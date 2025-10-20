@@ -8,17 +8,84 @@
 </head>
 
 <body>
-    
-    <div class="wrapper">
-        <div><h3>Welcome to Tetris multi</h3></div>
-        <div class="description">
-            <p>이 게임은 다양한 사람들이 함께 테트리스를 하는 게임입니다.</p>
-            <P>많이 즐겨 주셨으면 좋겠습니다.</P>
-            <button class="start-button">게임 시작</button>
+  <div class="container">
+    <header class="header">
+      <h1 class="brand">Tetris Multi</h1>
+      <nav class="nav">
+        <a href="#guide" class="btn ghost">키 가이드</a>
+        <button id="themeToggle" type="button" class="btn ghost" aria-pressed="false">다크 모드</button>
+      </nav>
+    </header>
+
+    <main class="main">
+      <section class="hero">
+        <h2 class="hero-title">Welcome to Tetris Multi</h2>
+        <p class="hero-desc">이 게임은 다양한 사람들이 함께 테트리스를 하는 게임입니다.<br/>많이 즐겨 주셨으면 좋겠습니다.</p>
+        <div class="cta">
+          <a class="btn primary" href="tetrisSingle.html">싱글 게임</a>
+          <a class="btn" href="tetris.html">멀티 게임</a>
         </div>
-    </div>
-    
+      </section>
+
+      <section class="cards">
+        <a class="card" href="tetrisSingle.html">
+          <div class="card-title">Single</div>
+          <div class="card-desc">혼자 연습하기 — 현재 구현된 싱글 플레이로 바로 시작</div>
+          <div class="card-cta">시작하기 →</div>
+        </a>
+        <a class="card" href="tetris.html">
+          <div class="card-title">Online</div>
+          <div class="card-desc">웹소켓 멀티 대전 — 대기실/매칭은 순차 오픈 예정</div>
+          <div class="card-cta">입장하기 →</div>
+        </a>
+      </section>
+
+      <section id="guide" class="guide">
+        <h3>키 가이드</h3>
+        <ul>
+          <li><kbd>←</kbd><span>왼쪽 이동</span></li>
+          <li><kbd>→</kbd><span>오른쪽 이동</span></li>
+          <li><kbd>↓</kbd><span>한 칸 하강(소프트 드롭)</span></li>
+          <li><kbd>↑</kbd><span>회전</span></li>
+          <li><kbd>Space</kbd><span>하드 드롭</span></li>
+        </ul>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span>© <span id="year"></span> Tetris Multi</span>
+      <span class="dot">•</span>
+      <a href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a>
+    </footer>
+  </div>
+
+  <script>
+  // 연도 표기 자동화
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  // Theme: load preference from localStorage or system, then apply
+  (function initTheme(){
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = saved || (prefersDark ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', theme);
+    const btn = document.getElementById('themeToggle');
+    if (btn) btn.textContent = theme === 'dark' ? '라이트 모드' : '다크 모드';
+  })();
+
+  // Toggle handler
+  const toggleBtn = document.getElementById('themeToggle');
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme') || 'light';
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('theme', next);
+      toggleBtn.textContent = next === 'dark' ? '라이트 모드' : '다크 모드';
+      toggleBtn.setAttribute('aria-pressed', String(next === 'dark'));
+    });
+  }
+  </script>
+  <script src="src/js/app.js" type="module"></script>
 </body>
-<script src="src/js/app.js" type="module">
-</script>
 </html>
