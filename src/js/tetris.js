@@ -1,4 +1,18 @@
 import BLOCKS from "./blocks.js"
+import {
+  createEmptyBoard as createEngineBoard,
+  canPlacePiece,
+  lockPieceOnBoard,
+  clearFilledLines,
+} from "./engine/board.js"
+import { resolveMoveAttempt } from "./engine/step.js"
+import {
+  BOARD_ROWS,
+  BOARD_COLS,
+  SPAWN_POSITION,
+  INITIAL_FALL_INTERVAL_MS,
+  NEXT_PREVIEW_DIMENSION,
+} from "./config.js"
 
 // =============================
 // 테트리스 메인 스크립트 (단일 플레이)
@@ -16,37 +30,54 @@ const boardEl = document.querySelector(".playground > ul");       // 20x10 격�
 const gameOverEl = document.querySelector(".game-text");          // 게임오버 레이어
 const scoreEl = document.querySelector(".score");                 // 점수 표시 영역
 const restartBtn = document.querySelector(".game-text > button"); // 재시작 버튼
+const nextPreviewEl = document.querySelector(".next-preview");    // 다음 블록 표시 영역
 
 const PIECE_TYPES = Object.keys(BLOCKS);                           // 사용 가능한 모든 블록 타입
-
-// 설정(행/열 수)
-const ROWS = 20;
-const COLS = 10;
+const ROWS = BOARD_ROWS;
+const COLS = BOARD_COLS;
+const SPAWN_ROW = SPAWN_POSITION.row;
+const SPAWN_COL = SPAWN_POSITION.col;
+const NEXT_PREVIEW_SIZE = NEXT_PREVIEW_DIMENSION;
 
 // 상태 변수들
 let score = 0;                 // 현재 점수
-let fallIntervalMs = 500;      // 자동 하강 주기(ms)
+let fallIntervalMs = INITIAL_FALL_INTERVAL_MS; // 자동 하강 주기(ms)
 let fallTimer;                 // setInterval 핸들(중력 타이머)
 let pendingPiece;              // 이동/회전을 "시도"해보는 임시 조각 상태
 let boardState;                // 2차원 배열로 관리하는 고정 블록 상태
 let boardCells;                // DOM 셀 참조(렌더링용 캐시)
+let nextPreviewCells;          // 다음 블록 미리보기 셀 모음
+let nextPieceType;             // 예정된 다음 블록 타입
 
 // 실제 확정된 현재 조각 상태(성공적으로 렌더되면 여기에 반영)
 const activePiece = {
   pieceType: "",   // 'I','O','T','S','Z','J','L'
   rotation: 0,      // 0~3
-  row: 0,           // 보드 y (위→아래)
-  col: 3,           // 보드 x (왼→오)
+  row: SPAWN_ROW,   // 보드 y (위→아래)
+  col: SPAWN_COL,   // 보드 x (왼→오)
 }
 
 // 초기 진입점
 init();
 
-// =============================
-// 헬퍼: 비어 있는 보드 배열 생성
-// =============================
-function createEmptyBoard(){
-  return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+function buildNextPreview(){
+  if (!nextPreviewEl) return;
+  nextPreviewEl.innerHTML = "";
+  nextPreviewCells = Array.from({ length: NEXT_PREVIEW_SIZE }, () => []);
+
+  const grid = document.createElement("ul");
+  grid.classList.add("next-grid");
+
+  for (let row = 0; row < NEXT_PREVIEW_SIZE; row++) {
+    for (let col = 0; col < NEXT_PREVIEW_SIZE; col++) {
+      const cell = document.createElement("li");
+      cell.classList.add("next-cell");
+      grid.append(cell);
+      nextPreviewCells[row].push(cell);
+    }
+  }
+
+  nextPreviewEl.append(grid);
 }
 
 // =============================
@@ -80,15 +111,18 @@ function init(){
   clearInterval(fallTimer);
   score = 0;
   scoreEl.innerText = score;
+  fallIntervalMs = INITIAL_FALL_INTERVAL_MS;
 
-  boardState = createEmptyBoard();
+  boardState = createEngineBoard(ROWS, COLS);
   buildBoard();
+  buildNextPreview();
 
   activePiece.pieceType = "";
   activePiece.rotation = 0;
-  activePiece.row = 0;
-  activePiece.col = 3;
+  activePiece.row = SPAWN_ROW;
+  activePiece.col = SPAWN_COL;
   pendingPiece = { ...activePiece };
+  nextPieceType = pickRandomPiece();
 
   renderBoard();
   generateNewBlock();                // 첫 블록 생성 + 중력 타이머 시작
@@ -102,33 +136,57 @@ function renderBlocks(moveType = ""){
   const { pieceType } = pendingPiece; // 시도 중인 좌표/회전
   if (!pieceType) return;
 
-  if (!canPlace(pendingPiece)) {
-    pendingPiece = { ...activePiece }; // 이동 실패 → 원래 상태로 롤백
+  const outcome = resolveMoveAttempt({
+    board: boardState,
+    activePiece,
+    pendingPiece,
+    moveCause: moveType,
+    blocks: BLOCKS,
+  });
 
-    if (moveType === "retry") {
-      clearInterval(fallTimer);
-      showGameOver();
-      return;
-    }
+  pendingPiece = { ...outcome.pending };
 
-    if (moveType === "top") {
-      seizeBlock();
-      return;
-    }
+  if (outcome.status === "gameOver") {
+    const { pieceType: type, rotation, row, col } = outcome.active;
+    activePiece.pieceType = type;
+    activePiece.col = col;
+    activePiece.row = row;
+    activePiece.rotation = rotation;
+    clearInterval(fallTimer);
+    showGameOver();
+    return;
+  }
 
+  if (outcome.status === "lock") {
+    const { pieceType: type, rotation, row, col } = outcome.active;
+    activePiece.pieceType = type;
+    activePiece.col = col;
+    activePiece.row = row;
+    activePiece.rotation = rotation;
+    seizeBlock();
+    return;
+  }
+
+  if (outcome.status === "retry") {
+    const { pieceType: type, rotation, row, col } = outcome.active;
+    activePiece.pieceType = type;
+    activePiece.col = col;
+    activePiece.row = row;
+    activePiece.rotation = rotation;
     setTimeout(() => {
       renderBlocks("retry");   // 스폰 직후 충돌 여부 재확인
     }, 0);
     return;
   }
 
-  const { rotation, row, col } = pendingPiece;
-  activePiece.pieceType = pieceType;
-  activePiece.col = col;
-  activePiece.row = row;
-  activePiece.rotation = rotation;
-
-  renderBoard();
+  if (outcome.status === "ok") {
+    const { pieceType: type, rotation, row, col } = outcome.active;
+    activePiece.pieceType = type;
+    activePiece.col = col;
+    activePiece.row = row;
+    activePiece.rotation = rotation;
+    renderBoard();
+  }
 }
 
 // =============================
@@ -139,13 +197,7 @@ function seizeBlock(){
   const { pieceType, rotation, row, col } = activePiece;
   if (!pieceType) return;
 
-  BLOCKS[pieceType][rotation].forEach(([offsetX, offsetY]) => {
-    const targetCol = col + offsetX;
-    const targetRow = row + offsetY;
-    if (targetCol >= 0 && targetCol < COLS && targetRow >= 0 && targetRow < ROWS) {
-      boardState[targetRow][targetCol] = pieceType;
-    }
-  });
+  lockPieceOnBoard(boardState, activePiece, BLOCKS);
 
   activePiece.pieceType = ""; // 고정 후에는 활성 조각이 없음
   renderBoard();               // 보드 상태와 DOM 동기화
@@ -159,16 +211,7 @@ function seizeBlock(){
 // - 새 블록 생성으로 다음 턴 진행
 // =============================
 function checkMatch(){
-  let clearedLines = 0;
-
-  for (let row = boardState.length - 1; row >= 0; row--) {
-    const isFull = boardState[row].every(cell => cell !== null);
-    if (isFull) {
-      boardState.splice(row, 1);
-      boardState.unshift(Array(COLS).fill(null));
-      clearedLines++;
-    }
-  }
+  const clearedLines = clearFilledLines(boardState);
 
   if (clearedLines > 0) {
     score += clearedLines * 10; // 단순 점수 규칙(+10)
@@ -180,34 +223,58 @@ function checkMatch(){
 }
 
 // =============================
+// 보드 상태(boardState)와 DOM 보드를 동기화
+// =============================
+function renderBoard(){
+  if (!boardCells) return;
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = boardCells[row]?.[col];
+      if (!cell) continue;
+
+      cell.classList.remove("moving", "seized");
+      PIECE_TYPES.forEach(type => cell.classList.remove(type));
+
+      const lockedPiece = boardState[row][col];
+      if (lockedPiece) {
+        cell.classList.add(lockedPiece, "seized");
+      }
+    }
+  }
+
+  if (!activePiece.pieceType) return;
+
+  BLOCKS[activePiece.pieceType][activePiece.rotation].forEach(([offsetX, offsetY]) => {
+    const targetCol = activePiece.col + offsetX;
+    const targetRow = activePiece.row + offsetY;
+    const cell = boardCells[targetRow]?.[targetCol];
+    if (!cell) return;
+    cell.classList.add(activePiece.pieceType, "moving");
+  });
+}
+
+// =============================
 // 새 블록 생성 + 중력 타이머 시작
-// - fallIntervalMs마다 아래로 1칸씩 이동(moveBlock('top',1))
+// - fallIntervalMs마다 아래로 1칸씩 이동
 // - BLOCKS에서 임의 유형 선택 후 (0,3)에서 시작
 // =============================
 function generateNewBlock(){
   clearInterval(fallTimer); // 기존 타이머 정지(중복 방지)
   fallTimer = setInterval(() => {
-    moveBlock("top", 1);    // 아래로 1칸 이동 시도
+    shiftActivePiece(1, 0, "top");    // 아래로 1칸 이동 시도
   }, fallIntervalMs);
 
-  const entries = Object.entries(BLOCKS);           // [['I', shape], ['O', shape], ...]
-  const randomIndex = Math.floor(Math.random() * entries.length);
-
-  activePiece.pieceType = entries[randomIndex][0];  // 랜덤 조각 타입 선택
-  activePiece.row = 0;                               // 화면 위에서 시작
-  activePiece.col = 3;                               // 가운데 근처에서 시작
-  activePiece.rotation = 0;                          // 기본 회전 상태
+  const currentType = nextPieceType ?? pickRandomPiece();
+  activePiece.pieceType = currentType;                // 예정된 조각 타입 사용
+  activePiece.row = SPAWN_ROW;                        // 화면 위에서 시작(일부는 위쪽에 숨김)
+  activePiece.col = SPAWN_COL;                        // 가운데 근처에서 시작
+  activePiece.rotation = 0;                           // 기본 회전 상태
 
   pendingPiece = { ...activePiece };                 // 임시 상태 동기화
+  nextPieceType = pickRandomPiece();
+  renderNextPiece();
   renderBlocks();                                    // 화면에 그리기
-}
-
-// =============================
-// 해당 셀이 비어 있는지(존재하고, 아직 고정되지 않았는지) 검사
-// =============================
-function checkEmpty(row, col){
-  if (col < 0 || col >= COLS || row < 0 || row >= ROWS) return false;
-  return boardState[row][col] === null;
 }
 
 // =============================
@@ -215,10 +282,33 @@ function checkEmpty(row, col){
 // - 모든 칸이 배치 가능해야(true)
 // =============================
 function canPlace({ pieceType, rotation, row, col }){
-  return BLOCKS[pieceType][rotation].every(([blockOffsetX, blockOffsetY]) => {
-    const boardCol = col + blockOffsetX;
-    const boardRow = row + blockOffsetY;
-    return checkEmpty(boardRow, boardCol);
+  return canPlacePiece(boardState, { pieceType, rotation, row, col }, BLOCKS);
+}
+
+function pickRandomPiece(){
+  const randomIndex = Math.floor(Math.random() * PIECE_TYPES.length);
+  return PIECE_TYPES[randomIndex];
+}
+
+function renderNextPiece(){
+  if (!nextPreviewCells) return;
+
+  nextPreviewCells.flat().forEach(cell => {
+    cell.className = "next-cell";
+  });
+
+  if (!nextPieceType) return;
+
+  const offsets = BLOCKS[nextPieceType][0];
+  const minX = Math.min(...offsets.map(([x]) => x));
+  const minY = Math.min(...offsets.map(([, y]) => y));
+
+  offsets.forEach(([offsetX, offsetY]) => {
+    const row = offsetY - minY;
+    const col = offsetX - minX;
+    const cell = nextPreviewCells[row]?.[col];
+    if (!cell) return;
+    cell.classList.add(nextPieceType, "preview");
   });
 }
 
@@ -251,13 +341,12 @@ function hardDrop(){
 }
 
 // =============================
-// 이동/하강 명령: 임시 상태에 먼저 반영 후 렌더 시도
-// - axis: 'left' 또는 'top'
+// 이동/하강 명령: 전달받은 델타를 적용하고 충돌 시 롤백
 // =============================
-function moveBlock(axis, amount){
-  if (axis === "left") pendingPiece.col += amount;   // 좌/우 이동
-  else if (axis === "top") pendingPiece.row += amount; // 하강
-  renderBlocks(axis); // 배치 성공 시 확정, 실패 시 롤백
+function shiftActivePiece(rowDelta, colDelta, moveCause){
+  pendingPiece.row += rowDelta;
+  pendingPiece.col += colDelta;
+  renderBlocks(moveCause);
 }
 
 // =============================
@@ -275,7 +364,7 @@ function changeDirection(){
 function dropBlock(){
   clearInterval(fallTimer);
   fallTimer = setInterval(() => {
-    moveBlock('top', 1);
+    shiftActivePiece(1, 0, "top");
   }, 10);
 }
 
@@ -286,13 +375,13 @@ function dropBlock(){
 document.addEventListener("keydown", e => {
   switch (e.key) {
     case "ArrowRight":
-      moveBlock("left", 1);   // 오른쪽 한 칸
+      shiftActivePiece(0, 1, "horizontal");   // 오른쪽 한 칸
       break;
     case "ArrowLeft":
-      moveBlock("left", -1);  // 왼쪽 한 칸
+      shiftActivePiece(0, -1, "horizontal");  // 왼쪽 한 칸
       break;
     case "ArrowDown":
-      moveBlock("top", 1);    // 아래로 한 칸(소프트 드롭)
+      shiftActivePiece(1, 0, "top");    // 아래로 한 칸(소프트 드롭)
       break;
     case "ArrowUp":
       changeDirection();       // 회전

@@ -7,15 +7,42 @@
     <link rel="stylesheet" href="../css/tetris.css">
 </head>
 <body>
-    <div class="wrapper">
-        <div class="game-text">
-            <span>게임 종료</span>
-            <button>다시 시작</button>
-        </div>
-        <div class="score">0</div>
-        <div class="playground">
-            <ul></ul>
-        </div>
+    <div class="single-wrapper">
+        <header class="single-header">
+            <h1 class="page-title">Single Player Tetris</h1>
+            <div class="scoreboard">
+                <span class="score-label">Score</span>
+                <span class="score">0</span>
+            </div>
+        </header>
+
+        <main class="single-layout">
+            <aside class="panel panel--left">
+                <h2>Next Up</h2>
+                <div class="next-preview"></div>
+            </aside>
+
+            <section class="playfield">
+                <div class="game-text">
+                    <span>게임 종료</span>
+                    <button>다시 시작</button>
+                </div>
+                <div class="playground">
+                    <ul></ul>
+                </div>
+            </section>
+
+            <aside class="panel panel--right">
+                <h2>Controls</h2>
+                <ul class="controls-list">
+                    <li><kbd>←</kbd><span>왼쪽 이동</span></li>
+                    <li><kbd>→</kbd><span>오른쪽 이동</span></li>
+                    <li><kbd>↑</kbd><span>회전</span></li>
+                    <li><kbd>↓</kbd><span>소프트 드롭</span></li>
+                    <li><kbd>Space</kbd><span>하드 드롭</span></li>
+                </ul>
+            </aside>
+        </main>
     </div>
     <script src="../js/tetris.js" type="module"></script>
 </body>
