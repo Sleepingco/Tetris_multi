@@ -1,4 +1,4 @@
-10월 20일
+# 10월 20일
 
 ⸻
 
@@ -217,3 +217,14 @@ Next 미리보기는 buildNextPreview로 4×4 그리드를 만들고(src/js/tetr
 이 구조 덕분에 보드 상태는 항상 배열 한 곳에 모이고, 렌더링/입력은 이 상태를 참조만 하므로 이후 step 기반 루프나 멀티플레이 동기화로 확장하기 용이합니다.
 
 # 10월 24일
+
+엔진 정리
+
+런타임 데이터를 전역 변수 대신 gameState 객체 하나에 묶어 놨어요 (src/js/tetris.js:42). 점수·타이머·보드·조각 상태가 한 곳에 모여서 이후 멀티플레이나 AI 직렬화가 훨씬 간단해졌습니다.
+setActivePiece를 도입하고 renderBlocks가 resolveMoveAttempt 결과(ok/lock/retry/gameOver)를 해석하도록 재구성했습니다 (src/js/tetris.js:132-185). 중복되던 활성 조각 대입 코드가 사라지고, DOM 갱신 지점이 명확해졌어요.
+shiftActivePiece는 오직 임시 조각 좌표만 수정하고, 실제 렌더 호출은 호출자가 담당하도록 분리했습니다 (src/js/tetris.js:354-401). 덕분에 “입력 → 엔진 → 뷰” 흐름이 자연스럽게 읽힙니다.
+이동 판정을 전담하는 엔진 모듈 resolveMoveAttempt를 추가해 (src/js/engine/step.js:1), DOM 없이도 이동 결과를 테스트하거나 재사용할 수 있게 했습니다.
+다음으로 확인할 것
+
+브라우저에서 src/html/tetrisSingle.html을 실행해 좌우 이동·소프트/하드 드롭·라인 클리어·게임 오버가 모두 정상 동작하는지 점검해 주세요.
+앞으로 홀드나 멀티플레이 동기화를 구현할 때는 이제 gameState 객체만 넘기면 되므로, 상태 관리와 직렬화가 한층 수월해질 것입니다.
