@@ -100,6 +100,38 @@ function canPlace({ pieceType, rotation, row, col }){
 
 ⸻
 
+
+이전 DOM 직접 조작 버전과 지금 배열 기반 버전의 핵심 차이는 다음과 같아요.
+
+보드 상태 저장 방식: 과거에는 .playground > ul의 각 <li>에 클래스(.moving, .seized)를 붙여 놓고 DOM 자체가 곧 상태였어요. 지금은 boardState[row][col] 배열에 고정 블록 타입을 기록하고, 렌더링 시점에만 해당 값을 DOM 셀(boardCells[row][col])에 반영합니다.
+충돌/이동 판정: 예전에는 원하는 좌표의 DOM 노드를 찾아 classList.contains("seized")로 막혀 있는지 확인했죠. 현재는 배열 값이 null인지로 바로 판단하고, row < 0도 허용해 스폰·회전 시 일부가 화면 밖에 걸쳐도 됩니다(checkEmpty).
+라인 클리어 처리: 기존에는 꽉 찬 <li>를 제거하고 맨 위에 새 <li>를 prepend하는 식이었는데, 지금은 배열에서 해당 행을 splice/unshift로 교체하고 한 번에 renderBoard()로 DOM을 갱신합니다.
+렌더링 분리: 이전 로직은 이동/회전 함수가 곧 DOM 조작이었고, 클래스 정리도 같은 곳에서 했습니다. 이제는 renderBlocks가 위치 검증만 하고, 확정된 상태는 renderBoard가 DOM과 싱크를 맞춰요. 이는 테스트나 추후 네트워크 전송 시 배열만 다루면 되도록 로직과 표현을 분리한 겁니다.
+초기 스폰 위치: 과거에는 (row=0, col=3)에서 시작해서 화면 밖을 허용하지 않았지만, 현재는 SPAWN_ROW = -1로 설정돼 있어 테트리스처럼 윗부분이 잠시 숨겨진 상태로 등장합니다.
+요약하면, 이전 코드는 DOM을 상태 저장소로 삼고 즉시 조작하는 구조였고, 현재 코드는 배열이 게임 로직의 단일 진실 원천(Single Source of Truth)이 되며 DOM은 렌더링 용도로만 쓰입니다.
+⸻
+State Initialization
+
+createEmptyBoard() returns a 20×10 array of null so logic works only on JavaScript data (src/js/tetris.js (lines 48-50)). 이전 버전은 prependNewLine()으로 <li>를 만들어 DOM 클래스 자체에 상태를 저장했습니다.
+buildBoard() 한 번만 전체 DOM 셀을 만들어 boardCells[row][col]에 캐시합니다 (src/js/tetris.js (lines 55-74)). 과거에는 매 스폰/라인 클리어마다 DOM 노드를 추가·삭제했죠.
+Active Piece & Spawn
+
+activePiece와 pendingPiece는 배열 좌표를 기준으로 동작하며 스폰 시 row = -1을 활용해 화면 밖 일부를 허용합니다 (src/js/tetris.js (lines 35-47)). DOM 버전은 row = 0에서 시작해서 위쪽 충돌이 즉시 발생했습니다.
+Collision & Movement
+
+checkEmpty(row, col)이 배열 경계를 검사하고 row < 0은 통과시켜 스폰 여유를 줍니다 (src/js/tetris.js (lines 240-243)). 이전에는 DOM 셀을 찾아 classList.contains("seized")로 판정했기 때문에 화면 밖 좌표를 다루기 힘들었습니다.
+canPlace()가 블록의 상대 좌표를 순회하면서 모두 배열상 비어 있는지를 계산합니다 (src/js/tetris.js (lines 249-254)). DOM 시절에는 boardEl.childNodes[row]처럼 트리 탐색을 반복했어요.
+Locking & Line Clears
+
+seizeBlock()은 충돌이 확정된 블록 좌표를 돌면서 boardState[row][col] = pieceType으로 기록하고, 렌더링은 별도 단계로 넘깁니다 (src/js/tetris.js (lines 138-151)).
+checkMatch()는 배열 행을 뒤에서 앞으로 훑어 splice/unshift로 한 번에 밀어 올립니다 (src/js/tetris.js (lines 161-179)). 기존 구현은 DOM 행을 remove()하고 prependNewLine()을 호출했습니다.
+Rendering
+
+renderBoard()가 단일 진실 원천(boardState, activePiece)을 이용해 DOM 클래스를 재설정합니다 (src/js/tetris.js (lines 185-212)). 먼저 모든 셀에서 .moving, .seized, 타입 클래스를 제거한 뒤 고정 블록을 그리고, 마지막에 활성 조각을 덧입힙니다. 이전에는 이동 함수가 DOM 클래스를 직접 제거·추가했습니다.
+Game Loop
+
+renderBlocks()는 이동 시도 → 배열 충돌 검사 → 성공 시 activePiece 갱신 → renderBoard() 호출 순으로 명확히 분리되었습니다 (src/js/tetris.js (lines 101-132)). DOM 버전은 이 함수 안에서 바로 DOM 조작과 클래스 롤백을 수행했습니다.
+하강 타이머, 하드드롭, 이동, 회전 로직(moveBlock, hardDrop, changeDirection)은 같은 인터페이스를 유지하지만 내부적으로 canPlace()와 배열 좌표를 사용합니다 (src/js/tetris.js (lines 261-301)).
  좋아! 지금 코드에서 바뀐 핵심을 아주 쉽게 풀어서 설명할게.
 한 줄 요약: “블록이 윗쪽(화면 밖) 에 조금 걸쳐도 바로 게임오버가 안 나게 만들었어.”
 

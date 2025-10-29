@@ -14,18 +14,17 @@ const sendButton = document.querySelector(".send-button");
 const displayContainer = document.querySelector(".display-container");
 // console.log(nickName, chatInput);
 // console.log(nickName.value, chatInput.value);
- 
+
 // Enter 키 입력 시 메시지를 전송
-chatInput.addEventListener("keypress", (envent)=>
-{
+chatInput.addEventListener("keypress", (envent) => {
     // 엔터(13) 키가 눌리면 send 함수 호출 후 입력창 초기화
-    if(event.keyCode === 13){
+    if (event.keyCode === 13) {
         send();
-        chatInput.value ="";
+        chatInput.value = "";
     }
 })
 // 메시지 전송 함수
-function send(){
+function send() {
     // 전송할 데이터 객체 생성
     const param = {
         name: nickName.value,
@@ -45,9 +44,9 @@ socket.on("chatting", (data) => {
     // console.log("Message:", chatInput.value);
     console.log(data);
     // 서버에서 받은 데이터 구조 분해 할당
-    const { name, msg, time} = data;
+    const { name, msg, time } = data;
     // 새로운 채팅 메시지 객체 생성
-    const item = new LiModel(name,msg,time);
+    const item = new LiModel(name, msg, time);
     // 채팅 메시지를 화면에 추가
     item.makeLi();
     // 새 메시지가 추가될 때 채팅창을 아래로 스크롤
@@ -56,7 +55,7 @@ socket.on("chatting", (data) => {
 // console.log(socket);
 
 // 채팅 메시지 모델 (메시지 데이터 저장 및 리스트 아이템 생성)
-function LiModel(name, msg, time){
+function LiModel(name, msg, time) {
     this.name = name;
     // 메시지 보낸 사람의 닉네임 저장
     this.msg = msg;
@@ -64,14 +63,14 @@ function LiModel(name, msg, time){
     this.time = time;
     console.log(this);
     // 채팅 메시지를 리스트에 추가하는 함수
-    this.makeLi = ()=>{
+    this.makeLi = () => {
         // 새로운 리스트 아이템(li) 생성
         const li = document.createElement("li");
         // 본인이 보낸 메시지인지 확인하여 클래스 지정
         li.classList.add(nickName.value === this.name ? "sent" : "received");
         // 채팅 메시지의 HTML 구조 생성
-        const dom = 
-        `<span class="profile">
+        const dom =
+            `<span class="profile">
         <span class="user">${this.name}</span>
                         <img class="image" src="https://picsum.photos/id/1/200/300" alt="any">
                     </span>
