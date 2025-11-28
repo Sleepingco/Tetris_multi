@@ -106,6 +106,21 @@ function buildBoard() {
 // =============================
 // 초기화: 점수 리셋, 20x10 보드 생성, 첫 블록 소환
 // =============================
+/**
+ * 게임을 처음 시작하거나 재시작할 때 전체 상태를 초기화한다.
+ *
+ * 수행 내용:
+ * - 기존 중력 타이머(fallTimer)를 정지하고 기본 하강 주기(fallIntervalMs)로 리셋한다.
+ * - 점수를 0으로 초기화하고 점수 표시 DOM(scoreEl)을 갱신한다.
+ * - 엔진 보드 배열(gameState.board)을 ROWS x COLS 크기의 비어 있는 상태로 생성한다.
+ * - DOM 보드(boardEl)와 다음 블록 미리보기 영역을 다시 생성하고 셀 참조를 캐싱한다.
+ * - activePiece를 “아직 블록이 없는 상태”로 스폰 위치에 초기화한다.
+ * - pendingPiece를 activePiece의 현재 상태 복사본으로 만들어,
+ *   이후 이동/회전 시도 시 기준이 되는 임시 상태로 사용한다.
+ * - 다음에 소환될 블록 타입(nextPieceType)을 무작위로 하나 선택해 저장한다.
+ * - 비어 있는 보드를 한 번 렌더링한 뒤, generateNewBlock()을 호출해
+ *   첫 블록을 소환하고 중력 타이머를 시작한다.
+ */
 function init() {
     clearInterval(gameState.fallTimer);
     gameState.score = 0;
@@ -141,6 +156,24 @@ function setActivePiece(piece) {
 // 현재 조각을 화면에 그리기 + 충돌 판정 + 롤백/고정 처리
 // - moveType: 'top'이면 아래로 이동 중(충돌 시 고정), 'retry'는 스폰 즉시 충돌 등
 // =============================
+/**
+ * pendingPiece를 기준으로 한 번의 이동/회전을 시도하고,
+ * 엔진 결과(resolveMoveAttempt)에 따라 activePiece/보드/게임오버를 처리한다.
+ *
+ * - moveType은 이번 시도가 어떤 원인에서 발생했는지를 나타낸다.
+ *   ('top' 하강, 'horizontal' 좌우 이동, 'retry' 스폰 재시도 등)
+ * - resolveMoveAttempt에 현재 보드 상태와 activePiece, pendingPiece를 넘겨
+ *   충돌 여부와 다음 상태(outcome)를 계산한다.
+ * - outcome.status에 따라:
+ *   - 'ok'       → activePiece를 outcome.active로 갱신하고 보드를 다시 렌더링한다.
+ *   - 'lock'     → activePiece를 고정 상태로 반영한 뒤 seizeBlock()을 호출한다.
+ *   - 'retry'    → 스폰 직후 충돌 등의 상황에서 activePiece로 롤백 후,
+ *                  setTimeout(0)으로 renderBlocks('retry')를 다시 호출해 재확인한다.
+ *   - 'gameOver' → activePiece를 마지막 상태로 렌더링하고 타이머를 정지한 뒤,
+ *                  게임오버 레이어를 표시한다.
+ * - 항상 gameState.pendingPiece는 outcome.pending로 덮어써
+ *   다음 시도에 사용할 임시 상태를 유지한다.
+ */
 function renderBlocks(moveType = "") {
     const pendingPiece = gameState.pendingPiece;
     if (!pendingPiece) return;

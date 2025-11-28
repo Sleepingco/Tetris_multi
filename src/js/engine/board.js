@@ -3,6 +3,22 @@
 // - Pure helpers for board allocation, collision, locking, clearing
 // =============================
 
+
+/**
+ * 한 줄 요약: 칸이 비었는지 체크한다
+ *
+ * 상세 설명:
+ *   (필요할 경우) 함수의 내부 동작, 알고리즘, 부수효과 등을 구체적으로 설명한다.
+ *
+ * @param {타입} 이름 - 파라미터의 의미를 설명.
+ * @param {타입} 이름 - (필요시) 형식이나 제약사항도 함께 작성.
+ * @returns {타입} 보드(게임판)의 위치에 null을 반환하여 비었다는걸 확인함
+ * @throws {Error} 예외 조건 (필요할 경우).
+ * @example
+ * // 예시
+ * const moved = moveBlock(board, 'left');
+ * if (!moved) console.log('벽에 막힘');
+ */
 function isCellEmpty(board, row, col) {
     const rows = board.length
     const cols = board[0]?.length ?? 0

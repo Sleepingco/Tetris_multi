@@ -1,34 +1,37 @@
 # 10월 20일
 
-⸻
+---
 
-한눈에 비교
+## 한눈에 비교
 
-구분	이전(DOM 기반)	지금(배열 기반)	왜 좋은가
-데이터의 주인	DOM 셀에 붙은 클래스( .moving, .seized )가 곧 데이터	boardState[y][x] 2차원 배열이 데이터	빠르고 단순, 테스트/멀티/AI에 유리
-충돌/배치 판정	셀 DOM을 찾아가 “비었는지” 확인	checkEmpty()/canPlace()로 배열 값 확인	브라우저 의존 ↓, 성능 ↑
-라인 클리어	DOM 줄을 보고 꽉 찼는지 판단	boardState[row].every(...)로 판단, splice/unshift	로직이 명확하고 버그 적음
-렌더링 역할	로직+화면이 섞여 있음	renderBoard()가 배열 → 화면만 반영	엔진/뷰 분리로 가독성 ↑
-상태 저장 위치	화면(DOM)에 흩어져 있음	하나의 소스(boardState)로 일원화	직렬화/네트워크/AI 처리 쉬움
-확장성	멀티/AI/테스트가 어려움	결정성(같은 입력=같은 결과) 확보 쉬움	리플레이/멀티/AI에 최적
+| 구분           | 이전(DOM 기반)                         | 지금(배열 기반)                          | 왜 좋은가                              |
+| -------------- | ------------------------------------ | -------------------------------------- | ------------------------------------ |
+| 데이터의 주인  | DOM 셀에 붙은 클래스( .moving, .seized )가 곧 데이터 | boardState[y][x] 2차원 배열이 데이터    | 빠르고 단순, 테스트/멀티/AI에 유리     |
+| 충돌/배치 판정 | 셀 DOM을 찾아가 “비었는지” 확인        | checkEmpty()/canPlace()로 배열 값 확인   | 브라우저 의존 ↓, 성능 ↑                |
+| 라인 클리어    | DOM 줄을 보고 꽉 찼는지 판단           | boardState[row].every(...)로 판단, splice/unshift | 로직이 명확하고 버그 적음              |
+| 렌더링 역할    | 로직+화면이 섞여 있음                  | renderBoard()가 배열 → 화면만 반영       | 엔진/뷰 분리로 가독성 ↑                |
+| 상태 저장 위치 | 화면(DOM)에 흩어져 있음                 | 하나의 소스(boardState)로 일원화          | 직렬화/네트워크/AI 처리 쉬움            |
+| 확장성         | 멀티/AI/테스트가 어려움                 | 결정성(같은 입력=같은 결과) 확보 쉬움     | 리플레이/멀티/AI에 최적                 |
 
+---
 
-⸻
+## 코드에서 달라진 핵심 포인트
 
-코드에서 달라진 핵심 포인트
+### 1) “보드 = 배열” 도입
 
-1) “보드 = 배열” 도입
-
+```js
 let boardState // 2차원 배열
 function createEmptyBoard(){
   return Array.from({ length: ROWS }, () => Array(COLS).fill(null))
 }
+```
 
-	•	예전엔 “어떤 셀이 비었나?”를 DOM에서 찾았지만
+- 예전엔 “어떤 셀이 비었나?”를 DOM에서 찾았지만  
 → 지금은 boardState[y][x]가 진실이야.
 
-2) 고정(착지) 로직이 배열을 채움
+### 2) 고정(착지) 로직이 배열을 채움
 
+```js
 function seizeBlock(){
   BLOCKS[pieceType][rotation].forEach(([dx, dy]) => {
     boardState[row + dy][col + dx] = pieceType
@@ -36,12 +39,14 @@ function seizeBlock(){
   renderBoard()
   checkMatch()
 }
+```
 
-	•	예전: .moving → .seized 같은 클래스 토글이 곧 상태
-	•	지금: 배열에 기입 → 그걸 화면에 그려줌(render)
+- 예전: .moving → .seized 같은 클래스 토글이 곧 상태  
+- 지금: 배열에 기입 → 그걸 화면에 그려줌(render)
 
-3) 라인 클리어가 “배열 기준”
+### 3) 라인 클리어가 “배열 기준”
 
+```js
 function checkMatch(){
   for (let r = boardState.length - 1; r >= 0; r--) {
     const full = boardState[r].every(cell => cell !== null)
@@ -52,22 +57,26 @@ function checkMatch(){
     }
   }
 }
+```
 
-	•	예전: DOM 줄을 훑으며 꽉 찼나 확인
-	•	지금: 배열 한 줄이 전부 null이 아닌지만 보면 끝 → 명확하고 빠름
+- 예전: DOM 줄을 훑으며 꽉 찼나 확인  
+- 지금: 배열 한 줄이 전부 null이 아닌지만 보면 끝 → 명확하고 빠름
 
-4) 화면은 “결과만” 그린다
+### 4) 화면은 “결과만” 그린다
 
+```js
 function renderBoard(){
   // 1) boardState에 맞춰 .seized 칠하기
   // 2) activePiece 기준으로 .moving 칠하기
 }
+```
 
-	•	예전: 렌더링 중에 판정도 같이 하곤 함(섞임)
-	•	지금: 판정(엔진) ↔ 렌더(뷰) 역할이 깔끔히 나뉨
+- 예전: 렌더링 중에 판정도 같이 하곤 함(섞임)  
+- 지금: 판정(엔진) ↔ 렌더(뷰) 역할이 깔끔히 나뉨
 
-5) 판정 함수가 배열만 본다
+### 5) 판정 함수가 배열만 본다
 
+```js
 function checkEmpty(row, col){
   if (col<0 || col>=COLS || row<0 || row>=ROWS) return false
   return boardState[row][col] === null
@@ -78,185 +87,278 @@ function canPlace({ pieceType, rotation, row, col }){
     checkEmpty(row + dy, col + dx)
   )
 }
+```
 
-	•	예전: DOM 트리를 타고 셀을 찾아가 비었는지 체크
-	•	지금: 배열 값만 검사 → 테스트/해석이 쉬움
+- 예전: DOM 트리를 타고 셀을 찾아가 비었는지 체크  
+- 지금: 배열 값만 검사 → 테스트/해석이 쉬움
 
-⸻
+---
 
-왜 학습/확장에 유리한가 (체감 포인트)
-	•	테스트 쉬움: 브라우저 없이도 boardState만 주고 함수 테스트 가능
-	•	성능/안정성: DOM 접근(느림) 대신 배열 접근(빠름) → 프레임 드랍 줄어듦
-	•	결정성: 같은 입력이면 결과가 항상 같음 → 멀티/AI/리플레이 가능
-	•	가독성: “데이터는 여기, 렌더는 저기”가 명확 → 디버깅 쉬움
+## 왜 학습/확장에 유리한가 (체감 포인트)
 
-⸻
+- 테스트 쉬움: 브라우저 없이도 boardState만 주고 함수 테스트 가능  
+- 성능/안정성: DOM 접근(느림) 대신 배열 접근(빠름) → 프레임 드랍 줄어듦  
+- 결정성: 같은 입력이면 결과가 항상 같음 → 멀티/AI/리플레이 가능  
+- 가독성: “데이터는 여기, 렌더는 저기”가 명확 → 디버깅 쉬움
 
-스스로 점검해보는 체크리스트
-	•	콘솔에서 boardState 찍었을 때, 고정 블록이 제대로 기록되나?
-	•	줄을 채우면 boardState가 splice/unshift로 정확히 변하나?
-	•	renderBoard()가 boardState만 보고 화면을 그리나? (DOM에서 상태를 읽지 않는가)
-	•	canPlace가 DOM 대신 boardState만 이용하나?
+---
 
-⸻
+## 스스로 점검해보는 체크리스트
 
+- 콘솔에서 boardState 찍었을 때, 고정 블록이 제대로 기록되나?  
+- 줄을 채우면 boardState가 splice/unshift로 정확히 변하나?  
+- renderBoard()가 boardState만 보고 화면을 그리나? (DOM에서 상태를 읽지 않는가)  
+- canPlace가 DOM 대신 boardState만 이용하나?
 
-이전 DOM 직접 조작 버전과 지금 배열 기반 버전의 핵심 차이는 다음과 같아요.
+---
 
-보드 상태 저장 방식: 과거에는 .playground > ul의 각 <li>에 클래스(.moving, .seized)를 붙여 놓고 DOM 자체가 곧 상태였어요. 지금은 boardState[row][col] 배열에 고정 블록 타입을 기록하고, 렌더링 시점에만 해당 값을 DOM 셀(boardCells[row][col])에 반영합니다.
-충돌/이동 판정: 예전에는 원하는 좌표의 DOM 노드를 찾아 classList.contains("seized")로 막혀 있는지 확인했죠. 현재는 배열 값이 null인지로 바로 판단하고, row < 0도 허용해 스폰·회전 시 일부가 화면 밖에 걸쳐도 됩니다(checkEmpty).
-라인 클리어 처리: 기존에는 꽉 찬 <li>를 제거하고 맨 위에 새 <li>를 prepend하는 식이었는데, 지금은 배열에서 해당 행을 splice/unshift로 교체하고 한 번에 renderBoard()로 DOM을 갱신합니다.
-렌더링 분리: 이전 로직은 이동/회전 함수가 곧 DOM 조작이었고, 클래스 정리도 같은 곳에서 했습니다. 이제는 renderBlocks가 위치 검증만 하고, 확정된 상태는 renderBoard가 DOM과 싱크를 맞춰요. 이는 테스트나 추후 네트워크 전송 시 배열만 다루면 되도록 로직과 표현을 분리한 겁니다.
-초기 스폰 위치: 과거에는 (row=0, col=3)에서 시작해서 화면 밖을 허용하지 않았지만, 현재는 SPAWN_ROW = -1로 설정돼 있어 테트리스처럼 윗부분이 잠시 숨겨진 상태로 등장합니다.
+## 이전 DOM 직접 조작 버전과 지금 배열 기반 버전의 핵심 차이는 다음과 같아요.
+
+- **보드 상태 저장 방식:**  
+  과거에는 `.playground > ul`의 각 `<li>`에 클래스(`.moving`, `.seized`)를 붙여 놓고 DOM 자체가 곧 상태였어요. 지금은 `boardState[row][col]` 배열에 고정 블록 타입을 기록하고, 렌더링 시점에만 해당 값을 DOM 셀(`boardCells[row][col]`)에 반영합니다.
+
+- **충돌/이동 판정:**  
+  예전에는 원하는 좌표의 DOM 노드를 찾아 `classList.contains("seized")`로 막혀 있는지 확인했죠. 현재는 배열 값이 `null`인지로 바로 판단하고, `row < 0`도 허용해 스폰·회전 시 일부가 화면 밖에 걸쳐도 됩니다(`checkEmpty`).
+
+- **라인 클리어 처리:**  
+  기존에는 꽉 찬 `<li>`를 제거하고 맨 위에 새 `<li>`를 prepend하는 식이었는데, 지금은 배열에서 해당 행을 `splice`/`unshift`로 교체하고 한 번에 `renderBoard()`로 DOM을 갱신합니다.
+
+- **렌더링 분리:**  
+  이전 로직은 이동/회전 함수가 곧 DOM 조작이었고, 클래스 정리도 같은 곳에서 했습니다. 이제는 `renderBlocks`가 위치 검증만 하고, 확정된 상태는 `renderBoard`가 DOM과 싱크를 맞춰요. 이는 테스트나 추후 네트워크 전송 시 배열만 다루면 되도록 로직과 표현을 분리한 겁니다.
+
+- **초기 스폰 위치:**  
+  과거에는 `(row=0, col=3)`에서 시작해서 화면 밖을 허용하지 않았지만, 현재는 `SPAWN_ROW = -1`로 설정돼 있어 테트리스처럼 윗부분이 잠시 숨겨진 상태로 등장합니다.
+
 요약하면, 이전 코드는 DOM을 상태 저장소로 삼고 즉시 조작하는 구조였고, 현재 코드는 배열이 게임 로직의 단일 진실 원천(Single Source of Truth)이 되며 DOM은 렌더링 용도로만 쓰입니다.
-⸻
-State Initialization
 
-createEmptyBoard() returns a 20×10 array of null so logic works only on JavaScript data (src/js/tetris.js (lines 48-50)). 이전 버전은 prependNewLine()으로 <li>를 만들어 DOM 클래스 자체에 상태를 저장했습니다.
-buildBoard() 한 번만 전체 DOM 셀을 만들어 boardCells[row][col]에 캐시합니다 (src/js/tetris.js (lines 55-74)). 과거에는 매 스폰/라인 클리어마다 DOM 노드를 추가·삭제했죠.
-Active Piece & Spawn
+---
 
-activePiece와 pendingPiece는 배열 좌표를 기준으로 동작하며 스폰 시 row = -1을 활용해 화면 밖 일부를 허용합니다 (src/js/tetris.js (lines 35-47)). DOM 버전은 row = 0에서 시작해서 위쪽 충돌이 즉시 발생했습니다.
-Collision & Movement
+## State Initialization
 
-checkEmpty(row, col)이 배열 경계를 검사하고 row < 0은 통과시켜 스폰 여유를 줍니다 (src/js/tetris.js (lines 240-243)). 이전에는 DOM 셀을 찾아 classList.contains("seized")로 판정했기 때문에 화면 밖 좌표를 다루기 힘들었습니다.
-canPlace()가 블록의 상대 좌표를 순회하면서 모두 배열상 비어 있는지를 계산합니다 (src/js/tetris.js (lines 249-254)). DOM 시절에는 boardEl.childNodes[row]처럼 트리 탐색을 반복했어요.
-Locking & Line Clears
+- `createEmptyBoard()`는 20×10 배열을 `null`로 채워 반환하여 로직이 오직 JavaScript 데이터에서만 작동하도록 합니다 (`src/js/tetris.js` (lines 48-50)).  
+  이전 버전은 `prependNewLine()`으로 `<li>`를 만들어 DOM 클래스 자체에 상태를 저장했습니다.
 
-seizeBlock()은 충돌이 확정된 블록 좌표를 돌면서 boardState[row][col] = pieceType으로 기록하고, 렌더링은 별도 단계로 넘깁니다 (src/js/tetris.js (lines 138-151)).
-checkMatch()는 배열 행을 뒤에서 앞으로 훑어 splice/unshift로 한 번에 밀어 올립니다 (src/js/tetris.js (lines 161-179)). 기존 구현은 DOM 행을 remove()하고 prependNewLine()을 호출했습니다.
-Rendering
+- `buildBoard()`는 한 번만 전체 DOM 셀을 만들어 `boardCells[row][col]`에 캐시합니다 (`src/js/tetris.js` (lines 55-74)).  
+  과거에는 매 스폰/라인 클리어마다 DOM 노드를 추가·삭제했죠.
 
-renderBoard()가 단일 진실 원천(boardState, activePiece)을 이용해 DOM 클래스를 재설정합니다 (src/js/tetris.js (lines 185-212)). 먼저 모든 셀에서 .moving, .seized, 타입 클래스를 제거한 뒤 고정 블록을 그리고, 마지막에 활성 조각을 덧입힙니다. 이전에는 이동 함수가 DOM 클래스를 직접 제거·추가했습니다.
-Game Loop
+---
 
-renderBlocks()는 이동 시도 → 배열 충돌 검사 → 성공 시 activePiece 갱신 → renderBoard() 호출 순으로 명확히 분리되었습니다 (src/js/tetris.js (lines 101-132)). DOM 버전은 이 함수 안에서 바로 DOM 조작과 클래스 롤백을 수행했습니다.
-하강 타이머, 하드드롭, 이동, 회전 로직(moveBlock, hardDrop, changeDirection)은 같은 인터페이스를 유지하지만 내부적으로 canPlace()와 배열 좌표를 사용합니다 (src/js/tetris.js (lines 261-301)).
- 좋아! 지금 코드에서 바뀐 핵심을 아주 쉽게 풀어서 설명할게.
-한 줄 요약: “블록이 윗쪽(화면 밖) 에 조금 걸쳐도 바로 게임오버가 안 나게 만들었어.”
+## Active Piece & Spawn
 
-⸻
+- `activePiece`와 `pendingPiece`는 배열 좌표를 기준으로 동작하며 스폰 시 `row = -1`을 활용해 화면 밖 일부를 허용합니다 (`src/js/tetris.js` (lines 35-47)).  
+  DOM 버전은 `row = 0`에서 시작해서 위쪽 충돌이 즉시 발생했습니다.
 
-1) 스폰 위치를 상수로 고정
+---
 
+## Collision & Movement
+
+- `checkEmpty(row, col)`이 배열 경계를 검사하고 `row < 0`은 통과시켜 스폰 여유를 줍니다 (`src/js/tetris.js` (lines 240-243)).  
+  이전에는 DOM 셀을 찾아 `classList.contains("seized")`로 판정했기 때문에 화면 밖 좌표를 다루기 힘들었습니다.
+
+- `canPlace()`가 블록의 상대 좌표를 순회하면서 모두 배열상 비어 있는지를 계산합니다 (`src/js/tetris.js` (lines 249-254)).  
+  DOM 시절에는 `boardEl.childNodes[row]`처럼 트리 탐색을 반복했어요.
+
+---
+
+## Locking & Line Clears
+
+- `seizeBlock()`은 충돌이 확정된 블록 좌표를 돌면서 `boardState[row][col] = pieceType`으로 기록하고, 렌더링은 별도 단계로 넘깁니다 (`src/js/tetris.js` (lines 138-151)).
+
+- `checkMatch()`는 배열 행을 뒤에서 앞으로 훑어 `splice`/`unshift`로 한 번에 밀어 올립니다 (`src/js/tetris.js` (lines 161-179)).  
+  기존 구현은 DOM 행을 `remove()`하고 `prependNewLine()`을 호출했습니다.
+
+---
+
+## Rendering
+
+- `renderBoard()`가 단일 진실 원천(`boardState`, `activePiece`)을 이용해 DOM 클래스를 재설정합니다 (`src/js/tetris.js` (lines 185-212)).  
+  먼저 모든 셀에서 `.moving`, `.seized`, 타입 클래스를 제거한 뒤 고정 블록을 그리고, 마지막에 활성 조각을 덧입힙니다.  
+  이전에는 이동 함수가 DOM 클래스를 직접 제거·추가했습니다.
+
+---
+
+## Game Loop
+
+- `renderBlocks()`는 이동 시도 → 배열 충돌 검사 → 성공 시 `activePiece` 갱신 → `renderBoard()` 호출 순으로 명확히 분리되었습니다 (`src/js/tetris.js` (lines 101-132)).  
+  DOM 버전은 이 함수 안에서 바로 DOM 조작과 클래스 롤백을 수행했습니다.
+
+- 하강 타이머, 하드드롭, 이동, 회전 로직(`moveBlock`, `hardDrop`, `changeDirection`)은 같은 인터페이스를 유지하지만 내부적으로 `canPlace()`와 배열 좌표를 사용합니다 (`src/js/tetris.js` (lines 261-301)).
+
+---
+
+## 좋아! 지금 코드에서 바뀐 핵심을 아주 쉽게 풀어서 설명할게.
+
+### 한 줄 요약: “블록이 윗쪽(화면 밖) 에 조금 걸쳐도 바로 게임오버가 안 나게 만들었어.”
+
+---
+
+### 1) 스폰 위치를 상수로 고정
+
+```js
 const SPAWN_ROW = -1  // 위로 한 칸 숨겨서 등장
 const SPAWN_COL = 3   // 가운데쯤에서 등장
+```
 
-	•	새 블록이 화면 위(-1행) 에서 살짝 숨겨진 채 시작해.
-	•	그래서 위가 조금 막혀 있어도 즉사하지 않고 내려올 기회를 줘.
+- 새 블록이 화면 위(-1행) 에서 살짝 숨겨진 채 시작해.  
+- 그래서 위가 조금 막혀 있어도 즉사하지 않고 내려올 기회를 줘.
 
-⸻
+---
 
-2) “윗공간은 빈칸 취급”
+### 2) “윗공간은 빈칸 취급”
 
+```js
 function checkEmpty(row, col){
   if (col < 0 || col >= COLS || row >= ROWS) return false
   if (row < 0) return true   // 화면 위쪽은 비어있는 것으로 본다
   return boardState[row][col] === null
 }
+```
 
-	•	row < 0(화면 위)는 충돌로 보지 않음 → 회전/이동도 가능해짐.
-	•	결과: 스폰 직후 “머리 부분이 위에 걸쳐도” 충돌 판정이 안 나서 한두 수 더 플레이 가능.
+- `row < 0`(화면 위)는 충돌로 보지 않음 → 회전/이동도 가능해짐.  
+- 결과: 스폰 직후 “머리 부분이 위에 걸쳐도” 충돌 판정이 안 나서 한두 수 더 플레이 가능.
 
-⸻
+---
 
-3) 새 블록을 뽑는 방법 정리
+### 3) 새 블록을 뽑는 방법 정리
 
+```js
 const PIECE_TYPES = Object.keys(BLOCKS)
 const rand = Math.floor(Math.random() * PIECE_TYPES.length)
 activePiece.pieceType = PIECE_TYPES[rand]
 activePiece.row = SPAWN_ROW
 activePiece.col = SPAWN_COL
 activePiece.rotation = 0
+```
 
-	•	블록 뽑기/배치 코드가 한 군데 상수(SPAWN_ROW/COL)로 통일되어 깔끔해졌어.
-	•	동작은 같지만, 읽고 바꾸기 쉬워진 것이 포인트.
+- 블록 뽑기/배치 코드가 한 군데 상수(`SPAWN_ROW`/`COL`)로 통일되어 깔끔해졌어.  
+- 동작은 같지만, 읽고 바꾸기 쉬워진 것이 포인트.
 
-⸻
+---
 
-4) 게임오버는 언제?
+### 4) 게임오버는 언제?
 
-renderBlocks("retry") 단계(스폰 직후 재확인)에서 그 위치에 블록을 놓을 수 없으면 게임오버가 돼.
-	•	이번 변경으로 row<0은 빈칸 취급이라 조금 막혀 있어도 바로 오버가 안 나고,
-완전히 막혀 있으면 여전히 게임오버가 나.
+- `renderBlocks("retry")` 단계(스폰 직후 재확인)에서 그 위치에 블록을 놓을 수 없으면 게임오버가 돼.  
+- 이번 변경으로 `row<0`은 빈칸 취급이라 조금 막혀 있어도 바로 오버가 안 나고, 완전히 막혀 있으면 여전히 게임오버가 나.
 
-더 관대하게 하려면?
-	•	스폰이 막히면 스폰 킥(살짝 위/좌/우로 밀어보기) 시도
-	•	락될 때(바닥에 고정될 때) 블록 일부가 화면 밖이면 그때 게임오버 처리
+더 관대하게 하려면?  
+- 스폰이 막히면 스폰 킥(살짝 위/좌/우로 밀어보기) 시도  
+- 락될 때(바닥에 고정될 때) 블록 일부가 화면 밖이면 그때 게임오버 처리  
 → 현대 테트리스의 “top-out” 규칙에 가까움
 
-⸻
+---
 
-5) 화면 그리기(renderBoard)는 “결과만 반영”
-	•	boardState(배열)에 적힌 걸 보고 고정 블록 칠함 → .seized
-	•	activePiece(현재 조각)는 움직이는 모양만 칠함 → .moving
-	•	즉, 판정(배열)과 그리기(DOM) 를 분리해서 더 이해/수정이 쉬워졌어.
+### 5) 화면 그리기(renderBoard)는 “결과만 반영”
 
-⸻
+- `boardState`(배열)에 적힌 걸 보고 고정 블록 칠함 → `.seized`  
+- `activePiece`(현재 조각)는 움직이는 모양만 칠함 → `.moving`  
+- 즉, 판정(배열)과 그리기(DOM) 를 분리해서 더 이해/수정이 쉬워졌어.
 
-6) 이렇게 테스트 해보면 끝!
-	1.	최상단까지 쌓기 → 새 블록 소환
-	•	예전: 바로 게임오버
-	•	지금: 한두 수는 더 진행(윗공간 허용 덕분)
-	2.	스폰 직후 회전/이동 시도
-	•	막히지 않고 동작해야 정상
-	3.	완전 봉쇄(윗공간까지 다 막힘) 상황
-	•	여전히 게임오버가 나야 정상
+---
 
-⸻
+### 6) 이렇게 테스트 해보면 끝!
 
-머릿속 그림(아주 간단)
+1. 최상단까지 쌓기 → 새 블록 소환  
+   - 예전: 바로 게임오버  
+   - 지금: 한두 수는 더 진행(윗공간 허용 덕분)  
+2. 스폰 직후 회전/이동 시도  
+   - 막히지 않고 동작해야 정상  
+3. 완전 봉쇄(윗공간까지 다 막힘) 상황  
+   - 여전히 게임오버가 나야 정상
 
+---
+
+## 머릿속 그림(아주 간단)
+
+```
 화면 위(보이지 않음)  ← row = -1  :  지금은 '빈칸'으로 본다 ✅
 ───────────────
 보이는 보드 시작     ← row = 0
+```
 
-이 정도만 기억하면 돼:
-	•	SPAWN_ROW = -1: 위에서 살짝 시작
-	•	row<0는 빈칸: 스폰/회전이 부드러워짐
-	•	완전 막히면 여전히 게임오버
+이 정도만 기억하면 돼:  
+- `SPAWN_ROW = -1`: 위에서 살짝 시작  
+- `row<0`는 빈칸: 스폰/회전이 부드러워짐  
+- 완전 막히면 여전히 게임오버
 
-엔진/렌더 분리 시작: boardState 관련 순수 로직을 src/js/engine/board.js로 떼어내서 tetris.js는 DOM 렌더링에 집중할 수 있게 됐어요.
-상태 관리 명확화: shiftActivePiece 같은 이름으로 이동 로직을 정리하고, 다음 블록 미리보기 렌더를 별도 함수로 분리해 흐름을 따라가기 쉬워졌습니다.
-설정 중앙화: 보드 크기, 스폰 위치, 하강 주기 등 하드코딩된 상수를 src/js/config.js에서 통합 관리하도록 바꿔 모드 전환이나 난이도 조정이 간편해졌습니다.
-UI 진척: 싱글 페이지 레이아웃과 Next 미리보기 패널을 추가해 이후 홀드/멀티플레이 확장에 필요한 UI 기반을 마련했습니다.
+---
 
-문제: 동시에 두 줄 이상이 가득 찼을 때 한 줄만 비워지고 나머지는 남아 있었습니다. 실제 동작에서는 한 줄을 splice로 제거한 뒤 unshift로 새 줄을 넣으면서 루프 인덱스가 계속 감소해, 바로 위 줄을 다시 검사하지 못한 것이 원인이었습니다.
-수정: src/js/engine/board.js:27에서 줄을 삭제했을 때 row++을 추가하여 같은 인덱스를 다시 검사하도록 했습니다. 이제 두 줄 이상이 한 번에 채워지면 모두 제거되고 각 줄마다 점수가 정상적으로 반영됩니다.
+## 엔진/렌더 분리 시작
 
- ---
+- `boardState` 관련 순수 로직을 `src/js/engine/board.js`로 떼어내서 `tetris.js`는 DOM 렌더링에 집중할 수 있게 됐어요.
 
-중간 기록 게임 구조:
-엔진 흐름
+## 상태 관리 명확화
 
-src/js/config.js:5가 보드 크기, 스폰 위치, 중력 주기 같은 공통 설정을 제공하고, 모든 모드가 이 값을 공유합니다.
-src/js/engine/board.js:1은 순수 로직만 담당합니다. 2D 배열 보드 생성, 충돌 판정(canPlacePiece), 착지 시 배열에 기록(lockPieceOnBoard), 꽉 찬 줄 삭제(clearFilledLines) 등을 DOM과 분리해두었습니다.
-이동 결과 판단은 src/js/engine/step.js:1에서 합니다. resolveMoveAttempt가 현재 보드와 임시 조각을 보고 ok/lock/retry/gameOver 중 하나를 반환해, 상위 레이어는 DOM 없이도 엔진 결과를 받아 처리할 수 있습니다.
-게임 상태
+- `shiftActivePiece` 같은 이름으로 이동 로직을 정리하고, 다음 블록 미리보기 렌더를 별도 함수로 분리해 흐름을 따라가기 쉬워졌습니다.
 
-src/js/tetris.js:34에 DOM 참조(보드 <ul>, 점수, 재시작 버튼 등)와 엔진 상태(점수, 중력 타이머, boardState, activePiece, pendingPiece, 다음 조각)가 모여 있고, init()이 이 상태를 초기화합니다 (src/js/tetris.js:109).
-pendingPiece는 이동/회전을 “시도”하는 값이고, 엔진 결과가 ok일 때만 activePiece에 확정됩니다. 이 분리 덕분에 충돌 시 롤백이 쉬워요.
-게임 루프
+## 설정 중앙화
 
-generateNewBlock(src/js/tetris.js:237)이 다음 조각을 활성화하고, 중력 인터벌이 shiftActivePiece(1, 0, "top")을 주기적으로 호출해 자동 하강합니다.
-resolveMoveAttempt의 반환값에 따라 seizeBlock(착지 후 배열 기록), renderBlocks("retry")(스폰 충돌 재확인), showGameOver가 결정됩니다 (src/js/tetris.js:210).
-시각적인 렌더링은 renderBoard(src/js/tetris.js:203) 한 곳에서 처리합니다. 보드 배열을 읽어 .seized를 칠하고, 현재 조각(activePiece)은 .moving으로 덧칠하기 때문에 엔진과 뷰가 자연스럽게 분리됩니다.
-입력 및 UI
+- 보드 크기, 스폰 위치, 하강 주기 등 하드코딩된 상수를 `src/js/config.js`에서 통합 관리하도록 바꿔 모드 전환이나 난이도 조정이 간편해졌습니다.
 
-키 입력은 document.addEventListener("keydown")(src/js/tetris.js:350)에서 받아 shiftActivePiece 또는 changeDirection, hardDrop을 호출합니다.
-Next 미리보기는 buildNextPreview로 4×4 그리드를 만들고(src/js/tetris.js:62), renderNextPiece가 BLOCKS 데이터의 0번 회전을 사용해 박스를 채웁니다 (src/js/tetris.js:268).
-두 줄 이상 동시에 채워졌을 때 모두 제거되도록 clearFilledLines가 줄 삭제 후 인덱스를 한 번 되돌려(src/js/engine/board.js:27) 연속 줄 검사를 수행합니다.
+## UI 진척
+
+- 싱글 페이지 레이아웃과 Next 미리보기 패널을 추가해 이후 홀드/멀티플레이 확장에 필요한 UI 기반을 마련했습니다.
+
+---
+
+## 문제
+
+- 동시에 두 줄 이상이 가득 찼을 때 한 줄만 비워지고 나머지는 남아 있었습니다.  
+- 실제 동작에서는 한 줄을 `splice`로 제거한 뒤 `unshift`로 새 줄을 넣으면서 루프 인덱스가 계속 감소해, 바로 위 줄을 다시 검사하지 못한 것이 원인이었습니다.
+
+## 수정
+
+- `src/js/engine/board.js:27`에서 줄을 삭제했을 때 `row++`을 추가하여 같은 인덱스를 다시 검사하도록 했습니다.  
+- 이제 두 줄 이상이 한 번에 채워지면 모두 제거되고 각 줄마다 점수가 정상적으로 반영됩니다.
+
+---
+
+## 중간 기록 게임 구조:
+
+### 엔진 흐름
+
+- `src/js/config.js:5`가 보드 크기, 스폰 위치, 중력 주기 같은 공통 설정을 제공하고, 모든 모드가 이 값을 공유합니다.  
+- `src/js/engine/board.js:1`은 순수 로직만 담당합니다. 2D 배열 보드 생성, 충돌 판정(`canPlacePiece`), 착지 시 배열에 기록(`lockPieceOnBoard`), 꽉 찬 줄 삭제(`clearFilledLines`) 등을 DOM과 분리해두었습니다.  
+- 이동 결과 판단은 `src/js/engine/step.js:1`에서 합니다. `resolveMoveAttempt`가 현재 보드와 임시 조각을 보고 `ok`/`lock`/`retry`/`gameOver` 중 하나를 반환해, 상위 레이어는 DOM 없이도 엔진 결과를 받아 처리할 수 있습니다.
+
+### 게임 상태
+
+- `src/js/tetris.js:34`에 DOM 참조(보드 `<ul>`, 점수, 재시작 버튼 등)와 엔진 상태(점수, 중력 타이머, `boardState`, `activePiece`, `pendingPiece`, 다음 조각)가 모여 있고, `init()`이 이 상태를 초기화합니다 (`src/js/tetris.js:109`).  
+- `pendingPiece`는 이동/회전을 “시도”하는 값이고, 엔진 결과가 `ok`일 때만 `activePiece`에 확정됩니다. 이 분리 덕분에 충돌 시 롤백이 쉬워요.
+
+### 게임 루프
+
+- `generateNewBlock`(`src/js/tetris.js:237`)이 다음 조각을 활성화하고, 중력 인터벌이 `shiftActivePiece(1, 0, "top")`을 주기적으로 호출해 자동 하강합니다.  
+- `resolveMoveAttempt`의 반환값에 따라 `seizeBlock`(착지 후 배열 기록), `renderBlocks("retry")`(스폰 충돌 재확인), `showGameOver`가 결정됩니다 (`src/js/tetris.js:210`).  
+- 시각적인 렌더링은 `renderBoard`(`src/js/tetris.js:203`) 한 곳에서 처리합니다. 보드 배열을 읽어 `.seized`를 칠하고, 현재 조각(`activePiece`)은 `.moving`으로 덧칠하기 때문에 엔진과 뷰가 자연스럽게 분리됩니다.
+
+### 입력 및 UI
+
+- 키 입력은 `document.addEventListener("keydown")`(`src/js/tetris.js:350`)에서 받아 `shiftActivePiece` 또는 `changeDirection`, `hardDrop`을 호출합니다.  
+- Next 미리보기는 `buildNextPreview`로 4×4 그리드를 만들고(`src/js/tetris.js:62`), `renderNextPiece`가 `BLOCKS` 데이터의 0번 회전을 사용해 박스를 채웁니다 (`src/js/tetris.js:268`).  
+- 두 줄 이상 동시에 채워졌을 때 모두 제거되도록 `clearFilledLines`가 줄 삭제 후 인덱스를 한 번 되돌려(`src/js/engine/board.js:27`) 연속 줄 검사를 수행합니다.
+
 이 구조 덕분에 보드 상태는 항상 배열 한 곳에 모이고, 렌더링/입력은 이 상태를 참조만 하므로 이후 step 기반 루프나 멀티플레이 동기화로 확장하기 용이합니다.
+
+---
 
 # 10월 24일
 
-엔진 정리
+## 엔진 정리
 
-런타임 데이터를 전역 변수 대신 gameState 객체 하나에 묶어 놨어요 (src/js/tetris.js:42). 점수·타이머·보드·조각 상태가 한 곳에 모여서 이후 멀티플레이나 AI 직렬화가 훨씬 간단해졌습니다.
-setActivePiece를 도입하고 renderBlocks가 resolveMoveAttempt 결과(ok/lock/retry/gameOver)를 해석하도록 재구성했습니다 (src/js/tetris.js:132-185). 중복되던 활성 조각 대입 코드가 사라지고, DOM 갱신 지점이 명확해졌어요.
-shiftActivePiece는 오직 임시 조각 좌표만 수정하고, 실제 렌더 호출은 호출자가 담당하도록 분리했습니다 (src/js/tetris.js:354-401). 덕분에 “입력 → 엔진 → 뷰” 흐름이 자연스럽게 읽힙니다.
-이동 판정을 전담하는 엔진 모듈 resolveMoveAttempt를 추가해 (src/js/engine/step.js:1), DOM 없이도 이동 결과를 테스트하거나 재사용할 수 있게 했습니다.
-다음으로 확인할 것
+- 런타임 데이터를 전역 변수 대신 `gameState` 객체 하나에 묶어 놨어요 (`src/js/tetris.js:42`).  
+  점수·타이머·보드·조각 상태가 한 곳에 모여서 이후 멀티플레이나 AI 직렬화가 훨씬 간단해졌습니다.
 
-브라우저에서 src/html/tetrisSingle.html을 실행해 좌우 이동·소프트/하드 드롭·라인 클리어·게임 오버가 모두 정상 동작하는지 점검해 주세요.
-앞으로 홀드나 멀티플레이 동기화를 구현할 때는 이제 gameState 객체만 넘기면 되므로, 상태 관리와 직렬화가 한층 수월해질 것입니다.
+- `setActivePiece`를 도입하고 `renderBlocks`가 `resolveMoveAttempt` 결과(`ok`/`lock`/`retry`/`gameOver`)를 해석하도록 재구성했습니다 (`src/js/tetris.js:132-185`).  
+  중복되던 활성 조각 대입 코드가 사라지고, DOM 갱신 지점이 명확해졌어요.
+
+- `shiftActivePiece`는 오직 임시 조각 좌표만 수정하고, 실제 렌더 호출은 호출자가 담당하도록 분리했습니다 (`src/js/tetris.js:354-401`).  
+  덕분에 “입력 → 엔진 → 뷰” 흐름이 자연스럽게 읽힙니다.
+
+- 이동 판정을 전담하는 엔진 모듈 `resolveMoveAttempt`를 추가해 (`src/js/engine/step.js:1`), DOM 없이도 이동 결과를 테스트하거나 재사용할 수 있게 했습니다.
+
+---
+
+## 다음으로 확인할 것
+
+- 브라우저에서 `src/html/tetrisSingle.html`을 실행해 좌우 이동·소프트/하드 드롭·라인 클리어·게임 오버가 모두 정상 동작하는지 점검해 주세요.  
+- 앞으로 홀드나 멀티플레이 동기화를 구현할 때는 이제 `gameState` 객체만 넘기면 되므로, 상태 관리와 직렬화가 한층 수월해질 것입니다.
