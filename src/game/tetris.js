@@ -4,8 +4,8 @@ import {
     canPlacePiece,
     lockPieceOnBoard,
     clearFilledLines,
-} from "./engine/board.js"
-import { resolveMoveAttempt } from "./engine/step.js"
+} from "../core/board.js"
+import { resolveMoveAttempt } from "../core/step.js"
 import { initGameSound, tryPlayMusic, playLineClearSfx } from "./sound.js"
 import {
     BOARD_ROWS,
@@ -16,6 +16,7 @@ import {
 } from "./config.js"
 
 const SPAWN_GRACE_MS = 400
+const NEXT_QUEUE_SIZE = 2
 
 // =============================
 // 테트리스 메인 스크립트 (단일 플레이)
@@ -34,6 +35,7 @@ const gameOverEl = document.querySelector(".game-text");          // 게임오�
 const scoreEl = document.querySelector(".score");                 // 점수 표시 영역
 const restartBtn = document.querySelector(".game-text > button"); // 재시작 버튼d
 const nextPreviewEl = document.querySelector(".next-preview");    // 다음 블록 표시 영역
+const holdPreviewEl = document.querySelector(".hold-preview");    // 홀드 블록 표시 영역
 const soundToggleBtn = document.getElementById("soundToggle");    // 사운드 온/오프 버튼
 
 const PIECE_TYPES = Object.keys(BLOCKS);                           // 사용 가능한 모든 블록 타입
@@ -49,8 +51,11 @@ const gameState = {
     fallTimer: undefined,                   // setInterval 핸들(중력 타이머)
     board: null,                            // 2차원 배열로 관리하는 고정 블록 상태
     boardCells: null,                       // DOM 셀 참조(렌더링용 캐시)
-    nextPreviewCells: null,                 // 다음 블록 미리보기 셀 모음
-    nextPieceType: null,                    // 예정된 다음 블록 타입
+    nextPreviewCells: [],                   // 다음 블록 미리보기 셀 모음(2개)
+    holdPreviewCells: null,                 // 홀드 블록 미리보기 셀 모음
+    pieceQueue: [],                         // 예정된 블록 큐
+    holdPieceType: null,                    // 홀드한 블록
+    holdUsedThisDrop: false,                // 이번 턴에 홀드 사용 여부
     spawnGraceTimer: null,                  // 스폰 막힘 시 게임오버 유예 타이머
     activePiece: {                          // 현재 확정된 조각 상태
         pieceType: "",
@@ -66,18 +71,13 @@ initGameSound(soundToggleBtn);
 init();
 
 /**
- * 다음 블록 미리보기 DOM(4x4)을 다시 만들고 셀 참조(nextPreviewCells)를 캐싱한다.
- * - 기존 미리보기 DOM을 비운 뒤 4x4 li 그리드를 생성한다.
- * - 각 셀을 nextPreviewCells[row][col]에 저장해 렌더링 시 직접 접근한다.
- * - nextPieceType 변경 후 renderNextPiece()가 이 캐시를 사용한다.
+ * 4x4 미리보기 그리드를 생성하고 셀 참조를 반환한다.
  *
- * @returns {void}
+ * @param {HTMLElement} container - 그리드를 넣을 컨테이너
+ * @returns {Array<Array<HTMLLIElement>>} 생성된 셀 참조
  */
-function buildNextPreview() {
-    if (!nextPreviewEl) return;
-    nextPreviewEl.innerHTML = "";
-    gameState.nextPreviewCells = Array.from({ length: NEXT_PREVIEW_SIZE }, () => []);
-
+function buildPreviewGrid(container) {
+    const cells = Array.from({ length: NEXT_PREVIEW_SIZE }, () => []);
     const grid = document.createElement("ul");
     grid.classList.add("next-grid");
 
@@ -86,11 +86,47 @@ function buildNextPreview() {
             const cell = document.createElement("li");
             cell.classList.add("next-cell");
             grid.append(cell);
-            gameState.nextPreviewCells[row].push(cell);
+            cells[row].push(cell);
         }
     }
 
-    nextPreviewEl.append(grid);
+    container.append(grid);
+    return cells;
+}
+
+/**
+ * 다음 블록 미리보기 DOM(4x4)을 2개 생성하고 셀 참조(nextPreviewCells)를 캐싱한다.
+ * - 기존 미리보기 DOM을 비운 뒤 4x4 li 그리드를 2개 생성한다.
+ * - 각 그리드 셀을 nextPreviewCells[index][row][col]에 저장해 렌더링 시 직접 접근한다.
+ *
+ * @returns {void}
+ */
+function buildNextPreview() {
+    if (!nextPreviewEl) return;
+    nextPreviewEl.innerHTML = "";
+    gameState.nextPreviewCells = [];
+
+    for (let i = 0; i < NEXT_QUEUE_SIZE; i++) {
+        const slot = document.createElement("div");
+        slot.classList.add("next-slot");
+        const label = document.createElement("span");
+        label.classList.add("slot-label");
+        label.textContent = `Next ${i + 1}`;
+        const cells = buildPreviewGrid(slot);
+        nextPreviewEl.append(slot);
+        gameState.nextPreviewCells.push(cells);
+    }
+}
+
+/**
+ * 홀드 블록 미리보기 DOM(4x4)을 생성하고 셀 참조를 캐싱한다.
+ *
+ * @returns {void}
+ */
+function buildHoldPreview() {
+    if (!holdPreviewEl) return;
+    holdPreviewEl.innerHTML = "";
+    gameState.holdPreviewCells = buildPreviewGrid(holdPreviewEl);
 }
 
 // =============================
@@ -135,7 +171,7 @@ function buildBoard() {
  * - 점수를 0으로 리셋하고 scoreEl에 반영한다.
  * - 엔진 보드 배열을 ROWS x COLS 크기의 빈 상태로 만들고, DOM 보드/미리보기를 재구성해 셀 캐시를 채운다.
  * - activePiece를 “빈 스폰 상태”로 두고 pendingPiece를 동기화해 이후 이동/회전 기준을 만든다.
- * - nextPieceType을 무작위로 예약하고 비어 있는 보드를 일단 렌더한다.
+ * - 무작위 블록 큐를 채워 두고 비어 있는 보드를 일단 렌더한다.
  * - generateNewBlock()으로 첫 블록을 소환하고 중력 타이머를 다시 시작한다.
  *
  * @returns {void}
@@ -150,9 +186,13 @@ function init() {
     gameState.score = 0;
     scoreEl.innerText = gameState.score;
     gameState.fallIntervalMs = INITIAL_FALL_INTERVAL_MS;
+    gameState.pieceQueue = [];
+    gameState.holdPieceType = null;
+    gameState.holdUsedThisDrop = false;
 
     gameState.board = createEngineBoard(ROWS, COLS);
     buildBoard();
+    buildHoldPreview();
     buildNextPreview();
 
     setActivePiece({
@@ -162,7 +202,9 @@ function init() {
         col: SPAWN_COL,
     });
     gameState.pendingPiece = { ...gameState.activePiece };
-    gameState.nextPieceType = pickRandomPiece();
+    ensureQueueFilled();
+    renderNextPieces();
+    renderHoldPiece();
 
     renderBoard();
     generateNewBlock();                // 첫 블록 생성 + 중력 타이머 시작
@@ -421,18 +463,17 @@ function renderBoard() {
 // - BLOCKS에서 임의 유형 선택 후 (0,3)에서 시작
 // =============================
 /**
- * 새 블록을 소환하고 중력 타이머를 재설정한다. nextPieceType을 소비하고 다음 타입을 예약한다.
+ * 새 블록을 소환하고 중력 타이머를 재설정한다. 큐에서 한 개를 소비하고 부족한 부분은 채운다.
  * - 기존 중력 타이머를 정지 후, fallIntervalMs 주기로 하강/충돌 검사를 진행하도록 새 타이머를 건다.
- * - nextPieceType이 있으면 소비하고, 없으면 무작위로 선택한다.
- * - active/pending을 스폰 위치/회전 0으로 맞추고, 다음 블록 타입을 새로 예약한다.
- * - 미리보기(renderNextPiece)와 화면(renderBlocks)을 갱신한다.
+ * - 큐에서 꺼낸 블록을 active/pending으로 설정하고 스폰 위치/회전을 0으로 맞춘다.
+ * - 미리보기(renderNextPieces)와 화면(renderBlocks)을 갱신한다.
  *
  * @returns {void}
  */
 function generateNewBlock() {
     startGravity(); // 기존 타이머 정지(중복 방지)
 
-    const currentType = gameState.nextPieceType ?? pickRandomPiece();
+    const currentType = takeNextFromQueue();
     const nextActivePiece = {
         pieceType: currentType,
         row: SPAWN_ROW,
@@ -441,8 +482,8 @@ function generateNewBlock() {
     };
     setActivePiece(nextActivePiece);
     gameState.pendingPiece = { ...nextActivePiece };        // 임시 상태 동기화
-    gameState.nextPieceType = pickRandomPiece();
-    renderNextPiece();
+    gameState.holdUsedThisDrop = false;
+    renderNextPieces();
     renderBlocks("spawn");                             // 스폰 충돌 여부 검사
 }
 
@@ -472,32 +513,86 @@ function pickRandomPiece() {
 }
 
 /**
- * nextPieceType을 4x4 미리보기 DOM에 렌더링한다.
- * - 4x4 셀 클래스명을 초기화한 뒤, 회전 0 기준 오프셋을 좌상단으로 정규화해 배치한다.
+ * 예정된 블록 큐가 최소 길이를 만족하도록 무작위 블록을 채워 넣는다.
  *
  * @returns {void}
  */
-function renderNextPiece() {
-    const { nextPreviewCells, nextPieceType } = gameState;
-    if (!nextPreviewCells) return;
+function ensureQueueFilled() {
+    while (gameState.pieceQueue.length < NEXT_QUEUE_SIZE + 1) {
+        gameState.pieceQueue.push(pickRandomPiece());
+    }
+}
 
-    nextPreviewCells.flat().forEach(cell => {
+/**
+ * 큐에서 다음 블록을 꺼내고 즉시 최소 길이를 유지하도록 채운다.
+ *
+ * @returns {string} 다음에 소환할 블록 타입
+ */
+function takeNextFromQueue() {
+    ensureQueueFilled();
+    const nextType = gameState.pieceQueue.shift();
+    ensureQueueFilled();
+    return nextType;
+}
+
+/**
+ * 미리보기 셀의 클래스를 초기 상태로 돌린다.
+ *
+ * @param {Array<Array<HTMLLIElement>>} cells - 초기화할 셀 배열
+ * @returns {void}
+ */
+function resetPreviewCells(cells) {
+    if (!cells) return;
+    cells.flat().forEach(cell => {
         cell.className = "next-cell";
     });
+}
 
-    if (!nextPieceType) return;
-
-    const offsets = BLOCKS[nextPieceType][0];
+/**
+ * 지정된 셀 그리드에 블록 모양을 렌더링한다.
+ *
+ * @param {Array<Array<HTMLLIElement>>} cells - 렌더할 셀 그리드
+ * @param {string|null} pieceType - 표시할 블록 타입
+ * @returns {void}
+ */
+function renderPieceOnCells(cells, pieceType) {
+    if (!cells || !pieceType) return;
+    const offsets = BLOCKS[pieceType][0];
     const minX = Math.min(...offsets.map(([x]) => x));
     const minY = Math.min(...offsets.map(([, y]) => y));
 
     offsets.forEach(([offsetX, offsetY]) => {
         const row = offsetY - minY;
         const col = offsetX - minX;
-        const cell = nextPreviewCells[row]?.[col];
+        const cell = cells[row]?.[col];
         if (!cell) return;
-        cell.classList.add(nextPieceType, "preview");
+        cell.classList.add(pieceType, "preview");
     });
+}
+
+/**
+ * 다음에 등장할 블록 2개를 미리보기 영역에 렌더링한다.
+ *
+ * @returns {void}
+ */
+function renderNextPieces() {
+    const { nextPreviewCells, pieceQueue } = gameState;
+    if (!nextPreviewCells) return;
+
+    nextPreviewCells.forEach((cells, idx) => {
+        resetPreviewCells(cells);
+        renderPieceOnCells(cells, pieceQueue[idx]);
+    });
+}
+
+/**
+ * 홀드 영역에 홀드된 블록을 렌더링한다.
+ *
+ * @returns {void}
+ */
+function renderHoldPiece() {
+    resetPreviewCells(gameState.holdPreviewCells);
+    renderPieceOnCells(gameState.holdPreviewCells, gameState.holdPieceType);
 }
 
 // =============================
@@ -575,6 +670,50 @@ function changeDirection() {
 }
 
 // =============================
+// 홀드: 이번 턴에 1회, 현재 조각을 홀드/교체
+// =============================
+/**
+ * 현재 조각을 홀드하거나 홀드된 조각과 교체한다.
+ * - 한 턴에 한 번만 사용할 수 있도록 holdUsedThisDrop 플래그를 체크한다.
+ * - 홀드가 비어 있으면 현재 조각을 저장하고 큐에서 새 조각을 가져온다.
+ * - 홀드가 이미 있으면 서로 교체하고 스폰 위치/회전을 초기화한다.
+ *
+ * @returns {void}
+ */
+function holdPiece() {
+    const { activePiece, holdPieceType, holdUsedThisDrop } = gameState;
+    const currentType = activePiece.pieceType;
+    if (!currentType || holdUsedThisDrop) return;
+
+    clearInterval(gameState.fallTimer);
+
+    let incomingType;
+    if (holdPieceType) {
+        incomingType = holdPieceType;
+        gameState.holdPieceType = currentType;
+    } else {
+        incomingType = takeNextFromQueue();
+        gameState.holdPieceType = currentType;
+    }
+
+    const swappedPiece = {
+        pieceType: incomingType,
+        rotation: 0,
+        row: SPAWN_ROW,
+        col: SPAWN_COL,
+    };
+
+    setActivePiece(swappedPiece);
+    gameState.pendingPiece = { ...swappedPiece };
+    gameState.holdUsedThisDrop = true;
+
+    renderHoldPiece();
+    renderNextPieces();
+    startGravity();
+    renderBlocks("spawn");
+}
+
+// =============================
 // 소프트 드롭: 하강 속도를 10ms 주기로 잠시 빠르게
 // =============================
 /**
@@ -598,6 +737,13 @@ function dropBlock() {
 // =============================
 document.addEventListener("keydown", e => {
     tryPlayMusic(); // 사용자 인터랙션 후 BGM 재생 시도(자동재생 차단 대비)
+
+    // IME/한영/대소문자 환경에서도 고정된 물리 키로 홀드 처리
+    if (e.code === "KeyC" || e.key?.toLowerCase() === "c") {
+        holdPiece();
+        return;
+    }
+
     switch (e.key) {
         case "ArrowRight":
             shiftActivePiece(0, 1);   // 오른쪽 한 칸

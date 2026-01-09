@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tetris multi</title>
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="stylesheet" href="../styles/style.css">
 </head>
 
 <body>
@@ -13,8 +13,8 @@
     <header class="header">
       <h1 class="brand">Tetris Multi</h1>
       <nav class="nav">
-        <a href="#guide" class="btn ghost">키 가이드</a>
         <button id="themeToggle" type="button" class="btn ghost" aria-pressed="false">다크 모드</button>
+        <button id="soundToggle" type="button" class="btn ghost" aria-pressed="false">사운드 켜기</button>
       </nav>
     </header>
 
@@ -61,33 +61,37 @@
     </footer>
   </div>
 
-  <script>
-  // 연도 표기 자동화
-  document.getElementById('year').textContent = new Date().getFullYear();
+  <script type="module">
+    import { initLobbySound } from "../game/sound.js"
 
-  // Theme: load preference from localStorage or system, then apply
-  (function initTheme(){
-    const saved = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const theme = saved || (prefersDark ? 'dark' : 'light');
-    document.documentElement.setAttribute('data-theme', theme);
-    const btn = document.getElementById('themeToggle');
-    if (btn) btn.textContent = theme === 'dark' ? '라이트 모드' : '다크 모드';
-  })();
+    // 연도 표기 자동화
+    document.getElementById('year').textContent = new Date().getFullYear();
 
-  // Toggle handler
-  const toggleBtn = document.getElementById('themeToggle');
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => {
-      const current = document.documentElement.getAttribute('data-theme') || 'light';
-      const next = current === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('theme', next);
-      toggleBtn.textContent = next === 'dark' ? '라이트 모드' : '다크 모드';
-      toggleBtn.setAttribute('aria-pressed', String(next === 'dark'));
-    });
-  }
+    // Theme: load preference from localStorage or system, then apply
+    (function initTheme(){
+      const saved = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = saved || (prefersDark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+      const btn = document.getElementById('themeToggle');
+      if (btn) btn.textContent = theme === 'dark' ? '라이트 모드' : '다크 모드';
+    })();
+
+    // Toggle handler
+    const toggleBtn = document.getElementById('themeToggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') || 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        toggleBtn.textContent = next === 'dark' ? '라이트 모드' : '다크 모드';
+        toggleBtn.setAttribute('aria-pressed', String(next === 'dark'));
+      });
+    }
+
+    // Lobby sound
+    initLobbySound(document.getElementById('soundToggle'));
   </script>
-  <script src="src/js/app.js" type="module"></script>
 </body>
 </html>

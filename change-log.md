@@ -362,3 +362,17 @@ activePiece.rotation = 0
 
 - 브라우저에서 `src/html/tetrisSingle.html`을 실행해 좌우 이동·소프트/하드 드롭·라인 클리어·게임 오버가 모두 정상 동작하는지 점검해 주세요.  
 - 앞으로 홀드나 멀티플레이 동기화를 구현할 때는 이제 `gameState` 객체만 넘기면 되므로, 상태 관리와 직렬화가 한층 수월해질 것입니다.
+
+# 12월 5일
+오늘 작업 정리
+
+src/js/sound.js 신규 모듈 도입: 로비/게임 BGM, 라인클리어 SFX, 사운드 토글 상태(localStorage) 관리. initLobbySound, initGameSound, tryPlayMusic, playLineClearSfx 제공.
+사운드 통합:
+src/html/index.html: 인라인 사운드 로직 제거, 모듈 import로 로비 BGM+토글 초기화.
+src/js/tetris.js: 사운드 코드 제거 후 모듈 사용으로 교체, 키 입력 시 BGM 재생 시도.
+src/html/tetrisSingle.html: 헤더에 사운드 토글 버튼(스타일 적용) 유지, 홈 이동 버튼 추가.
+UI/스타일:
+src/css/tetris.css: 사운드 토글/홈 버튼 스타일 추가, 보드 컨테이너 overflow: visible로 변경(이펙트 표시용).
+라인 클리어 이펙트:
+src/js/tetris.js: 가득 찬 줄 탐지 후 line-clear 클래스 부여 → 일정 시간 뒤 삭제/점수/새 블록 소환. findFullRows, addLineClearEffect 추가. seizeBlock에서 pendingPiece 초기화로 다음 블록 스폰 문제 해결.
+src/css/tetris.css: lineClearFlash 애니메이션으로 흰색 플래시+스케일/블러 후 위로 사라지는 연출 추가.

@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>테트리스</title>
-    <link rel="stylesheet" href="../css/tetris.css">
+    <link rel="stylesheet" href="../styles/tetris.css">
 </head>
 <body>
     <div class="single-wrapper">
@@ -22,8 +22,10 @@
 
         <main class="single-layout">
             <aside class="panel panel--left">
-                <h2>Next Up</h2>
-                <div class="next-preview"></div>
+                <div class="panel-section">
+                    <h2>Next Up</h2>
+                    <div class="next-preview"></div>
+                </div>
             </aside>
 
             <section class="playfield">
@@ -37,17 +39,24 @@
             </section>
 
             <aside class="panel panel--right">
-                <h2>Controls</h2>
-                <ul class="controls-list">
-                    <li><kbd>←</kbd><span>왼쪽 이동</span></li>
-                    <li><kbd>→</kbd><span>오른쪽 이동</span></li>
-                    <li><kbd>↑</kbd><span>회전</span></li>
-                    <li><kbd>↓</kbd><span>소프트 드롭</span></li>
-                    <li><kbd>Space</kbd><span>하드 드롭</span></li>
-                </ul>
+                <div class="panel-section">
+                    <h2>Hold</h2>
+                    <div class="hold-preview"></div>
+                </div>
+                <div class="panel-section">
+                    <h2>Controls</h2>
+                    <ul class="controls-list">
+                        <li><kbd>←</kbd><span>왼쪽 이동</span></li>
+                        <li><kbd>→</kbd><span>오른쪽 이동</span></li>
+                        <li><kbd>↑</kbd><span>회전</span></li>
+                        <li><kbd>↓</kbd><span>소프트 드롭</span></li>
+                        <li><kbd>Space</kbd><span>하드 드롭</span></li>
+                        <li><kbd>C</kbd><span>홀드 / 교체</span></li>
+                    </ul>
+                </div>
             </aside>
         </main>
     </div>
-    <script src="../js/tetris.js" type="module"></script>
+    <script src="../game/tetris.js" type="module"></script>
 </body>
 </html>

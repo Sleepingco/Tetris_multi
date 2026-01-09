@@ -31,6 +31,13 @@ export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause
 
     const canPlace = canPlacePiece(board, pendingPiece, blocks)
     if (!canPlace) {
+        if (moveCause === "spawn") {
+            return {
+                status: "spawnBlocked",
+                active: { ...activePiece },
+                pending: { ...pendingPiece },
+            }
+        }
         const reverted = { ...activePiece }
         if (moveCause === "retry") {
             return {
