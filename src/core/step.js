@@ -71,3 +71,35 @@ export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause
         pending: committed,
     }
 }
+
+/**
+ * 이동 결과(outcome)를 실행 의도(intent)로 변환한다.
+ * - 이 함수는 상태 판단만 수행하며 DOM/타이머 같은 부수효과는 처리하지 않는다.
+ *
+ * @param {Object} params - 의도 계산 입력값
+ * @param {{status: string, active: Object, pending: Object}} params.outcome - resolveMoveAttempt 결과
+ * @param {boolean} params.hasFallTimer - 현재 중력 타이머 동작 여부
+ * @returns {{kind: string, active: Object, shouldStartGravity?: boolean}} 실행 의도
+ */
+export function resolveMoveIntent({ outcome, hasFallTimer }) {
+    if (outcome.status === "lock") {
+        return { kind: "lock", active: { ...outcome.active } }
+    }
+    if (outcome.status === "gameOver") {
+        return { kind: "gameOver", active: { ...outcome.active } }
+    }
+    if (outcome.status === "spawnBlocked") {
+        return { kind: "spawnBlocked", active: { ...outcome.active } }
+    }
+    if (outcome.status === "retry") {
+        return { kind: "retry", active: { ...outcome.active } }
+    }
+    if (outcome.status === "ok") {
+        return {
+            kind: "ok",
+            active: { ...outcome.active },
+            shouldStartGravity: !hasFallTimer,
+        }
+    }
+    return { kind: "idle", active: { ...outcome.active } }
+}
