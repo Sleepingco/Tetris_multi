@@ -5,7 +5,7 @@ import {
     lockPieceOnBoard,
     clearFilledLines,
 } from "../core/board.js"
-import { resolveMoveAttempt } from "../core/step.js"
+import { resolveMoveAttempt, resolveMoveIntent } from "../core/step.js"
 import { initGameSound, tryPlayMusic, playLineClearSfx } from "./sound.js"
 import {
     BOARD_ROWS,
@@ -13,7 +13,16 @@ import {
     SPAWN_POSITION,
     INITIAL_FALL_INTERVAL_MS,
     NEXT_PREVIEW_DIMENSION,
+    INPUT_TICK_MS,
 } from "./config.js"
+import {
+    renderBoard as renderBoardDom,
+    renderNextPieces as renderNextPiecesDom,
+    renderHoldPiece as renderHoldPieceDom,
+    buildBoard as buildBoardDom,
+    buildHoldPreview as buildHoldPreviewDom,
+    buildNextPreview as buildNextPreviewDom,
+} from "../render/tetrisRender.js"
 
 const SPAWN_GRACE_MS = 400
 const NEXT_QUEUE_SIZE = 2
@@ -45,9 +54,26 @@ const SPAWN_ROW = SPAWN_POSITION.row;
 const SPAWN_COL = SPAWN_POSITION.col;
 const NEXT_PREVIEW_SIZE = NEXT_PREVIEW_DIMENSION;
 
+const INPUT_ACTION = {
+    MOVE_LEFT: "move_left",
+    MOVE_RIGHT: "move_right",
+    SOFT_DROP: "soft_drop",
+    ROTATE: "rotate",
+    HARD_DROP: "hard_drop",
+    HOLD: "hold",
+}
+
+const GAME_PHASE = {
+    PLAYING: "playing",
+    SPAWN_GRACE: "spawnGrace",
+    LINE_CLEARING: "lineClearing",
+    GAME_OVER: "gameOver",
+}
+
 const gameState = {
     score: 0,                               // 현재 점수
     fallIntervalMs: INITIAL_FALL_INTERVAL_MS, // 자동 하강 주기(ms)
+    inputTimer: undefined,                  // 입력 처리 타이머
     fallTimer: undefined,                   // setInterval 핸들(중력 타이머)
     board: null,                            // 2차원 배열로 관리하는 고정 블록 상태
     boardCells: null,                       // DOM 셀 참조(렌더링용 캐시)
@@ -64,101 +90,68 @@ const gameState = {
         col: SPAWN_COL,
     },
     pendingPiece: null,                     // 이동/회전을 시도하는 임시 조각 상태
+    inputQueue: [],                          // 입력 버퍼
+    phase: GAME_PHASE.PLAYING,              // 게임 진행 상태
 };
 
 // 초기 진입점
 initGameSound(soundToggleBtn);
 init();
 
-/**
- * 4x4 미리보기 그리드를 생성하고 셀 참조를 반환한다.
- *
- * @param {HTMLElement} container - 그리드를 넣을 컨테이너
- * @returns {Array<Array<HTMLLIElement>>} 생성된 셀 참조
- */
-function buildPreviewGrid(container) {
-    const cells = Array.from({ length: NEXT_PREVIEW_SIZE }, () => []);
-    const grid = document.createElement("ul");
-    grid.classList.add("next-grid");
-
-    for (let row = 0; row < NEXT_PREVIEW_SIZE; row++) {
-        for (let col = 0; col < NEXT_PREVIEW_SIZE; col++) {
-            const cell = document.createElement("li");
-            cell.classList.add("next-cell");
-            grid.append(cell);
-            cells[row].push(cell);
-        }
-    }
-
-    container.append(grid);
-    return cells;
-}
-
-/**
- * 다음 블록 미리보기 DOM(4x4)을 2개 생성하고 셀 참조(nextPreviewCells)를 캐싱한다.
- * - 기존 미리보기 DOM을 비운 뒤 4x4 li 그리드를 2개 생성한다.
- * - 각 그리드 셀을 nextPreviewCells[index][row][col]에 저장해 렌더링 시 직접 접근한다.
- *
- * @returns {void}
- */
-function buildNextPreview() {
-    if (!nextPreviewEl) return;
-    nextPreviewEl.innerHTML = "";
-    gameState.nextPreviewCells = [];
-
-    for (let i = 0; i < NEXT_QUEUE_SIZE; i++) {
-        const slot = document.createElement("div");
-        slot.classList.add("next-slot");
-        const label = document.createElement("span");
-        label.classList.add("slot-label");
-        label.textContent = `Next ${i + 1}`;
-        const cells = buildPreviewGrid(slot);
-        nextPreviewEl.append(slot);
-        gameState.nextPreviewCells.push(cells);
-    }
-}
-
-/**
- * 홀드 블록 미리보기 DOM(4x4)을 생성하고 셀 참조를 캐싱한다.
- *
- * @returns {void}
- */
-function buildHoldPreview() {
-    if (!holdPreviewEl) return;
-    holdPreviewEl.innerHTML = "";
-    gameState.holdPreviewCells = buildPreviewGrid(holdPreviewEl);
-}
-
 // =============================
-// 헬퍼: 20x10 보드를 DOM에 생성하고 셀 참조를 캐싱
+// Renderer wrappers (param injection)
 // =============================
-/**
- * 20x10 보드 DOM을 재구성하고 셀 참조(boardCells)를 캐싱한다.
- * - 기존 보드 DOM을 비우고 ul/li로 20행 x 10열을 새로 만든다.
- * - 각 셀 참조를 boardCells[row][col]에 저장해 renderBoard()가 직접 클래스 토글을 수행한다.
- *
- * @returns {void}
- */
 function buildBoard() {
-    boardEl.innerHTML = "";
-    gameState.boardCells = [];
-
-    for (let row = 0; row < ROWS; row++) {
-        const rowLi = document.createElement("li");
-        const rowUl = document.createElement("ul");
-        const cellRow = [];
-
-        for (let col = 0; col < COLS; col++) {
-            const cell = document.createElement("li");
-            rowUl.append(cell);
-            cellRow.push(cell);
-        }
-
-        rowLi.append(rowUl);
-        boardEl.append(rowLi);
-        gameState.boardCells.push(cellRow);
-    }
+    gameState.boardCells = buildBoardDom({
+        boardEl,
+        rows: ROWS,
+        cols: COLS,
+    });
 }
+
+function buildNextPreview() {
+    gameState.nextPreviewCells = buildNextPreviewDom({
+        nextPreviewEl,
+        nextQueueSize: NEXT_QUEUE_SIZE,
+        previewSize: NEXT_PREVIEW_SIZE,
+    });
+}
+
+function buildHoldPreview() {
+    gameState.holdPreviewCells = buildHoldPreviewDom({
+        holdPreviewEl,
+        previewSize: NEXT_PREVIEW_SIZE,
+    });
+}
+
+function renderBoard() {
+    renderBoardDom({
+        boardCells: gameState.boardCells,
+        board: gameState.board,
+        activePiece: gameState.activePiece,
+        rows: ROWS,
+        cols: COLS,
+        blocks: BLOCKS,
+        pieceTypes: PIECE_TYPES,
+    });
+}
+
+function renderNextPieces() {
+    renderNextPiecesDom({
+        nextPreviewCells: gameState.nextPreviewCells,
+        pieceQueue: gameState.pieceQueue,
+        blocks: BLOCKS,
+    });
+}
+
+function renderHoldPiece() {
+    renderHoldPieceDom({
+        holdPreviewCells: gameState.holdPreviewCells,
+        holdPieceType: gameState.holdPieceType,
+        blocks: BLOCKS,
+    });
+}
+
 
 // =============================
 // 초기화: 점수 리셋, 20x10 보드 생성, 첫 블록 소환
@@ -177,8 +170,7 @@ function buildBoard() {
  * @returns {void}
  */
 function init() {
-    clearInterval(gameState.fallTimer);
-    gameState.fallTimer = undefined;
+    stopGameLoops()
     if (gameState.spawnGraceTimer) {
         clearTimeout(gameState.spawnGraceTimer);
         gameState.spawnGraceTimer = null;
@@ -189,7 +181,9 @@ function init() {
     gameState.pieceQueue = [];
     gameState.holdPieceType = null;
     gameState.holdUsedThisDrop = false;
-
+    gameState.inputQueue = [];
+    gameState.phase = GAME_PHASE.PLAYING;
+    startInputLoop();
     gameState.board = createEngineBoard(ROWS, COLS);
     buildBoard();
     buildHoldPreview();
@@ -226,6 +220,67 @@ function setActivePiece(piece) {
     gameState.activePiece.col = piece.col;
 }
 
+/**
+ * core가 계산한 intent를 실제 게임 상태/타이머/렌더에 적용한다.
+ * - 이 함수는 DOM/타이머/사운드 같은 부수효과 실행만 담당한다.
+ *
+ * @param {{kind: string, active: Object, shouldStartGravity?: boolean}} intent - 실행 의도
+ * @returns {void}
+ */
+function applyMoveIntent(intent) {
+    if (intent.kind === "spawnBlocked") {
+        clearSpawnGraceTimer();
+        gameState.phase = GAME_PHASE.SPAWN_GRACE;
+        gameState.inputQueue = [];
+        clearInterval(gameState.fallTimer);
+        gameState.fallTimer = undefined;
+        setActivePiece(intent.active);
+        renderBoard();
+        gameState.spawnGraceTimer = setTimeout(() => {
+            gameState.phase = GAME_PHASE.GAME_OVER;
+            gameState.inputQueue = [];
+            stopGameLoops();
+            setActivePiece(intent.active);
+            renderBoard();
+            showGameOver();
+        }, SPAWN_GRACE_MS);
+        return;
+    }
+
+    if (intent.kind === "gameOver") {
+        clearSpawnGraceTimer();
+        gameState.phase = GAME_PHASE.GAME_OVER;
+        gameState.inputQueue = [];
+        stopGameLoops();
+        setActivePiece(intent.active);
+        renderBoard();
+        showGameOver();
+        return;
+    }
+
+    if (intent.kind === "lock") {
+        setActivePiece(intent.active);
+        seizeBlock();
+        return;
+    }
+
+    if (intent.kind === "retry") {
+        setActivePiece(intent.active);
+        setTimeout(() => {
+            renderBlocks("retry");   // 스폰 직후 충돌 여부 재확인
+        }, 0);
+        return;
+    }
+
+    if (intent.kind === "ok") {
+        clearSpawnGraceTimer();
+        gameState.phase = GAME_PHASE.PLAYING;
+        if (intent.shouldStartGravity) startGravity();
+        setActivePiece(intent.active);
+        renderBoard();
+    }
+}
+
 // =============================
 // 현재 조각을 화면에 그리기 + 충돌 판정 + 롤백/고정 처리
 // - moveType: 'top'이면 아래로 이동 중(충돌 시 고정), 'retry'는 스폰 즉시 충돌 등
@@ -236,11 +291,8 @@ function setActivePiece(piece) {
  * 호출 흐름:
  * - moveType은 시도 원인을 표현한다: 'top'(중력), 'horizontal'(좌우 이동), 'retry'(스폰 충돌 재확인) 등.
  * - resolveMoveAttempt에 board, activePiece, pendingPiece, moveCause, blocks를 전달해 충돌/배치 가능 여부와 다음 상태를 계산한다.
- * - outcome.status별 처리:
- *   - 'ok': activePiece를 outcome.active로 확정 후 renderBoard().
- *   - 'lock': activePiece를 outcome.active로 확정 후 seizeBlock()으로 고정/라인 검사.
- *   - 'retry': activePiece로 롤백 후 setTimeout(0)으로 renderBlocks('retry') 재호출(스폰 직후 충돌 재확인).
- *   - 'gameOver': activePiece를 마지막 상태로 렌더하고 타이머를 정지, 게임오버 UI 표시.
+ * - resolveMoveIntent가 outcome을 intent(kind)로 변환한다.
+ * - intent 실행은 applyMoveIntent에 위임한다.
  * - 매 호출마다 pendingPiece는 outcome.pending로 갱신해 다음 입력 시도를 위한 기준 상태를 유지한다.
  *
  * @param {string} [moveType=""] - 이동/회전 시도의 원인('top' 하강, 'horizontal' 좌우, 'retry' 재확인 등)
@@ -262,49 +314,11 @@ function renderBlocks(moveType = "") {
 
     gameState.pendingPiece = { ...outcome.pending };
 
-    if (outcome.status === "spawnBlocked") {
-        clearSpawnGraceTimer();
-        clearInterval(gameState.fallTimer);
-        gameState.fallTimer = undefined;
-        setActivePiece(outcome.active);
-        renderBoard();
-        gameState.spawnGraceTimer = setTimeout(() => {
-            setActivePiece(outcome.active);
-            renderBoard();
-            showGameOver();
-        }, SPAWN_GRACE_MS);
-        return;
-    }
-
-    if (outcome.status === "gameOver") {
-        clearSpawnGraceTimer();
-        setActivePiece(outcome.active);
-        renderBoard();
-        clearInterval(gameState.fallTimer);
-        showGameOver();
-        return;
-    }
-
-    if (outcome.status === "lock") {
-        setActivePiece(outcome.active);
-        seizeBlock();
-        return;
-    }
-
-    if (outcome.status === "retry") {
-        setActivePiece(outcome.active);
-        setTimeout(() => {
-            renderBlocks("retry");   // 스폰 직후 충돌 여부 재확인
-        }, 0);
-        return;
-    }
-
-    if (outcome.status === "ok") {
-        clearSpawnGraceTimer();
-        if (!gameState.fallTimer) startGravity();
-        setActivePiece(outcome.active);
-        renderBoard();
-    }
+    const intent = resolveMoveIntent({
+        outcome,
+        hasFallTimer: Boolean(gameState.fallTimer),
+    });
+    applyMoveIntent(intent);
 }
 
 function findFullRows(board) {
@@ -342,10 +356,7 @@ function addLineClearEffect(rows) {
     });
 }
 
-// =============================
-// 현재 ".moving"들을 ".seized"로 바꿔 보드에 "고정"
-// - 이후 가득 찬 줄이 있는지 검사(checkMatch)
-// =============================
+
 /**
  * activePiece를 보드에 고정하고 렌더 후 줄 검사까지 이어서 처리한다.
  * - lockPieceOnBoard로 엔진 보드에 조각을 채운다(경계 밖은 무시).
@@ -371,8 +382,9 @@ function seizeBlock() {
     renderBoard();               // 보드 상태와 DOM 동기화
     if (touchesAboveTop) {
         clearSpawnGraceTimer();
-        clearInterval(gameState.fallTimer);
-        gameState.fallTimer = undefined;
+        gameState.phase = GAME_PHASE.GAME_OVER;
+        gameState.inputQueue = [];
+        stopGameLoops();
         showGameOver();
         return;
     }
@@ -401,6 +413,8 @@ function checkMatch() {
         return;
     }
 
+    gameState.phase = GAME_PHASE.LINE_CLEARING;
+    gameState.inputQueue = [];
     clearInterval(gameState.fallTimer);
     playLineClearSfx();
     addLineClearEffect(fullRows);
@@ -416,46 +430,6 @@ function checkMatch() {
     }, 350); // 깜빡-폭발 이펙트 타이밍
 }
 
-// =============================
-// 보드 상태(boardState)와 DOM 보드를 동기화
-// =============================
-/**
- * 엔진 보드와 activePiece 상태를 DOM 클래스에 반영해 화면을 업데이트한다.
- * - 모든 셀에서 기존 클래스('moving', 'seized', 블록 타입)를 제거한 뒤,
- *   보드에 이미 고정된 블록은 seized로, activePiece 블록은 moving으로 표시한다.
- * - activePiece가 없을 땐 고정 블록만 반영한다.
- *
- * @returns {void}
- */
-function renderBoard() {
-    const { boardCells, board, activePiece } = gameState;
-    if (!boardCells) return;
-
-    for (let row = 0; row < ROWS; row++) {
-        for (let col = 0; col < COLS; col++) {
-            const cell = boardCells[row]?.[col];
-            if (!cell) continue;
-
-            cell.classList.remove("moving", "seized", "line-clear");
-            PIECE_TYPES.forEach(type => cell.classList.remove(type));
-
-            const lockedPiece = board[row][col];
-            if (lockedPiece) {
-                cell.classList.add(lockedPiece, "seized");
-            }
-        }
-    }
-
-    if (!activePiece.pieceType) return;
-
-    BLOCKS[activePiece.pieceType][activePiece.rotation].forEach(([offsetX, offsetY]) => {
-        const targetCol = activePiece.col + offsetX;
-        const targetRow = activePiece.row + offsetY;
-        const cell = boardCells[targetRow]?.[targetCol];
-        if (!cell) return;
-        cell.classList.add(activePiece.pieceType, "moving");
-    });
-}
 
 // =============================
 // 새 블록 생성 + 중력 타이머 시작
@@ -471,6 +445,7 @@ function renderBoard() {
  * @returns {void}
  */
 function generateNewBlock() {
+    gameState.phase = GAME_PHASE.PLAYING;
     startGravity(); // 기존 타이머 정지(중복 방지)
 
     const currentType = takeNextFromQueue();
@@ -535,65 +510,11 @@ function takeNextFromQueue() {
     return nextType;
 }
 
-/**
- * 미리보기 셀의 클래스를 초기 상태로 돌린다.
- *
- * @param {Array<Array<HTMLLIElement>>} cells - 초기화할 셀 배열
- * @returns {void}
- */
-function resetPreviewCells(cells) {
-    if (!cells) return;
-    cells.flat().forEach(cell => {
-        cell.className = "next-cell";
-    });
-}
 
-/**
- * 지정된 셀 그리드에 블록 모양을 렌더링한다.
- *
- * @param {Array<Array<HTMLLIElement>>} cells - 렌더할 셀 그리드
- * @param {string|null} pieceType - 표시할 블록 타입
- * @returns {void}
- */
-function renderPieceOnCells(cells, pieceType) {
-    if (!cells || !pieceType) return;
-    const offsets = BLOCKS[pieceType][0];
-    const minX = Math.min(...offsets.map(([x]) => x));
-    const minY = Math.min(...offsets.map(([, y]) => y));
 
-    offsets.forEach(([offsetX, offsetY]) => {
-        const row = offsetY - minY;
-        const col = offsetX - minX;
-        const cell = cells[row]?.[col];
-        if (!cell) return;
-        cell.classList.add(pieceType, "preview");
-    });
-}
 
-/**
- * 다음에 등장할 블록 2개를 미리보기 영역에 렌더링한다.
- *
- * @returns {void}
- */
-function renderNextPieces() {
-    const { nextPreviewCells, pieceQueue } = gameState;
-    if (!nextPreviewCells) return;
 
-    nextPreviewCells.forEach((cells, idx) => {
-        resetPreviewCells(cells);
-        renderPieceOnCells(cells, pieceQueue[idx]);
-    });
-}
 
-/**
- * 홀드 영역에 홀드된 블록을 렌더링한다.
- *
- * @returns {void}
- */
-function renderHoldPiece() {
-    resetPreviewCells(gameState.holdPreviewCells);
-    renderPieceOnCells(gameState.holdPreviewCells, gameState.holdPieceType);
-}
 
 // =============================
 // 하드 드롭: 가능한 한 아래로 쭉 내린 뒤 즉시 고정
@@ -713,60 +634,75 @@ function holdPiece() {
     renderBlocks("spawn");
 }
 
-// =============================
-// 소프트 드롭: 하강 속도를 10ms 주기로 잠시 빠르게
-// =============================
-/**
- * 소프트 드롭: 하강 타이머를 짧은 간격(10ms)으로 재설정해 중력을 가속한다.
- * - 기존 타이머를 멈추고, 10ms 간격으로 row+1 이동/충돌 검사를 반복한다.
- * - 충돌로 고정되면 generateNewBlock 흐름에서 원래 간격으로 복구된다.
- *
- * @returns {void}
- */
-function dropBlock() {
-    clearInterval(gameState.fallTimer);
-    gameState.fallTimer = setInterval(() => {
-        shiftActivePiece(1, 0);
-        renderBlocks("top");
-    }, 10);
+function enqueueInput(action) {
+    if (!action) return;
+    if (!canProcessPlayerInput()) return;
+    gameState.inputQueue.push(action);
 }
 
+function handleAction(action) {
+    if (action === INPUT_ACTION.MOVE_RIGHT) { shiftActivePiece(0, 1); renderBlocks("horizontal"); return }
+    if (action === INPUT_ACTION.MOVE_LEFT) { shiftActivePiece(0, -1); renderBlocks("horizontal"); return }
+    if (action === INPUT_ACTION.SOFT_DROP) { shiftActivePiece(1, 0); renderBlocks("top"); return }
+    if (action === INPUT_ACTION.HARD_DROP) { hardDrop(); return }
+    if (action === INPUT_ACTION.ROTATE) { changeDirection(); return }
+    if (action === INPUT_ACTION.HOLD) { holdPiece(); return }
+}
+
+function drainInputQueue(maxPerTick = 8) {
+    if (!canProcessPlayerInput()) return;
+    let count = 0;
+    while (gameState.inputQueue.length > 0 && count < maxPerTick) {
+        const action = gameState.inputQueue.shift();
+        handleAction(action);
+        count++;
+    }
+}
+
+function startInputLoop() {
+    clearInterval(gameState.inputTimer);
+    gameState.inputTimer = setInterval(() => {
+        drainInputQueue(4);
+    }, INPUT_TICK_MS);
+
+}
+
+function stopGameLoops() {
+    clearInterval(gameState.fallTimer);
+    clearInterval(gameState.inputTimer);
+    gameState.fallTimer = undefined;
+    gameState.inputTimer = undefined;
+}
+
+function canProcessPlayerInput() {
+    return (
+        gameState.phase === GAME_PHASE.PLAYING ||
+        gameState.phase === GAME_PHASE.SPAWN_GRACE
+    );
+}
 // =============================
 // 키보드 입력 처리
 // - 화살표 좌/우/하, 위(회전), 스페이스(하드 드롭)
 // =============================
 document.addEventListener("keydown", e => {
-    tryPlayMusic(); // 사용자 인터랙션 후 BGM 재생 시도(자동재생 차단 대비)
+    tryPlayMusic()
 
-    // IME/한영/대소문자 환경에서도 고정된 물리 키로 홀드 처리
-    if (e.code === "KeyC" || e.key?.toLowerCase() === "c") {
-        holdPiece();
-        return;
-    }
+    let action = null
+    if (e.code === "KeyC" || e.key?.toLowerCase() === "c") action = INPUT_ACTION.HOLD
+    else if (e.key === "ArrowRight") action = INPUT_ACTION.MOVE_RIGHT
+    else if (e.key === "ArrowLeft") action = INPUT_ACTION.MOVE_LEFT
+    else if (e.key === "ArrowDown") action = INPUT_ACTION.SOFT_DROP
+    else if (e.key === "ArrowUp") action = INPUT_ACTION.ROTATE
+    else if (e.code === "Space" || e.key === " ") action = INPUT_ACTION.HARD_DROP
 
-    switch (e.key) {
-        case "ArrowRight":
-            shiftActivePiece(0, 1);   // 오른쪽 한 칸
-            renderBlocks("horizontal");
-            break;
-        case "ArrowLeft":
-            shiftActivePiece(0, -1);  // 왼쪽 한 칸
-            renderBlocks("horizontal");
-            break;
-        case "ArrowDown":
-            shiftActivePiece(1, 0);    // 아래로 한 칸(소프트 드롭)
-            renderBlocks("top");
-            break;
-        case "ArrowUp":
-            changeDirection();       // 회전
-            break;
-        case " ":
-            hardDrop();              // 하드 드롭
-            break;
-        default:
-            break;
-    }
-});
+    if (!action) return
+
+    if (e.repeat && (action === INPUT_ACTION.HOLD || action === INPUT_ACTION.HARD_DROP || action === INPUT_ACTION.ROTATE)) return
+    if (["ArrowRight", "ArrowLeft", "ArrowDown", "ArrowUp", " "].includes(e.key) || e.code === "Space") e.preventDefault()
+
+    enqueueInput(action)
+})
+
 
 // =============================
 // 게임오버 레이어 표시

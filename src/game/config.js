@@ -12,3 +12,5 @@ export const SPAWN_POSITION = {
 
 export const INITIAL_FALL_INTERVAL_MS = 500;
 export const NEXT_PREVIEW_DIMENSION = 4;
+
+export const INPUT_TICK_MS = 16;

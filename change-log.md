@@ -376,3 +376,68 @@ src/css/tetris.css: 사운드 토글/홈 버튼 스타일 추가, 보드 컨테�
 라인 클리어 이펙트:
 src/js/tetris.js: 가득 찬 줄 탐지 후 line-clear 클래스 부여 → 일정 시간 뒤 삭제/점수/새 블록 소환. findFullRows, addLineClearEffect 추가. seizeBlock에서 pendingPiece 초기화로 다음 블록 스폰 문제 해결.
 src/css/tetris.css: lineClearFlash 애니메이션으로 흰색 플래시+스케일/블러 후 위로 사라지는 연출 추가.
+
+---
+
+# 2026년 2월 4일
+최근 변경 사항 정리
+
+## 기능 추가
+- **다음 블록 2개 미리보기 + 큐 도입**  
+  `pieceQueue`를 사용해 스폰 순서를 관리하고, 4x4 프리뷰 2개를 표시하도록 변경했습니다. (`src/game/tetris.js`)
+
+- **홀드 기능 추가**  
+  `C`(또는 Shift)로 현재 블록을 홀드하고, 턴당 1회 제한(`holdUsedThisDrop`)을 적용했습니다.  
+  홀드/교환 시 스폰 위치로 리셋하고 미리보기 UI를 갱신합니다. (`src/game/tetris.js`, `src/pages/tetrisSingle.html`)
+
+- **스폰 유예 로직 유지/정리**  
+  스폰 즉시 충돌 시 `SPAWN_GRACE_MS` 동안 유예 후 게임오버 처리 흐름 유지. (`src/game/tetris.js`)
+
+## 블록 정의 수정
+- **L/J 회전 정의 보정**  
+  4방향 회전이 중복되지 않도록 L/J 블록 좌표를 수정했습니다. (`src/game/blocks.js`)
+
+- **S 블록 추가**  
+  `ess` 조각을 추가하고 4회전 좌표를 정의했습니다. (`src/game/blocks.js`)
+
+## UI/문서
+- **홀드 UI 추가, 컨트롤 안내 갱신**  
+  `Hold` 영역 추가 및 `C` 홀드 안내 문구 추가. (`src/pages/tetrisSingle.html`)
+
+## 구조 변경(경로 정리)
+- `src/js` → `src/game`, `src/js/engine` → `src/core`, `src/html` → `src/pages`, `src/css` → `src/styles`로 경로 구조가 바뀌었습니다.  
+  이전 change-log의 경로 표기는 구버전 기준이니 참고 부탁해요.
+
+---
+
+# 2026년 2월 24일
+최근 변경 사항 정리
+
+## 구조/리팩토링
+- **렌더러 분리(파라미터 주입 방식)**  
+  DOM 렌더 관련 함수를 `src/render/tetrisRender.js`로 분리하고, `src/game/tetris.js`는 래퍼를 통해 필요한 상태만 전달하도록 정리했습니다.
+
+- **결정 로직과 실행 로직 분리**  
+  이동 시도 결과 해석은 `resolveMoveIntent`(`src/core/step.js`)에서 담당하고, 실제 DOM/타이머 반영은 `applyMoveIntent`(`src/game/tetris.js`)에서 처리하도록 분리했습니다.
+
+## 입력 처리 개선
+- **입력 큐 도입**  
+  `INPUT_ACTION`, `enqueueInput`, `handleAction`, `drainInputQueue`를 추가해 입력 수집과 실행을 분리했습니다.  
+  `keydown`에서는 액션을 큐에 넣고, 입력 루프에서 큐를 소비합니다.
+
+- **입력 루프 추가**  
+  `INPUT_TICK_MS`(현재 16ms)를 `src/game/config.js`에 추가하고, `startInputLoop`/`inputTimer`로 빠른 입력 처리 루프를 분리했습니다.
+
+## 루프 수명/상태 관리
+- **게임 상태(phase) 추가**  
+  `PLAYING`, `SPAWN_GRACE`, `LINE_CLEARING`, `GAME_OVER` 상태를 도입해 입력 허용/차단, 루프 정지/재시작을 명확히 관리합니다.
+
+- **루프 정리 함수 추가**  
+  `stopGameLoops`로 `fallTimer`/`inputTimer`를 한 번에 정리하도록 통합했습니다.
+
+## 스폰 유예(spawn grace) 로직 보정
+- `spawnBlocked` 시 즉시 게임오버로 가지 않고 `SPAWN_GRACE` 상태로 전환되도록 수정했습니다.  
+- 유예 시간 내 유효한 이동(`ok`)이 발생하면 `PLAYING`으로 복귀하고, 유예 시간 만료 시에만 `GAME_OVER`로 전환됩니다.
+
+## 현재 상태 메모
+- **캔버스 전환은 아직 미적용** 상태입니다. 현재 메인 보드는 기존 DOM(`<ul>/<li>`) 렌더링을 사용합니다.
