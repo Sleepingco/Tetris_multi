@@ -144,3 +144,9 @@ feat(engine): add canPlaceArray with boundary checks
 	•	디버깅 동행: 실패 케이스 로그를 주면 원인 후보를 좁혀서 제시
 
 ⸻
+
+rollback netcode
+prediction correction
+입력 지연 보상 고급 처리
+checksum 기반 자동 복구
+관전자 모드

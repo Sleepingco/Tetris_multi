@@ -79,13 +79,24 @@ src/
 - `var` 사용 금지
 - 함수명은 `camelCase`
 - DOM 클래스명은 `kebab-case` (`.moving`, `.seized`, `.ghost`)
-
 ### 주석
-짧고 구조화된 블록 헤더 사용:
+함수와 변수명은 직관적이며 주석을 docString 형식으로 인풋과 아웃풋 역할 등을 자세하고 쉽게 기술
+예시)
+/**
+ * activePiece를 전달된 조각 상태로 덮어쓴다.
+ * - null/undefined 입력은 무시한다.
+ * - 개별 필드를 직접 할당해 기존 객체 참조를 유지한다.
+ *
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 설정할 조각 상태
+ * @returns {void}
+ */
+
+위와 같은 형식이 필요 없는 경우 ex)함수가 아니거나 로직을 설명하는경우 짧고 구조화된 블록 헤더 사용:
 ```js
 // =============================
 // Line Clear Logic
 // =============================
+
 
 복잡한 로직일 경우에만 인라인 설명 추가
 

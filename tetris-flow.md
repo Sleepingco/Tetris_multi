@@ -22,8 +22,8 @@
 ### moveCause(=cause) 정의
 `renderBlocks(moveCause)`에 전달되는 문자열. “왜 이번 이동/판정이 발생했는지”를 의미.
 - `"spawn"`: 새 조각을 스폰한 직후, 스폰 위치가 유효한지 검사
-- `"top"`: 중력/하강(ArrowDown 포함)으로 인해 더 내려가려다 막혀서 “락(lock) 판정”이 필요한 케이스
-  - gravity tick 또는 ArrowDown → renderBlocks("top")
+- `"fall"`: 중력/하강(ArrowDown 포함)으로 인해 더 내려가려다 막혀서 “락(lock) 판정”이 필요한 케이스
+  - gravity tick 또는 ArrowDown → renderBlocks("falls")
 - `"horizontal"`: 좌/우 이동 입력으로 발생
 - `"retry"`: 스폰 충돌 재확인에만 사용(현재 구현은 setTimeout 재호출 포함)
 

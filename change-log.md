@@ -441,3 +441,86 @@ src/css/tetris.css: lineClearFlash 애니메이션으로 흰색 플래시+스케
 
 ## 현재 상태 메모
 - **캔버스 전환은 아직 미적용** 상태입니다. 현재 메인 보드는 기존 DOM(`<ul>/<li>`) 렌더링을 사용합니다.
+
+---
+
+# 2026년 2월 25일
+최근 변경 사항 정리
+
+## 렌더링/뷰
+- **메인 보드 캔버스 렌더링 적용 유지**  
+  싱글/멀티 페이지 보드 영역을 `<canvas>` 기준으로 사용하고, 메인 렌더는 `renderBoardCanvas` 중심으로 동작합니다. (`src/pages/tetrisSingle.html`, `src/pages/tetrisMulti.html`, `src/game/tetris.js`, `src/render/tetrisRender.js`)
+
+- **겹침 렌더링 방지 보정**  
+  고스트/활성 블록을 그릴 때 이미 고정 블록이 있는 칸은 스킵하도록 처리해, 스폰 충돌 상황에서 블록이 시각적으로 겹쳐 보이는 현상을 줄였습니다. (`src/render/tetrisRender.js`)
+
+## 게임 상태/규칙
+- **스폰 유예(Spawn Grace) 로직 제거**  
+  `SPAWN_GRACE_MS`, `SPAWN_GRACE` phase, `spawnGraceTimer`, 관련 정리 함수를 제거했습니다. (`src/game/tetris.js`)
+
+- **스폰 충돌 시 즉시 게임오버로 단순화**  
+  `moveCause === "spawn"` 충돌 시 결과를 즉시 `gameOver`로 반환하도록 변경했습니다. (`src/core/step.js`)
+
+- **입력 허용 조건 단순화**  
+  플레이어 입력은 `PLAYING` 상태에서만 처리하도록 정리했습니다. (`src/game/tetris.js`)
+
+## 검증
+- 문법 확인: `node --check` 기준 `src/game/tetris.js`, `src/core/step.js`, `src/render/tetrisRender.js` 통과
+
+---
+
+# 2026년 3월 18일
+최근 변경 사항 정리
+
+## 구조/리팩토링
+- **상태 팩토리 도입**
+  `gameState` 초기값 생성을 `createGameState`(`src/game/stateFactory.js`)로 분리했습니다.
+  직렬화 가능한 게임 데이터 스키마를 한 곳에서 관리할 수 있게 정리했습니다.
+
+- **runtime 분리**
+  `fallTimer`, `inputTimer`, `boardCtx`, `animationFrameId` 같은 실행 환경 전용 값은 `tetris.js` 내부 `runtime` 객체로 옮겼습니다.
+  상태 데이터와 런타임 객체를 분리해 멀티플레이/리플레이용 상태 직렬화 준비를 진행했습니다.
+
+- **입력 처리 모듈 분리**
+  키보드 입력 매핑과 반복 입력 방지 로직을 `src/game/input.js`로 분리했습니다.
+  `tetris.js`는 이제 입력 이벤트를 직접 해석하지 않고, 액션 큐에 들어온 값만 소비합니다.
+
+## 실행 로직 분리
+- **이동 결과 실행 분리**
+  `applyMoveIntent`를 `src/game/moveExecution.js`로 이동했습니다.
+  코어가 계산한 intent를 실제 게임 상태/루프/UI에 반영하는 책임을 별도 모듈로 분리했습니다.
+
+- **스폰/큐/홀드 실행 분리**
+  `ensureQueueFilled`, `generateNewBlock`, `holdPiece` 실행 흐름을 `src/game/pieceExecution.js`로 옮겼습니다.
+  `tetris.js`에는 얇은 래퍼만 남기고, 큐 관리와 스폰 실행 책임을 분리했습니다.
+
+- **라인 클리어/점수 반영 분리**
+  줄 검사 후 점수 갱신과 다음 블록 소환 흐름을 `src/game/lineExecution.js`로 분리했습니다.
+  점수 표시 및 게임오버 DOM 조작은 `src/game/ui.js`로 모아 UI 책임을 별도로 정리했습니다.
+
+- **액션 실행 분리**
+  `shiftActivePiece`, `changeDirection`, `hardDrop`, `handleAction` 성격의 실행 로직을 `src/game/actionExecution.js`로 이동했습니다.
+  입력 액션 처리 책임을 묶어 `tetris.js`를 엔트리/조립 파일에 가깝게 정리했습니다.
+
+## 규칙/상태 보정
+- **하드 드롭 판정 일원화**
+  `hardDrop` 고정 처리를 `tetris.js`의 직접 고정 호출 방식에서 제거하고, `resolveMoveAttempt`(`src/core/step.js`)가 `moveCause === "hardDrop"`일 때 `lock`을 반환하도록 변경했습니다.
+  하드 드롭도 일반 이동과 같은 intent 실행 파이프라인을 타도록 정리했습니다.
+
+- **렌더 파생값(state 오염) 제거**
+  `ghostRow`를 `activePiece` 상태에 직접 기록하던 방식을 제거하고, `getRenderableActivePiece()`에서 렌더 직전 계산한 복사 객체로만 넘기도록 변경했습니다.
+  authoritative state와 렌더 전용 파생값을 분리했습니다.
+
+## 문서/검증
+- `QnA.md`에 최근 질문/답변 주제를 정리해 추가했습니다.
+- 문법 확인: `node --check` 기준
+  `src/game/tetris.js`,
+  `src/core/step.js`,
+  `src/game/stateFactory.js`,
+  `src/game/input.js`,
+  `src/game/moveExecution.js`,
+  `src/game/pieceExecution.js`,
+  `src/game/lineExecution.js`,
+  `src/game/ui.js`,
+  `src/game/actionExecution.js`
+  통과
