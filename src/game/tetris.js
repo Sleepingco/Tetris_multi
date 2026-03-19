@@ -39,32 +39,25 @@ import { executeAction, shiftActivePiece } from "./actionExecution.js"
 const NEXT_QUEUE_SIZE = 2
 
 // =============================
-// 테트리스 메인 스크립트 (단일 플레이)
-// -----------------------------
-// DOM(ul/li)을 보드로 사용하고, 현재 조각을 CSS 클래스로 렌더링합니다.
-// 게임 사이클
-//   1) 블록 자동 하강(중력 타이머)
-//   2) 충돌 시 고정(seize)
-//   3) 가득 찬 줄 삭제(checkMatch) + 점수 갱신
-//   4) 새 블록 생성(generateNewBlock)
+// 싱글 플레이 런타임
+// 보드 상태, 입력, 중력, 고정 판정, UI 렌더링을 조율한다.
 // =============================
 
-// DOM 참조
-const boardCanvasEl = document.querySelector("canvas#tetrisBoardCanvas"); // 20x10 캔버스 컨테이너
-const multiCanvasEls = document.querySelectorAll("canvas.tetrisBoardCanvas"); // (멀티플레이어 용)
-const gameOverEl = document.querySelector(".game-text");          // 게임오버 레이어
-const scoreEl = document.querySelector(".score");                 // 점수 표시 영역
-const restartBtn = document.querySelector(".game-text > button"); // 재시작 버튼d
-const nextPreviewEl = document.querySelector(".next-preview");    // 다음 블록 표시 영역
-const holdPreviewEl = document.querySelector(".hold-preview");    // 홀드 블록 표시 영역
-const soundToggleBtn = document.getElementById("soundToggle");    // 사운드 온/오프 버튼
+const boardCanvasEl = document.querySelector("canvas#tetrisBoardCanvas")
+const multiCanvasEls = document.querySelectorAll("canvas.tetrisBoardCanvas")
+const gameOverEl = document.querySelector(".game-text")
+const scoreEl = document.querySelector(".score")
+const restartBtn = document.querySelector(".game-text > button")
+const nextPreviewEl = document.querySelector(".next-preview")
+const holdPreviewEl = document.querySelector(".hold-preview")
+const soundToggleBtn = document.getElementById("soundToggle")
 
-const PIECE_TYPES = Object.keys(BLOCKS);                           // 사용 가능한 모든 블록 타입
-const ROWS = BOARD_ROWS;
-const COLS = BOARD_COLS;
-const SPAWN_ROW = SPAWN_POSITION.row;
-const SPAWN_COL = SPAWN_POSITION.col;
-const NEXT_PREVIEW_SIZE = NEXT_PREVIEW_DIMENSION;
+const PIECE_TYPES = Object.keys(BLOCKS)
+const ROWS = BOARD_ROWS
+const COLS = BOARD_COLS
+const SPAWN_ROW = SPAWN_POSITION.row
+const SPAWN_COL = SPAWN_POSITION.col
+const NEXT_PREVIEW_SIZE = NEXT_PREVIEW_DIMENSION
 
 const GAME_PHASE = {
     PLAYING: "playing",
@@ -100,79 +93,75 @@ const ui = createGameUi({
     renderHoldPiece: renderHoldPieceDom,
 })
 
-// 초기 진입점
-initGameSound(soundToggleBtn);
-runtime.detachKeyboard = attachKeyboardInput({
-    enqueueAction: enqueueInput,
-    onUserInteract: tryPlayMusic,
-})
-init();
-
 // =============================
-// Renderer wrappers (param injection)
+// 게임 초기화
+// 런타임 상태, 미리보기, 첫 스폰까지 새 세션 기준으로 다시 구성한다.
 // =============================
-function initBoardContext() {
-    // 만약 싱글모드 캔버스가 없으면 첫 번째 멀티모드 캔버스라도 가져옵니다 (임시/기본 처리)
-    const targetCanvas = boardCanvasEl || multiCanvasEls[0];
-    runtime.boardCtx = getBoardContext(targetCanvas);
+/**
+ * 새 게임 시작 기준으로 싱글 플레이 전체 상태를 초기화한다.
+ * - 실행 중인 타이머를 멈추고 기본 하강 속도로 되돌린다.
+ * - 점수, 홀드, 큐, 입력 대기열, 보드를 모두 비운다.
+ * - 렌더러 컨텍스트와 미리보기 DOM을 다시 준비한다.
+ * - 큐를 채우고 빈 보드를 렌더한 뒤 첫 조각을 스폰한다.
+ *
+ * @returns {void}
+ */
+function init() {
+    stopGameLoops()
+    gameState.score = 0
+    ui.renderScore(gameState.score)
+    gameState.fallIntervalMs = INITIAL_FALL_INTERVAL_MS
+    gameState.pieceQueue = []
+    gameState.holdPieceType = null
+    gameState.holdUsedThisDrop = false
+    gameState.inputQueue = []
+    gameState.phase = GAME_PHASE.PLAYING
+    startInputLoop();
+    gameState.board = createEngineBoard(ROWS, COLS)
+    initBoardContext()
+    ui.buildHoldPreview()
+    ui.buildNextPreview()
+
+    setActivePiece({
+        pieceType: "",
+        rotation: 0,
+        row: SPAWN_ROW,
+        col: SPAWN_COL,
+    })
+    gameState.pendingPiece = { ...gameState.activePiece }
+    ensureQueueFilled()
+    renderNextPieces()
+    renderHoldPiece()
+
+    renderBoard()
+    generateNewBlock()
 }
 
-function getRenderableActivePiece() {
-    const { activePiece } = gameState
-    if (!activePiece || !activePiece.pieceType) return activePiece
-
-    let ghostRow = activePiece.row
-    while (canPlace({
-        pieceType: activePiece.pieceType,
-        rotation: activePiece.rotation,
-        col: activePiece.col,
-        row: ghostRow + 1,
-    })) {
-        ghostRow++
-    }
-
-    return { ...activePiece, ghostRow }
-}
-
-function renderBoard() {
-    renderBoardCanvas({
-        ctx: runtime.boardCtx,
-        board: gameState.board,
-        activePiece: getRenderableActivePiece(),
-        rows: ROWS,
-        cols: COLS,
-        blocks: BLOCKS,
-        isFlash: false,
-    });
-}
-
-function renderNextPieces() {
-    ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
-}
-
-function renderHoldPiece() {
-    ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
-}
-
-function ensureQueueFilled() {
-    fillPieceQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES)
-}
-
+/**
+ * 다음 조각을 스폰하고 새 턴의 중력 루프를 시작한다.
+ *
+ * @returns {void}
+ */
 function generateNewBlock() {
     spawnNextPiece({
         gameState,
         phases: GAME_PHASE,
+        setActivePiece,
         spawnRow: SPAWN_ROW,
         spawnCol: SPAWN_COL,
         nextQueueSize: NEXT_QUEUE_SIZE,
         pieceTypes: PIECE_TYPES,
-        setActivePiece,
         renderNextPieces,
         renderBlocks,
         startGravity,
     })
 }
 
+/**
+ * 홀드가 가능한 상황이면 현재 조각과 홀드 슬롯을 교체한다.
+ *
+ * @returns {void}
+ */
 function holdPiece() {
     executeHoldPiece({
         gameState,
@@ -189,93 +178,73 @@ function holdPiece() {
     })
 }
 
-
 // =============================
-// 초기화: 점수 리셋, 20x10 보드 생성, 첫 블록 소환
+// 입력 처리
+// 입력 큐에 액션을 쌓고, 순서대로 게임 상태 변화로 연결한다.
 // =============================
 /**
- * 게임을 처음 시작하거나 재시작할 때 전체 상태를 초기화한다.
+ * 현재 게임이 입력을 받을 수 있을 때만 플레이어 액션을 큐에 넣는다.
  *
- * 수행 내용:
- * - 중력 타이머(fallTimer)를 정지하고 하강 주기(fallIntervalMs)를 기본값으로 복원한다.
- * - 점수를 0으로 리셋하고 UI에 반영한다.
- * - 엔진 보드 배열을 ROWS x COLS 크기의 빈 상태로 만들고, DOM 보드/미리보기를 재구성해 셀 캐시를 채운다.
- * - activePiece를 “빈 스폰 상태”로 두고 pendingPiece를 동기화해 이후 이동/회전 기준을 만든다.
- * - 무작위 블록 큐를 채워 두고 비어 있는 보드를 일단 렌더한다.
- * - generateNewBlock()으로 첫 블록을 소환하고 중력 타이머를 다시 시작한다.
- *
+ * @param {string|null} action - 정규화된 입력 액션
  * @returns {void}
  */
-function init() {
-    stopGameLoops()
-    gameState.score = 0;
-    ui.renderScore(gameState.score);
-    gameState.fallIntervalMs = INITIAL_FALL_INTERVAL_MS;
-    gameState.pieceQueue = [];
-    gameState.holdPieceType = null;
-    gameState.holdUsedThisDrop = false;
-    gameState.inputQueue = [];
-    gameState.phase = GAME_PHASE.PLAYING;
-    startInputLoop();
-    gameState.board = createEngineBoard(ROWS, COLS);
-    initBoardContext();
-    ui.buildHoldPreview();
-    ui.buildNextPreview();
-
-    setActivePiece({
-        pieceType: "",
-        rotation: 0,
-        row: SPAWN_ROW,
-        col: SPAWN_COL,
-    });
-    gameState.pendingPiece = { ...gameState.activePiece };
-    ensureQueueFilled();
-    renderNextPieces();
-    renderHoldPiece();
-
-    renderBoard();
-    generateNewBlock();                // 첫 블록 생성 + 중력 타이머 시작
+function enqueueInput(action) {
+    if (!action) return
+    if (!canProcessPlayerInput()) return
+    gameState.inputQueue.push(action)
 }
 
 /**
- * activePiece를 전달된 조각 상태로 덮어쓴다.
- * - null/undefined 입력은 무시한다.
- * - 개별 필드를 직접 할당해 기존 객체 참조를 유지한다.
+ * 한 번의 입력 틱에서 제한된 개수만큼 입력 큐를 소비한다.
  *
- * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 설정할 조각 상태
+ * @param {number} [maxPerTick=8] - 이번 틱에서 처리할 최대 액션 수
  * @returns {void}
  */
-function setActivePiece(piece) {
-    if (!piece) return;
-    gameState.activePiece.pieceType = piece.pieceType;
-    gameState.activePiece.rotation = piece.rotation;
-    gameState.activePiece.row = piece.row;
-    gameState.activePiece.col = piece.col;
+function drainInputQueue(maxPerTick = 8) {
+    if (!canProcessPlayerInput()) return
+    let count = 0
+    while (gameState.inputQueue.length > 0 && count < maxPerTick) {
+        const action = gameState.inputQueue.shift()
+        handleAction(action)
+        count++
+    }
+}
+
+/**
+ * 정규화된 입력 액션을 actionExecution 모듈로 전달한다.
+ *
+ * @param {string} action - 입력 계층에서 넘어온 액션 식별자
+ * @returns {void}
+ */
+function handleAction(action) {
+    executeAction(action, {
+        gameState,
+        renderBlocks,
+        canPlace,
+        renderScore: ui.renderScore,
+        stopGravity: () => clearInterval(runtime.fallTimer),
+        holdPiece,
+    })
 }
 
 // =============================
-// 현재 조각을 화면에 그리기 + 충돌 판정 + 롤백/고정 처리
-// - moveType: 'fall'이면 아래로 이동 중(충돌 시 고정), 나머지 충돌은 롤백(retry)
+// 이동 판정 연결부
+// pendingPiece 변경을 엔진 판정 결과와 런타임 부수효과로 이어 준다.
 // =============================
 /**
- * pendingPiece를 기준으로 이동/회전을 한 번 시도하고, 엔진 결과(resolveMoveAttempt)에 따라 확정/고정/재시도/게임오버를 처리한다.
+ * pendingPiece 기준으로 이동 또는 회전 1회를 판정한다.
+ * - 엔진이 이동 성공, 롤백, 고정, 게임오버 중 무엇인지 결정한다.
+ * - 반환된 intent는 런타임 계층에서 실제 부수효과로 실행된다.
+ * - 다음 입력이 최신 결과를 기준으로 시작되도록 pendingPiece를 항상 갱신한다.
  *
- * 호출 흐름:
- * - moveType은 시도 원인을 표현한다: 'fall'(하강), 'horizontal'(좌우 이동), 'rotate'(회전) 등.
- * - resolveMoveAttempt에 board, activePiece, pendingPiece, moveCause, blocks를 전달해 충돌/배치 가능 여부와 다음 상태를 계산한다.
- * - resolveMoveIntent가 outcome을 intent(kind)로 변환한다.
- * - intent 실행은 applyMoveIntent에 위임한다.
- * - 매 호출마다 pendingPiece는 outcome.pending로 갱신해 다음 입력 시도를 위한 기준 상태를 유지한다.
- *
- * @param {string} [moveType=""] - 이동/회전 시도의 원인('fall' 하강, 'horizontal' 좌우, 'rotate' 회전 등)
+ * @param {string} [moveType=""] - 이동 시도 원인 (`fall`, `horizontal`, `rotate`, `spawn` 등)
  * @returns {void}
  */
 function renderBlocks(moveType = "") {
-    const pendingPiece = gameState.pendingPiece;
-    if (!pendingPiece) return;
-    const { pieceType } = pendingPiece; // 시도 중인 좌표/회전
-    if (!pieceType) return;
-
+    const pendingPiece = gameState.pendingPiece
+    if (!pendingPiece) return
+    const { pieceType } = pendingPiece
+    if (!pieceType) return
 
     const outcome = resolveMoveAttempt({
         board: gameState.board,
@@ -284,14 +253,14 @@ function renderBlocks(moveType = "") {
         moveCause: moveType,
         blocks: BLOCKS,
         wallKicks: WALL_KICKS,
-    });
+    })
 
-    gameState.pendingPiece = { ...outcome.pending };
+    gameState.pendingPiece = { ...outcome.pending }
 
     const intent = resolveMoveIntent({
         outcome,
         hasFallTimer: Boolean(runtime.fallTimer),
-    });
+    })
     applyMoveIntent(intent, {
         gameState,
         phases: GAME_PHASE,
@@ -301,131 +270,59 @@ function renderBlocks(moveType = "") {
         showGameOver: ui.showGameOver,
         seizeBlock,
         startGravity,
-    });
+    })
 }
 
-function findFullRows(board) {
-    const cols = board[0]?.length ?? 0;
-    const fullRows = [];
-    for (let row = 0; row < board.length; row++) {
-        const isFull = board[row].every(cell => cell !== null);
-        if (isFull) fullRows.push(row);
-    }
-    return { fullRows, cols };
-}
-
-function startGravity() {
-    clearInterval(runtime.fallTimer);
-    runtime.fallTimer = setInterval(() => {
-        shiftActivePiece(gameState, 1, 0);
-        renderBlocks("fall");
-    }, gameState.fallIntervalMs);
-}
-
-function addLineClearEffect(rows, onComplete) {
-    if (!runtime.boardCtx) {
-        if (onComplete) onComplete();
-        return;
-    }
-
-    if (runtime.animationFrameId) cancelAnimationFrame(runtime.animationFrameId);
-
-    const DURATION = 350; // CSS 애니메이션 지속 시간과 동일
-    const startTime = performance.now();
-
-    function animate(currentTime) {
-        let elapsed = currentTime - startTime;
-        let progress = Math.min(elapsed / DURATION, 1);
-
-        const animatedRows = rows.map(r => ({ row: r, progress: progress }));
-
-        renderBoardCanvas({
-            ctx: runtime.boardCtx,
-            board: gameState.board,
-            activePiece: null,
-            rows: ROWS,
-            cols: COLS,
-            blocks: BLOCKS,
-            flashRows: animatedRows,
-        });
-
-        if (progress < 1) {
-            runtime.animationFrameId = requestAnimationFrame(animate);
-        } else {
-            runtime.animationFrameId = null;
-            if (onComplete) onComplete();
-        }
-    }
-
-    runtime.animationFrameId = requestAnimationFrame(animate);
-}
-
-
+// =============================
+// 고정 및 후처리
+// 조각 고정 이후 게임오버, 라인 클리어, 다음 턴으로 이어진다.
+// =============================
 /**
- * activePiece를 보드에 고정하고 렌더 후 줄 검사까지 이어서 처리한다.
- * - lockPieceOnBoard로 엔진 보드에 조각을 채운다(경계 밖은 무시).
- * - activePiece를 빈 상태로 초기화해 “현재 움직이는 조각 없음”을 표시한다.
- * - renderBoard()로 고정 상태를 DOM에 반영한 뒤 checkMatch()로 라인 삭제/점수를 진행한다.
+ * activePiece를 보드에 고정하고, 이후 후처리 단계로 넘긴다.
+ * - 다음 조각을 만들기 전에 top-out 여부를 먼저 확인한다.
+ * - T 조각이 회전 직후 고정되면서 4개 코너 중 3개 이상이 막혀 있으면 T-Spin으로 기록한다.
+ * - 보드 반영이 끝나면 라인 클리어 판정 단계로 제어를 넘긴다.
  *
  * @returns {void}
  */
 function seizeBlock() {
-    const { activePiece, board } = gameState;
-    const { pieceType, rotation, row, col } = activePiece;
-    if (!pieceType) return;
+    const { activePiece, board } = gameState
+    const { pieceType, rotation, row, col } = activePiece
+    if (!pieceType) return
 
-    const touchesAboveTop = BLOCKS[pieceType][rotation].some(([, offsetY]) => row + offsetY < 0);
+    const touchesAboveTop = BLOCKS[pieceType][rotation].some(([, offsetY]) => row + offsetY < 0)
+    gameState.isTSpin = isTSpinLock({
+        board,
+        piece: activePiece,
+        lastActionWasRotation: gameState.lastActionWasRotation,
+    })
 
-    // T-Spin 판별 (T 블록이고, 마지막 행동이 회전이었으며, 3/4코너가 막혀있음)
-    let tSpin = false;
-    if (pieceType === "tree" && gameState.lastActionWasRotation) {
-        const centerCol = col + 1;
-        const centerRow = row + 1;
-        const corners = [
-            [centerCol - 1, centerRow - 1], [centerCol + 1, centerRow - 1],
-            [centerCol - 1, centerRow + 1], [centerCol + 1, centerRow + 1],
-        ];
-        let filledCorners = 0;
-        for (const [cx, cy] of corners) {
-            if (cx < 0 || cx >= COLS || cy >= ROWS || (cy >= 0 && board[cy][cx])) {
-                filledCorners++;
-            }
-        }
-        if (filledCorners >= 3) tSpin = true;
-    }
-
-    gameState.isTSpin = tSpin;
-
-    lockPieceOnBoard(board, activePiece, BLOCKS);
+    lockPieceOnBoard(board, activePiece, BLOCKS)
 
     setActivePiece({
         pieceType: "",
         rotation,
         row,
         col,
-    }); // 고정 후에는 활성 조각이 없음
-    renderBoard();               // 보드 상태와 DOM 동기화
+    })
+    renderBoard()
     if (touchesAboveTop) {
-        gameState.phase = GAME_PHASE.GAME_OVER;
-        gameState.inputQueue = [];
-        stopGameLoops();
-        ui.showGameOver();
-        return;
+        gameState.phase = GAME_PHASE.GAME_OVER
+        gameState.inputQueue = []
+        stopGameLoops()
+        ui.showGameOver()
+        return
     }
-    checkMatch();
+    checkMatch()
 }
 
 // =============================
-// 줄 완성 검사:
-// - 한 줄(10칸)이 모두 ".seized"면 그 줄 삭제 + 맨 위에 새 줄 추가
-// - 점수 +10 (단순 규칙)
-// - 새 블록 생성으로 다음 턴 진행
+// 고정 후 후처리
+// 완성 줄 삭제, 점수 갱신, 다음 스폰 흐름으로 이어진다.
 // =============================
 /**
- * 가득 찬 줄을 삭제하고 점수를 갱신한 뒤 보드를 렌더하고 새 블록을 소환한다.
- * - clearFilledLines로 삭제된 줄 수를 얻고, 줄당 10점씩 점수를 추가한다.
- * - 점수를 UI에 반영하고 보드를 재렌더한다.
- * - generateNewBlock()을 호출해 다음 턴을 시작한다.
+ * 라인 클리어 처리를 lineExecution 모듈로 위임한다.
+ * - 애니메이션, 점수 계산, 다음 조각 스폰을 보조 모듈이 담당한다.
  *
  * @returns {void}
  */
@@ -444,87 +341,284 @@ function checkMatch() {
     })
 }
 
-
 // =============================
-// 새 블록 생성 + 중력 타이머 시작
-// - fallIntervalMs마다 아래로 1칸씩 이동
-// - BLOCKS에서 임의 유형 선택 후 (0,3)에서 시작
-// =============================
-// =============================
-// 현재 조각이 특정 위치에 "놓일 수 있는지" 전부 검사 (하드 드롭 등에서 사용)
-// - 모든 칸이 배치 가능해야(true)
+// 배치 가능 여부 조회
+// 하드 드롭이나 고스트 계산에서 가상의 위치를 검사할 때 사용한다.
 // =============================
 /**
- * 현재 보드에 주어진 조각을 놓을 수 있는지 전부 검사한다.
- * - canPlacePiece 엔진 함수를 그대로 위임 사용한다.
+ * 전달된 조각 상태를 현재 보드에 놓을 수 있는지 검사한다.
  *
- * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 검사 대상 조각 상태
- * @returns {boolean} 모든 블록이 유효하면 true
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 검사할 조각 상태
+ * @returns {boolean} 모든 블록 칸이 유효하면 true
  */
 function canPlace({ pieceType, rotation, row, col }) {
     return canPlacePiece(gameState.board, { pieceType, rotation, row, col }, BLOCKS);
 }
 
-function enqueueInput(action) {
-    if (!action) return;
-    if (!canProcessPlayerInput()) return;
-    gameState.inputQueue.push(action);
-}
-
-function handleAction(action) {
-    executeAction(action, {
-        gameState,
-        renderBlocks,
-        canPlace,
-        renderScore: ui.renderScore,
-        stopGravity: () => clearInterval(runtime.fallTimer),
-        holdPiece,
-    })
-}
-
-function drainInputQueue(maxPerTick = 8) {
-    if (!canProcessPlayerInput()) return;
-    let count = 0;
-    while (gameState.inputQueue.length > 0 && count < maxPerTick) {
-        const action = gameState.inputQueue.shift();
-        handleAction(action);
-        count++;
-    }
-}
-
-function startInputLoop() {
-    clearInterval(runtime.inputTimer);
-    runtime.inputTimer = setInterval(() => {
-        drainInputQueue(4);
-    }, INPUT_TICK_MS);
-
-}
-
-function stopGameLoops() {
-    clearInterval(runtime.fallTimer);
-    clearInterval(runtime.inputTimer);
-    if (runtime.animationFrameId) cancelAnimationFrame(runtime.animationFrameId);
-    runtime.fallTimer = undefined;
-    runtime.inputTimer = undefined;
-    runtime.animationFrameId = null;
-}
-
-function canProcessPlayerInput() {
-    return gameState.phase === GAME_PHASE.PLAYING;
-}
-// =============================
-// 게임오버 레이어 표시
-// =============================
 /**
- * 게임오버 레이어를 화면에 표시한다.
- * - 중력 타이머 정지 이후 호출되며, 재시작 버튼 클릭 시 숨겨진다.
+ * activePiece를 아래로 밀어내는 중력 타이머를 시작하거나 다시 시작한다.
  *
  * @returns {void}
  */
+function startGravity() {
+    clearInterval(runtime.fallTimer)
+    runtime.fallTimer = setInterval(() => {
+        shiftActivePiece(gameState, 1, 0)
+        renderBlocks("fall")
+    }, gameState.fallIntervalMs)
+}
+
+/**
+ * 키보드 입력 큐를 주기적으로 소비하는 입력 루프를 시작한다.
+ *
+ * @returns {void}
+ */
+function startInputLoop() {
+    clearInterval(runtime.inputTimer)
+    runtime.inputTimer = setInterval(() => {
+        drainInputQueue(4)
+    }, INPUT_TICK_MS)
+}
+
+/**
+ * 중력, 입력 폴링, 라인 클리어 애니메이션을 모두 중지한다.
+ *
+ * @returns {void}
+ */
+function stopGameLoops() {
+    clearInterval(runtime.fallTimer)
+    clearInterval(runtime.inputTimer)
+    if (runtime.animationFrameId) cancelAnimationFrame(runtime.animationFrameId)
+    runtime.fallTimer = undefined
+    runtime.inputTimer = undefined
+    runtime.animationFrameId = null
+}
+
+/**
+ * 현재 phase가 플레이어 입력을 허용하는 상태인지 반환한다.
+ *
+ * @returns {boolean} 실제 플레이 중인 상태일 때만 true
+ */
+function canProcessPlayerInput() {
+    return gameState.phase === GAME_PHASE.PLAYING
+}
+
 // =============================
-// 재시작: 보드를 비우고 다시 init()
+// 렌더링 보조
+// 화면에 그릴 데이터와 애니메이션 처리를 담당한다.
+// =============================
+/**
+ * 렌더링에 사용할 캔버스를 정하고, 그리기 컨텍스트를 runtime에 저장한다.
+ * - 싱글 플레이 캔버스가 없으면 첫 번째 멀티 플레이 캔버스를 대신 사용한다.
+ *
+ * @returns {void}
+ */
+function initBoardContext() {
+    const targetCanvas = boardCanvasEl || multiCanvasEls[0];
+    runtime.boardCtx = getBoardContext(targetCanvas);
+}
+
+/**
+ * 현재 보드와 activePiece를 기준으로 한 프레임을 그린다.
+ *
+ * @returns {void}
+ */
+function renderBoard() {
+    renderBoardCanvas({
+        ctx: runtime.boardCtx,
+        board: gameState.board,
+        activePiece: getRenderableActivePiece(),
+        rows: ROWS,
+        cols: COLS,
+        blocks: BLOCKS,
+        isFlash: false,
+    });
+}
+
+/**
+ * 현재 pieceQueue를 기준으로 다음 블록 미리보기 UI를 갱신한다.
+ *
+ * @returns {void}
+ */
+function renderNextPieces() {
+    ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
+}
+
+/**
+ * 현재 hold 슬롯 상태를 기준으로 홀드 미리보기 UI를 갱신한다.
+ *
+ * @returns {void}
+ */
+function renderHoldPiece() {
+    ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
+}
+
+/**
+ * 렌더링용 activePiece를 만든다.
+ * - 고스트 피스 표시를 위해 착지 예정 행(`ghostRow`)을 계산해 포함한다.
+ * - 실제 gameState는 여기서 변경하지 않는다.
+ * - 반환값은 렌더러에서만 사용한다.
+ *
+ * @returns {{pieceType: string, rotation: number, row: number, col: number, ghostRow?: number}|null}
+ */
+function getRenderableActivePiece() {
+    const { activePiece } = gameState
+    if (!activePiece || !activePiece.pieceType) return activePiece
+
+    let ghostRow = activePiece.row
+    while (canPlace({
+        pieceType: activePiece.pieceType,
+        rotation: activePiece.rotation,
+        col: activePiece.col,
+        row: ghostRow + 1,
+    })) {
+        ghostRow++
+    }
+
+    return { ...activePiece, ghostRow }
+}
+
+/**
+ * 실제 줄 삭제 전에 라인 클리어 플래시 애니메이션을 재생한다.
+ *
+ * @param {number[]} rows - 강조해서 보여줄 줄 인덱스 목록
+ * @param {Function} onComplete - 애니메이션 종료 후 실행할 콜백
+ * @returns {void}
+ */
+function addLineClearEffect(rows, onComplete) {
+    if (!runtime.boardCtx) {
+        if (onComplete) onComplete()
+        return
+    }
+
+    if (runtime.animationFrameId) cancelAnimationFrame(runtime.animationFrameId)
+
+    const DURATION = 350
+    const startTime = performance.now()
+
+    function animate(currentTime) {
+        let elapsed = currentTime - startTime
+        let progress = Math.min(elapsed / DURATION, 1)
+
+        const animatedRows = rows.map(r => ({ row: r, progress: progress }))
+
+        renderBoardCanvas({
+            ctx: runtime.boardCtx,
+            board: gameState.board,
+            activePiece: null,
+            rows: ROWS,
+            cols: COLS,
+            blocks: BLOCKS,
+            flashRows: animatedRows,
+        })
+
+        if (progress < 1) {
+            runtime.animationFrameId = requestAnimationFrame(animate)
+        } else {
+            runtime.animationFrameId = null
+            if (onComplete) onComplete()
+        }
+    }
+
+    runtime.animationFrameId = requestAnimationFrame(animate)
+}
+
+// =============================
+// 상태 보조 함수
+// 작은 계산과 상태 갱신 helper를 모아 둔다.
+// =============================
+/**
+ * 스폰과 미리보기에 필요한 만큼 조각 큐를 채운다.
+ *
+ * @returns {void}
+ */
+function ensureQueueFilled() {
+    fillPieceQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES)
+}
+
+/**
+ * 현재 고정이 T-Spin 조건을 만족하는지 검사한다.
+ * - T 조각(`tree`)이 아니면 false다.
+ * - 마지막 액션이 회전이 아니면 false다.
+ * - 중심 4코너 중 3개 이상이 막혀 있으면 T-Spin으로 본다.
+ *
+ * @param {Object} params - T-Spin 판정 입력값
+ * @param {Array<Array<string|null>>} params.board - 현재 보드 배열
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} params.piece - 현재 고정 중인 조각
+ * @param {boolean} params.lastActionWasRotation - 마지막 성공 액션이 회전인지 여부
+ * @returns {boolean} T-Spin 조건을 만족하면 true
+ */
+function isTSpinLock({ board, piece, lastActionWasRotation }) {
+    if (!piece || piece.pieceType !== "tree") return false
+    if (!lastActionWasRotation) return false
+
+    const centerCol = piece.col + 1
+    const centerRow = piece.row + 1
+    const corners = [
+        [centerCol - 1, centerRow - 1],
+        [centerCol + 1, centerRow - 1],
+        [centerCol - 1, centerRow + 1],
+        [centerCol + 1, centerRow + 1],
+    ]
+
+    let filledCorners = 0
+    for (const [cx, cy] of corners) {
+        if (cx < 0 || cx >= COLS || cy >= ROWS || (cy >= 0 && board[cy][cx])) {
+            filledCorners++
+        }
+    }
+
+    return filledCorners >= 3
+}
+
+/**
+ * 보드를 검사해 가득 찬 줄 번호를 찾아 반환한다.
+ *
+ * @param {Array<Array<string|null>>} board - 검사할 보드 배열
+ * @returns {{fullRows: number[], cols: number}} 가득 찬 줄 목록과 보드 너비
+ */
+function findFullRows(board) {
+    const cols = board[0]?.length ?? 0
+    const fullRows = []
+    for (let row = 0; row < board.length; row++) {
+        const isFull = board[row].every(cell => cell !== null)
+        if (isFull) fullRows.push(row)
+    }
+    return { fullRows, cols }
+}
+
+/**
+ * 기존 객체 참조를 유지한 채 activePiece 내부 필드를 덮어쓴다.
+ * - null 또는 undefined 입력은 무시한다.
+ * - 필드를 하나씩 갱신해서 같은 객체를 바라보는 참조가 깨지지 않게 한다.
+ *
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 적용할 조각 상태
+ * @returns {void}
+ */
+function setActivePiece(piece) {
+    if (!piece) return
+    gameState.activePiece.pieceType = piece.pieceType
+    gameState.activePiece.rotation = piece.rotation
+    gameState.activePiece.row = piece.row
+    gameState.activePiece.col = piece.col
+}
+
+// =============================
+// 초기 진입
+// 사운드, 키보드 입력, 초기 게임 상태를 연결한다.
+// =============================
+initGameSound(soundToggleBtn);
+runtime.detachKeyboard = attachKeyboardInput({
+    enqueueAction: enqueueInput,
+    onUserInteract: tryPlayMusic,
+})
+// =============================
+// 재시작 이벤트
+// 게임오버 오버레이를 닫은 뒤 게임을 새로 시작한다.
 // =============================
 restartBtn.addEventListener("click", () => {
-    ui.hideGameOver();
-    init();                    // 초기화부터 재시작
+    ui.hideGameOver()
+    init()
 });
+
+init();

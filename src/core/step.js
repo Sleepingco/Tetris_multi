@@ -1,25 +1,25 @@
 import { canPlacePiece } from "./board.js"
 
 // =============================
-// Movement Resolution (Engine Layer)
-// - Determines the outcome of applying a pending move
+// 이동 판정 (엔진 계층)
+// 부수효과 없이 pending move의 결과만 계산한다.
 // =============================
 
 /**
- * pendingPiece 배치를 시도한 결과를 계산하고 active/pending과 상태 코드를 반환한다.
- * - 배치 가능 + moveCause=='hardDrop' → lock (즉시 고정)
- * - 배치 불가 + moveCause=='fall'   → lock (고정)
- * - 배치 불가 + moveCause=='spawn'  → gameOver
- * - 배치 불가(기타)                → retry (롤백)
- * - 배치 가능                      → ok (committed 상태)
+ * `pendingPiece`를 적용하려는 시도의 결과를 계산한다.
+ * - 유효한 하드 드롭이면 즉시 고정한다.
+ * - 하강 실패면 이전 active 위치에서 고정한다.
+ * - 스폰 실패면 게임오버로 처리한다.
+ * - 그 외 실패는 이전 확정 상태로 되돌린다.
  *
- * @param {Object} params - 이동 시도 입력값
+ * @param {Object} params - 이동 판정 입력값
  * @param {Array<Array<string|null>>} params.board - 현재 보드 배열
- * @param {{pieceType: string, rotation: number, row: number, col: number}} params.activePiece - 현재 확정 상태
- * @param {{pieceType: string, rotation: number, row: number, col: number}} params.pendingPiece - 이번에 적용하려는 상태
- * @param {string} params.moveCause - 호출 원인('fall' 하강, 'hardDrop', 'horizontal', 'rotate', 'spawn' 등)
- * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 조각 모양/회전 오프셋
- * @returns {{status: string, active: Object, pending: Object}} 결과 상태 코드와 확정/대기 조각
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} params.activePiece - 마지막으로 확정된 조각 상태
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} params.pendingPiece - 이번에 시도할 후보 조각 상태
+ * @param {string} params.moveCause - 시도 원인 (`fall`, `hardDrop`, `horizontal`, `rotate`, `spawn` 등)
+ * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 블록 타입과 회전별 오프셋 정의
+ * @param {Object} params.wallKicks - 회전 충돌 시 사용할 wall kick 테이블
+ * @returns {{status: string, moveCause: string, active: Object, pending: Object}} 런타임 계층으로 넘길 엔진 판정 결과
  */
 export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause, blocks, wallKicks }) {
     if (!pendingPiece.pieceType) {
@@ -41,7 +41,7 @@ export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause
         }
     }
     if (!canPlace) {
-        // Wall Kick 적용 시도
+        // 회전 충돌 시 SRS kick 오프셋을 먼저 시도한다.
         if (moveCause === "rotate" && wallKicks && activePiece.pieceType !== "square") {
             const pieceType = activePiece.pieceType;
             const kickType = pieceType === "bar" ? "bar" : "normal";
@@ -106,13 +106,13 @@ export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause
 }
 
 /**
- * 이동 결과(outcome)를 실행 의도(intent)로 변환한다.
- * - 이 함수는 상태 판단만 수행하며 DOM/타이머 같은 부수효과는 처리하지 않는다.
+ * 순수 엔진 판정 결과를 런타임 intent로 바꾼다.
+ * - 이 함수도 여전히 부수효과 없이 다음 행동의 종류만 정한다.
  *
- * @param {Object} params - 의도 계산 입력값
- * @param {{status: string, active: Object, pending: Object}} params.outcome - resolveMoveAttempt 결과
- * @param {boolean} params.hasFallTimer - 현재 중력 타이머 동작 여부
- * @returns {{kind: string, active: Object, shouldStartGravity?: boolean}} 실행 의도
+ * @param {Object} params - intent 계산 입력값
+ * @param {{status: string, active: Object, pending: Object}} params.outcome - `resolveMoveAttempt` 결과
+ * @param {boolean} params.hasFallTimer - 현재 중력 타이머가 이미 동작 중인지 여부
+ * @returns {{kind: string, moveCause: string, active: Object, shouldStartGravity?: boolean}} 런타임 실행 의도
  */
 export function resolveMoveIntent({ outcome, hasFallTimer }) {
     if (outcome.status === "lock") {
