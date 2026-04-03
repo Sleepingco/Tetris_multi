@@ -15,7 +15,6 @@
 export function checkMatch({
     gameState,
     phases,
-    runtime,
     findFullRows,
     clearFilledLines,
     playLineClearSfx,
@@ -23,6 +22,7 @@ export function checkMatch({
     renderBoard,
     generateNewBlock,
     renderScore,
+    stopGravity,
 }) {
     const { fullRows } = findFullRows(gameState.board)
     if (fullRows.length === 0) {
@@ -38,7 +38,7 @@ export function checkMatch({
 
     gameState.phase = phases.LINE_CLEARING
     gameState.inputQueue = []
-    clearInterval(runtime.fallTimer)
+    stopGravity()
     playLineClearSfx()
 
     addLineClearEffect(fullRows, () => {

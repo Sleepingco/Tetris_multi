@@ -5,12 +5,18 @@
 현재 목표는 **멀티플레이(WebSocket 기반) 모드 구현**입니다.  
 이후에 AI 상대 구현을 계획하고 있습니다.
 
+## 🛠 기술 스택
+- 백엔드: `Node.js`
+- 프론트엔드: 현재 구조 유지 중, 추후 마이그레이션 예정
+
 - 싱글플레이 엔진 완성  
 - 이제 멀티플레이(WebSocket 기반) 구현이 1차 목표  
 - 이후에 AI 상대 구현 예정  
 
-이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발하여,  
-배열 기반의 클린한 엔진과 렌더러로 분리하는 작업을 진행 중입니다.  
+이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
+현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
+싱글플레이는 `src/game/tetris.js`가 런타임을 조율하고,  
+입력/이동/라인 클리어/조각 스폰/렌더/UI가 모듈별로 나뉘어 있습니다.  
 목표는 단순히 Tetris를 완성하는 것이 아니라,  
 개발자가 모든 컴포넌트를 직접 설계하고 구현하며  
 코딩 능력과 아키텍처 사고, 디버깅 직관을 키우는 데 있습니다.
@@ -20,24 +26,35 @@
 ## 🧱 디렉터리 구조
 
 src/
-├── html/
-│   ├── index.html           # lobby
-│   ├── tetrisSingle.html    # Single-player mode
-│   └── (future) tetrisAI.html
-├── js/
-│   ├── tetris.js            # Current main logic (DOM-driven)
+├── app.js                   # Node.js server entry
+├── core/
+│   ├── board.js             # Board allocation, collision, lock, clear
+│   └── step.js              # Move intent / move attempt resolution
+├── game/
+│   ├── tetris.js            # Single-player runtime coordinator
 │   ├── blocks.js            # Block definitions
-│   ├── engine/              # Planned array-based engine modules
-│   │   ├── board.js         # Board array management
-│   │   ├── collisions.js    # canPlace(), lockPiece(), etc.
-│   │   ├── step.js          # Main tick/update loop
-│   │   └── utils.js
-│   ├── chat.js              # Multiplayer communication logic
-│   └── config.js            # Constants (rows, cols, fall speed, etc.)
-├── css/
-│   ├── style.css
-│   └── tetris.css
-└── app.js                   # Entry point and event wiring
+│   ├── config.js            # Game constants
+│   ├── input.js             # Keyboard input attach / normalize
+│   ├── actionExecution.js   # Action dispatch and runtime-side execution
+│   ├── moveExecution.js     # Rotation / move intent handling
+│   ├── pieceExecution.js    # Queue, spawn, hold logic
+│   ├── lineExecution.js     # Line clear flow
+│   ├── stateFactory.js      # Game state creation
+│   ├── stateSerialization.js# Multiplayer/serialization prep
+│   ├── ui.js                # DOM UI adapter
+│   └── sound.js             # BGM / SFX
+├── net/
+│   └── chat.js              # Multiplayer communication logic
+├── pages/
+│   ├── index.html           # Main entry
+│   ├── multiLobby.html      # Multiplayer lobby
+│   ├── tetrisSingle.html    # Single-player mode
+│   └── tetrisMulti.html     # Multiplayer board page
+├── render/
+│   └── tetrisRender.js      # Canvas / preview rendering helpers
+└── styles/
+    ├── style.css
+    └── tetris.css
 
 ---
 
@@ -53,7 +70,8 @@ src/
   라고 하면 코드 생성을 중단하고 멘토 모드(개념 + 힌트)로 전환
 
 ### 🧩 리팩토링 가이드
-- DOM 기반 로직 → 배열 기반 엔진으로 점진적 마이그레이션 지원
+- 단일 거대 파일 로직 → 실행 책임별 모듈 분리 리팩토링 지원
+- 배열 기반 상태와 렌더/UI 계층 분리를 유지하는 방향으로 지원
 - 한 번에 전체 파일 리팩토링 금지, 모듈별 점진적 변경 권장
 - 호환성 유지 (수정 후에도 게임 플레이 가능)
 - 제안 시:  
@@ -139,15 +157,16 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 
 ✅ 현재 단계
 	•	싱글플레이 엔진 완성
-	•	로직과 렌더링 분리 진행 중
-	•	하드 드롭, 회전, 점수 체계 작동 중
+	•	입력 / 이동 / 조각 / 라인클리어 / 렌더 / UI 모듈 분리 진행
+	•	하드 드롭, 회전, 점수, 홀드, 다음 블록 미리보기 작동 중
+	•	캔버스 기반 보드 렌더링 적용
 
 🧩 다음 단계
 	1. 멀티플레이(WebSocket 기반) 구현 — 현재 최우선 목표  
-	   (멀티플레이어 동기화, 통신 로직 개발)  
+	   (멀티플레이어 동기화, 통신 로직, 상태 직렬화 연결)  
 	2. AI 상대 구현 (규칙 기반 → 머신러닝)  
-	3. 배열 기반 충돌 및 라인 클리어 로직 완성  
-	4. step(game, input) 기반 결정론적 루프 구조화
+	3. step(game, input) 기반 결정론적 루프 구조화
+	4. 멀티/AI에서 재사용 가능한 상태/렌더 경계 정리
 
 🎯 학습 목표
 	• DOM 탐색과 이벤트 위임 이해  
@@ -164,6 +183,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 - "배열 기반 canPlace() 로직을 직접 만들어보려는데 설계 순서 알려줘."
 - "줄이 다 찼을 때 배열 기준으로 어떻게 클리어할까?"
 - "멀티플레이 통신에서 어떤 데이터를 보내야 해?"
+- "pieceExecution이랑 lineExecution 책임을 어떻게 나누는 게 좋아?"
 - "AI가 블록을 둘 위치를 판단하려면 어떤 특징을 써야 해?"
 
 
@@ -204,5 +224,8 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 
 사용자는 DOM 기반 로직에서 배열 기반 엔진, 멀티플레이, AI로  
 단계별로 Tetris 게임 시스템을 구축 중입니다.
+
+현재 코드는 `game / core / render / net / pages / styles` 기준으로 분리되어 있으며,  
+문서 설명이나 변경 제안도 이 실제 구조를 기준으로 맞춰야 합니다.
 
 모든 설명과 수정은 사용자가 이해하고 성장하는 데 도움을 주는 데 집중합니다.

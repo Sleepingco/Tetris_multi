@@ -11,12 +11,12 @@
  * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
  * @returns {string} 다음 조각 타입
  */
-export function pickRandomPiece(gameState, pieceTypes) {
+export function pickRandomPiece(gameState, pieceTypes, rng) {
     if (!gameState.bag || gameState.bag.length === 0) {
         gameState.bag = [...pieceTypes]
         for (let i = gameState.bag.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1))
-            ;[gameState.bag[i], gameState.bag[j]] = [gameState.bag[j], gameState.bag[i]]
+            const j = Math.floor(rng() * (i + 1));
+            [gameState.bag[i], gameState.bag[j]] = [gameState.bag[j], gameState.bag[i]]
         }
     }
     return gameState.bag.pop()
@@ -30,9 +30,9 @@ export function pickRandomPiece(gameState, pieceTypes) {
  * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
  * @returns {void}
  */
-export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes) {
+export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng) {
     while (gameState.pieceQueue.length < nextQueueSize + 1) {
-        gameState.pieceQueue.push(pickRandomPiece(gameState, pieceTypes))
+        gameState.pieceQueue.push(pickRandomPiece(gameState, pieceTypes, rng))
     }
 }
 
@@ -44,10 +44,10 @@ export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes) {
  * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
  * @returns {string} 지금 스폰할 조각 타입
  */
-export function takeNextFromQueue(gameState, nextQueueSize, pieceTypes) {
-    ensureQueueFilled(gameState, nextQueueSize, pieceTypes)
+export function takeNextFromQueue(gameState, nextQueueSize, pieceTypes, rng) {
+    ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng)
     const nextType = gameState.pieceQueue.shift()
-    ensureQueueFilled(gameState, nextQueueSize, pieceTypes)
+    ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng)
     return nextType
 }
 
@@ -64,6 +64,7 @@ export function generateNewBlock({
     spawnCol,
     nextQueueSize,
     pieceTypes,
+    rng,
     setActivePiece,
     renderNextPieces,
     renderBlocks,
@@ -72,7 +73,7 @@ export function generateNewBlock({
     gameState.phase = phases.PLAYING
     startGravity()
 
-    const currentType = takeNextFromQueue(gameState, nextQueueSize, pieceTypes)
+    const currentType = takeNextFromQueue(gameState, nextQueueSize, pieceTypes, rng)
     const nextActivePiece = {
         pieceType: currentType,
         row: spawnRow,
@@ -99,6 +100,7 @@ export function holdPiece({
     spawnCol,
     nextQueueSize,
     pieceTypes,
+    rng,
     setActivePiece,
     renderHoldPiece,
     renderNextPieces,
@@ -117,7 +119,7 @@ export function holdPiece({
         incomingType = holdPieceType
         gameState.holdPieceType = currentType
     } else {
-        incomingType = takeNextFromQueue(gameState, nextQueueSize, pieceTypes)
+        incomingType = takeNextFromQueue(gameState, nextQueueSize, pieceTypes, rng)
         gameState.holdPieceType = currentType
     }
 

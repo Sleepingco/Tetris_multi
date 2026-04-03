@@ -6,7 +6,7 @@ import {
     clearFilledLines,
 } from "../core/board.js"
 import { resolveMoveAttempt, resolveMoveIntent } from "../core/step.js"
-import { initGameSound, tryPlayMusic, playLineClearSfx } from "./sound.js"
+import { playLineClearSfx } from "./sound.js"
 import {
     BOARD_ROWS,
     BOARD_COLS,
@@ -25,7 +25,6 @@ import {
     buildNextPreview as buildNextPreviewDom,
 } from "../render/tetrisRender.js"
 import { createGameState } from "./stateFactory.js"
-import { attachKeyboardInput } from "./input.js"
 import { applyMoveIntent } from "./moveExecution.js"
 import {
     ensureQueueFilled as fillPieceQueue,
@@ -43,15 +42,6 @@ const NEXT_QUEUE_SIZE = 2
 // 보드 상태, 입력, 중력, 고정 판정, UI 렌더링을 조율한다.
 // =============================
 
-const boardCanvasEl = document.querySelector("canvas#tetrisBoardCanvas")
-const multiCanvasEls = document.querySelectorAll("canvas.tetrisBoardCanvas")
-const gameOverEl = document.querySelector(".game-text")
-const scoreEl = document.querySelector(".score")
-const restartBtn = document.querySelector(".game-text > button")
-const nextPreviewEl = document.querySelector(".next-preview")
-const holdPreviewEl = document.querySelector(".hold-preview")
-const soundToggleBtn = document.getElementById("soundToggle")
-
 const PIECE_TYPES = Object.keys(BLOCKS)
 const ROWS = BOARD_ROWS
 const COLS = BOARD_COLS
@@ -65,33 +55,45 @@ const GAME_PHASE = {
     GAME_OVER: "gameOver",
 }
 
-const gameState = createGameState({
-    spawnRow: SPAWN_ROW,
-    spawnCol: SPAWN_COL,
-    fallIntervalMs: INITIAL_FALL_INTERVAL_MS,
-    initialPhase: GAME_PHASE.PLAYING,
-})
+export function createTetrisRuntime({
+    boardCanvasEl = null,
+    multiCanvasEls = [],
+    gameOverEl = null,
+    scoreEl = null,
+    nextPreviewEl = null,
+    holdPreviewEl = null,
+    rng = Math.random,
+}) {
+    const gameState = createGameState({
+        spawnRow: SPAWN_ROW,
+        spawnCol: SPAWN_COL,
+        fallIntervalMs: INITIAL_FALL_INTERVAL_MS,
+        initialPhase: GAME_PHASE.PLAYING,
+    })
 
-const runtime = {
-    boardCtx: null,
-    fallTimer: undefined,
-    inputTimer: undefined,
-    animationFrameId: null,
-    detachKeyboard: null,
-}
+    const runtime = {
+        boardCtx: null,
+        inputTimer: undefined,
+        animationFrameId: null,
+        detachKeyboard: null,
+        gravityRunning: false,
+        gravityAccumulatorMs: 0,
+        lastTickAt: 0,
+        currentTick: 0,
+    }
 
-const ui = createGameUi({
-    scoreEl,
-    gameOverEl,
-    nextPreviewEl,
-    holdPreviewEl,
-    nextQueueSize: NEXT_QUEUE_SIZE,
-    previewSize: NEXT_PREVIEW_SIZE,
-    buildNextPreview: buildNextPreviewDom,
-    buildHoldPreview: buildHoldPreviewDom,
-    renderNextPieces: renderNextPiecesDom,
-    renderHoldPiece: renderHoldPieceDom,
-})
+    const ui = createGameUi({
+        scoreEl,
+        gameOverEl,
+        nextPreviewEl,
+        holdPreviewEl,
+        nextQueueSize: NEXT_QUEUE_SIZE,
+        previewSize: NEXT_PREVIEW_SIZE,
+        buildNextPreview: buildNextPreviewDom,
+        buildHoldPreview: buildHoldPreviewDom,
+        renderNextPieces: renderNextPiecesDom,
+        renderHoldPiece: renderHoldPieceDom,
+    })
 
 // =============================
 // 게임 초기화
@@ -106,7 +108,7 @@ const ui = createGameUi({
  *
  * @returns {void}
  */
-function init() {
+function init({ autoStart = true } = {}) {
     stopGameLoops()
     gameState.score = 0
     ui.renderScore(gameState.score)
@@ -116,11 +118,11 @@ function init() {
     gameState.holdUsedThisDrop = false
     gameState.inputQueue = []
     gameState.phase = GAME_PHASE.PLAYING
-    startInputLoop();
     gameState.board = createEngineBoard(ROWS, COLS)
     initBoardContext()
     ui.buildHoldPreview()
     ui.buildNextPreview()
+    runtime.currentTick = 0
 
     setActivePiece({
         pieceType: "",
@@ -134,7 +136,10 @@ function init() {
     renderHoldPiece()
 
     renderBoard()
-    generateNewBlock()
+    if (autoStart) {
+        startInputLoop()
+        generateNewBlock()
+    }
 }
 
 /**
@@ -151,6 +156,7 @@ function generateNewBlock() {
         spawnCol: SPAWN_COL,
         nextQueueSize: NEXT_QUEUE_SIZE,
         pieceTypes: PIECE_TYPES,
+        rng,
         renderNextPieces,
         renderBlocks,
         startGravity,
@@ -169,12 +175,13 @@ function holdPiece() {
         spawnCol: SPAWN_COL,
         nextQueueSize: NEXT_QUEUE_SIZE,
         pieceTypes: PIECE_TYPES,
+        rng,
         setActivePiece,
         renderHoldPiece,
         renderNextPieces,
         renderBlocks,
         startGravity,
-        stopGravity: () => clearInterval(runtime.fallTimer),
+        stopGravity,
     })
 }
 
@@ -191,7 +198,10 @@ function holdPiece() {
 function enqueueInput(action) {
     if (!action) return
     if (!canProcessPlayerInput()) return
-    gameState.inputQueue.push(action)
+    gameState.inputQueue.push({
+        tick: runtime.currentTick + 1,
+        action
+    })
 }
 
 /**
@@ -200,13 +210,17 @@ function enqueueInput(action) {
  * @param {number} [maxPerTick=8] - 이번 틱에서 처리할 최대 액션 수
  * @returns {void}
  */
-function drainInputQueue(maxPerTick = 8) {
+function drainInputQueue(currentTick, maxPerTick = 8) {
     if (!canProcessPlayerInput()) return
     let count = 0
     while (gameState.inputQueue.length > 0 && count < maxPerTick) {
-        const action = gameState.inputQueue.shift()
-        handleAction(action)
+        const nextInput = gameState.inputQueue[0]
+        if (nextInput.tick > currentTick) break
+
+        gameState.inputQueue.shift()
+        handleAction(nextInput.action)
         count++
+        if (!canProcessPlayerInput()) return
     }
 }
 
@@ -222,9 +236,35 @@ function handleAction(action) {
         renderBlocks,
         canPlace,
         renderScore: ui.renderScore,
-        stopGravity: () => clearInterval(runtime.fallTimer),
+        stopGravity,
         holdPiece,
     })
+}
+
+/**
+ * 고정 tick 안에서 입력 소비와 중력 진행을 함께 처리한다.
+ * - 입력 큐를 먼저 제한 개수만큼 비운다.
+ * - 그 뒤 누적된 시간만큼 자동 하강을 적용한다.
+ *
+ * @param {number} deltaMs - 직전 tick 이후 경과 시간
+ * @returns {void}
+ */
+function processTick(deltaMs) {
+    if (!canProcessPlayerInput()) return
+    runtime.currentTick++
+    drainInputQueue(runtime.currentTick, 4)
+    if (!canProcessPlayerInput()) return
+    if (!runtime.gravityRunning) return
+
+    runtime.gravityAccumulatorMs += deltaMs
+
+    while (runtime.gravityAccumulatorMs >= gameState.fallIntervalMs) {
+        shiftActivePiece(gameState, 1, 0)
+        renderBlocks("fall")
+        runtime.gravityAccumulatorMs -= gameState.fallIntervalMs
+
+        if (!canProcessPlayerInput()) return
+    }
 }
 
 // =============================
@@ -259,7 +299,7 @@ function renderBlocks(moveType = "") {
 
     const intent = resolveMoveIntent({
         outcome,
-        hasFallTimer: Boolean(runtime.fallTimer),
+        hasFallTimer: runtime.gravityRunning,
     })
     applyMoveIntent(intent, {
         gameState,
@@ -338,6 +378,7 @@ function checkMatch() {
         renderBoard,
         generateNewBlock,
         renderScore: ui.renderScore,
+        stopGravity,
     })
 }
 
@@ -361,11 +402,18 @@ function canPlace({ pieceType, rotation, row, col }) {
  * @returns {void}
  */
 function startGravity() {
-    clearInterval(runtime.fallTimer)
-    runtime.fallTimer = setInterval(() => {
-        shiftActivePiece(gameState, 1, 0)
-        renderBlocks("fall")
-    }, gameState.fallIntervalMs)
+    runtime.gravityRunning = true
+    runtime.gravityAccumulatorMs = 0
+}
+
+/**
+ * 자동 하강을 멈추고 누적 시간을 비운다.
+ *
+ * @returns {void}
+ */
+function stopGravity() {
+    runtime.gravityRunning = false
+    runtime.gravityAccumulatorMs = 0
 }
 
 /**
@@ -375,8 +423,12 @@ function startGravity() {
  */
 function startInputLoop() {
     clearInterval(runtime.inputTimer)
+    runtime.lastTickAt = performance.now()
     runtime.inputTimer = setInterval(() => {
-        drainInputQueue(4)
+        const now = performance.now()
+        const deltaMs = now - runtime.lastTickAt
+        runtime.lastTickAt = now
+        processTick(deltaMs)
     }, INPUT_TICK_MS)
 }
 
@@ -386,12 +438,14 @@ function startInputLoop() {
  * @returns {void}
  */
 function stopGameLoops() {
-    clearInterval(runtime.fallTimer)
     clearInterval(runtime.inputTimer)
     if (runtime.animationFrameId) cancelAnimationFrame(runtime.animationFrameId)
-    runtime.fallTimer = undefined
+    runtime.currentTick = 0
     runtime.inputTimer = undefined
     runtime.animationFrameId = null
+    runtime.gravityRunning = false
+    runtime.gravityAccumulatorMs = 0
+    runtime.lastTickAt = 0
 }
 
 /**
@@ -533,7 +587,7 @@ function addLineClearEffect(rows, onComplete) {
  * @returns {void}
  */
 function ensureQueueFilled() {
-    fillPieceQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES)
+    fillPieceQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES, rng)
 }
 
 /**
@@ -603,22 +657,14 @@ function setActivePiece(piece) {
     gameState.activePiece.col = piece.col
 }
 
-// =============================
-// 초기 진입
-// 사운드, 키보드 입력, 초기 게임 상태를 연결한다.
-// =============================
-initGameSound(soundToggleBtn);
-runtime.detachKeyboard = attachKeyboardInput({
-    enqueueAction: enqueueInput,
-    onUserInteract: tryPlayMusic,
-})
-// =============================
-// 재시작 이벤트
-// 게임오버 오버레이를 닫은 뒤 게임을 새로 시작한다.
-// =============================
-restartBtn.addEventListener("click", () => {
-    ui.hideGameOver()
-    init()
-});
-
-init();
+    return {
+        init,
+        enqueueInput,
+        render: renderBoard,
+        stop: stopGameLoops,
+        hideGameOver: ui.hideGameOver,
+        showGameOver: ui.showGameOver,
+        runtime,
+        gameState,
+    }
+}

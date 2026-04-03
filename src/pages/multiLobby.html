@@ -1,14 +1,138 @@
 <!DOCTYPE html>
-<html lang="kr">
-
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>멀티플레이 로비 - Tetris Multi</title>
+    <!-- style.css의 모던 메인 테마 적용 -->
+    <link rel="stylesheet" href="../styles/style.css">
 </head>
-
 <body>
+  <div id="app-content">
+    <div class="container">
+      <!-- 헤더 -->
+    <header class="header">
+      <h1 class="brand">Multi Lobby</h1>
+      <nav class="nav">
+        <button id="soundToggle" type="button" class="btn ghost" aria-pressed="false">사운드 켜기</button>
+        <button id="themeToggle" type="button" class="btn ghost" aria-pressed="false">다크 모드</button>
+        <a href="index.html" class="btn ghost">← 홈으로</a>
+      </nav>
+    </header>
 
+    <main class="main" style="padding-top: 10px;">
+        <div class="lobby-grid">
+            <!-- 왼쪽: 채팅 & 정보 사이드 (글래스모피즘 카드) -->
+            <section class="card chat-panel">
+                <h2 class="card-title" style="margin-bottom: 4px;">Global Chat</h2>
+                <div class="chat-messages" id="chatMessages">
+                    <div class="chat-msg"><span class="system">[System]</span> 로비 서버에 연결되었습니다. 대화나 게임 매칭을 시작하세요!</div>
+                </div>
+                <form class="chat-input-group" id="chatForm">
+                    <input type="text" id="chatInput" class="input-box" placeholder="메시지를 입력하세요..." autocomplete="off">
+                    <button type="submit" class="btn primary">전송</button>
+                </form>
+            </section>
+
+            <!-- 오른쪽: 유저 액션 패널 -->
+            <section class="action-panel">
+                <!-- 빠른 매칭 -->
+                <div class="action-box">
+                    <h3>Quick Match</h3>
+                    <p>현재 접속 중인 다른 플레이어와 무작위로 실시간 매칭됩니다.</p>
+                    <button id="btnQuickMatch" class="btn primary btn-match">매칭 시작 (Play)</button>
+                </div>
+
+                <!-- 프라이빗 룸 코드 입장 -->
+                <div class="action-box">
+                    <h3>Join by Code</h3>
+                    <p>친구가 생성한 방의 고유 코드를 입력하여 전용 방으로 입장하세요.</p>
+                    <div class="join-group">
+                        <input type="text" id="roomCodeInput" class="input-box input-code" placeholder="ENTER CODE" maxlength="8">
+                        <button id="btnJoinCode" class="btn">방 입장 (Join)</button>
+                    </div>
+                </div>
+                
+                <!-- 임시 테스트: 생성 -->
+                <div class="action-box" style="padding: 16px;">
+                    <p style="text-align:center; font-size:0.85rem;">또는 새로운 프라이빗 방을 생성합니다.</p>
+                    <button id="btnCreateRoom" class="btn ghost" style="width:100%;">방 생성 (Create Room)</button>
+                </div>
+            </section>
+        </div>
+    </main>
+  </div>
+  
+  <script type="module">
+    import { initLobbySound } from "../game/sound.js";
+
+    // 1. 테마 스크립트 (기존 index.html 재사용)
+    (function initTheme(){
+      const saved = localStorage.getItem('theme');
+      const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const theme = saved || (prefersDark ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+      const btn = document.getElementById('themeToggle');
+      if (btn) btn.textContent = theme === 'dark' ? '라이트 모드' : '다크 모드';
+    })();
+
+    const toggleBtn = document.getElementById('themeToggle');
+    if (toggleBtn) {
+      toggleBtn.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme') || 'light';
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        toggleBtn.textContent = next === 'dark' ? '라이트 모드' : '다크 모드';
+        toggleBtn.setAttribute('aria-pressed', String(next === 'dark'));
+      });
+    }
+    
+    // 2. 채팅 데모 로직
+    const chatForm = document.getElementById('chatForm');
+    const chatInput = document.getElementById('chatInput');
+    const messages = document.getElementById('chatMessages');
+
+    chatForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const msg = chatInput.value.trim();
+        if(!msg) return;
+        
+        appendMessage('user', msg);
+        chatInput.value = '';
+    });
+
+    function appendMessage(type, text) {
+        const div = document.createElement('div');
+        div.className = 'chat-msg';
+        const tag = type === 'system' ? '<span class="system">[System]</span>' : '<span class="user">[Guest]</span>';
+        div.innerHTML = `${tag} ${text.replace(/</g, "&lt;").replace(/>/g, "&gt;")}`;
+        messages.appendChild(div);
+        messages.scrollTop = messages.scrollHeight; // 자동 스크롤
+    }
+    
+    // 3. 버튼 이벤트 (향후 WebSocket 연동용)
+    document.getElementById('btnQuickMatch').addEventListener('click', () => {
+        appendMessage('system', '서버에서 대기 중인 플레이어를 찾고 있습니다... (WebSocket 구현 필요)');
+    });
+    
+    document.getElementById('btnJoinCode').addEventListener('click', () => {
+        const code = document.getElementById('roomCodeInput').value.trim();
+        if(!code) {
+            alert("방 코드를 입력해주세요.");
+            return;
+        }
+        appendMessage('system', `방 코드 [${code.toUpperCase()}]로 입장을 시도합니다...`);
+    });
+
+    document.getElementById('btnCreateRoom').addEventListener('click', () => {
+        appendMessage('system', '새로운 프라이빗 방을 생성합니다... 서버 응답 대기중...');
+    });
+
+    // 4. 로비 사운드 적용
+    initLobbySound(document.getElementById('soundToggle'));
+  </script>
+  </div>
+  <script type="module" src="../net/router.js"></script>
 </body>
-
 </html>

@@ -524,3 +524,75 @@ src/css/tetris.css: lineClearFlash 애니메이션으로 흰색 플래시+스케
   `src/game/ui.js`,
   `src/game/actionExecution.js`
   통과
+
+---
+
+# 2026년 3월 30일
+최근 변경 사항 정리
+
+## 오디오 무중단 재생을 위한 SPA(PJAX) 라우팅 도입
+메인 페이지(`index.html`)와 멀티 로비(`multiLobby.html`) 간 이동 시 배경음악(BGM)이 끊기지 않고 자연스럽게 이어지도록 **바닐라 JS 기반의 AJAX 라우터(`src/net/router.js`)**를 도입했습니다.
+
+### 🛠 기능적 변경 사항
+- **`src/net/router.js` 신설:** HTML 내의 모든 `<a>` 태그 클릭 이벤트를 가로채고(`preventDefault`), 대상을 `fetch`로 불러와 `<div id="app-content">` 구역만 갈아끼웁니다.
+- **히스토리(주소창) 관리:** `history.pushState`와 `popstate` 이벤트를 처리하여 뒤로 가기 및 앞으로 가기가 브라우저 순정 기능처럼 완벽히 동작합니다.
+- **스크립트 생명주기 제어:** `innerHTML`로 교체된 DOM 안의 `<script>` 태그는 브라우저 정책상 자동으로 실행되지 않습니다. 이를 마운트하기 위해 라우터 모듈 내부에 `executeScripts()` 함수를 두어, 새로 삽입된 본문의 `<script>` 요소를 동적으로 복제 파싱하여 강제로 재실행되게 만들었습니다.
+- **스타일 전역화:** 로비 페이지(`multiLobby.html`) 내부에 존재하던 전용 `<style>` 블록을 전역 체계인 `style.css` 최하단에 편입시켜, AJAX 렌더링 시 간헐적으로 발생할 수 있는 스타일 깜빡임이나 누락을 완벽히 방지했습니다.
+
+### 🧠 왜 이렇게 짰고, 무엇을 배워야 할까? (이론과 아키텍처)
+1. **페이지 이동과 자원 소멸의 원리**
+   일반적인 MPA(Multi-Page Application) 상에서 다른 HTML로 화면을 넘기면, 브라우저는 이전 문서의 DOM 구조는 물론 힙 메모리에 상주하는 자바스크립트 인스턴스(`Audio`, `WebSocket` 등)를 전부 **가비지 컬렉팅(소멸)** 시킵니다. 따라서 음악이나 웹소켓 연결을 장시간 한 번에 묶어 유지하려면 "실제로 페이지를 엎지 않으면서 본문 데이터만 갈아치우는" **SPA(Single Page Application)** 기법이 필수적입니다.
+2. **선택적 라우팅의 미학 (안정성과 생명주기 관리)**
+   이 패치의 핵심 목적은 오디오 객체 유지 구역(로비 ↔ 메인)을 묶는 것이었습니다. 하지만 정반대로 `tetris.js`처럼 거대한 `setInterval` 루프와 전역 키보드 이벤트가 얽혀 있는 하드코어한 엔진 모듈을 SPA 내부에서 무작정 스와핑하면 지옥의 메모리 누수와 좀비 이벤트가 발생합니다.
+   따라서 `router.js`에는 `href.includes("tetrisSingle.html")`인 경우 강제로 일반(Hard) 이동 동작을 허락해, **브라우저가 기존 메모리를 깔끔하게 전부 사멸시켜주는 기본 동작을 전략적으로 이용**했습니다. (직접 메모리를 닦는 것보다 브라우저에게 청소를 맡기는 것이 구조적으로 훨씬 안전할 때가 있습니다.)
+3. **HTML 파싱과 DOM 스와핑의 정수**
+   `new DOMParser().parseFromString(html, "text/html")`를 사용해 문자열 형태의 HTML 텍스트를 응답받아 메모리상에 독립된 문서를 구축하고, 필요한 부분(`.querySelector('#app-content')`)만 적출해내는 흐름은, 리액트나 Vue.js와 같은 최신 프론트엔드 프레임워크가 내부적으로 사용하는 스와핑 기법의 태동이 되는 기초 원리입니다. 프레임워크 없이 이를 바닐라 JS로 짜보면 DOM의 렌더링 과정을 온전히 통제하는 직관을 체득할 수 있습니다.
+
+---
+
+# 2026년 4월 3일
+최근 변경 사항 정리
+
+## 버그 픽스 (Wall Kick 및 블록 회전 버그 원천 해결)
+- **블록 좌표 및 기준점 SRS(Super Rotation System) 표준 탑재**
+  `src/game/blocks.js` 내부에 하드코딩 되어있던 J, L, S, T, Z 블록의 2차원 배열 데이터가 표준 SRS의 3x3 Bounding Box(격자) 규격과 정확히 일치하지 않고 각각 좌우로 어긋나 정렬되어 있던 문제를 발견하고 수정했습니다.
+- **월킥(Wall Kick) 오작동 방지**
+  블록의 회전 중심축이 어긋나면서 Z 블록 등의 넓은 면을 벽에 최대한 밀착시키고 회전시킬 경우, `step.js` 엔진의 시스템이 월킥 보정 좌표점(offset)을 제안했음에도 기준점이 달라 보정치 적용에 실패하는 현상을 완전히 해결했습니다. 이제 모든 블록이 표준 규격에 안착되어 있어 벽에 바짝 붙은 상태에서도 데이터를 정확히 물고 자연스럽게 밀착+회전(킥 동작)이 이루어집니다.
+
+---
+
+# 2026년 4월 3일 (추가)
+최근 변경 사항 정리
+
+## 멀티플레이 준비용 시간축 정리
+- **입력/중력 이중 인터벌 구조를 단일 tick 흐름으로 정리**
+  `src/game/tetris.js`에 `processTick(deltaMs)`를 추가하고, 입력 소비와 자동 하강이 같은 tick 안에서 순서대로 처리되도록 바꿨습니다. 이전처럼 입력 루프와 중력 루프가 각각 상태를 바꾸는 구조를 줄여, 멀티플레이에서 시간축을 맞추기 쉬운 형태로 정리했습니다.
+
+- **입력 큐를 tick-aware 구조로 변경**
+  `enqueueInput()`이 단순 문자열 대신 `{ tick, action }` 형태의 명령 객체를 큐에 넣도록 변경했습니다. `drainInputQueue(currentTick)`는 현재 tick 이하의 입력만 처리하고, 미래 tick 입력은 남겨두도록 바꿨습니다. (`src/game/tetris.js`)
+
+## 조각 공급 구조 개선
+- **RNG 주입 경로 확보**
+  `src/game/pieceExecution.js`의 `pickRandomPiece`, `ensureQueueFilled`, `takeNextFromQueue`, `generateNewBlock`, `holdPiece`가 외부 RNG를 전달받을 수 있도록 수정했습니다. 현재는 임시로 `Math.random`을 주입하지만, 이후 server bag 또는 seed 기반 PRNG로 교체할 수 있는 구조를 열어두었습니다.
+
+## 런타임 팩토리화 시작
+- **`createTetrisRuntime(...)` 도입**
+  `src/game/tetris.js`가 페이지 로드 시 전역으로 게임 1판을 바로 만드는 구조에서 벗어나, 게임 한 판을 생성하는 `createTetrisRuntime(...)` 팩토리를 export하도록 변경했습니다. `gameState`, `runtime`, `ui`가 이제 팩토리 내부에서 플레이어별로 생성될 수 있는 구조로 이동했습니다.
+
+- **싱글 페이지 부트스트랩 분리**
+  싱글 플레이 페이지 연결 책임을 `src/game/singleGamePage.js`로 분리했습니다. DOM query, 사운드 초기화, 키보드 연결, 재시작 버튼 연결은 이제 부트스트랩 파일이 담당하고, `src/game/tetris.js`는 런타임 생성기 역할에 집중합니다. `src/pages/tetrisSingle.html`도 새 부트스트랩 파일을 로드하도록 변경했습니다.
+
+- **멀티 페이지용 런타임 자리 생성**
+  `src/game/multiGamePage.js`를 추가해 `src/pages/tetrisMulti.html`에서 `localGame`과 `remoteGame` 두 개의 runtime을 만들 수 있는 최소 구조를 마련했습니다. 현재는 로컬 플레이어만 입력을 받고, 원격 플레이어는 `init({ autoStart: false })`로 빈 보드/UI만 준비하는 단계입니다.
+
+## 현재 의미
+- 이번 변경으로 구조가 `싱글 게임 1판 전역 실행`에서 `플레이어별 런타임 생성 가능 구조`로 넘어가기 시작했습니다.
+- 아직 네트워크 동기화(`applyAction`, `applySnapshot`, server bag 공급`)는 붙지 않았지만, 멀티플레이 본격 구현을 위한 엔진/페이지 경계가 처음으로 분리되었습니다.
+
+## 검증
+- 문법 확인: `node --check` 기준
+  `src/game/tetris.js`,
+  `src/game/pieceExecution.js`,
+  `src/game/singleGamePage.js`,
+  `src/game/multiGamePage.js`
+  통과

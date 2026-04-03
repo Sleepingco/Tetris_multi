@@ -3,13 +3,13 @@
 // =============================
 
 const BLOCK_COLORS = {
-    tree: "#67c23a",
-    bar: "#409eff",
-    square: "#fbf83c",
-    zee: "#cd2929",
-    eleft: "#3cfb78",
-    eright: "#f56c6c",
-    ess: "#7ed3ff"
+    tree: "#8B5CF6",   // Violet
+    bar: "#0EA5E9",    // Sky
+    square: "#F59E0B", // Amber
+    zee: "#EF4444",    // Red
+    eleft: "#3B82F6",  // Blue
+    eright: "#F97316", // Orange
+    ess: "#10B981"     // Emerald
 };
 
 const CELL_SIZE = 30; // 300px width / 10 cols
@@ -31,25 +31,29 @@ export function getBoardContext(canvasEl) {
 function drawBlock(ctx, col, row, color) {
     const x = col * CELL_SIZE;
     const y = row * CELL_SIZE;
+    const padding = 1;
+    const size = CELL_SIZE - padding * 2;
 
-    // 기본 블록 칠하기
+    // 모던하고 심플한 플랫 버튼형 디자인
     ctx.fillStyle = color;
-    ctx.fillRect(x, y, CELL_SIZE, CELL_SIZE);
+    if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(x + padding, y + padding, size, size, 4);
+        ctx.fill();
+    } else {
+        ctx.fillRect(x + padding, y + padding, size, size);
+    }
 
-    // 하이라이트 효과 (모서리 입체감)
-    ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
-    ctx.fillRect(x, y, CELL_SIZE, 4);
-    ctx.fillRect(x, y, 4, CELL_SIZE);
-
-    // 그림자 효과
-    ctx.fillStyle = "rgba(0, 0, 0, 0.3)";
-    ctx.fillRect(x, y + CELL_SIZE - 4, CELL_SIZE, 4);
-    ctx.fillRect(x + CELL_SIZE - 4, y, 4, CELL_SIZE);
-
-    // 테두리
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, CELL_SIZE, CELL_SIZE);
+    // 안쪽 상단의 은은한 하이라이트 (글래스 느낌 보조)
+    ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+    if (ctx.roundRect) {
+        ctx.beginPath();
+        // 상단 절반 정도에 하이라이트
+        ctx.roundRect(x + padding, y + padding, size, size * 0.4, 4);
+        ctx.fill();
+    } else {
+        ctx.fillRect(x + padding, y + padding, size, size * 0.4);
+    }
 }
 /**
  * 다음 블록 미리보기 DOM(4x4)을 2개 생성하고 셀 참조를 반환한다.
@@ -116,7 +120,7 @@ export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks,
     ctx.clearRect(0, 0, width, height);
 
     // === 배경 그리드 선(가이드) 그리기 ===
-    ctx.strokeStyle = "rgba(198, 241, 255, 0.08)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let r = 0; r <= rows; r++) { ctx.moveTo(0, r * CELL_SIZE); ctx.lineTo(width, r * CELL_SIZE); }

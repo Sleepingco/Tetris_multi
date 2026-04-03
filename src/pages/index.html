@@ -9,8 +9,9 @@
 </head>
 
 <body>
-  <div class="container">
-    <header class="header">
+  <div id="app-content">
+    <div class="container">
+      <header class="header">
       <h1 class="brand">Tetris Multi</h1>
       <nav class="nav">
         <button id="themeToggle" type="button" class="btn ghost" aria-pressed="false">다크 모드</button>
@@ -24,7 +25,7 @@
         <p class="hero-desc">이 게임은 다양한 사람들이 함께 테트리스를 하는 게임입니다.<br/>많이 즐겨 주셨으면 좋겠습니다.</p>
         <div class="cta">
           <a class="btn primary" href="tetrisSingle.html">싱글 게임</a>
-          <a class="btn" href="tetris.html">멀티 게임</a>
+          <a class="btn" href="multiLobby.html">멀티 게임</a>
         </div>
       </section>
 
@@ -34,7 +35,7 @@
           <div class="card-desc">혼자 연습하기 — 현재 구현된 싱글 플레이로 바로 시작</div>
           <div class="card-cta">시작하기 →</div>
         </a>
-        <a class="card" href="tetris.html">
+        <a class="card" href="multiLobby.html">
           <div class="card-title">Online</div>
           <div class="card-desc">웹소켓 멀티 대전 — 대기실/매칭은 순차 오픈 예정</div>
           <div class="card-cta">입장하기 →</div>
@@ -90,8 +91,10 @@
       });
     }
 
-    // Lobby sound
-    initLobbySound(document.getElementById('soundToggle'));
-  </script>
+      // Lobby sound
+      initLobbySound(document.getElementById('soundToggle'));
+    </script>
+  </div>
+  <script type="module" src="../net/router.js"></script>
 </body>
 </html>
