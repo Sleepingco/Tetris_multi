@@ -15,8 +15,8 @@
 
 이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
 현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
-싱글플레이는 `src/game/tetris.js`가 런타임을 조율하고,  
-입력/이동/라인 클리어/조각 스폰/렌더/UI가 모듈별로 나뉘어 있습니다.  
+싱글플레이 진입점은 `src/game/entry/singleGamePage.js`이고,  
+런타임 / 실행 / 상태 / UI / 렌더 / 네트워크가 계층별로 나뉘어 있습니다.  
 목표는 단순히 Tetris를 완성하는 것이 아니라,  
 개발자가 모든 컴포넌트를 직접 설계하고 구현하며  
 코딩 능력과 아키텍처 사고, 디버깅 직관을 키우는 데 있습니다.
@@ -27,24 +27,34 @@
 
 src/
 ├── app.js                   # Node.js server entry
+├── assets/
+│   └── sound/               # BGM / SFX assets
 ├── core/
 │   ├── board.js             # Board allocation, collision, lock, clear
 │   └── step.js              # Move intent / move attempt resolution
 ├── game/
-│   ├── tetris.js            # Single-player runtime coordinator
-│   ├── blocks.js            # Block definitions
-│   ├── config.js            # Game constants
-│   ├── input.js             # Keyboard input attach / normalize
-│   ├── actionExecution.js   # Action dispatch and runtime-side execution
-│   ├── moveExecution.js     # Rotation / move intent handling
-│   ├── pieceExecution.js    # Queue, spawn, hold logic
-│   ├── lineExecution.js     # Line clear flow
-│   ├── stateFactory.js      # Game state creation
-│   ├── stateSerialization.js# Multiplayer/serialization prep
-│   ├── ui.js                # DOM UI adapter
-│   └── sound.js             # BGM / SFX
+│   ├── entry/
+│   │   ├── singleGamePage.js# Single-player page entry
+│   │   └── multiGamePage.js # Multiplayer page entry
+│   ├── execution/
+│   │   ├── actionExecution.js
+│   │   ├── lineExecution.js
+│   │   ├── moveExecution.js
+│   │   └── pieceExecution.js
+│   ├── runtime/
+│   │   ├── tetris.js        # Runtime coordinator
+│   │   ├── input.js         # Keyboard input attach / normalize
+│   │   └── sound.js         # BGM / SFX runtime helpers
+│   ├── state/
+│   │   ├── blocks.js        # Block definitions
+│   │   ├── config.js        # Game constants
+│   │   ├── stateFactory.js  # Game state creation
+│   │   └── stateSerialization.js
+│   └── ui/
+│       └── ui.js            # DOM UI adapter
 ├── net/
-│   └── chat.js              # Multiplayer communication logic
+│   ├── chat.js              # Multiplayer communication logic
+│   └── router.js            # Network message routing / dispatch
 ├── pages/
 │   ├── index.html           # Main entry
 │   ├── multiLobby.html      # Multiplayer lobby
@@ -76,7 +86,7 @@ src/
 - 호환성 유지 (수정 후에도 게임 플레이 가능)
 - 제안 시:  
   1. 이유 설명  
-  2. 50줄 이하의 간결한 diff 제공  
+  2. 가능한 한 작은 diff 제공 (필요하면 안전한 범위까지 허용)  
   3. 테스트/검증 방법 안내
 
 ### 🧪 디버깅 파트너
@@ -98,7 +108,11 @@ src/
 - 함수명은 `camelCase`
 - DOM 클래스명은 `kebab-case` (`.moving`, `.seized`, `.ghost`)
 ### 주석
-함수와 변수명은 직관적이며 주석을 docString 형식으로 인풋과 아웃풋 역할 등을 자세하고 쉽게 기술
+함수와 변수명은 직관적으로 작성하고, 주석은 정말 필요한 곳에만 작성한다.
+- 복잡한 함수, 외부에서 자주 호출되는 함수, 부작용이 있는 함수는 docString 형식으로 입력/출력/역할을 설명
+- 단순 getter/setter, 이름만으로 충분히 읽히는 짧은 함수, 지역 변수에는 불필요한 설명 주석 지양
+- 코드 식별자(변수명, 함수명, 파일명)는 영어로 유지한다.
+- 주석은 한국어 또는 영어 중 하나로 일관되게 사용한다. 현재 코드베이스는 한국어 설명 주석을 허용하며, 한 블록 안에서 언어를 섞지 않는다.
 예시)
 /**
  * activePiece를 전달된 조각 상태로 덮어쓴다.
@@ -114,9 +128,93 @@ src/
 // =============================
 // Line Clear Logic
 // =============================
-
+```
 
 복잡한 로직일 경우에만 인라인 설명 추가
+
+## 🧭 설계 원칙
+
+1. 아직 필요하지 않은 일반화는 만들지 않는다.  
+현재 중복이 없고, 곧 반복될 근거도 없으면 helper, manager, service를 미리 만들지 않는다.  
+다만 경계가 명확하고 곧 확장될 가능성이 높은 경우에는 얇은 추상화를 허용한다.  
+예: 페이지 진입점, 네트워크 어댑터, 저장소 인터페이스
+
+2. 상태의 단일 진실 원천을 유지한다.  
+같은 의미의 상태를 여러 곳에서 각각 수정 가능한 값으로 저장하지 않는다.  
+필요한 파생값이나 캐시는 둘 수 있지만, 원본 상태로부터 계산되며 동기화 규칙이 분명해야 한다.  
+예: `board`는 원천 상태, `ghostRow`는 렌더용 파생값
+
+3. 게임 판정 로직과 화면 반영 로직은 분리한다.  
+충돌, 고정, 줄 삭제, 점수 같은 규칙은 상태/엔진에서 결정한다.  
+렌더 계층은 그 결과를 화면에 반영한다.  
+다만 애니메이션 진행값, 하이라이트, 표시용 좌표 같은 UI 계산은 렌더 계층에 둘 수 있다.
+
+4. 미래 확장을 이유로 현재 복잡도를 올리지 않는다.  
+멀티플레이나 AI를 이유로 지금 당장 필요 없는 구조를 미리 도입하지 않는다.  
+현재 요구를 가장 단순하게 만족시키고, 실제 요구가 생겼을 때 그 범위만큼 확장한다.
+
+5. helper는 재사용뿐 아니라 의미 부여에도 사용한다.  
+한 번만 쓰는 함수라도 복잡한 조건을 숨기거나 추상화 수준을 맞춰 준다면 허용한다.  
+반대로 단순 전달만 하는 얇은 래퍼는 지양한다.
+
+## 🔧 변경 원칙
+
+1. 한 변경은 하나의 이유를 가져야 한다.  
+기능 추가, 구조 리팩토링, 스타일 정리는 가능하면 분리한다.  
+다만 기능 구현에 직접 필요한 최소 리팩토링은 함께 할 수 있다.
+
+2. 새 기능 추가와 구조 정리는 가능하면 나눈다.  
+예: 홀드 기능 추가 후 안정화, 이후 파일 구조 정리  
+다만 기능을 넣기 위해 꼭 필요한 경로 수정이나 작은 책임 정리는 같은 작업에 포함할 수 있다.
+
+3. 큰 구조 변경 전에는 이유, 영향 범위, 검증 방법을 먼저 설명한다.  
+왜 바꾸는지, 어떤 파일이 영향을 받는지, 무엇으로 정상 동작을 확인할지 먼저 적는다.  
+학습용 프로젝트에서는 변경 결과보다 변경 이유를 이해하는 것이 더 중요하다.
+
+## 🧪 디버깅 원칙
+
+1. 수정 전에 기대 동작, 실제 동작, 원인 가설을 먼저 정리한다.  
+바로 고치지 말고 문제를 언어로 정의한다.
+
+2. 버그 수정 전 최소 재현 절차를 먼저 정리한다.  
+어떤 입력/상태/순서에서 문제가 발생하는지 재현 조건을 먼저 확보한다.
+
+3. 추측 대신 상태 로그, 호출 흐름, 조건 분기를 확인한다.  
+`아마 여기겠지`보다 `실제로 여기서 값이 어떻게 바뀌는지`를 본다.
+
+4. 원인을 설명할 수 없는 수정은 지양한다.  
+고친 이유를 설명할 수 있어야 비슷한 문제를 다시 만났을 때 대응할 수 있다.
+
+## 🧱 금지사항
+
+1. 실제 문제를 해결하지 않는 추상화 추가 금지  
+이름만 거창하고 한 군데에서만 단순 전달하는 helper, manager, service는 만들지 않는다.
+
+2. 전체 파일 교체 금지  
+맥락이 보이도록 필요한 부분만 점진적으로 수정한다.
+
+3. 렌더 코드에서 게임 규칙을 결정하는 로직 추가 금지  
+렌더는 상태를 반영하고, 규칙은 엔진/실행 흐름에서 결정한다.
+
+4. 같은 의미의 상태를 여러 곳에 중복 저장하는 구조 금지  
+원천 상태는 하나만 두고, 나머지는 읽거나 계산만 하게 만든다.
+
+⸻
+
+🧩 모듈 책임
+
+- `core`는 순수 판정만 담당한다.  
+  DOM 없이도 동작해야 한다.
+
+- `game`은 실행 흐름을 조율한다.  
+  입력, 타이머, 상태 전이 순서를 연결한다.  
+  현재는 `entry / runtime / execution / state / ui` 하위 구조를 기준으로 책임을 나눈다.
+
+- `render`는 화면 반영만 담당한다.  
+  표시용 계산은 할 수 있지만 게임 규칙은 결정하지 않는다.
+
+- `net`은 통신만 담당한다.  
+  메시지 송수신, 라우팅, 동기화 연결을 맡고, 게임 규칙 자체는 만들지 않는다.
 
 ⸻
 
@@ -126,7 +224,7 @@ Category	Agent Allowed	Agent Restricted
 코드 설명 / 개념 분해	✅	
 모듈별 점진적 리팩토링	✅	
 전체 파일 리팩토링	⚠️ 사용자 요청 시만	
-DOM → 배열 마이그레이션	✅ (단계별)	
+구조/상태 분리 리팩토링	✅ (단계별)	
 게임 밸런싱 / 설계	✅ (상담 가능)	
 외부 라이브러리 변경	❌	
 AI / ML 모델 구현	✅ (단계 도달 시)	
@@ -183,7 +281,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 - "배열 기반 canPlace() 로직을 직접 만들어보려는데 설계 순서 알려줘."
 - "줄이 다 찼을 때 배열 기준으로 어떻게 클리어할까?"
 - "멀티플레이 통신에서 어떤 데이터를 보내야 해?"
-- "pieceExecution이랑 lineExecution 책임을 어떻게 나누는 게 좋아?"
+- "execution과 runtime 책임을 어떻게 나누는 게 좋아?"
 - "AI가 블록을 둘 위치를 판단하려면 어떤 특징을 써야 해?"
 
 
@@ -202,19 +300,20 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 
 🧩 에이전트 성격 / 행동 지침
 	•	정확하고 솔직하게 — 불필요한 말 줄이기
-	•	깊은 설명은 한국어로, 코드/주석은 영어 유지
+	•	깊은 설명은 한국어로, 코드 식별자는 영어 유지
+	•	주석은 현재 코드베이스 흐름에 맞춰 한국어 또는 영어 중 하나로 일관되게 작성
 	•	불확실하면 추측보다 가정 명확히 하기
 	•	“대신 써주기”가 아닌 멘토 역할 수행
 	•	반복적 시도 권장: “먼저 직접 구현해보고, 안 되면 같이 보자”
 
 ⸻
 
-🧱 금지사항
-	•	❌ 맥락 없이 전체 파일 교체 금지
-	•	❌ 프레임워크 추가 금지 (React, Vue 등)
-	•	❌ 과도한 단순화 금지 (“그냥 이렇게 하면 돼” 식)
-	•	❌ 논리 단계 건너뛰기 금지
-	•	❌ 학습 의도 무시 금지
+## 🧱 추가 금지사항
+
+5. ❌ 프레임워크 추가 금지 (React, Vue 등)
+6. ❌ 과도한 단순화 금지 (“그냥 이렇게 하면 돼” 식)
+7. ❌ 논리 단계 건너뛰기 금지
+8. ❌ 학습 의도 무시 금지
 
 ⸻
 
@@ -222,10 +321,10 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 
 에이전트는 코드 생성기가 아니라 학습 협력자입니다.
 
-사용자는 DOM 기반 로직에서 배열 기반 엔진, 멀티플레이, AI로  
-단계별로 Tetris 게임 시스템을 구축 중입니다.
+사용자는 배열 기반 상태 관리와 모듈 분리 구조를 바탕으로,  
+멀티플레이와 AI까지 확장 가능한 Tetris 시스템을 단계별로 구축 중입니다.
 
-현재 코드는 `game / core / render / net / pages / styles` 기준으로 분리되어 있으며,  
+현재 코드는 `game(entry/runtime/execution/state/ui) / core / render / net / pages / styles` 기준으로 분리되어 있으며,  
 문서 설명이나 변경 제안도 이 실제 구조를 기준으로 맞춰야 합니다.
 
 모든 설명과 수정은 사용자가 이해하고 성장하는 데 도움을 주는 데 집중합니다.

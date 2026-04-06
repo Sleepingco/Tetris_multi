@@ -1,152 +1,406 @@
+# PLAN
 
+- Role: 이 문서는 현재 저장소의 단일 기준 문서다.
+- Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
+- Last update: `createTetrisRuntime(...)`, page bootstrap 분리, tick-tagged input queue, state serialization 도입 이후 기준으로 정리했다.
 
-전체 전략 (Rules of Play)
-	1.	의도 먼저: 코드 쓰기 전, 주석/의사코드로 “어떻게/왜”를 3~5줄로 적기.
-	2.	작게 쪼개기: 30–90분 안에 끝나는 단위로 목표를 분해.
-	3.	테스트 우선: 가능하면 작은 단위라도 테스트(또는 콘솔 검증 코드)부터.
-	4.	리팩터 고정 시간: 구현 후 20% 시간은 네이밍/분리/주석/삭제에 사용.
-	5.	기록: 매일 TIL(오늘 배운 것 3가지), 매주 회고(잘한 2, 아쉬운 2, 다음 실험 1).
-	6.	요청 방식: 나에게는 “힌트만” 요청(정답 코드 말고), 왜 그런지 근거 묻기.
+## Document Role
 
-⸻
+- 이 문서는 `ROADMAP.md`, `PROTOCOL.md`, `PHASE1_PLAN.md`의 핵심 내용을 현재 코드 기준으로 통합한 문서다.
+- 이상적인 장기 계획보다 현재 구현 상태와 바로 다음 작업을 우선한다.
+- 사람과 Codex/AI가 같이 참고하는 기준 문서로 사용한다.
+- 용어는 아래 기준으로 고정한다.
+  - `action`: 플레이어 입력 의미. 예: `move_left`, `rotate`
+  - `moveCause`: 엔진 판정 문맥. 예: `fall`, `spawn`, `hardDrop`
+  - `tick`: 입력과 진행 순서를 맞추기 위한 시간 단위
+  - `snapshot`: 직렬화 가능한 게임 상태 복사본
+  - `authoritative`: 최종 진실의 원천. 멀티에서는 서버 기준
 
-4주 플랜 (주당 5일 기준)
+## Project Direction
 
-Week 1 — “엔진/뷰 분리의 감” 익히기
+- 핵심 목표는 멀티플레이 가능한 테트리스 구조를 만드는 것이다.
+- 현재 우선순위는 프레임워크 도입이 아니라 런타임, 엔진, 네트워크 경계를 안정화하는 것이다.
+- 방향은 유지한다.
+  - 엔진은 최대한 순수하게 유지
+  - 런타임은 orchestration 중심
+  - 렌더러는 상태 소비자
+  - 멀티는 서버 authoritative
+- 장기적으로는 deterministic loop를 지향한다.
+- 하지만 현재 MVP 멀티는 `seed` 기반 완전 결정론보다 `server bag` 정책이 더 현실적이다.
 
-목표: DOM 의존 낮추고, 배열 기반 사고로 전환
-	•	Day 1: 보드 배열 board[y][x] 도입
-	•	의사코드: emptyBoard, PIECE_ID, DOM ↔ 배열 동기화 포인트 정의
-	•	구현: seizeBlock 시 배열 기록, checkMatch는 배열 우선
-	•	검증: 줄 클리어 케이스 3가지 수동 테스트(한 줄/두 줄/연속)
-	•	Day 2: canPlaceArray(board, piece) 구현
-	•	경계/충돌 케이스 표 작성 → 그대로 테스트 코드/콘솔 검증
-	•	이동/회전/하드드롭을 점진적으로 canPlaceArray로 치환
-	•	Day 3: drawBoard(board, active) 분리
-	•	DOM 업데이트 최소화(변경된 셀만 업데이트 시도) → 먼저 단순 전체 리드로 그린 뒤, 최적화는 다음에
-	•	Day 4: 고스트 피스
-	•	computeGhostY(board, active) 작성 → 렌더에 반투명 클래스 추가
-	•	Day 5: 리팩터 데이
-	•	함수 분리/네이밍/주석/죽은 코드 삭제
-	•	TIL + 미니 회고 작성
+## Current Status
 
-완료 기준
-	•	DOM 없이도 판정이 가능, 렌더는 별도 함수
-	•	고스트 피스 포함, 버그 없이 3판 연속 플레이
+### 구현된 것
 
-⸻
+- [x] `createTetrisRuntime(...)` 도입
+- [x] single/multi page bootstrap 분리
+- [x] tick-tagged input queue 도입
+- [x] `src/core/board.js`에 보드 생성, 충돌, 고정, 줄 삭제 순수 함수 존재
+- [x] `src/core/step.js`에 `resolveMoveAttempt`, `resolveMoveIntent` 존재
+- [x] `src/game/stateSerialization.js`에 snapshot serialize/deserialize 보조 함수 존재
+- [x] `src/game/multiGamePage.js`에서 local runtime / remote runtime 생성
 
-Week 2 — “결정성 + 게임 품질”
+### 부분 완료
 
-목표: 같은 입력=같은 결과(리플레이), 조작감 개선
-	•	Day 1: Seed 기반 7-bag PRNG
-	•	rng(seed), nextQueue
-	•	동일 seed + 입력열로 동일 결과 확인
-	•	Day 2: step(game, inputs) 루프 초안
-	•	틱 기반 중력/락/스폰/스코어를 한 함수에서 처리
-	•	메인 루프는 setInterval에서 step만 호출
-	•	Day 3: 레벨/속도 & 스코어링
-	•	N줄마다 속도 증가, 싱글/더블/트리플/테트리스 가중치
-	•	간단 콤보(연속 클리어 시 보너스)
-	•	Day 4: 락 딜레이(기본)
-	•	바닥 닿아도 N틱 입력 허용(회전/이동 시 리셋)
-	•	경계 케이스 테스트(바닥 근접 회전/연속 하드드롭 등)
-	•	Day 5: 리팩터 + 문서
-	•	README에 “결정성/리플레이/틱 루프” 설명 섹션 추가
+- [~] `src/game/tetris.js`는 예전의 전역 싱글 파일 단계에서는 벗어남
+- [~] `src/game/tetris.js`는 여전히 크고 orchestration 외 책임이 남아 있음
+- [~] RNG 주입 구조는 있음
+- [~] 기본 RNG는 아직 `Math.random`
+- [~] remote runtime은 생성되지만 network sync는 아직 없음
+- [~] 멀티 화면 bootstrap은 분리됐지만 실제 match 흐름은 아직 없음
 
-완료 기준
-	•	seed+입력 로그로 재현 가능
-	•	조작감이 눈에 띄게 좋아짐(락딜레이+레벨)
+### 아직 미구현
 
-⸻
+- [ ] 완전한 deterministic multiplayer
+- [ ] authoritative server match loop
+- [ ] room/match/game 이벤트 기반 멀티 프로토콜 구현
+- [ ] remote runtime snapshot 반영 경로
+- [ ] server bag 배포와 소비 경로
 
-Week 3 — “멀티 준비와 품질 디테일”
+### 현재 판단
 
-목표: 멀티 준비(입력/스냅샷 계약), 월킥 등 스펙 보강
-	•	Day 1: 메시지 스키마 설계(문서)
-	•	game/start {seed,tps,startTick}, game/input {tick, inputs[]}, game/snapshot {tick, players...}
-	•	해시/재동기화 전략(풀스냅샷 트리거 조건)
-	•	Day 2: SRS 월킥(기본)
-	•	회전 시 좌/우/상 보정 테이블 구현
-	•	테스트: 벽/블록 근처 회전 5케이스
-	•	Day 3: 렌더 최적화
-	•	더티셀 추적(달라진 셀만 갱신) or 줄 단위 리렌더
-	•	간단 성능 로그(틱당 업데이트 셀 수)
-	•	Day 4: 사운드 & 접근성
-	•	이동/락/라인클리어/레벨업 짧은 SFX, 포커스/키 가이드 접근성 확인
-	•	Day 5: 리팩터 + 문서
-	•	“네트워킹 설계서 v1”, SRS/락딜레이 규칙 표
+- 현재 구조는 "멀티 준비가 된 싱글 런타임" 단계다.
+- 아직 "실제 멀티 게임 루프" 단계는 아니다.
 
-완료 기준
-	•	월킥 정상 동작
-	•	메시지 스키마와 재동기화 전략 문서화
+## Current Architecture
 
-⸻
+### Page bootstrap
 
-Week 4 — “멀티 MVP 또는 규칙 기반 AI”
+- `src/game/singleGamePage.js`
+  - 싱글 페이지용 DOM 조회
+  - `createTetrisRuntime(...)` 생성
+  - keyboard input 연결
+  - `init()` 호출
+- `src/game/multiGamePage.js`
+  - local/remote player DOM 분리
+  - local runtime 생성 후 입력 연결
+  - remote runtime 생성 후 `init({ autoStart: false })`
+  - 현재 remote는 렌더 대상만 준비된 상태
 
-목표: 선택 1) 1v1 멀티 MVP, 선택 2) 규칙 기반 AI
-	•	선택 1) 멀티
-	•	서버: Node + socket.io, 30TPS 틱 루프, 엔진 서버 내 실행
-	•	클라: 입력 전송/스냅샷 수신 반영
-	•	공격(2/3/4 → 1/2/4 라인) 구현
-	•	선택 2) 규칙 기반 AI
-	•	특징: 구멍 수, 최대 높이, 요철, 총 높이합, 클리어 줄 수
-	•	모든 착지 후보 탐색 → 스코어 최대 → 입력열 생성
-	•	데모 모드(봇 vs 봇/봇 vs 사람)
+### Runtime layer
 
-완료 기준
-	•	멀티: 서로 다른 브라우저 2개로 대전 가능
-	•	AI: 사람이 보기에도 “그럴듯한” 수 읽기
+- `src/game/tetris.js`
+  - 현재 런타임 진입점은 `createTetrisRuntime(...)`
+  - 내부에서 다음을 조율한다.
+    - game state 초기화
+    - input queue 소비
+    - gravity 진행
+    - engine 판정 호출
+    - piece spawn/hold/seize
+    - line clear sequencing
+    - canvas/UI 반영
+  - 반환값은 현재 runtime 제어 API 역할을 한다.
+    - `init`
+    - `enqueueInput`
+    - `render`
+    - `stop`
+    - `hideGameOver`
+    - `showGameOver`
+    - `runtime`
+    - `gameState`
 
-⸻
+### Core engine layer
 
-매일 루틴(45–90분)
-	1.	워밍업 10–15분: 작은 문제 한 개(경계·반복·자료구조)
-	2.	핵심 작업 30–60분: 오늘의 미션(위 플랜)
-	3.	리팩터 10–15분: 네이밍/분리/주석/삭제
-	4.	로그/TIL 5분: 오늘 배운 3가지 + 내일 막대 포인트 1개
+- `src/core/board.js`
+  - `createEmptyBoard`
+  - `canPlacePiece`
+  - `lockPieceOnBoard`
+  - `clearFilledLines`
+- `src/core/step.js`
+  - `resolveMoveAttempt`
+  - `resolveMoveIntent`
+- 현재 core는 순수 함수 중심으로 유지되고 있다.
+- 이 방향은 맞다.
 
-⸻
+### State and snapshot layer
 
-코드 작성 체크리스트
-	•	함수 헤더에 “입력/출력/부작용” 주석
-	•	경계 케이스 3개 이상(배열 범위/충돌/동시 이벤트)
-	•	길어지는 함수 → 20~30줄 이내로 분리
-	•	네이밍: 무엇을 하는가(동사/명사) + 일관성
-	•	삭제할 코드가 없는지 점검(용도 끝난 로그/주석)
+- `src/game/stateSerialization.js`
+  - `serializeGameState`
+  - `deserializeGameState`
+- 현재 snapshot 보조 함수는 준비되어 있다.
+- 하지만 실제 네트워크 sync 경로에는 아직 연결되지 않았다.
 
-⸻
+### 현재 구조에 대한 짧은 평가
 
-PR/커밋 습관 (혼자 작업에도 효과 큼)
-	•	커밋 템플릿
+- 구조는 이전보다 훨씬 좋아졌다.
+- 특히 page bootstrap 분리와 runtime factory 도입은 큰 진전이다.
+- 다만 `tetris.js`는 아직 다음 책임이 남아 있다.
+  - line clear sequencing
+  - piece lifecycle 세부 흐름
+  - 일부 state helper
+  - runtime loop 세부 구현
 
-feat(engine): add canPlaceArray with boundary checks
+## Multiplayer Direction
 
-- implement boundary & collision checks
-- add 5 console-based tests for edge cases
-- migrate hardDrop to use canPlaceArray
+### 기본 원칙
 
+- 서버 authoritative 방향을 유지한다.
+- 클라이언트는 `action`을 보낸다.
+- 서버는 room 상태와 match 상태를 관리한다.
+- remote 화면은 결국 authoritative snapshot 또는 그에 준하는 state apply 결과를 보여준다.
 
-	•	PR 체크리스트
-	•	테스트/콘솔 검증 포함
-	•	함수 책임이 한 가지인지
-	•	변수명/주석이 의도를 설명하는지
-	•	삭제 가능한 코드/로깅은 없는지
+### 현재 기준 MVP 정책
 
-⸻
+- MVP에서는 `seed`보다 `server bag`이 더 현실적이다.
+- 의미:
+  - 서버가 각 플레이어의 조각 순서를 소유한다.
+  - 클라이언트의 RNG는 authoritative source가 아니다.
+  - 클라이언트는 서버가 정한 bag/queue 또는 spawn 결과를 따른다.
+- 이유:
+  - 지금은 완전 deterministic loop가 아직 아니다.
+  - 기본 RNG가 여전히 `Math.random`이다.
+  - runtime 구조는 정리 중이고, 먼저 작동하는 멀티 MVP가 필요하다.
 
-나(도우미) 활용법
-	•	“정답 코드 말고 힌트” 요청:
-	•	“월킥이 벽에서 안 돼요 → 어떤 보정 순서로 검사해야 할까요?”
-	•	“락딜레이 타이머가 꼬여요 → 이벤트 순서를 어케 고정하죠?”
-	•	리뷰 모드: 코어 함수 30줄 이내로 붙여 주면, ✔ 체크리스트 기준으로 피드백
-	•	디버깅 동행: 실패 케이스 로그를 주면 원인 후보를 좁혀서 제시
+### action과 moveCause 규약
 
-⸻
+- 네트워크로 보내는 값은 `action`이다.
+- 예:
+  - `move_left`
+  - `move_right`
+  - `soft_drop`
+  - `rotate`
+  - `hard_drop`
+  - `hold`
+- `moveCause`는 엔진 내부 판정 문맥으로 유지한다.
+- 예:
+  - `horizontal`
+  - `fall`
+  - `rotate`
+  - `hardDrop`
+  - `spawn`
 
-rollback netcode
-prediction correction
-입력 지연 보상 고급 처리
-checksum 기반 자동 복구
-관전자 모드
+### snapshot 방향
+
+- `snapshot`은 멀티 sync와 remote render를 위한 상태 복사본이다.
+- 현재는 serialization helper만 있음
+- 아직 없는 것:
+  - 서버에서 snapshot 생성
+  - 클라이언트에서 snapshot 적용
+  - remote runtime에 authoritative state 반영
+
+### 현재 멀티 진행 상태
+
+- [x] 멀티 페이지에서 local/remote runtime 캔버스 구조 준비
+- [x] remote runtime은 `autoStart: false`로 생성 가능
+- [ ] local 입력을 네트워크로 보내는 경로
+- [ ] 서버 room/match 상태
+- [ ] server bag 전달
+- [ ] snapshot 수신 후 remote runtime 반영
+- [ ] 승패 판정과 match lifecycle
+
+## Current Phase
+
+### 현재 단계
+
+- 이름: Runtime boundary stabilization with multiplayer prep
+
+### 진행 현황
+
+- [x] 전역 단일 파일 구조 탈출
+- [x] runtime factory 도입
+- [x] single/multi bootstrap 분리
+- [x] tick-tagged input queue 도입
+- [x] core board/step 분리
+- [~] `tetris.js` 축소 진행 중
+- [~] snapshot 기반 멀티 준비 중
+- [ ] 실제 authoritative multiplayer 시작 전
+
+### 현재 단계의 핵심 문제
+
+- `tetris.js`가 아직 크다.
+- snapshot을 만들 수는 있지만 적용 경로가 없다.
+- 멀티 page는 준비됐지만 멀티 규약과 서버 상태가 아직 없다.
+- deterministic 설계는 방향만 있고, 현재 MVP 구현 기준은 아니다.
+
+### Phase 1 완료 조건
+
+- [ ] `tetris.js`가 orchestration 중심으로 읽힌다.
+- [ ] 엔진 판단이 `src/core`에서 이해된다.
+- [ ] DOM 없이 핵심 규칙 테스트가 가능하다.
+- [ ] 입력 -> 판정 -> 상태 변경 -> 렌더 흐름을 추적할 수 있다.
+
+### 현재 단계에서 하지 않을 것
+
+- 전체 프런트 프레임워크 전환
+- rollback netcode
+- checksum 자동 복구
+- spectator
+- ranking
+- seed 기반 완전 재현을 멀티 MVP의 선행조건으로 두기
+
+## Next Actions
+
+### 바로 해야 할 일
+
+1. `PLAN` 기준 용어와 상태 기준 고정
+   - `action`, `moveCause`, `tick`, `snapshot`, `authoritative`
+   - 서버와 클라이언트가 같은 용어를 쓰게 정리
+2. `tetris.js`를 한 단계 더 축소
+   - line clear sequencing
+   - piece lifecycle sequencing
+   - runtime loop helper
+3. 멀티 서버 상태 초안 추가
+   - room state
+   - match state
+   - player state
+4. `server bag` 정책 문서화 후 최소 구현
+   - 서버가 bag 또는 next queue를 관리
+   - 클라이언트는 이를 소비
+5. snapshot apply 경로 설계
+   - `serializeGameState`는 있음
+   - 이제 remote runtime에 state를 반영하는 경로 필요
+
+### 권장 구현 순서
+
+- [ ] Step 1. `src/app.js`를 room/match 단위 서버로 확장
+- [ ] Step 2. `match:start`, `match:ready`, `game:input` 최소 이벤트 정의
+- [ ] Step 3. 서버가 local player용 `server bag` 또는 spawn stream을 관리
+- [ ] Step 4. remote runtime에 snapshot 또는 spawn/update 반영 API 추가
+- [ ] Step 5. local/remote 한 화면에서 상태 차이가 눈에 보이게 만들기
+
+### 이후 단계
+
+- [ ] deterministic RNG를 실제로 주입 가능한 구조로 마무리
+- [ ] seed 기반 replay 실험
+- [ ] authoritative tick과 snapshot 주기 정리
+- [ ] multiplayer MVP 완료 후 AI 단계로 이동
+
+## MVP Event Contract
+
+- 목적: MVP 멀티에서 바로 구현할 이벤트만 작게 고정한다.
+- 기준: 서버 authoritative, 네트워크에는 `action`, 내부 판정에는 `moveCause`
+- 필수 공통 필드
+  - `roomId`
+  - `matchId`
+  - `playerId`
+  - `tick`
+  - `action`
+  - `tickRate`
+  - `startTick`
+
+### `room:create`
+
+```json
+{
+  "nickname": "park",
+  "mode": "versus",
+  "isPrivate": false
+}
+```
+
+### `room:join`
+
+```json
+{
+  "roomId": "room_123",
+  "nickname": "guest"
+}
+```
+
+### `match:ready`
+
+```json
+{
+  "roomId": "room_123",
+  "playerId": "player_a",
+  "ready": true
+}
+```
+
+### `match:start`
+
+- 현재 MVP 기준
+  - `seed` 고정 전제 대신 `bagMode: "server"`를 사용
+  - 필요하면 나중에 `seed`를 옵션으로 추가
+
+```json
+{
+  "roomId": "room_123",
+  "matchId": "match_001",
+  "startTick": 0,
+  "tickRate": 30,
+  "bagMode": "server",
+  "initialBagChunks": {
+    "player_a": ["tee", "bar", "square", "rightZee", "leftZee", "leftL", "rightL"],
+    "player_b": ["bar", "square", "tee", "leftL", "rightL", "leftZee", "rightZee"]
+  },
+  "seed": null
+}
+```
+
+### `game:input`
+
+```json
+{
+  "roomId": "room_123",
+  "matchId": "match_001",
+  "playerId": "player_a",
+  "tick": 42,
+  "action": "move_left"
+}
+```
+
+### `game:snapshot`
+
+```json
+{
+  "roomId": "room_123",
+  "matchId": "match_001",
+  "tick": 60,
+  "players": [
+    {
+      "playerId": "player_a",
+      "score": 1200,
+      "board": [],
+      "activePiece": {
+        "pieceType": "tee",
+        "rotation": 1,
+        "row": 5,
+        "col": 4
+      },
+      "holdPieceType": "bar",
+      "nextQueue": ["square", "leftZee"],
+      "phase": "playing"
+    }
+  ]
+}
+```
+
+### `match:finish`
+
+```json
+{
+  "roomId": "room_123",
+  "matchId": "match_001",
+  "winnerPlayerId": "player_a",
+  "reason": "top_out",
+  "finalTick": 321
+}
+```
+
+## Later Roadmap
+
+### 멀티 MVP 이후
+
+- [ ] 배포와 운영 기초 정리
+- [ ] AI 상대 추가
+- [ ] deterministic seed/replay 고도화
+
+### 운영 체크리스트 최소 항목
+
+- [ ] `start` / `build` / `dev` script
+- [ ] `env` / `port` 정리
+- [ ] room cleanup
+- [ ] health check
+
+### AI 원칙
+
+- AI는 DOM이 아니라 game state를 읽는다.
+- AI 출력은 사람과 같은 `action` 형식을 사용한다.
+
+## Existing Docs Note
+
+- `ROADMAP.md`: 상위 방향 문서였음. 핵심 방향은 이 문서에 흡수했다.
+- `PROTOCOL.md`: 멀티 철학은 유지하되, MVP 기준은 `seed`보다 `server bag`으로 수정 반영했다.
+- `PHASE1_PLAN.md`: 오래된 계획서 성격이 강해서 "진행 현황"과 "다음 액션"으로 흡수했다.
+- 가능하면 이후에는 이 `PLAN`을 기준으로 유지하고, 나머지 문서는 보조 기록 또는 아카이브로 두는 편이 좋다.

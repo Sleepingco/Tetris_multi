@@ -1,5 +1,5 @@
-import { attachKeyboardInput } from "./input.js"
-import { createTetrisRuntime } from "./tetris.js"
+import { attachKeyboardInput } from "../runtime/input.js"
+import { createTetrisRuntime } from "../runtime/tetris.js"
 
 function getPlayerElements(playerId) {
     const root = document.querySelector(`.player-column[data-player="${playerId}"]`)

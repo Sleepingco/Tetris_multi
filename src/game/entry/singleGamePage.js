@@ -1,6 +1,6 @@
-import { initGameSound, tryPlayMusic } from "./sound.js"
-import { attachKeyboardInput } from "./input.js"
-import { createTetrisRuntime } from "./tetris.js"
+import { initGameSound, tryPlayMusic } from "../runtime/sound.js"
+import { attachKeyboardInput } from "../runtime/input.js"
+import { createTetrisRuntime } from "../runtime/tetris.js"
 
 const boardCanvasEl = document.querySelector("canvas#tetrisBoardCanvas")
 const multiCanvasEls = document.querySelectorAll("canvas.tetrisBoardCanvas")

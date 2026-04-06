@@ -596,3 +596,21 @@ src/css/tetris.css: lineClearFlash 애니메이션으로 흰색 플래시+스케
   `src/game/singleGamePage.js`,
   `src/game/multiGamePage.js`
   통과
+
+---
+
+# 2026년 4월 6일
+추상화 경계 재조정 및 런타임 응집도 강화 (리팩토링 완료)
+
+## 과도한 추상화 및 Props Drilling 해결
+- **실행 모듈(Execution) 런타임 본가(`tetris.js`)로 병합**
+  파일 분리에 따른 "의존성 노출(Prop Drilling)" 및 콜백 지옥 문제를 해결하기 위해, 조율자(Orchestrator) 역할을 하던 외부 모듈들을 과감히 삭제하고 기능을 모두 `tetris.js`의 `createTetrisRuntime` 스코프 내부로 직관적으로 전면 재흡수했습니다.
+  - 삭제된 파일: `src/game/execution/actionExecution.js`
+  - 삭제된 파일: `src/game/execution/lineExecution.js`
+  - 삭제된 파일: `src/game/execution/moveExecution.js`
+  - `pieceExecution.js` 축소: `generateNewBlock`(-> `startNextTurn`으로 개편) 및 `holdPiece`를 `tetris.js` 내부 함수로 이관.
+
+## 모듈 역할의 본질 회복
+- **런타임 제어권 회수:** 화면 갱신, 점수 갱신(`checkMatch`), 의도 반영(`applyMoveIntent`), 이동 처리(`handleAction/hardDrop`) 등의 흐름 제어 로직을 런타임(`tetris.js`)으로 일원화했습니다.
+- 10개가 넘는 파라미터를 넘기던 인라인 클로저들이 모두 사라졌으며, 코드가 위에서 아래로 물 흐르듯 읽히는 최상의 응집도를 확보했습니다.
+- `pieceExecution.js`는 이제 외부 상태나 렌더러에 의존하지 않고 오직 배열의 순서(bag, queue)만 관리하는 독립적이고 안전한 도구 모음(Utility)으로 완전히 탈바꿈했습니다.
