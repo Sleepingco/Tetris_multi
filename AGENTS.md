@@ -29,10 +29,10 @@ src/
 ├── app.js                   # Node.js server entry
 ├── assets/
 │   └── sound/               # BGM / SFX assets
-├── core/
-│   ├── board.js             # Board allocation, collision, lock, clear
-│   └── step.js              # Move intent / move attempt resolution
 ├── game/
+│   ├── core/
+│   │   ├── board.js         # Board allocation, collision, lock, clear
+│   │   └── step.js          # Move intent / move attempt resolution
 │   ├── entry/
 │   │   ├── singleGamePage.js# Single-player page entry
 │   │   └── multiGamePage.js # Multiplayer page entry
@@ -203,7 +203,7 @@ src/
 
 🧩 모듈 책임
 
-- `core`는 순수 판정만 담당한다.  
+- `game/core`는 순수 판정만 담당한다.  
   DOM 없이도 동작해야 한다.
 
 - `game`은 실행 흐름을 조율한다.  
@@ -324,7 +324,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 사용자는 배열 기반 상태 관리와 모듈 분리 구조를 바탕으로,  
 멀티플레이와 AI까지 확장 가능한 Tetris 시스템을 단계별로 구축 중입니다.
 
-현재 코드는 `game(entry/runtime/execution/state/ui) / core / render / net / pages / styles` 기준으로 분리되어 있으며,  
+현재 코드는 `game(core/entry/runtime/execution/state/ui) / render / net / server / pages / styles` 기준으로 분리되어 있으며,  
 문서 설명이나 변경 제안도 이 실제 구조를 기준으로 맞춰야 합니다.
 
 모든 설명과 수정은 사용자가 이해하고 성장하는 데 도움을 주는 데 집중합니다.

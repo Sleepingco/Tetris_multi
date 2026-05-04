@@ -614,3 +614,39 @@ src/css/tetris.css: lineClearFlash 애니메이션으로 흰색 플래시+스케
 - **런타임 제어권 회수:** 화면 갱신, 점수 갱신(`checkMatch`), 의도 반영(`applyMoveIntent`), 이동 처리(`handleAction/hardDrop`) 등의 흐름 제어 로직을 런타임(`tetris.js`)으로 일원화했습니다.
 - 10개가 넘는 파라미터를 넘기던 인라인 클로저들이 모두 사라졌으며, 코드가 위에서 아래로 물 흐르듯 읽히는 최상의 응집도를 확보했습니다.
 - `pieceExecution.js`는 이제 외부 상태나 렌더러에 의존하지 않고 오직 배열의 순서(bag, queue)만 관리하는 독립적이고 안전한 도구 모음(Utility)으로 완전히 탈바꿈했습니다.
+
+---
+
+# 2026년 5월 4일
+멀티플레이 구현 전 폴더 책임 경계 정리
+
+## 서버 구조 분리
+- **`src/app.js`를 얇은 서버 entry로 변경**
+  기존에 Express, HTTP 서버, Socket.IO 이벤트가 한 파일에 섞여 있던 구조에서 벗어나, `src/app.js`는 `src/server/app.js`를 실행하는 진입점 역할만 담당하도록 정리했습니다.
+
+- **`src/server` 폴더 추가**
+  Node.js 서버 전용 책임을 `src/server` 아래로 분리했습니다.
+  현재는 기존 채팅 서버 동작을 유지하는 범위에서만 분리했으며, 멀티플레이 room/snapshot/bag 구현은 추가하지 않았습니다.
+  - `src/server/app.js`: Express/Socket.IO 서버 조립
+  - `src/server/chatSocket.js`: 기존 `chatting` Socket.IO 이벤트 처리
+
+## 게임 core 위치 정리
+- **`src/core`를 `src/game/core`로 이동**
+  보드 생성, 충돌 검사, 고정, 줄 삭제, 이동 판정은 테트리스 게임 내부 도메인에 속하므로 `src/game/core` 아래로 이동했습니다.
+  - `src/core/board.js` -> `src/game/core/board.js`
+  - `src/core/step.js` -> `src/game/core/step.js`
+
+- **core import 경로 갱신**
+  `src/game/runtime/tetris.js`에서 core 모듈을 새 위치 기준으로 import하도록 변경했습니다.
+  - `../../core/board.js` -> `../core/board.js`
+  - `../../core/step.js` -> `../core/step.js`
+
+## 구조 문서 갱신
+- **`AGENTS.md` 구조 설명 갱신**
+  현재 실제 구조에 맞춰 `game/core`와 `server` 책임을 반영했습니다.
+  현재 기준 구조는 `game(core/entry/runtime/execution/state/ui) / render / net / server / pages / styles`입니다.
+
+## 검증
+- 전체 `src/**/*.js`에 대해 `node --check` 통과
+- 코드 기준으로 남은 `src/core` import 없음
+- 멀티플레이 구현 로직은 추가하지 않고, 사용자가 직접 구현할 수 있도록 폴더 책임만 정리

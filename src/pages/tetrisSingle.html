@@ -1,65 +1,16 @@
 <!DOCTYPE html>
-<html lang="kr">
-
+<html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>테트리스</title>
-    <link rel="stylesheet" href="../styles/tetris.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Single Player Tetris</title>
+  <script>
+    const shellUrl = new URL("./index.html", window.location.href)
+    shellUrl.hash = "/single"
+    window.location.replace(shellUrl.toString())
+  </script>
 </head>
-
 <body>
-    <div class="single-wrapper">
-        <header class="single-header">
-            <h1 class="page-title">Single Player Tetris</h1>
-            <div class="scoreboard">
-                <span class="score-label">Score</span>
-                <span class="score">0</span>
-            </div>
-            <div class="header-actions">
-                <button id="soundToggle" class="sound-toggle" type="button" aria-pressed="false">사운드 켜기</button>
-                <a class="home-btn" href="index.html">홈으로</a>
-            </div>
-        </header>
-
-        <main class="single-layout">
-            <aside class="panel panel--left">
-                <div class="panel-section">
-                    <h2>Next Up</h2>
-                    <div class="next-preview"></div>
-                </div>
-            </aside>
-
-            <section class="playfield">
-                <div class="game-text">
-                    <span>게임 종료</span>
-                    <button>다시 시작</button>
-                </div>
-                <div class="playground">
-                    <canvas id="tetrisBoardCanvas" width="300" height="600"></canvas>
-                </div>
-            </section>
-
-            <aside class="panel panel--right">
-                <div class="panel-section">
-                    <h2>Hold</h2>
-                    <div class="hold-preview"></div>
-                </div>
-                <div class="panel-section">
-                    <h2>Controls</h2>
-                    <ul class="controls-list">
-                        <li><kbd>←</kbd><span>왼쪽 이동</span></li>
-                        <li><kbd>→</kbd><span>오른쪽 이동</span></li>
-                        <li><kbd>↑</kbd><span>회전</span></li>
-                        <li><kbd>↓</kbd><span>소프트 드롭</span></li>
-                        <li><kbd>Space</kbd><span>하드 드롭</span></li>
-                        <li><kbd>C</kbd><span>홀드 / 교체</span></li>
-                    </ul>
-                </div>
-            </aside>
-        </main>
-    </div>
-    <script src="../game/entry/singleGamePage.js" type="module"></script>
+  <p><a href="./index.html#/single">싱글 플레이 화면으로 이동</a></p>
 </body>
-
 </html>

@@ -4,8 +4,8 @@ import {
     canPlacePiece,
     lockPieceOnBoard,
     clearFilledLines,
-} from "../../core/board.js"
-import { resolveMoveAttempt, resolveMoveIntent } from "../../core/step.js"
+} from "../core/board.js"
+import { resolveMoveAttempt, resolveMoveIntent } from "../core/step.js"
 import { playLineClearSfx } from "./sound.js"
 import { INPUT_ACTION } from "./input.js"
 import {
@@ -31,7 +31,10 @@ import {
     takeNextFromQueue,
 } from "../execution/pieceExecution.js"
 import { createGameUi } from "../ui/ui.js"
-
+import {
+    serializeGameState,
+    deserializeGameState,
+} from "../state/stateSerialization.js"
 const NEXT_QUEUE_SIZE = 2
 
 // =============================
@@ -73,6 +76,8 @@ export function createTetrisRuntime({
         inputTimer: undefined,
         animationFrameId: null,
         detachKeyboard: null,
+        bagMode: "local",
+        serverBagQueue: [],
         gravityRunning: false,
         gravityAccumulatorMs: 0,
         lastTickAt: 0,
@@ -150,7 +155,7 @@ export function createTetrisRuntime({
         initBoardContext()
         ui.buildHoldPreview()
         ui.buildNextPreview()
-        fillPieceQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES, rng)
+        refillSpawnQueue()
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
     }
@@ -192,7 +197,12 @@ export function createTetrisRuntime({
         gameState.phase = GAME_PHASE.PLAYING
         startGravity()
 
-        const currentType = takeNextFromQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES, rng)
+        const currentType = takeNextPieceType()
+        if (!currentType) {
+            stopGravity()
+            console.error("No piece available for the next turn.")
+            return
+        }
         const nextActivePiece = createSpawnedPiece(currentType, SPAWN_ROW, SPAWN_COL)
 
         activateSpawnedPiece(nextActivePiece)
@@ -218,8 +228,14 @@ export function createTetrisRuntime({
             incomingType = holdPieceType
             gameState.holdPieceType = currentType
         } else {
-            incomingType = takeNextFromQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES, rng)
+            incomingType = takeNextPieceType()
             gameState.holdPieceType = currentType
+        }
+
+        if (!incomingType) {
+            startGravity()
+            console.error("No piece available while resolving hold.")
+            return
         }
 
         const swappedPiece = createSpawnedPiece(incomingType, SPAWN_ROW, SPAWN_COL)
@@ -642,6 +658,20 @@ export function createTetrisRuntime({
     }
 
     /**
+     * 라우트 이탈이나 화면 제거 전에 런타임 루프와 입력 연결을 정리한다.
+     *
+     * @returns {void}
+     */
+    function destroy() {
+        stopGameLoops()
+        runtime.detachKeyboard?.()
+        runtime.detachKeyboard = null
+        ui.hideGameOver()
+        gameState.inputQueue = []
+        runtime.boardCtx = null
+    }
+
+    /**
      * 현재 phase가 플레이어 입력을 허용하는 상태인지 반환한다.
      *
      * @returns {boolean} 실제 플레이 중인 상태일 때만 true
@@ -822,14 +852,166 @@ export function createTetrisRuntime({
         gameState.activePiece.col = piece.col
     }
 
+    /**
+     * 현재 bag 모드에 맞춰 다음 스폰/미리보기 큐를 채운다.
+     * - server 모드에서는 서버가 내려준 조각만 소비한다.
+     * - local 모드에서는 기존 7-bag RNG 경로를 유지한다.
+     *
+     * @returns {void}
+     */
+    function refillSpawnQueue() {
+        if (runtime.bagMode === "server") {
+            while (gameState.pieceQueue.length < NEXT_QUEUE_SIZE + 1 && runtime.serverBagQueue.length > 0) {
+                gameState.pieceQueue.push(runtime.serverBagQueue.shift())
+            }
+            return
+        }
+
+        fillPieceQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES, rng)
+    }
+
+    /**
+     * 현재 모드에 맞게 다음 스폰 조각을 가져오고 큐를 다시 채운다.
+     *
+     * @returns {string|undefined} 스폰할 조각 타입
+     */
+    function takeNextPieceType() {
+        if (runtime.bagMode === "server") {
+            refillSpawnQueue()
+            const nextType = gameState.pieceQueue.shift()
+            refillSpawnQueue()
+            return nextType
+        }
+
+        return takeNextFromQueue(gameState, NEXT_QUEUE_SIZE, PIECE_TYPES, rng)
+    }
+
+    /**
+     * 현재 런타임 상태를 직렬화 가능한 스냅샷으로 꺼낸다.
+     * - 멀티플레이 동기화나 디버깅 저장 지점에서 사용할 수 있다.
+     *
+     * @returns {Object} 현재 gameState와 tick 정보를 담은 스냅샷
+     */
+    function getSnapshot() {
+        return {
+            board: serializeGameState(gameState).board,
+            activePiece: serializeGameState(gameState).activePiece,
+            pieceQueue: [...gameState.pieceQueue],
+            holdPieceType: gameState.holdPieceType,
+            holdUsedThisDrop: gameState.holdUsedThisDrop,
+            score: gameState.score,
+            phase: gameState.phase,
+            fallIntervalMs: gameState.fallIntervalMs,
+            tick: runtime.currentTick,
+        }
+    }
+
+    /**
+     * 외부에서 받은 스냅샷으로 gameState와 UI를 현재 시점에 맞게 복원한다.
+     * - 보드, 큐, 홀드, 점수, activePiece를 모두 덮어쓴 뒤 다시 렌더링한다.
+     * - 복원 직후 중력 누적값은 초기화해 이전 루프 상태가 이어지지 않게 한다.
+     *
+     * @param {Object|null} snapshot - 복원할 스냅샷
+     * @returns {void}
+     */
+    function applySnapshot(snapshot) {
+        if (!snapshot) return
+
+        const restored = deserializeGameState(snapshot, {
+            spawnRow: SPAWN_ROW,
+            spawnCol: SPAWN_COL,
+            fallIntervalMs: INITIAL_FALL_INTERVAL_MS,
+            initialPhase: GAME_PHASE.PLAYING,
+
+        })
+
+        gameState.score = restored.score
+        gameState.fallIntervalMs = restored.fallIntervalMs
+        gameState.board = restored.board
+        gameState.pieceQueue = restored.pieceQueue
+        gameState.holdPieceType = restored.holdPieceType
+        gameState.holdUsedThisDrop = restored.holdUsedThisDrop
+        gameState.pendingPiece = restored.pendingPiece ?? clonePendingPiece(restored.activePiece)
+        gameState.phase = restored.phase
+        gameState.lastActionWasRotation = restored.lastActionWasRotation
+        gameState.isTSpin = restored.isTSpin
+
+        setActivePiece(restored.activePiece)
+
+        runtime.currentTick = snapshot.tick ?? runtime.currentTick
+        runtime.gravityRunning = false
+        runtime.gravityAccumulatorMs = 0
+
+        ui.renderScore(gameState.score)
+        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
+        ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
+        if (gameState.phase === GAME_PHASE.GAME_OVER) {
+            ui.showGameOver()
+        } else {
+            ui.hideGameOver()
+        }
+        renderBoard()
+    }
+
+    /**
+     * 서버에서 받은 초기 bag chunk들을 런타임 대기열에 저장한다.
+     * - 멀티플레이 MVP에서는 스폰 조각 공급을 서버가 결정한다.
+     *
+     * @param {string[][]} chunks - 서버가 보낸 7-bag chunk 목록
+     * @returns {void}
+     */
+    function applyServerBag(chunks) {
+        runtime.bagMode = "server"
+        runtime.serverBagQueue = Array.isArray(chunks)
+            ? chunks.flatMap(chunk => Array.isArray(chunk) ? [...chunk] : [])
+            : []
+        gameState.bag = []
+        gameState.pieceQueue = []
+        refillSpawnQueue()
+        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
+    }
+
+    /**
+     * 서버가 추가로 보낸 bag chunk를 런타임 대기열 뒤에 붙인다.
+     *
+     * @param {string[]} chunk - 추가 공급된 7-bag 한 묶음
+     * @returns {void}
+     */
+    function appendServerBag(chunk) {
+        if (!Array.isArray(chunk) || chunk.length === 0) return
+        runtime.bagMode = "server"
+        runtime.serverBagQueue.push(...chunk)
+        refillSpawnQueue()
+        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
+    }
+
+    /**
+     * activePiece 복원 실패 시 pendingPiece를 최소 상태로 맞춘다.
+     *
+     * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - 기준 조각 상태
+     * @returns {{pieceType: string, rotation: number, row: number, col: number}|null} 복사된 pendingPiece
+     */
+    function clonePendingPiece(piece) {
+        if (!piece) return null
+        return {
+            pieceType: piece.pieceType,
+            rotation: piece.rotation,
+            row: piece.row,
+            col: piece.col,
+        }
+    }
     return {
         init,
         enqueueInput,
         render: renderBoard,
         stop: stopGameLoops,
+        destroy,
+        getSnapshot,
+        applySnapshot,
+        applyServerBag,
+        appendServerBag,
         hideGameOver: ui.hideGameOver,
         showGameOver: ui.showGameOver,
         runtime,
-        gameState,
     }
 }

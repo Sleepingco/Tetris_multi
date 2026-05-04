@@ -26,7 +26,13 @@ export function getBoardContext(canvasEl) {
 }
 
 /**
- * DOM 캔버스에 블록 하나를 그립니다. (내부 함수)
+ * Canvas 좌표계에 블록 한 칸을 현재 테마 색상으로 그린다.
+ *
+ * @param {CanvasRenderingContext2D} ctx - 대상 2D 컨텍스트
+ * @param {number} col - 블록 열 인덱스
+ * @param {number} row - 블록 행 인덱스
+ * @param {string} color - 채울 색상
+ * @returns {void}
  */
 function drawBlock(ctx, col, row, color) {
     const x = col * CELL_SIZE;
