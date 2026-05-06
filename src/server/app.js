@@ -12,7 +12,7 @@ const STATIC_ROOT = path.join(__dirname, "..")
 
 app.use(express.static(STATIC_ROOT))
 app.get("/", (_, res) => {
-    res.sendFile(path.join(STATIC_ROOT, "pages", "index.html"))
+  res.redirect("/pages/index.html")
 })
 
 registerChatSocket(io)

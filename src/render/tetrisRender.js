@@ -121,12 +121,14 @@ export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks,
 
     const width = cols * CELL_SIZE;
     const height = rows * CELL_SIZE;
+    const canvasStyle = getComputedStyle(ctx.canvas);
+    const gridColor = canvasStyle.getPropertyValue("--game-board-grid").trim() || "rgba(255, 255, 255, 0.04)";
 
     // === 보드 지우기 ===
     ctx.clearRect(0, 0, width, height);
 
     // === 배경 그리드 선(가이드) 그리기 ===
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
+    ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let r = 0; r <= rows; r++) { ctx.moveTo(0, r * CELL_SIZE); ctx.lineTo(width, r * CELL_SIZE); }

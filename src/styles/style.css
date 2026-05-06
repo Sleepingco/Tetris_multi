@@ -89,6 +89,13 @@ body {
 }
 .btn.ghost { background: transparent; border-color: var(--border); }
 .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn:disabled {
+  cursor: not-allowed;
+  filter: none;
+  opacity: 0.55;
+  transform: none;
+  box-shadow: none;
+}
 
 /* Hero Section */
 .main { padding: 40px 0 20px; display: flex; flex-direction: column; gap: 3rem; }

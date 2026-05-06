@@ -53,8 +53,7 @@ src/
 │   └── ui/
 │       └── ui.js            # DOM UI adapter
 ├── net/
-│   ├── chat.js              # Multiplayer communication logic
-│   └── router.js            # Network message routing / dispatch
+│   └── chat.js              # Multiplayer communication logic
 ├── pages/
 │   ├── index.html           # Main entry
 │   ├── multiLobby.html      # Multiplayer lobby
@@ -102,7 +101,7 @@ src/
 ### JavaScript
 - ES Modules (`import` / `export default`)
 - 들여쓰기 2칸  
-- 세미콜론 없음 (기존 스타일 유지)
+- 코드 끝에 세미콜론 작성
 - 상수는 `const`, 변경 가능 변수는 `let`
 - `var` 사용 금지
 - 함수명은 `camelCase`

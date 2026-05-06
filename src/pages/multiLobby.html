@@ -5,12 +5,128 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>멀티플레이 로비 - Tetris Multi</title>
   <script>
-    const shellUrl = new URL("./index.html", window.location.href)
-    shellUrl.hash = "/lobby"
-    window.location.replace(shellUrl.toString())
+    (() => {
+      const savedTheme = localStorage.getItem("theme")
+      const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+      document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
+    })()
   </script>
+  <style>
+    :root {
+      color-scheme: light;
+      --initial-bg: #f8fafc;
+      --initial-bg-soft: #f1f5f9;
+      background: #f8fafc;
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --initial-bg: #0f172a;
+      --initial-bg-soft: #1e293b;
+      background: #0f172a;
+    }
+    html,
+    body {
+      min-height: 100%;
+      background: linear-gradient(135deg, var(--initial-bg-soft) 0%, var(--initial-bg) 100%);
+    }
+  </style>
+  <link rel="stylesheet" href="../styles/style.css">
 </head>
 <body>
-  <p><a href="./index.html#/lobby">멀티플레이 로비로 이동</a></p>
+  <div class="container">
+    <header class="header">
+      <h1 class="brand">Multi Lobby</h1>
+      <nav class="nav">
+        <button id="soundToggle" type="button" class="btn ghost" aria-pressed="false">사운드 켜기</button>
+        <button id="themeToggle" type="button" class="btn ghost" aria-pressed="false">다크 모드</button>
+        <a href="./index.html" class="btn ghost">← 홈으로</a>
+      </nav>
+    </header>
+
+    <main class="main" style="padding-top: 10px;">
+      <div class="lobby-grid">
+        <section class="card chat-panel">
+          <h2 class="card-title" style="margin-bottom: 4px;">Global Chat</h2>
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-msg"><span class="system">[System]</span> 멀티플레이 로직은 roomService 설계 후 연결 예정입니다.</div>
+          </div>
+          <form class="chat-input-group" id="chatForm">
+            <input type="text" id="chatInput" class="input-box" placeholder="메시지를 입력하세요..." autocomplete="off">
+            <button type="submit" class="btn primary">전송</button>
+          </form>
+        </section>
+
+        <section class="action-panel">
+          <div class="action-box">
+            <h3>Quick Match</h3>
+            <p>roomService를 만든 뒤 매칭 흐름을 연결할 예정입니다.</p>
+            <button id="btnQuickMatch" class="btn primary btn-match" type="button" disabled>준비중</button>
+          </div>
+
+          <div class="action-box">
+            <h3>Join by Code</h3>
+            <p>방 생성과 참가 상태 관리를 먼저 순수 함수로 검증합니다.</p>
+            <div class="join-group">
+              <input type="text" id="roomCodeInput" class="input-box input-code" placeholder="ENTER CODE" maxlength="8" disabled>
+              <button id="btnJoinCode" class="btn" type="button" disabled>방 입장 준비중</button>
+            </div>
+          </div>
+
+          <div class="action-box" style="padding: 16px;">
+            <p style="text-align:center; font-size:0.85rem;">방 생성 로직은 서버 roomService에서 먼저 검증합니다.</p>
+            <button id="btnCreateRoom" class="btn ghost" style="width:100%;" type="button" disabled>방 생성 준비중</button>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script type="module">
+    import { initLobbySound } from "../game/runtime/sound.js"
+    import { queryElement, requireElement } from "../game/entry/dom.js"
+    import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
+
+    function escapeHtml(text) {
+      return text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    }
+
+    const themeToggleBtn = queryElement(document, "#themeToggle")
+    const soundToggleBtn = queryElement(document, "#soundToggle")
+    const chatForm = requireElement(document, "#chatForm", "lobby")
+    const chatInput = requireElement(document, "#chatInput", "lobby")
+    const messages = requireElement(document, "#chatMessages", "lobby")
+
+    applySavedTheme(themeToggleBtn)
+
+    const appendMessage = (type, text) => {
+      const div = document.createElement("div")
+      div.className = "chat-msg"
+      const tag = type === "system"
+        ? '<span class="system">[System]</span>'
+        : '<span class="user">[Guest]</span>'
+      div.innerHTML = `${tag} ${escapeHtml(text)}`
+      messages.appendChild(div)
+      messages.scrollTop = messages.scrollHeight
+    }
+
+    const onToggleTheme = () => toggleTheme(themeToggleBtn)
+    const onSubmitChat = (event) => {
+      event.preventDefault()
+      const message = chatInput.value.trim()
+      if (!message) return
+      appendMessage("user", message)
+      chatInput.value = ""
+    }
+
+    themeToggleBtn?.addEventListener("click", onToggleTheme)
+    chatForm.addEventListener("submit", onSubmitChat)
+    const cleanupSound = initLobbySound(soundToggleBtn)
+
+    window.addEventListener("pagehide", () => {
+      themeToggleBtn?.removeEventListener("click", onToggleTheme)
+      chatForm.removeEventListener("submit", onSubmitChat)
+      cleanupSound?.()
+    }, { once: true })
+  </script>
 </body>
 </html>
