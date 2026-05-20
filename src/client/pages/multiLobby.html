@@ -74,8 +74,8 @@
                         <p>방 생성과 참가 상태 관리를 먼저 순수 함수로 검증합니다.</p>
                         <div class="join-group">
                             <input type="text" id="roomCodeInput" class="input-box input-code" placeholder="ENTER CODE"
-                                maxlength="8" disabled>
-                            <button id="btnJoinCode" class="btn" type="button" disabled>방 입장 준비중</button>
+                                maxlength="8">
+                            <button id="btnJoinCode" class="btn" type="button">방 입장 준비중</button>
                         </div>
                     </div>
 
@@ -83,6 +83,20 @@
                         <p style="text-align:center; font-size:0.85rem;">방 생성 로직은 서버 roomService에서 먼저 검증합니다.</p>
                         <button id="btnCreateRoom" class="btn ghost" style="width:100%;" type="button">방 생성
                             준비중</button>
+                        <div id="roomStatus" class="room-status" hidden>
+                            <div class="room-status-row">
+                                <span>방 코드</span>
+                                <strong id="roomCodeText">-</strong>
+                            </div>
+                            <div class="room-status-row">
+                                <span>상태</span>
+                                <strong id="roomStateText">-</strong>
+                            </div>
+                            <div class="room-status-row">
+                                <span>플레이어</span>
+                                <strong><span id="roomPlayerCountText">0</span> / 2</strong>
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>
@@ -94,7 +108,7 @@
         import { initLobbySound } from "../game/runtime/sound.js"
         import { queryElement, requireElement } from "../game/entry/dom.js"
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
-        import { createRoom, onRoomResult } from "../net/roomClient.js"
+        import { requestCreateRoom, onRoomResult, requestJoinRoom } from "../net/roomClient.js"
         function escapeHtml(text) {
             return text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
         }
@@ -104,6 +118,10 @@
         const chatForm = requireElement(document, "#chatForm", "lobby")
         const chatInput = requireElement(document, "#chatInput", "lobby")
         const messages = requireElement(document, "#chatMessages", "lobby")
+        const roomStatus = requireElement(document, "#roomStatus", "lobby")
+        const roomCodeText = requireElement(document, "#roomCodeText", "lobby")
+        const roomStateText = requireElement(document, "#roomStateText", "lobby")
+        const roomPlayerCountText = requireElement(document, "#roomPlayerCountText", "lobby")
 
         applySavedTheme(themeToggleBtn)
 
@@ -140,13 +158,48 @@
 
         const btnCreateRoom = queryElement(document, "#btnCreateRoom")
         btnCreateRoom?.addEventListener("click", () => {
-            createRoom({
+            requestCreateRoom({
                 playerId: crypto.randomUUID(),
                 nickname: "Guest",
             })
         })
-        onRoomResult((result) => {
+        onRoomResult((result, requestType) => {
             console.log(result)
+            if (!result.ok) {
+                appendMessage("system", result.reason)
+                return
+            }
+
+            const { room } = result
+            if (!room) return
+
+            roomStatus.hidden = false
+            roomCodeText.textContent = room.roomId
+            roomStateText.textContent = room.status
+            roomPlayerCountText.textContent = String(room.players.length)
+            if (requestType === "create") {
+                appendMessage("system", `방이 생성되었습니다. 코드: ${room.roomId}`)
+            }
+
+            if (requestType === "join") {
+                appendMessage("system", `방에 입장했습니다. 코드: ${room.roomId}`)
+            }
+        })
+
+        const roomCodeInput = requireElement(document, "#roomCodeInput", "lobby")
+        const joinCodeBtn = requireElement(document, "#btnJoinCode", "lobby")
+        joinCodeBtn.addEventListener("click", () => {
+            const roomId = roomCodeInput.value.trim().toUpperCase()
+
+            if (!roomId) {
+                appendMessage("system", "방 코드를 입력해주세요.")
+                return
+            }
+
+            requestJoinRoom(roomId, {
+                playerId: crypto.randomUUID(),
+                nickname: "Guest",
+            })
         })
     </script>
 </body>

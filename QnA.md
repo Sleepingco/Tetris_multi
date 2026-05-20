@@ -819,3 +819,672 @@ const p2State = createGameState(1234);
 	•	snapshot/action 반영
 	•	server bag 공급
 	•	같은 멀티 요소를 붙이기 시작하는 단계임.
+
+⸻
+
+## Q. 현재 그럼 app.js, roomService.js와 같은 파일이 어떤 식으로 동작하는지 설명해줘. (2026-05-20)
+
+답변 요약:
+
+현재 서버 구조는 크게 세 단계로 나뉜다.
+
+```txt
+브라우저
+  ↓ Socket.IO 이벤트 전송
+src/client/net/roomClient.js
+  ↓
+src/server/sockets/multiplayerSocket.js
+  ↓
+src/server/services/roomService.js
+  ↓
+서버 메모리 Map에 방 상태 저장
+```
+
+### 1. `src/app.js`
+
+`src/app.js`는 실제 서버 로직을 직접 가지고 있는 파일이 아니라, 서버를 실행하기 위한 얇은 진입점이다.
+
+```js
+require("./server/app.js")
+```
+
+즉 `node src/app.js`로 실행하면 내부적으로는 `src/server/app.js`를 실행한다.
+
+직접 실행할 때도 `node src/server/app.js`로 서버를 띄울 수 있다.
+
+```txt
+src/app.js
+  ↓
+src/server/app.js
+```
+
+### 2. `src/server/app.js`
+
+이 파일은 서버 전체의 시작점이다.
+
+주요 책임은 다음과 같다.
+
+```txt
+1. Express 앱 생성
+2. HTTP 서버 생성
+3. Socket.IO 서버 생성
+4. 정적 파일 제공 경로 설정
+5. 멀티플레이 Socket.IO 이벤트 등록
+6. PORT 5500에서 서버 실행
+```
+
+핵심 코드는 다음 흐름이다.
+
+```js
+const app = express()
+const server = http.createServer(app)
+const io = socketIO(server)
+```
+
+여기서 역할을 나누면 다음과 같다.
+
+```txt
+express app
+  = HTML, CSS, JS 같은 파일을 브라우저에 보내는 역할
+
+http server
+  = 실제로 포트를 열고 요청을 받는 서버
+
+socket.io server
+  = 브라우저와 실시간 이벤트를 주고받는 서버
+```
+
+Socket.IO는 `express app`에 직접 붙는 것이 아니라, `http.createServer(app)`로 만든 `server`에 붙는다.
+
+```txt
+HTTP server
+├── Express 정적 파일 제공
+└── Socket.IO 실시간 통신
+```
+
+정적 파일 루트는 이 코드로 정해진다.
+
+```js
+const STATIC_ROOT = path.join(__dirname, "..")
+app.use(express.static(STATIC_ROOT))
+```
+
+`src/server/app.js`에서 `__dirname`은 `src/server`를 의미한다.
+
+따라서 현재 구조에서는 `path.join(__dirname, "..", "client")`가 `src/client` 폴더를 가리킨다.
+
+```txt
+프로젝트 루트
+└── src                  ← 정적 파일 루트
+    └── pages
+        └── tetrisSingle.html
+```
+
+그래서 브라우저 URL에서는 `src`를 붙이지 않는다.
+
+```txt
+실제 파일:
+src/client/pages/tetrisSingle.html
+
+올바른 URL:
+http://127.0.0.1:5500/pages/tetrisSingle.html
+
+잘못된 URL:
+http://127.0.0.1:5500/src/client/pages/tetrisSingle.html
+```
+
+잘못된 URL이 실패하는 이유는 서버가 이미 `src` 안을 기준으로 보고 있기 때문이다.
+
+즉 `/src/client/pages/tetrisSingle.html`로 요청하면 서버는 실제로 다음 경로를 찾게 된다.
+
+```txt
+src/client/src/client/pages/tetrisSingle.html
+```
+
+마지막으로 이 줄이 멀티플레이 이벤트 처리를 연결한다.
+
+```js
+registerMultiplayerSocket(io)
+```
+
+이 말은 `app.js`가 직접 방 생성, 참가, 퇴장 로직을 처리하지 않고, Socket.IO 관련 처리는 `multiplayerSocket.js`에 맡긴다는 뜻이다.
+
+### 3. `src/server/sockets/multiplayerSocket.js`
+
+이 파일은 네트워크 이벤트 라우터 역할을 한다.
+
+즉 클라이언트가 어떤 이벤트를 보내면, 서버에서 어떤 함수를 실행할지 연결한다.
+
+```js
+function registerMultiplayerSocket(io) {
+  io.on("connection", (socket) => {
+    console.log("a user connected")
+  })
+}
+```
+
+여기서 `io`와 `socket`의 차이가 중요하다.
+
+```txt
+io
+  = Socket.IO 서버 전체
+  = 모든 접속자에게 메시지를 보낼 때 사용 가능
+
+socket
+  = 지금 연결된 특정 브라우저 1명
+  = 이 사용자에게만 응답할 때 사용
+```
+
+예를 들어 채팅 코드는 다음과 같다.
+
+```js
+socket.on("chatting", (data) => {
+  const { name, msg } = data
+
+  io.emit("chatting", {
+    name,
+    msg,
+  })
+})
+```
+
+여기서는 `io.emit()`을 사용한다.
+
+의미는 다음과 같다.
+
+```txt
+어떤 클라이언트가 chatting 이벤트를 보냄
+  ↓
+서버가 받음
+  ↓
+서버가 모든 클라이언트에게 chatting 이벤트를 다시 보냄
+```
+
+반면 방 생성 코드는 `socket.emit()`을 사용한다.
+
+```js
+socket.on("room:create", (player) => {
+  const hostPlayer = player
+    ? { ...player, socketId: socket.id }
+    : null
+
+  const result = createRoom(hostPlayer)
+
+  socket.emit("room:result", result)
+})
+```
+
+이 흐름은 다음과 같다.
+
+```txt
+브라우저가 "room:create" 이벤트 보냄
+  ↓
+서버가 player 정보를 받음
+  ↓
+서버가 player 정보에 socket.id 추가
+  ↓
+roomService.createRoom(hostPlayer) 호출
+  ↓
+결과를 "room:result" 이벤트로 해당 브라우저에게만 돌려줌
+```
+
+여기서 `socket.id`는 Socket.IO가 연결마다 자동으로 만들어 주는 고유 ID다.
+
+예를 들면 player 정보가 처음에는 다음처럼 들어온다.
+
+```js
+{
+  playerId: "client-random-id",
+  nickname: "Guest"
+}
+```
+
+서버에서는 여기에 `socket.id`를 붙인다.
+
+```js
+{
+  playerId: "client-random-id",
+  nickname: "Guest",
+  socketId: "abc123..."
+}
+```
+
+`playerId`와 `socketId`는 의미가 다르다.
+
+```txt
+playerId
+  = 게임 안에서 플레이어를 구분하기 위한 ID
+  = 클라이언트가 생성해서 보냄
+
+socketId
+  = 현재 네트워크 연결을 구분하기 위한 ID
+  = Socket.IO 서버가 자동 부여
+```
+
+나중에 disconnect 처리를 할 때는 `socketId`가 중요해진다.
+
+예를 들어 브라우저가 꺼지면 `playerId`를 직접 보내지 못할 수 있지만, 서버는 끊어진 `socket.id`를 알 수 있다.
+
+### 4. `src/server/services/roomService.js`
+
+`roomService.js`는 실제 방 상태를 관리하는 로직 계층이다.
+
+이 파일의 가장 중요한 특징은 Socket.IO를 모른다는 점이다.
+
+```txt
+roomService.js가 모르는 것
+  • socket
+  • io
+  • DOM
+  • HTML
+  • 브라우저 이벤트
+
+roomService.js가 아는 것
+  • roomId
+  • players
+  • status
+  • createdAt
+```
+
+현재 방 목록은 서버 메모리에 `Map`으로 저장된다.
+
+```js
+const rooms = new Map()
+```
+
+방 하나는 대략 이런 형태다.
+
+```js
+{
+  roomId: "A1B2C3D4",
+  players: [
+    {
+      playerId: "client-random-id",
+      nickname: "Guest",
+      socketId: "socket-id"
+    }
+  ],
+  status: "waiting",
+  createdAt: 1710000000000
+}
+```
+
+`createRoom(hostPlayer)`는 방을 만든다.
+
+흐름은 다음과 같다.
+
+```txt
+1. hostPlayer가 없으면 실패
+2. 8자리 roomId 생성
+3. players 배열에 hostPlayer를 넣음
+4. status를 "waiting"으로 설정
+5. rooms Map에 저장
+6. 성공 결과 반환
+```
+
+성공 결과는 항상 이런 형태다.
+
+```js
+{
+  ok: true,
+  room,
+  reason: null
+}
+```
+
+실패 결과는 이런 형태다.
+
+```js
+{
+  ok: false,
+  room: null,
+  reason: "HOST_PLAYER_REQUIRED"
+}
+```
+
+이렇게 성공과 실패 응답 모양을 맞춰두면 클라이언트에서 처리하기 쉽다.
+
+```js
+if (result.ok) {
+  // 방 생성 성공
+} else {
+  // result.reason 보고 실패 처리
+}
+```
+
+`joinRoom(roomId, guestPlayer)`는 기존 방에 참가한다.
+
+흐름은 다음과 같다.
+
+```txt
+1. roomId로 방을 찾음
+2. 방이 없으면 ROOM_NOT_FOUND
+3. 이미 플레이어가 2명이면 ROOM_FULL
+4. 같은 playerId가 이미 있으면 PLAYER_ALREADY_JOINED
+5. players 배열에 guestPlayer 추가
+6. status를 "playing"으로 변경
+7. 성공 결과 반환
+```
+
+여기서 현재 구조는 2인용 멀티플레이를 전제로 한다.
+
+```js
+if (roomState.players.length >= 2) {
+  return failure("ROOM_FULL")
+}
+```
+
+`removePlayer(roomId, playerId)`는 방에서 플레이어를 제거한다.
+
+흐름은 다음과 같다.
+
+```txt
+1. roomId로 방을 찾음
+2. playerId로 플레이어 위치를 찾음
+3. players 배열에서 제거
+4. 아무도 안 남으면 방 자체를 삭제
+5. 한 명 남으면 status를 "waiting"으로 변경
+6. 결과 반환
+```
+
+아무도 남지 않았을 때는 `rooms.delete(roomId)`로 방을 제거한다.
+
+```txt
+players.length === 0
+  ↓
+rooms.delete(roomId)
+```
+
+이 구조는 메모리 누수를 줄이기 위해 필요하다.
+
+만약 빈 방을 계속 남겨두면 서버가 오래 켜져 있을수록 사용하지 않는 방 데이터가 쌓인다.
+
+### 5. `src/client/net/roomClient.js`
+
+이 파일은 브라우저 쪽 Socket.IO 어댑터다.
+
+로비 페이지가 직접 `socket.emit(...)`을 많이 쓰지 않도록, 의미 있는 함수로 감싼다.
+
+```js
+const socket = io()
+```
+
+이 줄에서 현재 서버에 Socket.IO로 연결한다.
+
+```js
+export function createRoom(player) {
+  socket.emit("room:create", player)
+}
+```
+
+즉 로비 페이지에서는 네트워크 이벤트 이름을 몰라도 된다.
+
+```js
+createRoom({
+  playerId: crypto.randomUUID(),
+  nickname: "Guest",
+})
+```
+
+그리고 서버 결과는 다음 함수로 받는다.
+
+```js
+export function onRoomResult(handler) {
+  socket.on("room:result", handler)
+}
+```
+
+현재 `multiLobby.html`에서는 결과를 콘솔에만 출력하고 있다.
+
+```js
+onRoomResult((result) => {
+  console.log(result)
+})
+```
+
+즉 지금 단계에서는 "방 생성 결과가 서버에서 돌아오는지 확인하는 단계"에 가깝다.
+
+### 6. 방 생성 전체 흐름
+
+방 생성 버튼을 눌렀을 때 실제 흐름은 다음과 같다.
+
+```txt
+[사용자]
+  ↓
+방 생성 버튼 클릭
+  ↓
+multiLobby.html
+  ↓
+createRoom({ playerId, nickname })
+  ↓
+roomClient.js
+  ↓
+socket.emit("room:create", player)
+  ↓
+multiplayerSocket.js
+  ↓
+player 정보에 socket.id 추가
+  ↓
+roomService.createRoom(hostPlayer)
+  ↓
+rooms Map에 방 저장
+  ↓
+{ ok: true, room, reason: null } 반환
+  ↓
+socket.emit("room:result", result)
+  ↓
+브라우저의 onRoomResult 콜백 실행
+  ↓
+console.log(result)
+```
+
+이 흐름에서 책임을 나누면 다음과 같다.
+
+```txt
+multiLobby.html
+  = 버튼 클릭, 화면 이벤트 처리
+
+roomClient.js
+  = 클라이언트에서 서버로 Socket.IO 이벤트 전송
+
+multiplayerSocket.js
+  = 네트워크 이벤트를 받아 적절한 서버 로직 호출
+
+roomService.js
+  = 실제 방 상태 생성/수정/삭제
+```
+
+### 7. 왜 이렇게 나누는가?
+
+가장 큰 이유는 "통신"과 "상태 변경 로직"을 분리하기 위해서다.
+
+좋지 않은 구조는 다음과 같다.
+
+```txt
+socket.on("room:create", () => {
+  // 여기서 방 ID 만들고
+  // 여기서 players 배열 수정하고
+  // 여기서 상태 바꾸고
+  // 여기서 응답까지 처리
+})
+```
+
+이렇게 하면 처음에는 빨라 보이지만, 나중에 문제가 생긴다.
+
+```txt
+문제점
+  • 방 생성 로직을 테스트하기 어려움
+  • Socket.IO 없이 room 로직을 재사용하기 어려움
+  • 참가, 퇴장, 재접속, disconnect 처리가 섞이기 쉬움
+  • 멀티 게임 상태 동기화가 붙으면 파일이 급격히 복잡해짐
+```
+
+현재처럼 나누면 각 파일의 질문이 명확해진다.
+
+```txt
+app.js
+  = 서버를 어떻게 열 것인가?
+
+multiplayerSocket.js
+  = 어떤 네트워크 이벤트를 받을 것인가?
+
+roomService.js
+  = 방 상태를 어떻게 바꿀 것인가?
+
+roomClient.js
+  = 브라우저에서 어떤 요청을 보낼 것인가?
+```
+
+이 구분은 이후 멀티플레이 구현에서 중요하다.
+
+게임 동기화를 붙일 때도 같은 원칙을 유지할 수 있다.
+
+```txt
+네트워크 이벤트
+  "game:input"
+  "game:snapshot"
+  "game:ready"
+
+게임 상태 로직
+  applyInput()
+  createSnapshot()
+  updatePlayerState()
+```
+
+즉 Socket.IO 이벤트 이름과 게임 규칙 로직을 같은 곳에 다 밀어 넣지 않는 것이 핵심이다.
+
+### 8. 현재 구조의 한계
+
+현재 구현은 방 관리의 시작 단계다.
+
+아직 완성된 멀티플레이 로비라고 보기는 어렵다.
+
+남은 작업은 다음과 같다.
+
+```txt
+1. roomClient.js에 joinRoom(), leaveRoom() 추가
+2. multiLobby.html에서 방 코드 입력 후 참가 기능 연결
+3. 서버에서 socket.join(roomId) 사용
+4. 방 상태 변경 시 방 안의 모든 플레이어에게 broadcast
+5. disconnect 발생 시 자동 퇴장 처리
+6. 방이 playing 상태가 되면 tetrisMulti.html로 이동
+7. tetrisMulti.html에서 roomId/playerId를 받아 게임 런타임과 연결
+8. 이후 게임 snapshot/input 동기화 연결
+```
+
+현재 코드에서 조심할 부분도 있다.
+
+`joinRoom(roomId, guestPlayer)`에서는 `guestPlayer`가 없을 때를 먼저 검사하지 않는다.
+
+그런데 아래 코드에서 `guestPlayer.playerId`를 바로 사용한다.
+
+```js
+const alreadyJoined = roomState.players.some(player => player.playerId === guestPlayer.playerId)
+```
+
+따라서 잘못된 요청이 들어오면 서버 에러가 날 수 있다.
+
+나중에는 `createRoom()`처럼 다음 검사가 먼저 필요하다.
+
+```js
+if (!guestPlayer) {
+  return failure("GUEST_PLAYER_REQUIRED")
+}
+```
+
+### 9. 현재 단계의 결론
+
+현재 구조는 아직 게임 동기화를 하는 단계는 아니지만, 멀티플레이의 기반은 올바른 방향으로 나뉘어 있다.
+
+```txt
+서버 실행
+  → app.js
+
+실시간 이벤트 연결
+  → multiplayerSocket.js
+
+방 상태 관리
+  → roomService.js
+
+브라우저 요청 함수
+  → roomClient.js
+```
+
+이제 다음으로 할 일은 `roomService`를 더 복잡하게 만들기보다, 현재 있는 방 생성 흐름을 기준으로 `join`, `leave`, `broadcast`, `disconnect`를 하나씩 붙이는 것이다.
+
+즉 다음 목표는 "게임 동기화"가 아니라 먼저 "로비에서 두 명이 같은 방에 들어가고, 양쪽 화면이 같은 방 상태를 보는 것"이다.
+
+⸻
+
+## Q. 유지보수를 위해 백엔드와 프론트엔드 파트를 나누어서 구조를 변경해줘. (2026-05-20)
+
+답변 요약:
+	•	서버에서 실행되는 Node.js 코드와 브라우저에서 실행되는 정적 파일을 물리적으로 분리함.
+	•	새 구조는 `src/server`와 `src/client` 기준임.
+	•	`src/app.js`는 계속 서버 실행 진입점으로 유지하고, 내부에서 `src/server/app.js`를 실행함.
+	•	`src/server/app.js`는 Express, HTTP server, Socket.IO server 조립만 담당함.
+	•	`src/server/sockets/multiplayerSocket.js`는 서버 Socket.IO 이벤트 핸들러 등록을 담당함.
+	•	`src/server/services/roomService.js`는 Socket.IO를 모르는 순수 방 상태 관리 계층으로 유지함.
+	•	`src/client`는 Express가 공개하는 정적 파일 루트가 됨.
+	•	따라서 브라우저 URL은 기존처럼 `/pages/index.html`, `/pages/multiLobby.html` 형태를 유지함.
+	•	브라우저 Socket.IO 어댑터는 `src/client/net/roomClient.js`로 이동함.
+	•	게임 런타임, 렌더, 스타일, 사운드, HTML 페이지도 `src/client` 아래로 이동함.
+
+현재 구조:
+
+```txt
+src/
+├── app.js
+├── server/
+│   ├── app.js
+│   ├── services/
+│   │   └── roomService.js
+│   └── sockets/
+│       └── multiplayerSocket.js
+└── client/
+    ├── assets/
+    ├── game/
+    │   ├── core/
+    │   ├── render/
+    │   ├── runtime/
+    │   ├── state/
+    │   └── ui/
+    ├── net/
+    │   ├── chat.js
+    │   └── roomClient.js
+    ├── pages/
+    └── styles/
+```
+
+실행 흐름:
+
+```txt
+node src/app.js
+  ↓
+src/server/app.js
+  ↓
+Express 정적 루트 = src/client
+  ↓
+Socket.IO 이벤트 등록 = server/sockets/multiplayerSocket.js
+  ↓
+방 상태 로직 = server/services/roomService.js
+```
+
+브라우저 흐름:
+
+```txt
+/pages/multiLobby.html
+  ↓
+../net/roomClient.js
+  ↓
+serverConnection.emit("room:create", player)
+  ↓
+server/sockets/multiplayerSocket.js
+  ↓
+server/services/roomService.js
+```
+
+검증:
+	•	`node --check`로 server 주요 파일과 client 주요 모듈 문법 확인.
+	•	`npm test`로 roomService 단위 테스트 10개 통과.
+	•	로컬 서버를 `PORT=5599 node src/app.js`로 실행해 `/pages/index.html`, `/pages/multiLobby.html`, `/net/roomClient.js`, `/game/runtime/tetris.js`가 모두 `200 OK`로 응답하는지 확인.

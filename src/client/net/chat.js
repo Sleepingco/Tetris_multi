@@ -1,7 +1,7 @@
 // 엄격 모드 사용 (더 안전한 코드 작성)
 "use strict";
 // 서버와의 실시간 통신을 위한 Socket.IO 초기화
-const socket = io();
+const chatConnection = io();
 // 닉네임 입력 필드 선택
 const nickName = document.querySelector("#nickname");;
 // 채팅 메시지가 표시될 리스트 선택
@@ -32,14 +32,14 @@ function send() {
     }
 
     // 서버로 "chatting" 이벤트와 함께 메시지 데이터 전송
-    socket.emit("chatting", param)
+    chatConnection.emit("chatting", param)
 }
 // 전송 버튼 클릭 시 메시지 전송
 sendButton.addEventListener("click", send);
 
 
 // 서버에서 "chatting" 이벤트를 수신하면 실행
-socket.on("chatting", (data) => {
+chatConnection.on("chatting", (data) => {
     // console.log("Nickname:", nickName.value);
     // console.log("Message:", chatInput.value);
     console.log(data);
@@ -52,7 +52,7 @@ socket.on("chatting", (data) => {
     // 새 메시지가 추가될 때 채팅창을 아래로 스크롤
     displayContainer.scrollTo(0, displayContainer.scrollHeight);
 })
-// console.log(socket);
+// console.log(chatConnection);
 
 // 채팅 메시지 모델 (메시지 데이터 저장 및 리스트 아이템 생성)
 function LiModel(name, msg, time) {

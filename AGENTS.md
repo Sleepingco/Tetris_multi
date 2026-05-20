@@ -8,6 +8,8 @@
 ## 🛠 기술 스택
 - 백엔드: `Node.js`
 - 프론트엔드: 현재 구조 유지 중, 추후 마이그레이션 예정
+- 현재 학습/구현 단계: Vanilla JS + Express + Socket.IO 중심
+- 실무형 확장 단계: 프론트엔드는 Vite + React, 백엔드는 Express + Socket.IO 구조화 또는 NestJS Gateway 검토 가능
 
 - 싱글플레이 엔진 완성  
 - 이제 멀티플레이(WebSocket 기반) 구현이 1차 목표  
@@ -15,7 +17,7 @@
 
 이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
 현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
-싱글플레이 진입점은 `src/game/entry/singleGamePage.js`이고,  
+싱글플레이 진입점은 `src/client/pages/tetrisSingle.html`의 module script이며,  
 런타임 / 실행 / 상태 / UI / 렌더 / 네트워크가 계층별로 나뉘어 있습니다.  
 목표는 단순히 Tetris를 완성하는 것이 아니라,  
 개발자가 모든 컴포넌트를 직접 설계하고 구현하며  
@@ -27,43 +29,34 @@
 
 src/
 ├── app.js                   # Node.js server entry
-├── assets/
-│   └── sound/               # BGM / SFX assets
-├── game/
-│   ├── core/
-│   │   ├── board.js         # Board allocation, collision, lock, clear
-│   │   └── step.js          # Move intent / move attempt resolution
-│   ├── entry/
-│   │   ├── singleGamePage.js# Single-player page entry
-│   │   └── multiGamePage.js # Multiplayer page entry
-│   ├── execution/
-│   │   ├── actionExecution.js
-│   │   ├── lineExecution.js
-│   │   ├── moveExecution.js
-│   │   └── pieceExecution.js
-│   ├── runtime/
-│   │   ├── tetris.js        # Runtime coordinator
-│   │   ├── input.js         # Keyboard input attach / normalize
-│   │   └── sound.js         # BGM / SFX runtime helpers
-│   ├── state/
-│   │   ├── blocks.js        # Block definitions
-│   │   ├── config.js        # Game constants
-│   │   ├── stateFactory.js  # Game state creation
-│   │   └── stateSerialization.js
-│   └── ui/
-│       └── ui.js            # DOM UI adapter
-├── net/
-│   └── chat.js              # Multiplayer communication logic
-├── pages/
-│   ├── index.html           # Main entry
-│   ├── multiLobby.html      # Multiplayer lobby
-│   ├── tetrisSingle.html    # Single-player mode
-│   └── tetrisMulti.html     # Multiplayer board page
-├── render/
-│   └── tetrisRender.js      # Canvas / preview rendering helpers
-└── styles/
-    ├── style.css
-    └── tetris.css
+├── server/                 # Node.js only
+│   ├── app.js               # Express / HTTP / Socket.IO server assembly
+│   ├── services/
+│   │   └── roomService.js   # Room state management
+│   └── sockets/
+│       └── multiplayerSocket.js
+└── client/                # Browser static root
+    ├── assets/
+    │   └── sound/           # BGM / SFX assets
+    ├── game/
+    │   ├── core/
+    │   ├── entry/
+    │   ├── execution/
+    │   ├── render/
+    │   ├── runtime/
+    │   ├── state/
+    │   └── ui/
+    ├── net/
+    │   ├── chat.js          # Browser Socket.IO chat adapter
+    │   └── roomClient.js    # Browser Socket.IO room adapter
+    ├── pages/
+    │   ├── index.html
+    │   ├── multiLobby.html
+    │   ├── tetrisSingle.html
+    │   └── tetrisMulti.html
+    └── styles/
+        ├── style.css
+        └── tetris.css
 
 ---
 
@@ -156,6 +149,10 @@ src/
 한 번만 쓰는 함수라도 복잡한 조건을 숨기거나 추상화 수준을 맞춰 준다면 허용한다.  
 반대로 단순 전달만 하는 얇은 래퍼는 지양한다.
 
+6. 프레임워크는 복잡도를 줄일 때만 도입한다.  
+현재 목표가 Socket.IO 통신 구조, room 상태, 게임 루프 경계를 직접 이해하는 것이라면 Vanilla JS 구조를 유지한다.  
+다만 실무/유지보수 기준에서 화면 상태, 라우팅, 빌드, 테스트, 팀 개발 복잡도가 커지면 프레임워크 도입을 검토할 수 있다.
+
 ## 🔧 변경 원칙
 
 1. 한 변경은 하나의 이유를 가져야 한다.  
@@ -169,6 +166,10 @@ src/
 3. 큰 구조 변경 전에는 이유, 영향 범위, 검증 방법을 먼저 설명한다.  
 왜 바꾸는지, 어떤 파일이 영향을 받는지, 무엇으로 정상 동작을 확인할지 먼저 적는다.  
 학습용 프로젝트에서는 변경 결과보다 변경 이유를 이해하는 것이 더 중요하다.
+
+4. 프레임워크 도입은 별도 변경으로 분리한다.  
+React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.  
+도입 시에는 현재 기능을 먼저 동작 가능한 상태로 고정하고, 마이그레이션 이유, 영향 범위, 되돌릴 방법, 검증 기준을 문서화한다.
 
 ## 🧪 디버깅 원칙
 
@@ -202,18 +203,50 @@ src/
 
 🧩 모듈 책임
 
-- `game/core`는 순수 판정만 담당한다.  
+- `client/game/core`는 순수 판정만 담당한다.  
   DOM 없이도 동작해야 한다.
 
-- `game`은 실행 흐름을 조율한다.  
+- `client/game`은 실행 흐름을 조율한다.  
   입력, 타이머, 상태 전이 순서를 연결한다.  
   현재는 `entry / runtime / execution / state / ui` 하위 구조를 기준으로 책임을 나눈다.
 
-- `render`는 화면 반영만 담당한다.  
+- `client/game/render`는 게임 화면 반영만 담당한다.  
   표시용 계산은 할 수 있지만 게임 규칙은 결정하지 않는다.
 
-- `net`은 통신만 담당한다.  
+- `server/sockets`는 서버 Socket.IO 이벤트 입구를 담당한다.
+  메시지 송수신, 라우팅, roomService 호출을 맡고, 게임 규칙 자체는 만들지 않는다.
+
+- `client/net`은 브라우저 Socket.IO 어댑터를 담당한다.  
   메시지 송수신, 라우팅, 동기화 연결을 맡고, 게임 규칙 자체는 만들지 않는다.
+
+⸻
+
+🧭 프레임워크 / 실무형 구조 기준
+
+현재 단계의 기본 원칙:
+- 멀티플레이 MVP는 Vanilla JS + Express + Socket.IO로 먼저 완성한다.
+- Socket.IO 이벤트 흐름, roomService 상태 변화, 클라이언트 통신 어댑터를 직접 이해하는 것을 우선한다.
+- 프레임워크가 없어도 계층은 나눈다: `server/app` → `server/sockets` → `server/services` → `client/net` → `client/pages/ui`.
+
+실무/유지보수 기준에서 프레임워크 도입을 고려할 조건:
+- 로비, 방 목록, 준비 상태, 채팅, 설정, 결과 화면처럼 화면 상태가 많아진다.
+- DOM 직접 갱신 코드가 늘어나 UI 상태와 서버 상태 동기화가 어려워진다.
+- 라우팅, 빌드, 테스트, 배포 구조를 장기적으로 관리해야 한다.
+- 팀 단위 개발이나 기능별 소유 경계가 필요해진다.
+
+권장 전환 방향:
+- 프론트엔드: `Vite + React`를 우선 검토한다.
+  - `LobbyPage`, `GamePage`, `RoomPanel`, `useRoomSocket`처럼 화면과 상태를 컴포넌트/훅으로 분리할 수 있다.
+  - 단, 게임 판정 로직은 React 컴포넌트에 넣지 않고 기존 `client/game/core`, `client/game/runtime`, `client/game/render` 경계를 유지한다.
+- 백엔드: 당장은 `Express + Socket.IO`를 유지하되 `sockets / services / validators / repositories`로 나누는 방식을 우선한다.
+  - 이벤트가 많아지고 인증, DB, 매치메이킹, 세션 관리가 커지면 `NestJS + Socket.IO Gateway`를 검토할 수 있다.
+
+추천 마이그레이션 순서:
+1. Vanilla 구조로 멀티플레이 MVP를 동작시킨다.
+2. room/game 통신 프로토콜과 상태 흐름을 문서화한다.
+3. 프론트엔드가 복잡해지면 Vite + React로 화면 계층만 먼저 옮긴다.
+4. 백엔드는 Express + Socket.IO를 유지하며 서비스/소켓/검증 계층을 정리한다.
+5. 서버 복잡도가 충분히 커졌을 때 NestJS 같은 백엔드 프레임워크를 검토한다.
 
 ⸻
 
@@ -257,13 +290,38 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 	•	입력 / 이동 / 조각 / 라인클리어 / 렌더 / UI 모듈 분리 진행
 	•	하드 드롭, 회전, 점수, 홀드, 다음 블록 미리보기 작동 중
 	•	캔버스 기반 보드 렌더링 적용
+	•	멀티플레이 roomService 1차 구현 완료
+		- `createRoom`, `joinRoom`, `removePlayer`, `getRoomState`
+		- `Map` 기반 서버 메모리 room 상태 관리
+		- 성공/실패 반환 형태 `{ ok, room, reason }`로 통일
+		- Node 내장 테스트(`node --test`)로 roomService 정상/실패 케이스 검증
+		•	Socket.IO 기반 room 생성 흐름 1차 연결
+			- `server/sockets/multiplayerSocket.js`에서 `room:create`, `room:join`, `room:leave` 이벤트 등록
+			- `client/net/roomClient.js`에서 브라우저 `room:create` 요청과 `room:result` 수신 연결
+			- `multiLobby.html`에서 방 생성 버튼으로 서버 room 생성 결과를 콘솔에서 확인
+	•	게임 플레이 화면 라이트/다크 테마 적용
 
 🧩 다음 단계
-	1. 멀티플레이(WebSocket 기반) 구현 — 현재 최우선 목표  
-	   (멀티플레이어 동기화, 통신 로직, 상태 직렬화 연결)  
-	2. AI 상대 구현 (규칙 기반 → 머신러닝)  
-	3. step(game, input) 기반 결정론적 루프 구조화
-	4. 멀티/AI에서 재사용 가능한 상태/렌더 경계 정리
+	1. 멀티 로비 UI에 생성된 `roomId` 표시
+		- 현재는 `console.log(result)`로만 확인 중
+		- 화면에 방 코드, 상태, 현재 player 수를 표시
+		- 이후 join 테스트를 위해 roomId 복사/입력 흐름 준비
+	2. `room:join` 클라이언트 흐름 연결
+		- `roomClient.js`에 join 요청 함수 추가
+		- 로비의 room code input과 join button 활성화
+		- 두 브라우저 탭으로 같은 room에 2명이 들어오는지 확인
+	3. `room:leave` 및 disconnect 정리
+		- 수동 leave 버튼 또는 페이지 이탈 시 room에서 player 제거
+		- Socket.IO `disconnect`와 `removePlayer` 연결 방식 설계
+	4. room 단위 Socket.IO room 참가 검토
+		- `socket.join(roomId)` 도입 시점 결정
+		- 같은 room 참가자에게만 room 상태 broadcast
+	5. 게임 동기화 전 준비
+		- room 상태와 game 상태의 경계 문서화
+		- `game:snapshot`, `game:action`, server bag은 room 흐름 안정화 후 진행
+	6. AI 상대 구현 (규칙 기반 → 머신러닝)
+	7. step(game, input) 기반 결정론적 루프 구조화
+	8. 멀티/AI에서 재사용 가능한 상태/렌더 경계 정리
 
 🎯 학습 목표
 	• DOM 탐색과 이벤트 위임 이해  
@@ -309,7 +367,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 
 ## 🧱 추가 금지사항
 
-5. ❌ 프레임워크 추가 금지 (React, Vue 등)
+5. ❌ 현재 학습/MVP 단계에서 프레임워크 임의 추가 금지 (React, Vue 등)
 6. ❌ 과도한 단순화 금지 (“그냥 이렇게 하면 돼” 식)
 7. ❌ 논리 단계 건너뛰기 금지
 8. ❌ 학습 의도 무시 금지

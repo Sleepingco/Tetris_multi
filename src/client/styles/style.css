@@ -289,6 +289,36 @@ kbd {
     font-weight: 700;
 }
 
+.room-status {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--kbd-bg);
+}
+
+.room-status[hidden] {
+    display: none;
+}
+
+.room-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.room-status-row strong {
+    color: var(--text);
+    font-size: 0.95rem;
+    letter-spacing: 0.06em;
+}
+
 @media (max-width: 768px) {
     .lobby-grid { grid-template-columns: 1fr; }
 }

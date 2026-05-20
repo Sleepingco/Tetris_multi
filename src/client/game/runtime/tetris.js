@@ -24,7 +24,7 @@ import {
     renderHoldPiece as renderHoldPieceDom,
     buildHoldPreview as buildHoldPreviewDom,
     buildNextPreview as buildNextPreviewDom,
-} from "../../render/tetrisRender.js"
+} from "../render/tetrisRender.js"
 import { createGameState } from "../state/stateFactory.js"
 import {
     ensureQueueFilled as fillPieceQueue,

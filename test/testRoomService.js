@@ -6,7 +6,7 @@ const {
     getRoomState,
     joinRoom,
     removePlayer,
-} = require("../src/server/roomService.js")
+} = require("../src/server/services/roomService.js")
 
 test("createRoom은 host player가 들어간 waiting room을 만든다", () => {
     const hostPlayer = {
