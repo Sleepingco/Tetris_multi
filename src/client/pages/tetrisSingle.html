@@ -1,140 +1,140 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Single Player Tetris</title>
-  <script>
-    (() => {
-      const savedTheme = localStorage.getItem("theme")
-      const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
-      document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
-    })()
-  </script>
-  <style>
-    :root {
-      color-scheme: light;
-      --initial-game-bg: #f8fafc;
-      background: #f8fafc;
-    }
-    :root[data-theme="dark"] {
-      color-scheme: dark;
-      --initial-game-bg: #0f172a;
-      background: #0f172a;
-    }
-    html,
-    body {
-      min-height: 100%;
-      background: var(--initial-game-bg);
-    }
-  </style>
-  <link rel="stylesheet" href="../styles/style.css">
-  <link rel="stylesheet" href="../styles/tetris.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Single Player Tetris</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem("theme")
+            const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+            document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
+        })()
+    </script>
+    <style>
+        :root {
+            color-scheme: light;
+            --initial-game-bg: #f8fafc;
+            background: #f8fafc;
+        }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --initial-game-bg: #0f172a;
+            background: #0f172a;
+        }
+        html,
+        body {
+            min-height: 100%;
+            background: var(--initial-game-bg);
+        }
+    </style>
+    <link rel="stylesheet" href="../styles/style.css">
+    <link rel="stylesheet" href="../styles/tetris.css">
 </head>
 <body>
-  <div class="single-wrapper">
-    <header class="single-header">
-      <h1 class="page-title">Single Player Tetris</h1>
-      <div class="scoreboard">
-        <span class="score-label">Score</span>
-        <span class="score">0</span>
-      </div>
-      <div class="header-actions">
-        <button id="soundToggle" class="sound-toggle" type="button" aria-pressed="false">사운드 켜기</button>
-        <button id="themeToggle" class="sound-toggle" type="button" aria-pressed="false">다크 모드</button>
-        <a class="home-btn" href="./index.html">홈으로</a>
-      </div>
-    </header>
+    <div class="single-wrapper">
+        <header class="single-header">
+            <h1 class="page-title">Single Player Tetris</h1>
+            <div class="scoreboard">
+                <span class="score-label">Score</span>
+                <span class="score">0</span>
+            </div>
+            <div class="header-actions">
+                <button id="soundToggle" class="sound-toggle" type="button" aria-pressed="false">사운드 켜기</button>
+                <button id="themeToggle" class="sound-toggle" type="button" aria-pressed="false">다크 모드</button>
+                <a class="home-btn" href="./index.html">홈으로</a>
+            </div>
+        </header>
 
-    <main class="single-layout">
-      <aside class="panel panel--left">
-        <div class="panel-section">
-          <h2>Next Up</h2>
-          <div class="next-preview"></div>
-        </div>
-      </aside>
+        <main class="single-layout">
+            <aside class="panel panel--left">
+                <div class="panel-section">
+                    <h2>Next Up</h2>
+                    <div class="next-preview"></div>
+                </div>
+            </aside>
 
-      <section class="playfield">
-        <div class="game-text">
-          <span>게임 종료</span>
-          <button>다시 시작</button>
-        </div>
-        <div class="playground">
-          <canvas id="tetrisBoardCanvas" width="300" height="600"></canvas>
-        </div>
-      </section>
+            <section class="playfield">
+                <div class="game-text">
+                    <span>게임 종료</span>
+                    <button>다시 시작</button>
+                </div>
+                <div class="playground">
+                    <canvas id="tetrisBoardCanvas" width="300" height="600"></canvas>
+                </div>
+            </section>
 
-      <aside class="panel panel--right">
-        <div class="panel-section">
-          <h2>Hold</h2>
-          <div class="hold-preview"></div>
-        </div>
-        <div class="panel-section">
-          <h2>Controls</h2>
-          <ul class="controls-list">
-            <li><kbd>←</kbd><span>왼쪽 이동</span></li>
-            <li><kbd>→</kbd><span>오른쪽 이동</span></li>
-            <li><kbd>↑</kbd><span>회전</span></li>
-            <li><kbd>↓</kbd><span>소프트 드롭</span></li>
-            <li><kbd>Space</kbd><span>하드 드롭</span></li>
-            <li><kbd>C</kbd><span>홀드 / 교체</span></li>
-          </ul>
-        </div>
-      </aside>
-    </main>
-  </div>
+            <aside class="panel panel--right">
+                <div class="panel-section">
+                    <h2>Hold</h2>
+                    <div class="hold-preview"></div>
+                </div>
+                <div class="panel-section">
+                    <h2>Controls</h2>
+                    <ul class="controls-list">
+                        <li><kbd>←</kbd><span>왼쪽 이동</span></li>
+                        <li><kbd>→</kbd><span>오른쪽 이동</span></li>
+                        <li><kbd>↑</kbd><span>회전</span></li>
+                        <li><kbd>↓</kbd><span>소프트 드롭</span></li>
+                        <li><kbd>Space</kbd><span>하드 드롭</span></li>
+                        <li><kbd>C</kbd><span>홀드 / 교체</span></li>
+                    </ul>
+                </div>
+            </aside>
+        </main>
+    </div>
 
-  <script type="module">
-    import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js"
-    import { attachKeyboardInput } from "../game/runtime/input.js"
-    import { createTetrisRuntime } from "../game/runtime/tetris.js"
-    import { queryElement, requireElement } from "../game/entry/dom.js"
-    import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
+    <script type="module">
+        import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js"
+        import { attachKeyboardInput } from "../game/runtime/input.js"
+        import { createTetrisRuntime } from "../game/runtime/tetris.js"
+        import { queryElement, requireElement } from "../game/entry/dom.js"
+        import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
 
-    const boardCanvasEl = requireElement(document, "canvas#tetrisBoardCanvas", "single game")
-    const gameOverEl = requireElement(document, ".game-text", "single game")
-    const scoreEl = requireElement(document, ".score", "single game")
-    const nextPreviewEl = requireElement(document, ".next-preview", "single game")
-    const holdPreviewEl = requireElement(document, ".hold-preview", "single game")
-    const restartBtn = queryElement(document, ".game-text > button")
-    const soundToggleBtn = queryElement(document, "#soundToggle")
-    const themeToggleBtn = queryElement(document, "#themeToggle")
+        const boardCanvasEl = requireElement(document, "canvas#tetrisBoardCanvas", "single game")
+        const gameOverEl = requireElement(document, ".game-text", "single game")
+        const scoreEl = requireElement(document, ".score", "single game")
+        const nextPreviewEl = requireElement(document, ".next-preview", "single game")
+        const holdPreviewEl = requireElement(document, ".hold-preview", "single game")
+        const restartBtn = queryElement(document, ".game-text > button")
+        const soundToggleBtn = queryElement(document, "#soundToggle")
+        const themeToggleBtn = queryElement(document, "#themeToggle")
 
-    applySavedTheme(themeToggleBtn)
+        applySavedTheme(themeToggleBtn)
 
-    const game = createTetrisRuntime({
-      boardCanvasEl,
-      gameOverEl,
-      scoreEl,
-      nextPreviewEl,
-      holdPreviewEl,
-    })
+        const game = createTetrisRuntime({
+            boardCanvasEl,
+            gameOverEl,
+            scoreEl,
+            nextPreviewEl,
+            holdPreviewEl,
+        })
 
-    const cleanupSound = initGameSound(soundToggleBtn)
-    game.runtime.detachKeyboard = attachKeyboardInput({
-      enqueueAction: game.enqueueInput,
-      onUserInteract: tryPlayMusic,
-    })
+        const cleanupSound = initGameSound(soundToggleBtn)
+        game.runtime.detachKeyboard = attachKeyboardInput({
+            enqueueAction: game.enqueueInput,
+            onUserInteract: tryPlayMusic,
+        })
 
-    const onRestart = () => {
-      game.hideGameOver()
-      game.init()
-    }
-    const onToggleTheme = () => {
-      toggleTheme(themeToggleBtn)
-      game.render()
-    }
+        const onRestart = () => {
+            game.hideGameOver()
+            game.init()
+        }
+        const onToggleTheme = () => {
+            toggleTheme(themeToggleBtn)
+            game.render()
+        }
 
-    themeToggleBtn?.addEventListener("click", onToggleTheme)
-    restartBtn?.addEventListener("click", onRestart)
-    game.init()
+        themeToggleBtn?.addEventListener("click", onToggleTheme)
+        restartBtn?.addEventListener("click", onRestart)
+        game.init()
 
-    window.addEventListener("pagehide", () => {
-      themeToggleBtn?.removeEventListener("click", onToggleTheme)
-      restartBtn?.removeEventListener("click", onRestart)
-      cleanupSound?.()
-      game.destroy()
-    }, { once: true })
-  </script>
+        window.addEventListener("pagehide", () => {
+            themeToggleBtn?.removeEventListener("click", onToggleTheme)
+            restartBtn?.removeEventListener("click", onRestart)
+            cleanupSound?.()
+            game.destroy()
+        }, { once: true })
+    </script>
 </body>
 </html>

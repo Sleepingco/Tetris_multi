@@ -93,7 +93,7 @@ src/
 
 ### JavaScript
 - ES Modules (`import` / `export default`)
-- 들여쓰기 2칸  
+- 들여쓰기 4칸  
 - 코드 끝에 세미콜론 작성
 - 상수는 `const`, 변경 가능 변수는 `let`
 - `var` 사용 금지

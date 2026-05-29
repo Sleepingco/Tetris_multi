@@ -1,141 +1,141 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Multiplayer Tetris</title>
-  <script>
-    (() => {
-      const savedTheme = localStorage.getItem("theme")
-      const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
-      document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
-    })()
-  </script>
-  <style>
-    :root {
-      color-scheme: light;
-      --initial-game-bg: #f8fafc;
-      background: #f8fafc;
-    }
-    :root[data-theme="dark"] {
-      color-scheme: dark;
-      --initial-game-bg: #0f172a;
-      background: #0f172a;
-    }
-    html,
-    body {
-      min-height: 100%;
-      background: var(--initial-game-bg);
-    }
-  </style>
-  <link rel="stylesheet" href="../styles/style.css">
-  <link rel="stylesheet" href="../styles/tetris.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multiplayer Tetris</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem("theme")
+            const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+            document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
+        })()
+    </script>
+    <style>
+        :root {
+            color-scheme: light;
+            --initial-game-bg: #f8fafc;
+            background: #f8fafc;
+        }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --initial-game-bg: #0f172a;
+            background: #0f172a;
+        }
+        html,
+        body {
+            min-height: 100%;
+            background: var(--initial-game-bg);
+        }
+    </style>
+    <link rel="stylesheet" href="../styles/style.css">
+    <link rel="stylesheet" href="../styles/tetris.css">
 </head>
 <body>
-  <div class="multi-wrapper">
-    <header class="multi-header">
-      <div class="multi-title">
-        <h1>Multiplayer Tetris</h1>
-        <p>2인용 대전 모드 (직접 구현 예정)</p>
-      </div>
-      <div class="multi-actions">
-        <button id="themeToggle" class="sound-toggle" type="button" aria-pressed="false">다크 모드</button>
-        <a class="home-btn" href="./index.html">홈으로</a>
-      </div>
-    </header>
+    <div class="multi-wrapper">
+        <header class="multi-header">
+            <div class="multi-title">
+                <h1>Multiplayer Tetris</h1>
+                <p>2인용 대전 모드 (직접 구현 예정)</p>
+            </div>
+            <div class="multi-actions">
+                <button id="themeToggle" class="sound-toggle" type="button" aria-pressed="false">다크 모드</button>
+                <a class="home-btn" href="./index.html">홈으로</a>
+            </div>
+        </header>
 
-    <main class="multi-grid">
-      <section class="player-column" data-player="1">
-        <div class="player-header">
-          <div class="player-id">Player 1</div>
-          <div class="player-stats">
-            <div class="stat">
-              <span class="label">Score</span>
-              <span class="score">0</span>
-            </div>
-            <div class="stat">
-              <span class="label">Lines</span>
-              <span class="lines">0</span>
-            </div>
-          </div>
-        </div>
+        <main class="multi-grid">
+            <section class="player-column" data-player="1">
+                <div class="player-header">
+                    <div class="player-id">Player 1</div>
+                    <div class="player-stats">
+                        <div class="stat">
+                            <span class="label">Score</span>
+                            <span class="score">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Lines</span>
+                            <span class="lines">0</span>
+                        </div>
+                    </div>
+                </div>
 
-        <div class="player-panels">
-          <aside class="panel panel--left">
-            <div class="panel-section">
-              <h2>Hold</h2>
-              <div class="hold-preview" data-player="1"></div>
-            </div>
-            <div class="panel-section">
-              <h2>Next Up</h2>
-              <div class="next-preview" data-player="1"></div>
-            </div>
-          </aside>
+                <div class="player-panels">
+                    <aside class="panel panel--left">
+                        <div class="panel-section">
+                            <h2>Hold</h2>
+                            <div class="hold-preview" data-player="1"></div>
+                        </div>
+                        <div class="panel-section">
+                            <h2>Next Up</h2>
+                            <div class="next-preview" data-player="1"></div>
+                        </div>
+                    </aside>
 
-          <section class="playfield playfield--multi">
-            <div class="game-text" data-player="1">
-              <span>대기중</span>
-            </div>
-            <div class="playground" data-player="1">
-              <canvas class="tetrisBoardCanvas" width="300" height="600"></canvas>
-            </div>
-          </section>
-        </div>
-      </section>
+                    <section class="playfield playfield--multi">
+                        <div class="game-text" data-player="1">
+                            <span>대기중</span>
+                        </div>
+                        <div class="playground" data-player="1">
+                            <canvas class="tetrisBoardCanvas" width="300" height="600"></canvas>
+                        </div>
+                    </section>
+                </div>
+            </section>
 
-      <section class="player-column" data-player="2">
-        <div class="player-header">
-          <div class="player-id">Player 2</div>
-          <div class="player-stats">
-            <div class="stat">
-              <span class="label">Score</span>
-              <span class="score">0</span>
-            </div>
-            <div class="stat">
-              <span class="label">Lines</span>
-              <span class="lines">0</span>
-            </div>
-          </div>
-        </div>
+            <section class="player-column" data-player="2">
+                <div class="player-header">
+                    <div class="player-id">Player 2</div>
+                    <div class="player-stats">
+                        <div class="stat">
+                            <span class="label">Score</span>
+                            <span class="score">0</span>
+                        </div>
+                        <div class="stat">
+                            <span class="label">Lines</span>
+                            <span class="lines">0</span>
+                        </div>
+                    </div>
+                </div>
 
-        <div class="player-panels">
-          <aside class="panel panel--left">
-            <div class="panel-section">
-              <h2>Hold</h2>
-              <div class="hold-preview" data-player="2"></div>
-            </div>
-            <div class="panel-section">
-              <h2>Next Up</h2>
-              <div class="next-preview" data-player="2"></div>
-            </div>
-          </aside>
+                <div class="player-panels">
+                    <aside class="panel panel--left">
+                        <div class="panel-section">
+                            <h2>Hold</h2>
+                            <div class="hold-preview" data-player="2"></div>
+                        </div>
+                        <div class="panel-section">
+                            <h2>Next Up</h2>
+                            <div class="next-preview" data-player="2"></div>
+                        </div>
+                    </aside>
 
-          <section class="playfield playfield--multi">
-            <div class="game-text" data-player="2">
-              <span>대기중</span>
-            </div>
-            <div class="playground" data-player="2">
-              <canvas class="tetrisBoardCanvas" width="300" height="600"></canvas>
-            </div>
-          </section>
-        </div>
-      </section>
-    </main>
-  </div>
+                    <section class="playfield playfield--multi">
+                        <div class="game-text" data-player="2">
+                            <span>대기중</span>
+                        </div>
+                        <div class="playground" data-player="2">
+                            <canvas class="tetrisBoardCanvas" width="300" height="600"></canvas>
+                        </div>
+                    </section>
+                </div>
+            </section>
+        </main>
+    </div>
 
-  <script type="module">
-    import { queryElement } from "../game/entry/dom.js"
-    import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
+    <script type="module">
+        import { queryElement } from "../game/entry/dom.js"
+        import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
 
-    const themeToggleBtn = queryElement(document, "#themeToggle")
-    applySavedTheme(themeToggleBtn)
+        const themeToggleBtn = queryElement(document, "#themeToggle")
+        applySavedTheme(themeToggleBtn)
 
-    const onToggleTheme = () => toggleTheme(themeToggleBtn)
-    themeToggleBtn?.addEventListener("click", onToggleTheme)
+        const onToggleTheme = () => toggleTheme(themeToggleBtn)
+        themeToggleBtn?.addEventListener("click", onToggleTheme)
 
-    window.addEventListener("pagehide", () => {
-      themeToggleBtn?.removeEventListener("click", onToggleTheme)
-    }, { once: true })
-  </script>
+        window.addEventListener("pagehide", () => {
+            themeToggleBtn?.removeEventListener("click", onToggleTheme)
+        }, { once: true })
+    </script>
 </body>
 </html>
