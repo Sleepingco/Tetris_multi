@@ -1,8 +1,11 @@
 // const moment = require("moment")
 const {
     createRoom,
+    getRoomState,
     joinRoom,
     removePlayer,
+    findRoomBySocketId,
+
 } = require("../services/roomService.js")
 
 function registerMultiplayerSocket(socketServer) {
@@ -24,7 +27,7 @@ function registerMultiplayerSocket(socketServer) {
                 ? { ...player, socketId: clientSocket.id }
                 : null
             const result = createRoom(hostPlayer)
-            
+
             if (result.ok) {
                 clientSocket.join(result.room.roomId);
             }
@@ -51,10 +54,46 @@ function registerMultiplayerSocket(socketServer) {
         })
 
         clientSocket.on("room:leave", ({ roomId, playerId }) => {
+            const roomBeforeLeave = getRoomState(roomId)
+            const leavingPlayer = roomBeforeLeave?.players.find(player => player.playerId === playerId)
             const result = removePlayer(roomId, playerId)
+
+            if (result.ok) {
+                clientSocket.leave(roomId)
+
+                if (result.room) {
+                    socketServer.to(roomId).emit("room:updated", result.room)
+                    socketServer.to(roomId).emit("room:message", {
+                        type: "system",
+                        text: `${leavingPlayer?.nickname || "Player"}님이 퇴장하였습니다.`,
+                        roomId: result.room.roomId,
+                    })
+                }
+            }
 
             clientSocket.emit("room:result", result)
         })
+
+        clientSocket.on("disconnect", () => {
+            const found = findRoomBySocketId(clientSocket.id);
+            if (found) {
+                const { room, player } = found
+                const result = removePlayer(room.roomId, player.playerId)
+
+                if (result.ok) {
+                    clientSocket.leave(room.roomId)
+                    if (result.room) {
+                        socketServer.to(room.roomId).emit("room:updated", result.room)
+                        socketServer.to(room.roomId).emit("room:message", {
+                            type: "system",
+                            text: `${player?.nickname || "Player"}님이 퇴장하였습니다.`,
+                            roomId: room.roomId,
+                        })
+                    }
+                }
+            }
+        })
+
     })
 }
 

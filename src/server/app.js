@@ -12,7 +12,7 @@ const STATIC_ROOT = path.join(__dirname, "..", "client")
 
 app.use(express.static(STATIC_ROOT))
 app.get("/", (_, res) => {
-        res.redirect("/pages/index.html")
+    res.redirect("/pages/index.html")
 })
 
 registerMultiplayerSocket(socketServer)

@@ -42,6 +42,18 @@ function createRoom(hostPlayer) {
 }
 
 function joinRoom(roomId, guestPlayer) {
+    if (!guestPlayer) {
+        return failure("GUEST_PLAYER_REQUIRED")
+    }
+
+    if (!guestPlayer.playerId) {
+        return failure("GUEST_PLAYER_ID_REQUIRED")
+    }
+
+    if (!roomId) {
+        return failure("ROOM_ID_REQUIRED")
+    }
+
     const roomState = getRoomState(roomId)
     if (!roomState) {
         return failure("ROOM_NOT_FOUND")
@@ -85,9 +97,27 @@ function removePlayer(roomId, playerId) {
 
     return success(roomState)
 }
+
+function findRoomBySocketId(socketId) {
+    for (const room of rooms.values()) {
+        const player = room.players.find(player => player.socketId === socketId);
+
+        if (player) {
+            return {
+                room,
+                player,
+            }
+        }
+    }
+
+    return null
+}
+
+
 module.exports = {
     createRoom,
     getRoomState,
     joinRoom,
     removePlayer,
+    findRoomBySocketId,
 }

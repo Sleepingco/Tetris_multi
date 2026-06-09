@@ -2,239 +2,354 @@
 <html lang="ko">
 
 <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>멀티플레이 로비 - Tetris Multi</title>
-        <script>
-                (() => {
-                        const savedTheme = localStorage.getItem("theme")
-                        const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
-                        document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
-                })()
-        </script>
-        <style>
-                :root {
-                        color-scheme: light;
-                        --initial-bg: #f8fafc;
-                        --initial-bg-soft: #f1f5f9;
-                        background: #f8fafc;
-                }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>멀티플레이 로비 - Tetris Multi</title>
+    <script>
+        (() => {
+            const savedTheme = localStorage.getItem("theme")
+            const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
+            document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
+        })()
+    </script>
+    <style>
+        :root {
+            color-scheme: light;
+            --initial-bg: #f8fafc;
+            --initial-bg-soft: #f1f5f9;
+            background: #f8fafc;
+        }
 
-                :root[data-theme="dark"] {
-                        color-scheme: dark;
-                        --initial-bg: #0f172a;
-                        --initial-bg-soft: #1e293b;
-                        background: #0f172a;
-                }
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --initial-bg: #0f172a;
+            --initial-bg-soft: #1e293b;
+            background: #0f172a;
+        }
 
-                html,
-                body {
-                        min-height: 100%;
-                        background: linear-gradient(135deg, var(--initial-bg-soft) 0%, var(--initial-bg) 100%);
-                }
-        </style>
-        <link rel="stylesheet" href="../styles/style.css">
+        html,
+        body {
+            min-height: 100%;
+            background: linear-gradient(135deg, var(--initial-bg-soft) 0%, var(--initial-bg) 100%);
+        }
+    </style>
+    <link rel="stylesheet" href="../styles/style.css">
 </head>
 
 <body>
-        <div class="container">
-                <header class="header">
-                        <h1 class="brand">Multi Lobby</h1>
-                        <nav class="nav">
-                                <button id="soundToggle" type="button" class="btn ghost" aria-pressed="false">사운드 켜기</button>
-                                <button id="themeToggle" type="button" class="btn ghost" aria-pressed="false">다크 모드</button>
-                                <a href="./index.html" class="btn ghost">← 홈으로</a>
-                        </nav>
-                </header>
+    <div class="container">
+        <header class="header">
+            <h1 class="brand">Multi Lobby</h1>
+            <nav class="nav">
+                <button id="soundToggle" type="button" class="btn ghost" aria-pressed="false">사운드 켜기</button>
+                <button id="themeToggle" type="button" class="btn ghost" aria-pressed="false">다크 모드</button>
+                <a href="./index.html" class="btn ghost">← 홈으로</a>
+            </nav>
+        </header>
 
-                <main class="main" style="padding-top: 10px;">
-                        <div class="lobby-grid">
-                                <section class="card chat-panel">
-                                        <h2 class="card-title" style="margin-bottom: 4px;">Global Chat</h2>
-                                        <div class="chat-messages" id="chatMessages">
-                                                <div class="chat-msg"><span class="system">[System]</span> 멀티플레이 로직은 roomService 설계 후 연결 예정입니다.
-                                                </div>
-                                        </div>
-                                        <form class="chat-input-group" id="chatForm">
-                                                <input type="text" id="chatInput" class="input-box" placeholder="메시지를 입력하세요..."
-                                                        autocomplete="off">
-                                                <button type="submit" class="btn primary">전송</button>
-                                        </form>
-                                </section>
-
-                                <section class="action-panel">
-                                        <div class="action-box">
-                                                <h3>Quick Match</h3>
-                                                <p>roomService를 만든 뒤 매칭 흐름을 연결할 예정입니다.</p>
-                                                <button id="btnQuickMatch" class="btn primary btn-match" type="button" disabled>준비중</button>
-                                        </div>
-
-                                        <div class="action-box">
-                                                <h3>Join by Code</h3>
-                                                <p>방 생성과 참가 상태 관리를 먼저 순수 함수로 검증합니다.</p>
-                                                <div class="join-group">
-                                                        <input type="text" id="roomCodeInput" class="input-box input-code" placeholder="ENTER CODE"
-                                                                maxlength="8">
-                                                        <button id="btnJoinCode" class="btn" type="button">방 입장 준비중</button>
-                                                </div>
-                                        </div>
-
-                                        <div class="action-box" style="padding: 16px;">
-                                                <p style="text-align:center; font-size:0.85rem;">방 생성 로직은 서버 roomService에서 먼저 검증합니다.</p>
-                                                <button id="btnCreateRoom" class="btn ghost" style="width:100%;" type="button">방 생성
-                                                        준비중</button>
-                                                <div id="roomStatus" class="room-status" hidden>
-                                                        <div class="room-status-row">
-                                                                <span>방 코드</span>
-                                                                <div class="room-code-group">
-                                                                        <strong id="roomCodeText">-</strong>
-                                                                        <button id="btnCopyRoomCode" class="room-copy-btn" type="button">복사</button>
-                                                                </div>
-                                                        </div>
-                                                        <div class="room-status-row">
-                                                                <span>상태</span>
-                                                                <strong id="roomStateText">-</strong>
-                                                        </div>
-                                                        <div class="room-status-row">
-                                                                <span>플레이어</span>
-                                                                <strong><span id="roomPlayerCountText">0</span> / 2</strong>
-                                                        </div>
-                                                </div>
-                                        </div>
-                                </section>
+        <main class="main" style="padding-top: 10px;">
+            <div class="lobby-grid">
+                <section class="card chat-panel">
+                    <h2 class="card-title" style="margin-bottom: 4px;">Global Chat</h2>
+                    <div class="chat-messages" id="chatMessages">
+                        <div class="chat-msg"><span class="system">[System]</span> 멀티플레이 로직은 roomService 설계 후 연결 예정입니다.
                         </div>
-                </main>
-        </div>
+                    </div>
+                    <form class="chat-input-group" id="chatForm">
+                        <input type="text" id="chatInput" class="input-box" placeholder="메시지를 입력하세요..."
+                            autocomplete="off">
+                        <button type="submit" class="btn primary">전송</button>
+                    </form>
+                </section>
 
-        <script src="/socket.io/socket.io.js"></script>
-        <script type="module">
-                import { initLobbySound } from "../game/runtime/sound.js"
-                import { queryElement, requireElement } from "../game/entry/dom.js"
-                import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
-                import { requestCreateRoom, onRoomResult, requestJoinRoom, onRoomUpdated, onRoomMessage } from "../net/roomClient.js"
-                function escapeHtml(text) {
-                        return text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
-                }
+                <section class="action-panel">
+                    <div class="action-box profile-box">
+                        <div class="avatar">
+                            <span id="playerAvatarChar">G</span>
+                        </div>
+                        <div class="profile-details">
+                            <span class="profile-meta">My Profile</span>
+                            <span class="profile-name" id="playerNicknameText">Guest</span>
+                        </div>
+                    </div>
 
-                const themeToggleBtn = queryElement(document, "#themeToggle")
-                const soundToggleBtn = queryElement(document, "#soundToggle")
-                const chatForm = requireElement(document, "#chatForm", "lobby")
-                const chatInput = requireElement(document, "#chatInput", "lobby")
-                const messages = requireElement(document, "#chatMessages", "lobby")
-                const roomStatus = requireElement(document, "#roomStatus", "lobby")
-                const roomCodeText = requireElement(document, "#roomCodeText", "lobby")
-                const roomStateText = requireElement(document, "#roomStateText", "lobby")
-                const roomPlayerCountText = requireElement(document, "#roomPlayerCountText", "lobby")
-                const copyRoomCodeBtn = requireElement(document, "#btnCopyRoomCode", "lobby")
+                    <div class="action-box">
+                        <h3>Quick Match</h3>
+                        <p>roomService를 만든 뒤 매칭 흐름을 연결할 예정입니다.</p>
+                        <button id="btnQuickMatch" class="btn primary btn-match" type="button" disabled>준비중</button>
+                    </div>
 
-                applySavedTheme(themeToggleBtn)
+                    <div class="action-box">
+                        <h3>Join by Code</h3>
+                        <p>방 생성과 참가 상태 관리를 먼저 순수 함수로 검증합니다.</p>
+                        <div class="join-group">
+                            <input type="text" id="roomCodeInput" class="input-box input-code" placeholder="ENTER CODE"
+                                maxlength="8">
+                            <button id="btnJoinCode" class="btn" type="button">방 입장 준비중</button>
+                            <button id="btnLeaveRoom" class="btn" type="button">방 나가기</button>
+                        </div>
+                    </div>
 
-                const appendMessage = (type, text) => {
-                        const div = document.createElement("div")
-                        div.className = "chat-msg"
-                        const tag = type === "system"
-                                ? '<span class="system">[System]</span>'
-                                : '<span class="user">[Guest]</span>'
-                        div.innerHTML = `${tag} ${escapeHtml(text)}`
-                        messages.appendChild(div)
-                        messages.scrollTop = messages.scrollHeight
-                }
+                    <div class="action-box" style="padding: 16px;">
+                        <p style="text-align:center; font-size:0.85rem;">방 생성 로직은 서버 roomService에서 먼저 검증합니다.</p>
+                        <button id="btnCreateRoom" class="btn ghost" style="width:100%;" type="button">방 생성
+                            준비중</button>
+                        <div id="roomStatus" class="room-status" hidden>
+                            <div class="room-status-row">
+                                <span>방 코드</span>
+                                <div class="room-code-group">
+                                    <strong id="roomCodeText">-</strong>
+                                    <button id="btnCopyRoomCode" class="room-copy-btn" type="button">복사</button>
+                                </div>
+                            </div>
+                            <div class="room-status-row">
+                                <span>상태</span>
+                                <strong id="roomStateText">-</strong>
+                            </div>
+                            <div class="room-status-row">
+                                <span>플레이어</span>
+                                <strong><span id="roomPlayerCountText">0</span> / 2</strong>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
 
-                const onToggleTheme = () => toggleTheme(themeToggleBtn)
-                const onSubmitChat = (event) => {
-                        event.preventDefault()
-                        const message = chatInput.value.trim()
-                        if (!message) return
-                        appendMessage("user", message)
-                        chatInput.value = ""
-                }
-                const onCopyRoomCode = async () => {
-                        const roomId = roomCodeText.textContent.trim()
-                        if (!roomId || roomId === "-") {
-                                appendMessage("system", "복사할 방 코드가 없습니다.")
-                                return
-                        }
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module">
+        import { initLobbySound } from "../game/runtime/sound.js"
+        import { queryElement, requireElement } from "../game/entry/dom.js"
+        import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
+        import { requestCreateRoom, onRoomResult, requestJoinRoom, onRoomUpdated, onRoomMessage, requestLeaveRoom } from "../net/roomClient.js"
 
-                        try {
-                                await navigator.clipboard.writeText(roomId)
-                                appendMessage("system", `방 코드 ${roomId}를 복사했습니다.`)
-                        } catch {
-                                appendMessage("system", `복사에 실패했습니다. 방 코드: ${roomId}`)
-                        }
-                }
+        // =============================
+        // Display Helpers
+        // 채팅/상태 표시 전에 사용자 입력 문자열을 안전하게 이스케이프한다.
+        // =============================
+        function escapeHtml(text) {
+            return text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        }
 
-                themeToggleBtn?.addEventListener("click", onToggleTheme)
-                chatForm.addEventListener("submit", onSubmitChat)
-                copyRoomCodeBtn.addEventListener("click", onCopyRoomCode)
-                const cleanupSound = initLobbySound(soundToggleBtn)
+        // =============================
+        // DOM References
+        // 로비 화면에서 반복해서 사용할 필수/선택 요소를 한 번만 조회한다.
+        // =============================
+        const themeToggleBtn = queryElement(document, "#themeToggle")
+        const soundToggleBtn = queryElement(document, "#soundToggle")
+        const chatForm = requireElement(document, "#chatForm", "lobby")
+        const chatInput = requireElement(document, "#chatInput", "lobby")
+        const messages = requireElement(document, "#chatMessages", "lobby")
+        const roomStatus = requireElement(document, "#roomStatus", "lobby")
+        const roomCodeText = requireElement(document, "#roomCodeText", "lobby")
+        const roomStateText = requireElement(document, "#roomStateText", "lobby")
+        const roomPlayerCountText = requireElement(document, "#roomPlayerCountText", "lobby")
+        const copyRoomCodeBtn = requireElement(document, "#btnCopyRoomCode", "lobby")
+        const playerNicknameText = requireElement(document, "#playerNicknameText", "lobby")
+        const playerAvatarChar = requireElement(document, "#playerAvatarChar", "lobby")
 
-                window.addEventListener("pagehide", () => {
-                        themeToggleBtn?.removeEventListener("click", onToggleTheme)
-                        chatForm.removeEventListener("submit", onSubmitChat)
-                        copyRoomCodeBtn.removeEventListener("click", onCopyRoomCode)
-                        cleanupSound?.()
-                }, { once: true })
+        applySavedTheme(themeToggleBtn)
+
+        // =============================
+        // Chat UI
+        // 시스템/사용자 메시지를 채팅 패널에 누적해서 보여준다.
+        // =============================
+        /**
+         * 채팅 패널에 메시지 한 줄을 추가하고, 최신 메시지가 보이도록 스크롤을 내린다.
+         *
+         * @param {string} sender - 메시지 보낸 사람 (닉네임 또는 "system")
+         * @param {string} text - 화면에 출력할 메시지 본문
+         * @returns {void}
+         */
+        const appendMessage = (sender, text) => {
+            const div = document.createElement("div")
+            div.className = "chat-msg"
+            const tag = sender === "system"
+                ? '<span class="system">[System]</span>'
+                : `<span class="user">[${escapeHtml(sender)}]</span>`
+            div.innerHTML = `${tag} ${escapeHtml(text)}`
+            messages.appendChild(div)
+            messages.scrollTop = messages.scrollHeight
+        }
+
+        // =============================
+        // Common UI Events
+        // 테마 토글, 로컬 채팅 입력, 방 코드 복사처럼 로비 공통 상호작용을 처리한다.
+        // =============================
+        const onToggleTheme = () => toggleTheme(themeToggleBtn)
+        const onSubmitChat = (event) => {
+            event.preventDefault()
+            const message = chatInput.value.trim()
+            if (!message) return
+            appendMessage(currentPlayer.nickname, message)
+            chatInput.value = ""
+        }
+        const onCopyRoomCode = async () => {
+            const roomId = roomCodeText.textContent.trim()
+            if (!roomId || roomId === "-") {
+                appendMessage("system", "복사할 방 코드가 없습니다.")
+                return
+            }
+
+            try {
+                await navigator.clipboard.writeText(roomId)
+                appendMessage("system", `방 코드 ${roomId}를 복사했습니다.`)
+            } catch {
+                appendMessage("system", `복사에 실패했습니다. 방 코드: ${roomId}`)
+            }
+        }
+
+        // =============================
+        // Global Event Wiring
+        // 로비에 진입하면 공통 UI 리스너와 로비 BGM을 연결하고, pagehide 시 정리한다.
+        // =============================
+        themeToggleBtn?.addEventListener("click", onToggleTheme)
+        chatForm.addEventListener("submit", onSubmitChat)
+        copyRoomCodeBtn.addEventListener("click", onCopyRoomCode)
+        const cleanupSound = initLobbySound(soundToggleBtn)
+
+        window.addEventListener("pagehide", () => {
+            themeToggleBtn?.removeEventListener("click", onToggleTheme)
+            chatForm.removeEventListener("submit", onSubmitChat)
+            copyRoomCodeBtn.removeEventListener("click", onCopyRoomCode)
+            cleanupSound?.()
+        }, { once: true })
+
+        // =============================
+        // Room Actions
+        // 방 생성, 참가 요청, 방 나가기 처럼 사용자가 roomClient에 명령을 보내는 진입점이다.
+        // =============================
+        const btnCreateRoom = queryElement(document, "#btnCreateRoom")
+        const btnLeaveRoom = queryElement(document, "#btnLeaveRoom")
+
+        function createGuestNickname() {
+            return `Guest${Math.floor(1000 + Math.random() * 9000)}`
+        }
+
+        function getSavedNickname() {
+            const savedNickname = sessionStorage.getItem("tetris:nickname")?.trim()
+            if (savedNickname) return savedNickname
+
+            const guestNickname = createGuestNickname()
+            sessionStorage.setItem("tetris:nickname", guestNickname)
+            return guestNickname
+        }
+
+        const currentPlayer = {
+            playerId: crypto.randomUUID(),
+            nickname: getSavedNickname(),
+        }
+
+        // 현재 플레이어 정보를 UI에 반영한다.
+        playerNicknameText.textContent = currentPlayer.nickname
+        playerAvatarChar.textContent = currentPlayer.nickname.charAt(0).toUpperCase()
+
+        btnCreateRoom?.addEventListener("click", () => {
+            requestCreateRoom(currentPlayer)
+        })
+        btnLeaveRoom?.addEventListener("click", () => {
+            if (!currentRoomId) {
+                appendMessage("system", "존재하지 않는 방입니다.")
+                return
+            }
+
+            leaveRoom(currentRoomId, currentPlayer.playerId)
+        })
 
 
-                const btnCreateRoom = queryElement(document, "#btnCreateRoom")
-                btnCreateRoom?.addEventListener("click", () => {
-                        requestCreateRoom({
-                                playerId: crypto.randomUUID(),
-                                nickname: "Guest",
-                        })
-                })
+        // =============================
+        // Room State Rendering
+        // 서버/roomService에서 받은 방 스냅샷을 현재 로비 상태 UI에 반영한다.
+        // =============================
+        /**
+         * 방 코드, 상태, 인원 수를 현재 room 상태 패널에 동기화한다.
+         *
+         * @param {{roomId: string, status: string, players: Array<unknown>}} room - 반영할 현재 방 상태
+         * @returns {void}
+         */
+        let currentRoomId = null;
+        function renderRoom(room) {
+            currentRoomId = room.roomId;
+            roomStatus.hidden = false
+            roomCodeText.textContent = room.roomId
+            roomStateText.textContent = room.status
+            roomPlayerCountText.textContent = String(room.players.length)
+        }
 
-                function renderRoom(room) {
-                    roomStatus.hidden = false
-                    roomCodeText.textContent = room.roomId
-                    roomStateText.textContent = room.status
-                    roomPlayerCountText.textContent = String(room.players.length)
-                }
+        function clearRoom() {
+            currentRoomId = null
+            roomStatus.hidden = true
+            roomCodeText.textContent = "-"
+            roomStateText.textContent = "-"
+            roomPlayerCountText.textContent = "0"
+        }
 
-                onRoomUpdated((room) => {
-                        if (!room) return;
-                        renderRoom(room);
-                })
+        // =============================
+        // Room Client Subscriptions
+        // roomClient가 밀어주는 상태 변화/메시지/요청 결과를 받아 화면에 반영한다.
+        // =============================
+        onRoomUpdated((room) => {
+            if (!room) return
+            renderRoom(room)
+        })
 
-                onRoomMessage((message) => {
-                        if (!message) return
-                        appendMessage(message.type || "system", message.text || "")
-                })
+        onRoomMessage((message) => {
+            if (!message) return
+            appendMessage(message.type || "system", message.text || "")
+        })
 
-                onRoomResult((result, requestType) => {
-                        if (!result.ok) {
-                                appendMessage("system", result.reason)
-                                return
-                        }
+        onRoomResult((result, requestType) => {
+            if (!result.ok) {
+                appendMessage("system", result.reason)
+                return
+            }
 
-                        const { room } = result
-                        if (!room) return
-                        renderRoom(room)
-                        if (requestType === "create") {
-                                appendMessage("system", `방이 생성되었습니다. 코드: ${room.roomId}`)
-                        }
 
-                        if (requestType === "join") {
-                                appendMessage("system", `방에 입장했습니다. 코드: ${room.roomId}`)
-                        }
-                })
+            if (requestType === "leave") {
+                appendMessage("system", `방에서 퇴장했습니다.`)
+                clearRoom()
+                return
+            }
 
-                const roomCodeInput = requireElement(document, "#roomCodeInput", "lobby")
-                const joinCodeBtn = requireElement(document, "#btnJoinCode", "lobby")
-                joinCodeBtn.addEventListener("click", () => {
-                        const roomId = roomCodeInput.value.trim().toUpperCase()
+            const { room } = result
+            if (!room) return;
+            renderRoom(room)
+            if (requestType === "create") {
+                appendMessage("system", `방이 생성되었습니다. 코드: ${room.roomId}`)
+            }
 
-                        if (!roomId) {
-                                appendMessage("system", "방 코드를 입력해주세요.")
-                                return
-                        }
+            if (requestType === "join") {
+                appendMessage("system", `방에 입장했습니다. 코드: ${room.roomId}`)
+            }
 
-                        requestJoinRoom(roomId, {
-                                playerId: crypto.randomUUID(),
-                                nickname: "Guest",
-                        })
-                })
-        </script>
+        })
+
+        // =============================
+        // Join By Code
+        // 입력된 방 코드를 검증한 뒤 roomClient를 통해 참가 요청을 보낸다.
+        // =============================
+        const roomCodeInput = requireElement(document, "#roomCodeInput", "lobby")
+        const joinCodeBtn = requireElement(document, "#btnJoinCode", "lobby")
+        joinCodeBtn.addEventListener("click", () => {
+            const roomId = roomCodeInput.value.trim().toUpperCase()
+
+            if (!roomId) {
+                appendMessage("system", "방 코드를 입력해주세요.")
+                return
+            }
+
+            requestJoinRoom(roomId, currentPlayer)
+        })
+
+        function leaveRoom(roomId, currentPlayerId) {
+            if (!roomId) {
+                appendMessage("system", "방 코드를 입력해주세요.")
+                return;
+            }
+            requestLeaveRoom(roomId, currentPlayerId)
+        }
+    </script>
 </body>
 
 </html>

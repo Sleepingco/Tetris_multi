@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,12 +19,14 @@
             --initial-bg-soft: #f1f5f9;
             background: #f8fafc;
         }
+
         :root[data-theme="dark"] {
             color-scheme: dark;
             --initial-bg: #0f172a;
             --initial-bg-soft: #1e293b;
             background: #0f172a;
         }
+
         html,
         body {
             min-height: 100%;
@@ -32,6 +35,7 @@
     </style>
     <link rel="stylesheet" href="../styles/style.css">
 </head>
+
 <body>
     <div class="container">
         <header class="header">
@@ -46,9 +50,22 @@
             <section class="hero">
                 <h2 class="hero-title">Welcome to Tetris Multi</h2>
                 <p class="hero-desc">이 게임은 다양한 사람들이 함께 테트리스를 하는 게임입니다.<br>많이 즐겨 주셨으면 좋겠습니다.</p>
-                <div class="cta">
-                    <a class="btn primary" href="./tetrisSingle.html">싱글 게임</a>
-                    <a class="btn" href="./multiLobby.html">멀티 게임</a>
+                <div class="setup-container">
+                    <form class="nickname-form" id="nicknameEntryForm">
+                        <div class="input-wrapper">
+                            <span class="input-icon">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="20" height="20">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                                </svg>
+                            </span>
+                            <input id="nicknameInput" class="input-box" type="text" maxlength="16"
+                                placeholder="닉네임 입력 (미입력 시 Guest)" autocomplete="nickname">
+                        </div>
+                        <div class="cta-group">
+                            <a id="btnSingle" class="btn" href="./tetrisSingle.html">싱글 게임</a>
+                            <button type="submit" id="btnMulti" class="btn primary">멀티 게임</button>
+                        </div>
+                    </form>
                 </div>
             </section>
 
@@ -58,7 +75,7 @@
                     <div class="card-desc">혼자 연습하기 — 현재 구현된 싱글 플레이로 바로 시작</div>
                     <div class="card-cta">시작하기 →</div>
                 </a>
-                <a class="card" href="./multiLobby.html">
+                <a class="card" href="./multiLobby.html" data-multi-lobby-link>
                     <div class="card-title">Online</div>
                     <div class="card-desc">웹소켓 멀티 대전 — 대기실/매칭은 순차 오픈 예정</div>
                     <div class="card-cta">입장하기 →</div>
@@ -92,6 +109,10 @@
         const themeToggleBtn = queryElement(document, "#themeToggle")
         const soundToggleBtn = queryElement(document, "#soundToggle")
         const yearEl = queryElement(document, "#year")
+        const nicknameEntryForm = queryElement(document, "#nicknameEntryForm")
+        const nicknameInput = queryElement(document, "#nicknameInput")
+        const btnSingle = queryElement(document, "#btnSingle")
+        const multiLobbyLinks = document.querySelectorAll("[data-multi-lobby-link]")
 
         if (yearEl) {
             yearEl.textContent = new Date().getFullYear()
@@ -103,13 +124,42 @@
             toggleTheme(themeToggleBtn)
         }
 
+        function createGuestNickname() {
+            return `Guest${Math.floor(1000 + Math.random() * 9000)}`
+        }
+
+        function enterMultiLobby(event) {
+            event.preventDefault()
+            const nickname = nicknameInput?.value.trim() || createGuestNickname()
+            sessionStorage.setItem("tetris:nickname", nickname)
+            window.location.href = "./multiLobby.html"
+        }
+
+        function enterSingleGame() {
+            const nickname = nicknameInput?.value.trim()
+            if (nickname) {
+                sessionStorage.setItem("tetris:nickname", nickname)
+            }
+        }
+
         themeToggleBtn?.addEventListener("click", onToggleTheme)
+        nicknameEntryForm?.addEventListener("submit", enterMultiLobby)
+        btnSingle?.addEventListener("click", enterSingleGame)
+        multiLobbyLinks.forEach(link => {
+            link.addEventListener("click", enterMultiLobby)
+        })
         const cleanupSound = initLobbySound(soundToggleBtn)
 
         window.addEventListener("pagehide", () => {
             themeToggleBtn?.removeEventListener("click", onToggleTheme)
+            nicknameEntryForm?.removeEventListener("submit", enterMultiLobby)
+            btnSingle?.removeEventListener("click", enterSingleGame)
+            multiLobbyLinks.forEach(link => {
+                link.removeEventListener("click", enterMultiLobby)
+            })
             cleanupSound?.()
         }, { once: true })
     </script>
 </body>
+
 </html>
