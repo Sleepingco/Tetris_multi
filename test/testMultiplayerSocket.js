@@ -164,3 +164,52 @@ test("disconnect는 끊어진 socket의 player를 room에서 제거하고 남은
     assert.equal(socketServer.roomEvents.at(-1).eventName, "room:message")
     assert.equal(socketServer.roomEvents.at(-1).payload.text, "Guest님이 퇴장하였습니다.")
 })
+
+test("room:start는 방장만 실행 가능하며, 성공 시 게임 시작 이벤트와 룸 정보를 broadcast한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("host-socket")
+    const guestSocket = new FakeClientSocket("guest-socket")
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "p1",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "p2",
+            nickname: "Guest",
+        },
+    })
+
+    assert.doesNotThrow(() => {
+        hostSocket.trigger("room:start", {
+            roomId,
+            playerId: "p1",
+        })
+    })
+
+    const startResult = hostSocket.lastClientEvent("room:result").payload
+
+    assert.equal(startResult.ok, true)
+    assert.equal(startResult.room.players.length, 2)
+    assert.equal(startResult.room.players[0].playerId, "p1")
+    assert.equal(startResult.room.players[1].playerId, "p2")
+    assert.equal(startResult.room.status, "playing")
+
+    const updatedEvent = socketServer.roomEvents.findLast(event => event.eventName === "room:updated")
+    const messageEvent = socketServer.roomEvents.findLast(event => event.eventName === "room:message")
+
+    assert.equal(updatedEvent.roomId, roomId)
+    assert.equal(updatedEvent.payload.status, "playing")
+    assert.equal(updatedEvent.payload.players.length, 2)
+    assert.equal(messageEvent.roomId, roomId)
+    assert.equal(messageEvent.payload.text, "Host님이 게임을 시작했습니다.")
+})

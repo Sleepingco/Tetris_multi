@@ -7,6 +7,7 @@ const {
     joinRoom,
     removePlayer,
     findRoomBySocketId,
+    startGame,
 } = require("../src/server/services/roomService.js")
 
 test("createRoom은 host player가 들어간 waiting room을 만든다", () => {
@@ -22,6 +23,7 @@ test("createRoom은 host player가 들어간 waiting room을 만든다", () => {
     assert.equal(result.reason, null)
     assert.equal(result.room.players.length, 1)
     assert.equal(result.room.players[0].playerId, "p1")
+    assert.equal(result.room.hostPlayerId, "p1")
     assert.equal(result.room.status, "waiting")
     assert.equal(typeof result.room.roomId, "string")
 })
@@ -40,7 +42,7 @@ test("getRoomState는 roomId로 생성된 room을 다시 조회한다", () => {
     assert.equal(room.players.length, 1)
 })
 
-test("joinRoom은 두 번째 player를 추가하고 status를 playing으로 바꾼다", () => {
+test("joinRoom은 두 번째 player를 추가하고 status를 waiting으로 유지한다", () => {
     const hostPlayer = {
         playerId: "p1",
         nickname: "Player 1",
@@ -60,7 +62,7 @@ test("joinRoom은 두 번째 player를 추가하고 status를 playing으로 바�
     assert.equal(joinResult.reason, null)
     assert.equal(joinResult.room.players.length, 2)
     assert.equal(joinResult.room.players[1].playerId, "p2")
-    assert.equal(joinResult.room.status, "playing")
+    assert.equal(joinResult.room.status, "waiting")
 })
 
 test("joinRoom은 없는 roomId면 ROOM_NOT_FOUND를 반환한다", () => {
@@ -194,6 +196,31 @@ test("removePlayer는 한 명이 나가면 room을 유지하고 status를 waitin
     assert.equal(result.reason, null)
     assert.equal(result.room.players.length, 1)
     assert.equal(result.room.players[0].playerId, "p1")
+    assert.equal(result.room.hostPlayerId, "p1")
+    assert.equal(result.room.status, "waiting")
+})
+
+test("removePlayer는 host가 나가면 남은 player를 새 host로 지정한다", () => {
+    const hostPlayer = {
+        playerId: "p1",
+        nickname: "Player 1",
+        socketId: "socket-1",
+    }
+    const guestPlayer = {
+        playerId: "p2",
+        nickname: "Player 2",
+        socketId: "socket-2",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    const result = removePlayer(createResult.room.roomId, "p1")
+
+    assert.equal(result.ok, true)
+    assert.equal(result.reason, null)
+    assert.equal(result.room.players.length, 1)
+    assert.equal(result.room.players[0].playerId, "p2")
+    assert.equal(result.room.hostPlayerId, "p2")
     assert.equal(result.room.status, "waiting")
 })
 
@@ -261,4 +288,92 @@ test("findRoomBySocketId는 없는 socketId면 null을 반환한다", () => {
     const found = findRoomBySocketId("missing-socket")
 
     assert.equal(found, null)
+})
+
+test("startGame는 status를 playing으로 바꾸고 game 데이터를 반환한다", () => {
+    const hostPlayer = {
+        playerId: "p1",
+        nickname: "Player 1",
+        socketId: "socket-1",
+    }
+    const guestPlayer = {
+        playerId: "p2",
+        nickname: "Player 2",
+        socketId: "socket-2",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    const result = startGame(createResult.room.roomId, hostPlayer.playerId)
+
+    assert.equal(result.ok, true)
+    assert.equal(result.reason, null)
+    assert.equal(result.room.status, "playing")
+    assert.equal(result.room.players.length, 2)
+})
+
+test("startGame는 없는 roomId면 ROOM_NOT_FOUND를 반환한다", () => {
+    const result = startGame("UNKNOWN", "p1")
+
+    assert.equal(result.ok, false)
+    assert.equal(result.room, null)
+    assert.equal(result.reason, "ROOM_NOT_FOUND")
+})
+
+test("startGame는 방장이 아닌 player가 요청하면 NOT_AUTHORIZED를 반환한다", () => {
+    const hostPlayer = {
+        playerId: "p1",
+        nickname: "Player 1",
+        socketId: "socket-1",
+    }
+    const guestPlayer = {
+        playerId: "p2",
+        nickname: "Player 2",
+        socketId: "socket-2",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    const result = startGame(createResult.room.roomId, guestPlayer.playerId)
+
+    assert.equal(result.ok, false)
+    assert.equal(result.room, null)
+    assert.equal(result.reason, "NOT_AUTHORIZED")
+})
+
+test("startGame는 player가 한 명뿐이면 NOT_ENOUGH_PLAYERS를 반환한다", () => {
+    const hostPlayer = {
+        playerId: "p1",
+        nickname: "Player 1",
+        socketId: "socket-1",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    const result = startGame(createResult.room.roomId, hostPlayer.playerId)
+
+    assert.equal(result.ok, false)
+    assert.equal(result.room, null)
+    assert.equal(result.reason, "NOT_ENOUGH_PLAYERS")
+})
+
+test("startGame는 이미 시작된 room이면 GAME_ALREADY_STARTED를 반환한다", () => {
+    const hostPlayer = {
+        playerId: "p1",
+        nickname: "Player 1",
+        socketId: "socket-1",
+    }
+    const guestPlayer = {
+        playerId: "p2",
+        nickname: "Player 2",
+        socketId: "socket-2",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    startGame(createResult.room.roomId, hostPlayer.playerId)
+    const result = startGame(createResult.room.roomId, hostPlayer.playerId)
+
+    assert.equal(result.ok, false)
+    assert.equal(result.room, null)
+    assert.equal(result.reason, "GAME_ALREADY_STARTED")
 })

@@ -31,6 +31,7 @@ function createRoom(hostPlayer) {
 
     const room = {
         roomId,
+        hostPlayerId: hostPlayer.playerId,
         players: [hostPlayer],
         status: "waiting",
         createdAt: Date.now(),
@@ -68,7 +69,7 @@ function joinRoom(roomId, guestPlayer) {
     }
 
     roomState.players.push(guestPlayer)
-    roomState.status = "playing"
+    roomState.status = "waiting"
 
     return success(roomState)
 }
@@ -86,11 +87,16 @@ function removePlayer(roomId, playerId) {
         return failure("PLAYER_NOT_FOUND")
     }
 
+    const removedPlayer = roomState.players[playerIndex]
     roomState.players.splice(playerIndex, 1)
 
     if (roomState.players.length === 0) {
         rooms.delete(roomId)
         return success(null)
+    }
+
+    if (roomState.hostPlayerId === removedPlayer.playerId) {
+        roomState.hostPlayerId = roomState.players[0].playerId
     }
 
     roomState.status = "waiting"
@@ -113,6 +119,38 @@ function findRoomBySocketId(socketId) {
     return null
 }
 
+function startGame(roomId, playerId) {
+    const roomState = getRoomState(roomId)
+    if (!roomId || !roomState) {
+        return failure("ROOM_NOT_FOUND")
+    }
+
+    if (!playerId) {
+        return failure("PLAYER_ID_REQUIRED")
+    }
+
+    const player = roomState.players.find(player => player.playerId === playerId)
+
+    if (!player) {
+        return failure("NOT_AUTHORIZED")
+    }
+
+    if (roomState.status !== "waiting") {
+        return failure("GAME_ALREADY_STARTED")
+    }
+
+    if (roomState.hostPlayerId !== playerId) {
+        return failure("NOT_AUTHORIZED")
+    }
+
+    if (roomState.players.length !== 2) {
+        return failure("NOT_ENOUGH_PLAYERS")
+    }
+
+    roomState.status = "playing"
+
+    return success(roomState)
+}
 
 module.exports = {
     createRoom,
@@ -120,4 +158,5 @@ module.exports = {
     joinRoom,
     removePlayer,
     findRoomBySocketId,
+    startGame,
 }

@@ -4,16 +4,20 @@
 이 저장소는 **싱글플레이 엔진이 어느 정도 완성된 상태**이며,  
 현재 목표는 **멀티플레이(WebSocket 기반) 모드 구현**입니다.  
 이후에 AI 상대 구현을 계획하고 있습니다.
+LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결과를 사용자에게 설명하는 **보조 코칭 계층**으로 검토합니다.
 
 ## 🛠 기술 스택
 - 백엔드: `Node.js`
 - 프론트엔드: 현재 구조 유지 중, 추후 마이그레이션 예정
 - 현재 학습/구현 단계: Vanilla JS + Express + Socket.IO 중심
 - 실무형 확장 단계: 프론트엔드는 Vite + React, 백엔드는 Express + Socket.IO 구조화 또는 NestJS Gateway 검토 가능
+- 실행: `npm start`
+- 테스트: `npm test` (`node --test`)
 
 - 싱글플레이 엔진 완성  
 - 이제 멀티플레이(WebSocket 기반) 구현이 1차 목표  
 - 이후에 AI 상대 구현 예정  
+- LLM은 게임 판단의 원천이 아니라, AI/분석 결과를 자연어로 풀어주는 후순위 기능  
 
 이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
 현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
@@ -30,7 +34,7 @@
 src/
 ├── app.js                   # Node.js server entry
 ├── server/                 # Node.js only
-│   ├── app.js               # Express / HTTP / Socket.IO server assembly
+│   ├── init.js              # Express / HTTP / Socket.IO server assembly
 │   ├── services/
 │   │   └── roomService.js   # Room state management
 │   └── sockets/
@@ -226,7 +230,7 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 현재 단계의 기본 원칙:
 - 멀티플레이 MVP는 Vanilla JS + Express + Socket.IO로 먼저 완성한다.
 - Socket.IO 이벤트 흐름, roomService 상태 변화, 클라이언트 통신 어댑터를 직접 이해하는 것을 우선한다.
-- 프레임워크가 없어도 계층은 나눈다: `server/app` → `server/sockets` → `server/services` → `client/net` → `client/pages/ui`.
+- 프레임워크가 없어도 계층은 나눈다: `src/app.js` → `server/init` → `server/sockets` → `server/services` → `client/net` → `client/pages/ui`.
 
 실무/유지보수 기준에서 프레임워크 도입을 고려할 조건:
 - 로비, 방 목록, 준비 상태, 채팅, 설정, 결과 화면처럼 화면 상태가 많아진다.
@@ -291,37 +295,36 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 	•	하드 드롭, 회전, 점수, 홀드, 다음 블록 미리보기 작동 중
 	•	캔버스 기반 보드 렌더링 적용
 	•	멀티플레이 roomService 1차 구현 완료
-		- `createRoom`, `joinRoom`, `removePlayer`, `getRoomState`
+		- `createRoom`, `joinRoom`, `removePlayer`, `getRoomState`, `findRoomBySocketId`
 		- `Map` 기반 서버 메모리 room 상태 관리
 		- 성공/실패 반환 형태 `{ ok, room, reason }`로 통일
-		- Node 내장 테스트(`node --test`)로 roomService 정상/실패 케이스 검증
-		•	Socket.IO 기반 room 생성 흐름 1차 연결
-			- `server/sockets/multiplayerSocket.js`에서 `room:create`, `room:join`, `room:leave` 이벤트 등록
-			- `client/net/roomClient.js`에서 브라우저 `room:create` 요청과 `room:result` 수신 연결
-			- `multiLobby.html`에서 방 생성 버튼으로 서버 room 생성 결과를 콘솔에서 확인
+	•	Socket.IO 기반 room 흐름 1차 연결
+		- `src/server/sockets/multiplayerSocket.js`에서 `room:create`, `room:join`, `room:leave`, `disconnect` 이벤트 등록
+		- `socket.join(roomId)` 기반 room 참가와 room 단위 `room:updated`, `room:message` broadcast 연결
+		- `src/client/net/roomClient.js`에서 `create / join / leave` 요청과 `room:result / room:updated / room:message` 수신 연결
+		- `src/client/pages/multiLobby.html`에서 방 코드, 상태, 현재 player 수 표시 및 방 코드 복사, 입장, 나가기 흐름 연결
+	•	Node 내장 테스트(`node --test`)로 roomService와 multiplayerSocket 주요 흐름 검증
 	•	게임 플레이 화면 라이트/다크 테마 적용
 
 🧩 다음 단계
-	1. 멀티 로비 UI에 생성된 `roomId` 표시
-		- 현재는 `console.log(result)`로만 확인 중
-		- 화면에 방 코드, 상태, 현재 player 수를 표시
-		- 이후 join 테스트를 위해 roomId 복사/입력 흐름 준비
-	2. `room:join` 클라이언트 흐름 연결
-		- `roomClient.js`에 join 요청 함수 추가
-		- 로비의 room code input과 join button 활성화
-		- 두 브라우저 탭으로 같은 room에 2명이 들어오는지 확인
-	3. `room:leave` 및 disconnect 정리
-		- 수동 leave 버튼 또는 페이지 이탈 시 room에서 player 제거
-		- Socket.IO `disconnect`와 `removePlayer` 연결 방식 설계
-	4. room 단위 Socket.IO room 참가 검토
-		- `socket.join(roomId)` 도입 시점 결정
-		- 같은 room 참가자에게만 room 상태 broadcast
-	5. 게임 동기화 전 준비
+	1. 멀티 로비 room 흐름 브라우저 수동 검증
+		- 두 브라우저 탭으로 create → join → leave → disconnect 흐름 확인
+		- 로비의 "준비중" 문구를 실제 동작 상태에 맞게 정리
+	2. match 준비/시작 흐름 설계
+		- `match:ready`, `match:start` 이벤트와 room 상태 전환 기준 정의
+		- 방이 2명일 때 게임 화면으로 이동할지, 로비에서 ready를 받을지 결정
+	3. 서버 match/player 상태 초안 추가
+		- room 상태와 match 상태를 분리
+		- player의 socketId, nickname, ready, game state 경계를 문서화
+	4. 게임 동기화 전 준비
 		- room 상태와 game 상태의 경계 문서화
 		- `game:snapshot`, `game:action`, server bag은 room 흐름 안정화 후 진행
+	5. 멀티 게임 화면 연결
+		- `src/client/pages/tetrisMulti.html`은 현재 화면 골격 위주이므로 local/remote runtime 또는 snapshot render 경로 연결 필요
 	6. AI 상대 구현 (규칙 기반 → 머신러닝)
 	7. step(game, input) 기반 결정론적 루프 구조화
 	8. 멀티/AI에서 재사용 가능한 상태/렌더 경계 정리
+	9. 플레이 로그/AI 비교/패턴 분석이 준비된 뒤 LLM 코칭 리포트 검토
 
 🎯 학습 목표
 	• DOM 탐색과 이벤트 위임 이해  
@@ -329,6 +332,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 	• 코드베이스 리팩토링과 기능 유지  
 	• 데이터 중심 아키텍처 이해 및 구축  
 	• AI 통합을 위한 결정론적 게임 로직 완성
+	• LLM은 판단 엔진이 아니라 분석 결과 설명 계층으로 사용하는 설계 감각 학습
 
 ⸻
 
@@ -340,6 +344,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 - "멀티플레이 통신에서 어떤 데이터를 보내야 해?"
 - "execution과 runtime 책임을 어떻게 나누는 게 좋아?"
 - "AI가 블록을 둘 위치를 판단하려면 어떤 특징을 써야 해?"
+- "LLM 코칭을 붙이려면 어떤 플레이 로그와 분석 지표가 먼저 필요해?"
 
 
 ⸻
@@ -381,7 +386,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 사용자는 배열 기반 상태 관리와 모듈 분리 구조를 바탕으로,  
 멀티플레이와 AI까지 확장 가능한 Tetris 시스템을 단계별로 구축 중입니다.
 
-현재 코드는 `game(core/entry/runtime/execution/state/ui) / render / net / server / pages / styles` 기준으로 분리되어 있으며,  
+현재 코드는 `client/game(core/entry/execution/render/runtime/state/ui) / client/net / client/pages / client/styles / server/services / server/sockets` 기준으로 분리되어 있으며,  
 문서 설명이나 변경 제안도 이 실제 구조를 기준으로 맞춰야 합니다.
 
 모든 설명과 수정은 사용자가 이해하고 성장하는 데 도움을 주는 데 집중합니다.

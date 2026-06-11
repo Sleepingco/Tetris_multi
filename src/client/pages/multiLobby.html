@@ -69,14 +69,17 @@
                         </div>
                         <div class="profile-details">
                             <span class="profile-meta">My Profile</span>
-                            <span class="profile-name" id="playerNicknameText">Guest</span>
+                            <div class="profile-name-row">
+                                <span class="profile-name" id="playerNicknameText">Guest</span>
+                                <span class="host-badge" id="playerHostBadge" hidden>방장</span>
+                            </div>
                         </div>
                     </div>
 
                     <div class="action-box">
-                        <h3>Quick Match</h3>
-                        <p>roomService를 만든 뒤 매칭 흐름을 연결할 예정입니다.</p>
-                        <button id="btnQuickMatch" class="btn primary btn-match" type="button" disabled>준비중</button>
+                        <h3 id="primaryActionTitle">Quick Match</h3>
+                        <p id="primaryActionDesc">roomService를 만든 뒤 매칭 흐름을 연결할 예정입니다.</p>
+                        <button id="btnPrimaryAction" class="btn primary btn-match" type="button" disabled>준비중</button>
                     </div>
 
                     <div class="action-box">
@@ -122,7 +125,7 @@
         import { initLobbySound } from "../game/runtime/sound.js"
         import { queryElement, requireElement } from "../game/entry/dom.js"
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
-        import { requestCreateRoom, onRoomResult, requestJoinRoom, onRoomUpdated, onRoomMessage, requestLeaveRoom } from "../net/roomClient.js"
+        import { requestCreateRoom, onRoomResult, requestJoinRoom, onRoomUpdated, onRoomMessage, requestLeaveRoom, requestStartGame } from "../net/roomClient.js"
 
         // =============================
         // Display Helpers
@@ -148,6 +151,10 @@
         const copyRoomCodeBtn = requireElement(document, "#btnCopyRoomCode", "lobby")
         const playerNicknameText = requireElement(document, "#playerNicknameText", "lobby")
         const playerAvatarChar = requireElement(document, "#playerAvatarChar", "lobby")
+        const playerHostBadge = requireElement(document, "#playerHostBadge", "lobby")
+        const primaryActionTitle = requireElement(document, "#primaryActionTitle", "lobby")
+        const primaryActionDesc = requireElement(document, "#primaryActionDesc", "lobby")
+        const primaryActionBtn = requireElement(document, "#btnPrimaryAction", "lobby")
 
         applySavedTheme(themeToggleBtn)
 
@@ -199,6 +206,10 @@
                 appendMessage("system", `복사에 실패했습니다. 방 코드: ${roomId}`)
             }
         }
+        const onClickPrimaryAction = () => {
+            appendMessage("system", "게임 시작 연결은 다음 단계에서 진행합니다.")
+            requestStartGame(currentRoomId, currentPlayer.playerId)
+        }
 
         // =============================
         // Global Event Wiring
@@ -207,12 +218,14 @@
         themeToggleBtn?.addEventListener("click", onToggleTheme)
         chatForm.addEventListener("submit", onSubmitChat)
         copyRoomCodeBtn.addEventListener("click", onCopyRoomCode)
+        primaryActionBtn.addEventListener("click", onClickPrimaryAction)
         const cleanupSound = initLobbySound(soundToggleBtn)
 
         window.addEventListener("pagehide", () => {
             themeToggleBtn?.removeEventListener("click", onToggleTheme)
             chatForm.removeEventListener("submit", onSubmitChat)
             copyRoomCodeBtn.removeEventListener("click", onCopyRoomCode)
+            primaryActionBtn.removeEventListener("click", onClickPrimaryAction)
             cleanupSound?.()
         }, { once: true })
 
@@ -244,6 +257,7 @@
         // 현재 플레이어 정보를 UI에 반영한다.
         playerNicknameText.textContent = currentPlayer.nickname
         playerAvatarChar.textContent = currentPlayer.nickname.charAt(0).toUpperCase()
+        renderPrimaryAction(null)
 
         btnCreateRoom?.addEventListener("click", () => {
             requestCreateRoom(currentPlayer)
@@ -269,12 +283,46 @@
          * @returns {void}
          */
         let currentRoomId = null;
+        function renderPrimaryAction(room) {
+            if (!room) {
+                primaryActionTitle.textContent = "Quick Match"
+                primaryActionDesc.textContent = "roomService를 만든 뒤 매칭 흐름을 연결할 예정입니다."
+                primaryActionBtn.textContent = "준비중"
+                primaryActionBtn.disabled = true
+                return
+            }
+
+            const isHost = room.hostPlayerId === currentPlayer.playerId
+            const canStartGame = isHost && room.players.length === 2
+
+            primaryActionTitle.textContent = "Game Start"
+            primaryActionBtn.textContent = "게임 시작"
+
+            if (!isHost) {
+                primaryActionDesc.textContent = "방장이 게임을 시작할 수 있습니다."
+                primaryActionBtn.textContent = "방장 대기중"
+                primaryActionBtn.disabled = true
+                return
+            }
+
+            if (!canStartGame) {
+                primaryActionDesc.textContent = "상대가 입장하면 게임을 시작할 수 있습니다."
+                primaryActionBtn.disabled = true
+                return
+            }
+
+            primaryActionDesc.textContent = "두 명이 모였습니다. 게임 시작 준비가 가능합니다."
+            primaryActionBtn.disabled = false
+        }
+
         function renderRoom(room) {
             currentRoomId = room.roomId;
             roomStatus.hidden = false
             roomCodeText.textContent = room.roomId
             roomStateText.textContent = room.status
             roomPlayerCountText.textContent = String(room.players.length)
+            playerHostBadge.hidden = room.hostPlayerId !== currentPlayer.playerId
+            renderPrimaryAction(room)
         }
 
         function clearRoom() {
@@ -283,6 +331,8 @@
             roomCodeText.textContent = "-"
             roomStateText.textContent = "-"
             roomPlayerCountText.textContent = "0"
+            playerHostBadge.hidden = true
+            renderPrimaryAction(null)
         }
 
         // =============================
@@ -349,6 +399,8 @@
             }
             requestLeaveRoom(roomId, currentPlayerId)
         }
+
+
     </script>
 </body>
 

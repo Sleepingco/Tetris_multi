@@ -34,3 +34,8 @@ export function requestLeaveRoom(roomId, playerId) {
     lastRoomRequestType = "leave"
     serverConnection.emit("room:leave", { roomId, playerId })
 }
+
+export function requestStartGame(roomId, playerId) {
+    lastRoomRequestType = "start"
+    serverConnection.emit("room:start", { roomId, playerId })
+}

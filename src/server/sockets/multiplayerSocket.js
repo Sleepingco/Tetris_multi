@@ -5,8 +5,23 @@ const {
     joinRoom,
     removePlayer,
     findRoomBySocketId,
-
+    startGame,
 } = require("../services/roomService.js")
+
+function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickname) {
+    if (!result.ok) return
+
+    clientSocket.leave(roomId)
+
+    if (!result.room) return
+
+    socketServer.to(roomId).emit("room:updated", result.room)
+    socketServer.to(roomId).emit("room:message", {
+        type: "system",
+        text: `${nickname}님이 퇴장하였습니다.`,
+        roomId: result.room.roomId,
+    })
+}
 
 function registerMultiplayerSocket(socketServer) {
     socketServer.on("connection", (clientSocket) => {
@@ -58,18 +73,13 @@ function registerMultiplayerSocket(socketServer) {
             const leavingPlayer = roomBeforeLeave?.players.find(player => player.playerId === playerId)
             const result = removePlayer(roomId, playerId)
 
-            if (result.ok) {
-                clientSocket.leave(roomId)
-
-                if (result.room) {
-                    socketServer.to(roomId).emit("room:updated", result.room)
-                    socketServer.to(roomId).emit("room:message", {
-                        type: "system",
-                        text: `${leavingPlayer?.nickname || "Player"}님이 퇴장하였습니다.`,
-                        roomId: result.room.roomId,
-                    })
-                }
-            }
+            handlePlayerLeftRoom(
+                socketServer,
+                clientSocket,
+                roomId,
+                result,
+                leavingPlayer?.nickname || "Player",
+            )
 
             clientSocket.emit("room:result", result)
         })
@@ -80,17 +90,41 @@ function registerMultiplayerSocket(socketServer) {
                 const { room, player } = found
                 const result = removePlayer(room.roomId, player.playerId)
 
-                if (result.ok) {
-                    clientSocket.leave(room.roomId)
-                    if (result.room) {
-                        socketServer.to(room.roomId).emit("room:updated", result.room)
-                        socketServer.to(room.roomId).emit("room:message", {
-                            type: "system",
-                            text: `${player?.nickname || "Player"}님이 퇴장하였습니다.`,
-                            roomId: room.roomId,
-                        })
-                    }
-                }
+                handlePlayerLeftRoom(
+                    socketServer,
+                    clientSocket,
+                    room.roomId,
+                    result,
+                    player?.nickname || "Player",
+                )
+            }
+        })
+
+        clientSocket.on("room:start", ({ roomId, playerId }) => {
+            const found = findRoomBySocketId(clientSocket.id);
+            if (!found) return;
+
+            if (found.room.hostPlayerId !== playerId) {
+                clientSocket.emit("room:result", {
+                    ok: false,
+                    error: "방장만 게임을 시작할 수 있습니다."
+                })
+                return;
+            }
+
+            const result = startGame(roomId, playerId);
+            const hostPlayer = found.player
+            if (result.ok && result.room) {
+                socketServer.to(result.room.roomId).emit("room:updated", result.room);
+                socketServer.to(result.room.roomId).emit("room:message", {
+                    type: "system",
+                    text: `${hostPlayer?.nickname || "Host"}님이 게임을 시작했습니다.`,
+                    roomId: result.room.roomId,
+                })
+
+                clientSocket.emit("room:result", result);
+            } else {
+                clientSocket.emit("room:result", result);
             }
         })
 
