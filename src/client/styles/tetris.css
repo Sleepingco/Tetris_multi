@@ -492,3 +492,37 @@ kbd {
 .eleft  { background: #3B82F6; } /* Blue (J) */
 .eright { background: #F97316; } /* Orange (L) */
 .ess    { background: #10B981; } /* Emerald (S) */
+
+/* -----------------------------
+  * Multiplayer Room Info Badge
+  * ----------------------------- */
+.room-info-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 0.35rem;
+        padding: 4px 10px;
+        background: var(--game-control-bg);
+        border: 1px solid var(--game-border);
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--game-text);
+        width: max-content;
+}
+
+.room-dot {
+        width: 6px;
+        height: 6px;
+        background: #10b981; /* pulsing green active dot */
+        border-radius: 50%;
+        display: inline-block;
+        box-shadow: 0 0 8px #10b981;
+        animation: roomPulse 2s infinite;
+}
+
+@keyframes roomPulse {
+        0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+        70% { transform: scale(1); box-shadow: 0 0 0 5px rgba(16, 185, 129, 0); }
+        100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}

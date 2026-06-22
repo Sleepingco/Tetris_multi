@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,11 +18,13 @@
             --initial-game-bg: #f8fafc;
             background: #f8fafc;
         }
+
         :root[data-theme="dark"] {
             color-scheme: dark;
             --initial-game-bg: #0f172a;
             background: #0f172a;
         }
+
         html,
         body {
             min-height: 100%;
@@ -31,11 +34,16 @@
     <link rel="stylesheet" href="../styles/style.css">
     <link rel="stylesheet" href="../styles/tetris.css">
 </head>
+
 <body>
     <div class="multi-wrapper">
         <header class="multi-header">
             <div class="multi-title">
                 <h1>Multiplayer Tetris</h1>
+                <div class="room-info-badge" id="multiRoomBadge" style="display: none;">
+                    <span class="room-dot"></span>
+                    <span id="roomCodeText">방 코드: -</span>
+                </div>
                 <p>2인용 대전 모드 (직접 구현 예정)</p>
             </div>
             <div class="multi-actions">
@@ -47,7 +55,10 @@
         <main class="multi-grid">
             <section class="player-column" data-player="1">
                 <div class="player-header">
-                    <div class="player-id">Player 1</div>
+                    <div class="player-id-wrap">
+                        <div class="player-id" id="player1Name">Player 1</div>
+                        <span id="player1RoleBadge">-</span>
+                    </div>
                     <div class="player-stats">
                         <div class="stat">
                             <span class="label">Score</span>
@@ -77,7 +88,9 @@
                             <span>대기중</span>
                         </div>
                         <div class="playground" data-player="1">
-                            <canvas class="tetrisBoardCanvas" width="300" height="600"></canvas>
+                            <canvas class="tetrisBoardCanvas" width="300" height="600">
+
+                            </canvas>
                         </div>
                     </section>
                 </div>
@@ -85,7 +98,10 @@
 
             <section class="player-column" data-player="2">
                 <div class="player-header">
-                    <div class="player-id">Player 2</div>
+                    <div class="player-id-wrap">
+                        <div class="player-id" id="player2Name">Player 2</div>
+                        <span id="player2RoleBadge">-</span>
+                    </div>
                     <div class="player-stats">
                         <div class="stat">
                             <span class="label">Score</span>
@@ -115,27 +131,189 @@
                             <span>대기중</span>
                         </div>
                         <div class="playground" data-player="2">
-                            <canvas class="tetrisBoardCanvas" width="300" height="600"></canvas>
+                            <canvas class="tetrisBoardCanvas" width="300" height="600">
+
+                            </canvas>
                         </div>
                     </section>
                 </div>
             </section>
         </main>
     </div>
+    <script src="/socket.io/socket.io.js"></script>
 
     <script type="module">
+
         import { queryElement } from "../game/entry/dom.js"
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
-
+        import { createTetrisRuntime } from "../game/runtime/tetris.js"
+        import { attachKeyboardInput } from "../game/runtime/input.js"
+        import { requestJoinGameRoom, onGameJoinResult, sendGameSnapshot, receiveSnapshot, leaveGame, onGameOpponentLeft } from "../net/roomClient.js"
         const themeToggleBtn = queryElement(document, "#themeToggle")
+        const player1Name = queryElement(document, "#player1Name")
+        const player2Name = queryElement(document, "#player2Name")
+        const multiRoomBadge = queryElement(document, "#multiRoomBadge")
+        const roomCodeText = queryElement(document, "#roomCodeText")
+        const player1RoleBadge = queryElement(document, "#player1RoleBadge")
+        const player2RoleBadge = queryElement(document, "#player2RoleBadge")
+
         applySavedTheme(themeToggleBtn)
 
-        const onToggleTheme = () => toggleTheme(themeToggleBtn)
-        themeToggleBtn?.addEventListener("click", onToggleTheme)
+        function clearRoomSession() {
+            sessionStorage.removeItem("tetris:roomId")
+            sessionStorage.removeItem("room")
+        }
 
-        window.addEventListener("pagehide", () => {
-            themeToggleBtn?.removeEventListener("click", onToggleTheme)
-        }, { once: true })
+        function redirectToLobby() {
+            clearRoomSession()
+            location.replace("./multiLobby.html")
+        }
+
+        function readStoredRoom() {
+            const roomJson = sessionStorage.getItem("room")
+            if (!roomJson) return null
+
+            try {
+                return JSON.parse(roomJson)
+            } catch {
+                clearRoomSession()
+                return null
+            }
+        }
+
+        function hasValidRoomSession(room, playerId) {
+            return Boolean(
+                playerId
+                && room?.roomId
+                && Array.isArray(room.players)
+                && room.players.some(player => player.playerId === playerId)
+            )
+        }
+
+        // 세션에서 방 정보와 player 정보를 불러온다. 서버 검증 실패 시 로비로 되돌린다.
+        const playerId = sessionStorage.getItem("tetris:playerId")
+        const room = readStoredRoom()
+
+        if (!hasValidRoomSession(room, playerId)) {
+            redirectToLobby()
+        } else {
+            const roomId = room.roomId
+            const hostPlayer = room.players.find(player => player.playerId === room.hostPlayerId)
+            const guestPlayer = room.players.find(player => player.playerId !== room.hostPlayerId)
+            const myRole = playerId === room.hostPlayerId ? "host" : "guest"
+
+            console.log("room : ", room)
+            console.log("playerId : ", playerId)
+            console.log("hostPlayer : ", hostPlayer)
+            console.log("guestPlayer : ", guestPlayer)
+            console.log("myRole : ", myRole)
+
+            onGameJoinResult((result) => {
+                if (!result.ok) {
+                    redirectToLobby()
+                    return
+                }
+
+                if (result.room) {
+                    sessionStorage.setItem("tetris:roomId", result.room.roomId)
+                    sessionStorage.setItem("room", JSON.stringify(result.room))
+                }
+            })
+
+            if (player1Name) {
+                player1Name.textContent = hostPlayer?.nickname || "Host"
+            }
+
+            if (player2Name) {
+                player2Name.textContent = guestPlayer?.nickname || "Guest"
+            }
+
+            if (roomCodeText) {
+                roomCodeText.textContent = `방 코드: ${roomId}`
+            }
+
+            if (multiRoomBadge) {
+                multiRoomBadge.style.display = "inline-flex"
+            }
+
+            if (myRole === "host") {
+                player1RoleBadge.textContent = "내 보드"
+                player2RoleBadge.textContent = "상대 보드"
+            } else {
+                player1RoleBadge.textContent = "상대 보드"
+                player2RoleBadge.textContent = "내 보드"
+            }
+
+            const onToggleTheme = () => toggleTheme(themeToggleBtn)
+            themeToggleBtn?.addEventListener("click", onToggleTheme)
+
+            requestJoinGameRoom(roomId, playerId)
+
+            // 플레이어 캔버스 지정
+            const player1Canvas = queryElement(document, '.playground[data-player="1"] .tetrisBoardCanvas')
+            const player2Canvas = queryElement(document, '.playground[data-player="2"] .tetrisBoardCanvas')
+            const myCanvas = myRole === "host" ? player1Canvas : player2Canvas
+            const opponentCanvas = myRole === "host" ? player2Canvas : player1Canvas
+
+            console.log("myCanvas : ", myCanvas)
+            console.log("opponentCanvas : ", opponentCanvas)
+
+            const player1Column = queryElement(document, '[data-player="1"]')
+            const player2Column = queryElement(document, '[data-player="2"]')
+            const myColumn = myRole === "host" ? player1Column : player2Column
+            myColumn?.classList.add("is-mine")
+
+            // 캔버스가 그려지도록 냅다 생성.
+            const myGame = createTetrisRuntime({
+                boardCanvasEl: myCanvas,
+                // gameOverEl,
+                // scoreEl,
+                // nextPreviewEl,
+                // holdPreviewEl,
+            })
+            // 테스트용
+            myGame.init({ autoStart: true })
+            myGame.runtime.detachKeyboard = attachKeyboardInput({
+                enqueueAction: myGame.enqueueInput,
+            })
+            const opponentGame = createTetrisRuntime({
+                boardCanvasEl: opponentCanvas,
+            })
+            opponentGame.init({ autoStart: false })
+
+            const snapshotTimer = setInterval(() => {
+                sendGameSnapshot(roomId, playerId, myGame.getSnapshot())
+            }, 100)
+
+            receiveSnapshot(({ playerId: remotePlayerId, snapshot }) => {
+                // console.log("received snapshot from", remotePlayerId, snapshot)
+                opponentGame.applySnapshot(snapshot)
+            })
+
+            let shouldNotifyGameLeave = true
+            onGameOpponentLeft(({ room: updatedRoom }) => {
+                clearInterval(snapshotTimer)
+                myGame.destroy()
+                opponentGame.destroy()
+                if (updatedRoom) {
+                    sessionStorage.setItem("tetris:roomId", updatedRoom.roomId)
+                    sessionStorage.setItem("room", JSON.stringify(updatedRoom))
+                }
+                shouldNotifyGameLeave = false
+                location.replace("./multiLobby.html")
+            })
+            window.addEventListener("pagehide", () => {
+                themeToggleBtn?.removeEventListener("click", onToggleTheme)
+                if (shouldNotifyGameLeave) {
+                    leaveGame(roomId, playerId);
+                }
+                clearInterval(snapshotTimer)
+                myGame.destroy()
+                opponentGame.destroy()
+            }, { once: true })
+        }
+
     </script>
 </body>
+
 </html>

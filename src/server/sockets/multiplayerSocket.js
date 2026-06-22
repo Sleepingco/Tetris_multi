@@ -1,11 +1,13 @@
 // const moment = require("moment")
 const {
     createRoom,
-    getRoomState,
     joinRoom,
-    removePlayer,
-    findRoomBySocketId,
+    removePlayerBySocketId,
     startGame,
+    leaveGame,
+    syncRoom,
+    leaveRoom,
+
 } = require("../services/roomService.js")
 
 function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickname) {
@@ -69,67 +71,94 @@ function registerMultiplayerSocket(socketServer) {
         })
 
         clientSocket.on("room:leave", ({ roomId, playerId }) => {
-            const roomBeforeLeave = getRoomState(roomId)
-            const leavingPlayer = roomBeforeLeave?.players.find(player => player.playerId === playerId)
-            const result = removePlayer(roomId, playerId)
-
+            const result = leaveRoom(roomId, playerId)
             handlePlayerLeftRoom(
                 socketServer,
                 clientSocket,
-                roomId,
+                result.roomId,
                 result,
-                leavingPlayer?.nickname || "Player",
+                result.player?.nickname || "Player",
             )
 
             clientSocket.emit("room:result", result)
         })
 
         clientSocket.on("disconnect", () => {
-            const found = findRoomBySocketId(clientSocket.id);
-            if (found) {
-                const { room, player } = found
-                const result = removePlayer(room.roomId, player.playerId)
+            const result = removePlayerBySocketId(clientSocket.id)
 
-                handlePlayerLeftRoom(
-                    socketServer,
-                    clientSocket,
-                    room.roomId,
-                    result,
-                    player?.nickname || "Player",
-                )
-            }
+            handlePlayerLeftRoom(
+                socketServer,
+                clientSocket,
+                result.roomId,
+                result,
+                result.player?.nickname || "Player",
+            )
         })
 
-        clientSocket.on("room:start", ({ roomId, playerId }) => {
-            const found = findRoomBySocketId(clientSocket.id);
-            if (!found) return;
+        clientSocket.on("room:start", (payload = {}) => {
+            const { roomId, playerId } = payload
+            const result = startGame(roomId, playerId, clientSocket.id)
 
-            if (found.room.hostPlayerId !== playerId) {
-                clientSocket.emit("room:result", {
-                    ok: false,
-                    error: "방장만 게임을 시작할 수 있습니다."
-                })
-                return;
-            }
-
-            const result = startGame(roomId, playerId);
-            const hostPlayer = found.player
             if (result.ok && result.room) {
+                const hostPlayer = result.room.players.find(player => player.playerId === playerId)
+
+                clientSocket.emit("room:result", result)
                 socketServer.to(result.room.roomId).emit("room:updated", result.room);
                 socketServer.to(result.room.roomId).emit("room:message", {
                     type: "system",
                     text: `${hostPlayer?.nickname || "Host"}님이 게임을 시작했습니다.`,
                     roomId: result.room.roomId,
                 })
-
-                clientSocket.emit("room:result", result);
             } else {
-                clientSocket.emit("room:result", result);
+                clientSocket.emit("room:result", result)
             }
+        })
+
+        clientSocket.on("game:join", (payload = {}) => {
+            const { roomId, playerId } = payload
+            const result = syncRoom(roomId, playerId)
+
+            if (result.ok && result.room) {
+                clientSocket.join(result.room.roomId)
+            }
+
+            clientSocket.emit("game:join:result", result)
+        })
+
+        clientSocket.on("game:snapshot", (payload = {}) => {
+            const { roomId, playerId, snapshot } = payload
+            clientSocket.to(roomId).emit("game:snapshot", { playerId, snapshot })
+        })
+
+        clientSocket.on("game:leave", (payload = {}) => {
+            const { roomId, playerId } = payload
+            const result = leaveGame(roomId, playerId)
+            if (result.ok) {
+                clientSocket.leave(roomId)
+                clientSocket.to(roomId).emit("game:opponent-left", {
+                    room: result.room,
+                    playerId
+                })
+            }
+
+            clientSocket.emit("game:leave:result", result)
+
+        })
+
+        clientSocket.on("room:sync", (payload = {}) => {
+            const { roomId, playerId } = payload
+            const result = syncRoom(roomId, playerId)
+
+            if (result.ok && result.room) {
+                clientSocket.join(result.room.roomId)
+            }
+
+            clientSocket.emit("room:result", result)
         })
 
     })
 }
+
 
 module.exports = {
     registerMultiplayerSocket,

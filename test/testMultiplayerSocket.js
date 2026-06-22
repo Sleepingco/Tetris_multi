@@ -7,6 +7,7 @@ class FakeSocketServer {
     constructor() {
         this.handlers = new Map()
         this.roomEvents = []
+        this.clients = []
     }
 
     on(eventName, handler) {
@@ -22,6 +23,8 @@ class FakeSocketServer {
     }
 
     connect(clientSocket) {
+        clientSocket.socketServer = this
+        this.clients.push(clientSocket)
         this.handlers.get("connection")(clientSocket)
     }
 }
@@ -31,6 +34,7 @@ class FakeClientSocket {
         this.id = id
         this.handlers = new Map()
         this.clientEvents = []
+        this.socketRoomEvents = []
         this.joinedRooms = []
         this.leftRooms = []
     }
@@ -44,11 +48,24 @@ class FakeClientSocket {
     }
 
     join(roomId) {
+        if (this.joinedRooms.includes(roomId)) return
         this.joinedRooms.push(roomId)
     }
 
     leave(roomId) {
         this.leftRooms.push(roomId)
+    }
+
+    to(roomId) {
+        return {
+            emit: (eventName, payload) => {
+                this.socketRoomEvents.push({ roomId, eventName, payload })
+                this.socketServer.clients
+                    .filter(socket => socket !== this)
+                    .filter(socket => socket.joinedRooms.includes(roomId))
+                    .forEach(socket => socket.emit(eventName, payload))
+            },
+        }
     }
 
     trigger(eventName, payload) {
@@ -212,4 +229,249 @@ test("room:start는 방장만 실행 가능하며, 성공 시 게임 시작 이�
     assert.equal(updatedEvent.payload.players.length, 2)
     assert.equal(messageEvent.roomId, roomId)
     assert.equal(messageEvent.payload.text, "Host님이 게임을 시작했습니다.")
+})
+
+test("room:start는 host playerId를 보내도 다른 socket이면 NOT_AUTHORIZED를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("start-host-socket")
+    const guestSocket = new FakeClientSocket("start-guest-socket")
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "start-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "start-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    guestSocket.trigger("room:start", {
+        roomId,
+        playerId: "start-host-player",
+    })
+
+    const startResult = guestSocket.lastClientEvent("room:result").payload
+
+    assert.equal(startResult.ok, false)
+    assert.equal(startResult.room, null)
+    assert.equal(startResult.reason, "NOT_AUTHORIZED")
+})
+
+test("game:snapshot은 game:join으로 같은 room에 들어간 상대 socket에게 전달된다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("game-host-socket")
+    const guestSocket = new FakeClientSocket("game-guest-socket")
+    const snapshot = {
+        tick: 10,
+        board: [["I"]],
+        activePiece: {
+            pieceType: "I",
+            rotation: 0,
+            row: 1,
+            col: 4,
+        },
+    }
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "host-player",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "guest-player",
+    })
+
+    hostSocket.trigger("game:snapshot", {
+        roomId,
+        playerId: "host-player",
+        snapshot,
+    })
+
+    const guestSnapshotEvent = guestSocket.lastClientEvent("game:snapshot")
+
+    assert.deepEqual(hostSocket.joinedRooms, [roomId])
+    assert.deepEqual(guestSocket.joinedRooms, [roomId])
+    assert.equal(guestSnapshotEvent.eventName, "game:snapshot")
+    assert.equal(guestSnapshotEvent.payload.playerId, "host-player")
+    assert.deepEqual(guestSnapshotEvent.payload.snapshot, snapshot)
+})
+
+test("game:join은 서버에 없는 room이면 실패 결과를 돌려준다", () => {
+    const socketServer = new FakeSocketServer()
+    const gameSocket = new FakeClientSocket("missing-game-socket")
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(gameSocket)
+
+    gameSocket.trigger("game:join", {
+        roomId: "MISSING1",
+        playerId: "missing-player",
+    })
+
+    const joinResult = gameSocket.lastClientEvent("game:join:result")
+
+    assert.equal(joinResult.payload.ok, false)
+    assert.equal(joinResult.payload.room, null)
+    assert.equal(joinResult.payload.reason, "ROOM_NOT_FOUND")
+    assert.deepEqual(gameSocket.joinedRooms, [])
+})
+
+test("game:join은 roomService DTO 결과를 반환하고 성공 시 socket을 room에 참가시킨다", () => {
+    const socketServer = new FakeSocketServer()
+    const lobbySocket = new FakeClientSocket("game-join-lobby-socket")
+    const gameSocket = new FakeClientSocket("game-join-game-socket")
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(lobbySocket)
+    socketServer.connect(gameSocket)
+
+    lobbySocket.trigger("room:create", {
+        playerId: "game-join-player",
+        nickname: "Host",
+    })
+    const createResult = lobbySocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    gameSocket.trigger("game:join", {
+        roomId,
+        playerId: "game-join-player",
+    })
+
+    const joinResult = gameSocket.lastClientEvent("game:join:result").payload
+
+    assert.equal(joinResult.ok, true)
+    assert.equal(joinResult.reason, null)
+    assert.equal(joinResult.room.roomId, roomId)
+    assert.deepEqual(gameSocket.joinedRooms, [roomId])
+})
+
+test("room:sync는 roomService DTO 결과를 요청 socket에 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const lobbySocket = new FakeClientSocket("sync-lobby-socket")
+    const reconnectSocket = new FakeClientSocket("sync-reconnect-socket")
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(lobbySocket)
+    socketServer.connect(reconnectSocket)
+
+    lobbySocket.trigger("room:create", {
+        playerId: "sync-player",
+        nickname: "Host",
+    })
+    const createResult = lobbySocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    reconnectSocket.trigger("room:sync", {
+        roomId,
+        playerId: "sync-player",
+    })
+
+    const syncResult = reconnectSocket.lastClientEvent("room:result").payload
+
+    assert.equal(syncResult.ok, true)
+    assert.equal(syncResult.reason, null)
+    assert.equal(syncResult.room.roomId, roomId)
+    assert.deepEqual(reconnectSocket.joinedRooms, [roomId])
+})
+
+test("room:sync는 권한 없는 player면 NOT_AUTHORIZED 결과를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const lobbySocket = new FakeClientSocket("sync-auth-lobby-socket")
+    const reconnectSocket = new FakeClientSocket("sync-auth-reconnect-socket")
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(lobbySocket)
+    socketServer.connect(reconnectSocket)
+
+    lobbySocket.trigger("room:create", {
+        playerId: "sync-auth-player",
+        nickname: "Host",
+    })
+    const createResult = lobbySocket.lastClientEvent("room:result").payload
+
+    reconnectSocket.trigger("room:sync", {
+        roomId: createResult.room.roomId,
+        playerId: "missing-player",
+    })
+
+    const syncResult = reconnectSocket.lastClientEvent("room:result").payload
+
+    assert.equal(syncResult.ok, false)
+    assert.equal(syncResult.room, null)
+    assert.equal(syncResult.reason, "NOT_AUTHORIZED")
+    assert.deepEqual(reconnectSocket.joinedRooms, [])
+})
+
+test("playing room에서는 로비 socket disconnect 후에도 game:join을 허용한다", () => {
+    const socketServer = new FakeSocketServer()
+    const lobbyHostSocket = new FakeClientSocket("lobby-host-socket")
+    const lobbyGuestSocket = new FakeClientSocket("lobby-guest-socket")
+    const gameHostSocket = new FakeClientSocket("game-host-socket-after-start")
+
+    registerMultiplayerSocket(socketServer)
+    socketServer.connect(lobbyHostSocket)
+    socketServer.connect(lobbyGuestSocket)
+    socketServer.connect(gameHostSocket)
+
+    lobbyHostSocket.trigger("room:create", {
+        playerId: "host-player-after-start",
+        nickname: "Host",
+    })
+    const createResult = lobbyHostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    lobbyGuestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "guest-player-after-start",
+            nickname: "Guest",
+        },
+    })
+
+    lobbyHostSocket.trigger("room:start", {
+        roomId,
+        playerId: "host-player-after-start",
+    })
+
+    lobbyHostSocket.trigger("disconnect")
+    gameHostSocket.trigger("game:join", {
+        roomId,
+        playerId: "host-player-after-start",
+    })
+
+    const joinResult = gameHostSocket.lastClientEvent("game:join:result")
+
+    assert.equal(joinResult.payload.ok, true)
+    assert.equal(joinResult.payload.room.roomId, roomId)
+    assert.equal(joinResult.payload.room.players.length, 2)
+    assert.deepEqual(gameHostSocket.joinedRooms, [roomId])
 })

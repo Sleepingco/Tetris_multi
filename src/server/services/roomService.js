@@ -2,24 +2,64 @@ const { randomUUID } = require("crypto")
 
 const rooms = new Map()
 
-function success(room) {
+function success(room, meta = {}) {
     return {
         ok: true,
         room,
         reason: null,
+        ...meta,
     }
 }
 
-function failure(reason) {
+function failure(reason, meta = {}) {
     return {
         ok: false,
         room: null,
         reason,
+        ...meta,
     }
 }
 
 function getRoomState(roomId) {
     return rooms.get(roomId) || null
+}
+
+function getRoomPlayerContext(roomId, playerId) {
+    const roomState = getRoomState(roomId)
+    if (!roomId || !roomState) {
+        return {
+            ok: false,
+            roomState: null,
+            player: null,
+            reason: "ROOM_NOT_FOUND",
+        }
+    }
+
+    if (!playerId) {
+        return {
+            ok: false,
+            roomState,
+            player: null,
+            reason: "PLAYER_ID_REQUIRED",
+        }
+    }
+
+    const player = roomState.players.find(player => player.playerId === playerId)
+    if (!player) {
+        return {
+            ok: false,
+            roomState,
+            player: null,
+            reason: "NOT_AUTHORIZED",
+        }
+    }
+
+    return {
+        ok: true,
+        roomState,
+        player,
+        reason: null,
+    }
 }
 
 function createRoom(hostPlayer) {
@@ -119,19 +159,65 @@ function findRoomBySocketId(socketId) {
     return null
 }
 
-function startGame(roomId, playerId) {
-    const roomState = getRoomState(roomId)
-    if (!roomId || !roomState) {
-        return failure("ROOM_NOT_FOUND")
+function removePlayerBySocketId(socketId) {
+    const found = findRoomBySocketId(socketId)
+
+    if (!found) {
+        return failure("SOCKET_NOT_FOUND", {
+            roomId: null,
+            player: null,
+        })
     }
 
-    if (!playerId) {
-        return failure("PLAYER_ID_REQUIRED")
+    const { room, player } = found
+
+    if (room.status === "playing") {
+        return failure("GAME_PLAYING", {
+            roomId: room.roomId,
+            player,
+        })
     }
 
-    const player = roomState.players.find(player => player.playerId === playerId)
+    const result = removePlayer(room.roomId, player.playerId)
+    const meta = {
+        roomId: room.roomId,
+        player,
+    }
 
-    if (!player) {
+    return result.ok
+        ? success(result.room, meta)
+        : failure(result.reason, meta)
+}
+
+function leaveRoom(roomId, playerId) {
+    const context = getRoomPlayerContext(roomId, playerId)
+    if (!context.ok) {
+        return failure(context.reason, {
+            roomId: roomId || null,
+            player: null,
+        })
+    }
+
+    const result = removePlayer(roomId, playerId)
+    const meta = {
+        roomId,
+        player: context.player,
+    }
+
+    return result.ok
+        ? success(result.room, meta)
+        : failure(result.reason, meta)
+}
+
+function startGame(roomId, playerId, socketId = null) {
+    const context = getRoomPlayerContext(roomId, playerId)
+    if (!context.ok) {
+        return failure(context.reason)
+    }
+
+    const { roomState, player } = context
+
+    if (socketId && player.socketId !== socketId) {
         return failure("NOT_AUTHORIZED")
     }
 
@@ -152,11 +238,43 @@ function startGame(roomId, playerId) {
     return success(roomState)
 }
 
+function leaveGame(roomId, playerId) {
+    const context = getRoomPlayerContext(roomId, playerId)
+    if (!context.ok) {
+        return failure(context.reason)
+    }
+
+    const { roomState } = context
+
+    if (roomState.status !== "playing") {
+        return failure("GAME_NOT_PLAYING")
+    }
+
+    if (roomState.players.length !== 2) {
+        return failure("NOT_ENOUGH_PLAYERS")
+    }
+
+    return removePlayer(roomId, playerId)
+}
+
+function syncRoom(roomId, playerId) {
+    const context = getRoomPlayerContext(roomId, playerId)
+    if (!context.ok) {
+        return failure(context.reason)
+    }
+
+    return success(context.roomState)
+}
+
 module.exports = {
     createRoom,
     getRoomState,
     joinRoom,
     removePlayer,
     findRoomBySocketId,
+    removePlayerBySocketId,
     startGame,
+    leaveGame,
+    syncRoom,
+    leaveRoom,
 }

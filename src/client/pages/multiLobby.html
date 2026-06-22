@@ -73,6 +73,10 @@
                                 <span class="profile-name" id="playerNicknameText">Guest</span>
                                 <span class="host-badge" id="playerHostBadge" hidden>방장</span>
                             </div>
+                            <div class="room-badge" id="lobbyRoomBadge">
+                                <span class="room-badge-dot"></span>
+                                <span class="room-badge-text" id="lobbyRoomBadgeText">로비 대기 중</span>
+                            </div>
                         </div>
                     </div>
 
@@ -125,7 +129,16 @@
         import { initLobbySound } from "../game/runtime/sound.js"
         import { queryElement, requireElement } from "../game/entry/dom.js"
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
-        import { requestCreateRoom, onRoomResult, requestJoinRoom, onRoomUpdated, onRoomMessage, requestLeaveRoom, requestStartGame } from "../net/roomClient.js"
+        import {
+            requestCreateRoom,
+            onRoomResult,
+            requestJoinRoom,
+            onRoomUpdated,
+            onRoomMessage,
+            requestLeaveRoom,
+            requestStartGame,
+            requestRoomSync,
+        } from "../net/roomClient.js"
 
         // =============================
         // Display Helpers
@@ -155,6 +168,8 @@
         const primaryActionTitle = requireElement(document, "#primaryActionTitle", "lobby")
         const primaryActionDesc = requireElement(document, "#primaryActionDesc", "lobby")
         const primaryActionBtn = requireElement(document, "#btnPrimaryAction", "lobby")
+        const lobbyRoomBadge = requireElement(document, "#lobbyRoomBadge", "lobby")
+        const lobbyRoomBadgeText = requireElement(document, "#lobbyRoomBadgeText", "lobby")
 
         applySavedTheme(themeToggleBtn)
 
@@ -248,16 +263,51 @@
             sessionStorage.setItem("tetris:nickname", guestNickname)
             return guestNickname
         }
+        function getSavedPlayerId() {
+            const savedPlayerId = sessionStorage.getItem("tetris:playerId")
+            if (savedPlayerId) return savedPlayerId
 
+            const playerId = crypto.randomUUID()
+            sessionStorage.setItem("tetris:playerId", playerId)
+            return playerId
+        }
         const currentPlayer = {
-            playerId: crypto.randomUUID(),
+            playerId: getSavedPlayerId(),
             nickname: getSavedNickname(),
+        }
+
+        function updateRoomBadge(roomId) {
+            if (roomId) {
+                lobbyRoomBadge.classList.add("active")
+                lobbyRoomBadgeText.textContent = `방 코드: ${roomId}`
+            } else {
+                lobbyRoomBadge.classList.remove("active")
+                lobbyRoomBadgeText.textContent = "로비 대기 중"
+            }
+        }
+
+        function saveRoomSession(room) {
+            sessionStorage.setItem("tetris:roomId", room.roomId)
+            sessionStorage.setItem("room", JSON.stringify(room))
+        }
+
+        function clearRoomSession() {
+            sessionStorage.removeItem("tetris:roomId")
+            sessionStorage.removeItem("room")
         }
 
         // 현재 플레이어 정보를 UI에 반영한다.
         playerNicknameText.textContent = currentPlayer.nickname
         playerAvatarChar.textContent = currentPlayer.nickname.charAt(0).toUpperCase()
         renderPrimaryAction(null)
+
+        // 세션에 저장된 룸 ID가 있는 경우 UI 반영 및 자동 방 참가 요청
+        const savedRoomId = sessionStorage.getItem("tetris:roomId")
+        if (savedRoomId) {
+            requestRoomSync(savedRoomId, currentPlayer.playerId)
+        } else {
+            updateRoomBadge(null)
+        }
 
         btnCreateRoom?.addEventListener("click", () => {
             requestCreateRoom(currentPlayer)
@@ -317,6 +367,8 @@
 
         function renderRoom(room) {
             currentRoomId = room.roomId;
+            saveRoomSession(room)
+            updateRoomBadge(room.roomId)
             roomStatus.hidden = false
             roomCodeText.textContent = room.roomId
             roomStateText.textContent = room.status
@@ -327,6 +379,8 @@
 
         function clearRoom() {
             currentRoomId = null
+            clearRoomSession()
+            updateRoomBadge(null)
             roomStatus.hidden = true
             roomCodeText.textContent = "-"
             roomStateText.textContent = "-"
@@ -341,6 +395,12 @@
         // =============================
         onRoomUpdated((room) => {
             if (!room) return
+            if (room.status === "playing") {
+                saveRoomSession(room)
+                sessionStorage.setItem("tetris:playerId", currentPlayer.playerId);
+                location.href = `/pages/tetrisMulti.html?roomId=${room.roomId}`
+                return;
+            }
             renderRoom(room)
         })
 
@@ -351,6 +411,13 @@
 
         onRoomResult((result, requestType) => {
             if (!result.ok) {
+                if (requestType === "sync") {
+                    clearRoom()
+                }
+
+                if (requestType === "join" && result.reason === "ROOM_NOT_FOUND") {
+                    clearRoom()
+                }
                 appendMessage("system", result.reason)
                 return
             }
@@ -399,6 +466,7 @@
             }
             requestLeaveRoom(roomId, currentPlayerId)
         }
+
 
 
     </script>

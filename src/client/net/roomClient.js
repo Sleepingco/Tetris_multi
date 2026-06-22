@@ -35,7 +35,37 @@ export function requestLeaveRoom(roomId, playerId) {
     serverConnection.emit("room:leave", { roomId, playerId })
 }
 
+export function requestJoinGameRoom(roomId, playerId) {
+    serverConnection.emit("game:join", { roomId, playerId })
+}
+
+export function onGameJoinResult(handler) {
+    serverConnection.on("game:join:result", handler)
+}
+
 export function requestStartGame(roomId, playerId) {
     lastRoomRequestType = "start"
     serverConnection.emit("room:start", { roomId, playerId })
+}
+
+export function sendGameSnapshot(roomId, playerId, snapshot) {
+    serverConnection.emit("game:snapshot", { roomId, playerId, snapshot })
+}
+
+export function receiveSnapshot(handler) {
+    serverConnection.on("game:snapshot", handler)
+}
+
+export function leaveGame(roomId, playerId) {
+    serverConnection.emit("game:leave", { roomId, playerId })
+
+}
+
+export function onGameOpponentLeft(handler) {
+    serverConnection.on("game:opponent-left", handler)
+}
+
+export function requestRoomSync(roomId, playerId) {
+    lastRoomRequestType = "sync"
+    serverConnection.emit("room:sync", { roomId, playerId })
 }

@@ -650,3 +650,211 @@ src/css/tetris.css: lineClearFlash 애니메이션으로 흰색 플래시+스케
 - 전체 `src/**/*.js`에 대해 `node --check` 통과
 - 코드 기준으로 남은 `src/core` import 없음
 - 멀티플레이 구현 로직은 추가하지 않고, 사용자가 직접 구현할 수 있도록 폴더 책임만 정리
+
+---
+
+# 2026년 5월 6일
+RoomService 기반 멀티플레이 서버 상태 관리 시작
+
+## 커밋 정보
+- `2026-05-06 17:08:45 +0900`
+- `4963602`
+- `refactor: replace frontend routing and legacy game pages with server-side RoomService implementation`
+
+## 변경 사항
+- **서버 room 상태 관리 도입**
+  `Map` 기반 `RoomService`를 추가해 서버 메모리에서 방 상태를 관리하기 시작했습니다.
+
+- **roomService 기본 API 추가**
+  `createRoom`, `joinRoom`, `removePlayer`, `getRoomState`를 만들고, 결과 반환 형태를 `{ ok, room, reason }`으로 통일했습니다.
+
+- **Node 내장 테스트 기반 마련**
+  `node --test` 기반 `testRoomService.js`를 추가해 방 생성, 입장, 퇴장, 실패 케이스를 검증할 수 있게 했습니다.
+
+## 의미
+- 멀티플레이 구현의 첫 기준점이 클라이언트 화면이 아니라 서버 room 상태로 이동했습니다.
+- 이후 Socket.IO 이벤트는 이 roomService를 호출하는 얇은 입구가 될 수 있는 구조가 생겼습니다.
+
+---
+
+# 2026년 5월 13일
+채팅 중심 소켓에서 room 이벤트 중심 구조로 전환
+
+## 커밋 정보
+- `2026-05-13 14:49:47 +0900`
+- `40f54f0`
+- `feat: implement multiplayer room and socket services to replace legacy chat handling`
+
+## 변경 사항
+- **roomClient 어댑터 추가**
+  브라우저에서 `room:create` 요청을 보낼 수 있는 `roomClient` 흐름을 만들었습니다.
+
+- **멀티플레이 Socket.IO 이벤트 입구 추가**
+  서버에 `room:create`, `room:join`, `room:leave` 이벤트를 받을 수 있는 소켓 처리 흐름을 추가했습니다.
+
+- **멀티 로비와 roomService 연결 시작**
+  `multiLobby.html`에서 방 생성 요청을 서버로 보내고, 서버의 room 결과를 받을 수 있는 기반을 마련했습니다.
+
+## 의미
+- 기존 전역 채팅 소켓 중심 구조에서 실제 멀티플레이에 필요한 room 단위 이벤트 구조로 방향이 바뀌었습니다.
+
+---
+
+# 2026년 5월 20일
+현재 `src/client` / `src/server` 구조로 재배치
+
+## 커밋 정보
+- `2026-05-20 19:28:11 +0900`
+- `f0b198c`
+- `feat: add multiplayer and single player Tetris pages with responsive design`
+
+## 변경 사항
+- **브라우저 정적 루트 정리**
+  프론트엔드 파일을 `src/client` 아래로 이동해 서버 코드와 브라우저 코드를 더 명확히 분리했습니다.
+
+- **서버 책임 분리**
+  서버는 `src/server/services`와 `src/server/sockets` 기준으로 나뉘기 시작했습니다.
+
+- **싱글/멀티 페이지 재배치**
+  `tetrisSingle.html`, `tetrisMulti.html`, `multiLobby.html`을 현재 클라이언트 루트 기준으로 정리했습니다.
+
+- **스타일 구조 정리**
+  공통 스타일과 테트리스 게임 스타일을 `src/client/styles` 기준으로 관리하도록 재배치했습니다.
+
+## 의미
+- 현재 프로젝트 구조인 `src/client/...`와 `src/server/...` 경계가 이 시점부터 본격적으로 자리 잡았습니다.
+
+---
+
+# 2026년 5월 29일
+Socket.IO room join/broadcast 흐름과 UI 스타일 정리
+
+## 커밋 정보
+- `2026-05-29 18:44:26 +0900`
+- `33b2b23`
+- `Refactor CSS for consistency and readability; update server socket handling for room creation and joining`
+
+## 변경 사항
+- **Socket.IO room 참가 도입**
+  방 생성/입장 성공 시 `socket.join(roomId)`를 호출해 같은 방 참가자에게만 이벤트를 보낼 수 있게 했습니다.
+
+- **room 상태 broadcast 추가**
+  `room:updated`, `room:message` 이벤트를 통해 같은 room 참가자에게 상태 변경과 시스템 메시지를 전달하도록 했습니다.
+
+- **client room adapter 확장**
+  `roomClient`에서 room 결과뿐 아니라 room 업데이트와 메시지도 구독할 수 있게 했습니다.
+
+- **CSS 정리**
+  멀티 로비와 게임 화면 스타일을 정리해 UI 구조를 읽기 쉽게 만들었습니다.
+
+## 의미
+- 방 상태가 더 이상 요청자 한 명에게만 머무르지 않고, 같은 room 참가자에게 동기화되는 기반이 생겼습니다.
+
+---
+
+# 2026년 6월 9일
+닉네임 입력, 플레이어 세션, 퇴장/disconnect 처리 추가
+
+## 커밋 정보
+- `2026-06-09 10:56:36 +0900`
+- `3d1ead7`
+- `feat: implement player nickname entry and add socket logic for leaving rooms and handling disconnections`
+
+## 변경 사항
+- **닉네임 입력 흐름 추가**
+  메인 화면에서 닉네임을 입력하고, 로비에서 현재 플레이어 프로필로 표시할 수 있게 했습니다.
+
+- **`sessionStorage` 기반 플레이어 정보 유지**
+  닉네임과 player 정보를 브라우저 세션에 저장해 로비 이동 후에도 같은 사용자 맥락을 유지하도록 했습니다.
+
+- **room 퇴장 흐름 추가**
+  수동 `room:leave` 이벤트로 방에서 나가고, 남은 참가자에게 room 상태 변경을 알릴 수 있게 했습니다.
+
+- **disconnect 정리**
+  소켓 연결이 끊어졌을 때 `findRoomBySocketId`로 해당 player를 찾아 room에서 제거하는 흐름을 추가했습니다.
+
+- **테스트 보강**
+  `roomService`와 `multiplayerSocket` 테스트에 퇴장 및 disconnect 케이스를 추가했습니다.
+
+## 의미
+- 멀티플레이 room이 단순 생성/입장만 가능한 상태에서, 실제 사용자 세션과 이탈 상황을 다루는 구조로 발전했습니다.
+
+---
+
+# 2026년 6월 12일
+방장 기준 게임 시작 흐름 추가
+
+## 커밋 정보
+- `2026-06-12 01:56:45 +0900`
+- `7cecbb3`
+- `feat: implement room host logic and game start functionality in room service and lobby UI`
+
+## 변경 사항
+- **host player 개념 추가**
+  room에 `hostPlayerId`를 저장해 방장을 구분할 수 있게 했습니다.
+
+- **방장만 게임 시작 가능**
+  `room:start` 이벤트를 추가하고, 방장 socket/player만 게임 시작을 요청할 수 있게 검증했습니다.
+
+- **게임 시작 조건 검증**
+  2명이 입장하기 전에는 시작할 수 없고, 이미 시작된 room은 다시 시작하지 않도록 서버에서 막았습니다.
+
+- **room 상태 전환**
+  게임 시작 시 room 상태를 `waiting`에서 `playing`으로 전환했습니다.
+
+- **로비 UI 연결**
+  방장 배지와 게임 시작 버튼을 로비에 연결했습니다.
+
+- **테스트 보강**
+  host 권한, 인원 부족, 중복 시작 등 room start 관련 테스트를 추가했습니다.
+
+## 의미
+- 단순 room 입장 기능에서 실제 match 시작 직전 단계로 넘어갔습니다.
+- 아직 authoritative match loop는 없지만, room이 게임 시작 상태를 가질 수 있게 되었습니다.
+
+---
+
+# 2026년 6월 22일
+멀티 게임 화면 연결 및 snapshot 기반 초기 동기화 초안
+
+> 이 항목은 현재 작업 트리의 미커밋 변경 기준입니다. 아직 최종 커밋 메시지는 없습니다.
+
+## 변경 사항
+- **로비 room 세션 복구**
+  `multiLobby.html`에서 `sessionStorage`에 저장된 `roomId`와 player 정보를 기준으로 `room:sync`를 요청해, 새로고침이나 페이지 이동 후에도 방 상태를 복구할 수 있게 했습니다.
+
+- **playing 상태 진입 시 게임 화면 이동**
+  room 상태가 `playing`으로 바뀌면 로비에서 `tetrisMulti.html`로 이동하도록 연결했습니다.
+
+- **멀티 게임 화면에 room/player 표시 추가**
+  `tetrisMulti.html`에서 방 코드, host/guest 이름, 내 보드/상대 보드 배지를 표시하도록 했습니다.
+
+- **local/opponent runtime 연결**
+  멀티 게임 화면에서 내 보드용 `createTetrisRuntime(...)`과 상대 보드용 runtime을 각각 생성하는 초안을 추가했습니다.
+
+- **snapshot 송수신 초안**
+  `game:snapshot` 이벤트로 내 게임 상태를 주기적으로 전송하고, 상대 runtime에는 받은 snapshot을 `applySnapshot`으로 반영하는 초기 동기화 흐름을 추가했습니다.
+
+- **게임 화면 입장/이탈 이벤트 추가**
+  `game:join`, `game:leave`, `game:opponent-left`, `game:join:result` 흐름을 추가했습니다.
+
+- **roomService 책임 확장**
+  `leaveRoom`, `leaveGame`, `syncRoom`, `removePlayerBySocketId`, `getRoomPlayerContext`를 추가해 room/player 검증과 이탈 흐름을 더 명확히 분리했습니다.
+
+- **Socket.IO 이벤트 확장**
+  `room:sync`, `game:join`, `game:snapshot`, `game:leave`를 서버 소켓에 추가했습니다.
+
+- **테스트 확장**
+  `testRoomService.js`와 `testMultiplayerSocket.js`에 room sync, game join, snapshot 전달, playing room disconnect, game leave 관련 케이스를 추가했습니다.
+
+## 의미
+- 이제 로비에서 게임 화면으로 넘어가고, 양쪽 보드가 snapshot으로 연결되는 첫 단계까지 왔습니다.
+- 다만 현재 구조는 아직 초안입니다. 100ms snapshot 전송은 구현은 쉽지만 장기적으로는 `game:input`, server bag, authoritative tick 구조로 정리해야 합니다.
+
+## 남은 것
+- `console.log` 디버깅 출력 정리
+- `game:snapshot` payload 검증 추가
+- snapshot 주기와 데이터 크기 조정
+- `game:input` 기반 authoritative 흐름 설계
+- server bag 또는 seed 기반 조각 공급 정책 확정
+- 브라우저 2탭 수동 검증
