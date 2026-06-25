@@ -29,6 +29,33 @@ export function onRoomMessage(handler) {
     serverConnection.on("room:message", handler)
 }
 
+export function sendGlobalChat(player, text) {
+    serverConnection.emit("global:chat", {
+        playerId: player?.playerId,
+        nickname: player?.nickname,
+        text,
+    })
+}
+
+export function sendRoomChat(roomId, playerId, text) {
+    serverConnection.emit("room:chat", { roomId, playerId, text })
+}
+
+export function onGlobalMessage(handler) {
+    serverConnection.on("global:message", handler)
+
+    return () => {
+        serverConnection.off("global:message", handler)
+    }
+}
+
+export function onChatResult(handler) {
+    serverConnection.on("chat:result", handler)
+
+    return () => {
+        serverConnection.off("chat:result", handler)
+    }
+}
 
 export function requestLeaveRoom(roomId, playerId) {
     lastRoomRequestType = "leave"
@@ -52,8 +79,52 @@ export function sendGameSnapshot(roomId, playerId, snapshot) {
     serverConnection.emit("game:snapshot", { roomId, playerId, snapshot })
 }
 
+export function sendGameInput(roomId, playerId, action, tick = null) {
+    serverConnection.emit("game:input", { roomId, playerId, action, tick })
+}
+
+export function receiveGameInput(handler) {
+    serverConnection.on("game:input", handler)
+
+    return () => {
+        serverConnection.off("game:input", handler)
+    }
+}
+
+export function onGameInputResult(handler) {
+    serverConnection.on("game:input:result", handler)
+
+    return () => {
+        serverConnection.off("game:input:result", handler)
+    }
+}
+
+export function requestGameBagChunk(roomId, playerId) {
+    serverConnection.emit("game:bag:request", { roomId, playerId })
+}
+
+export function receiveGameBagAppend(handler) {
+    serverConnection.on("game:bag:append", handler)
+
+    return () => {
+        serverConnection.off("game:bag:append", handler)
+    }
+}
+
+export function onGameBagResult(handler) {
+    serverConnection.on("game:bag:result", handler)
+
+    return () => {
+        serverConnection.off("game:bag:result", handler)
+    }
+}
+
 export function receiveSnapshot(handler) {
     serverConnection.on("game:snapshot", handler)
+
+    return () => {
+        serverConnection.off("game:snapshot", handler)
+    }
 }
 
 export function leaveGame(roomId, playerId) {
@@ -68,4 +139,32 @@ export function onGameOpponentLeft(handler) {
 export function requestRoomSync(roomId, playerId) {
     lastRoomRequestType = "sync"
     serverConnection.emit("room:sync", { roomId, playerId })
+}
+
+export function onGameSnapshotResult(handler) {
+    serverConnection.on("game:snapshot:result", handler)
+
+    return () => {
+        serverConnection.off("game:snapshot:result", handler)
+    }
+}
+
+export function sendGameOver(roomId, playerId, reason) {
+    serverConnection.emit("game:over", { roomId, playerId, reason })
+}
+
+export function onMatchFinish(handler) {
+    serverConnection.on("match:finish", handler)
+
+    return () => {
+        serverConnection.off("match:finish", handler)
+    }
+}
+
+export function onGameOverResult(handler) {
+    serverConnection.on("game:over:result", handler)
+
+    return () => {
+        serverConnection.off("game:over:result", handler)
+    }
 }

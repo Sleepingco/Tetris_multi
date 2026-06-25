@@ -35,10 +35,12 @@ src/
 ├── app.js                   # Node.js server entry
 ├── server/                 # Node.js only
 │   ├── init.js              # Express / HTTP / Socket.IO server assembly
-│   ├── services/
-│   │   └── roomService.js   # Room state management
-│   └── sockets/
-│       └── multiplayerSocket.js
+	│   ├── services/
+	│   │   └── roomService.js   # Room state management
+	│   └── sockets/
+	│       ├── index.js             # Socket.IO connection composition
+	│       ├── chatHandlers.js      # Chat event handlers
+	│       └── multiplayerHandlers.js # Room / game event handlers
 └── client/                # Browser static root
     ├── assets/
     │   └── sound/           # BGM / SFX assets
@@ -299,11 +301,12 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 		- `Map` 기반 서버 메모리 room 상태 관리
 		- 성공/실패 반환 형태 `{ ok, room, reason }`로 통일
 	•	Socket.IO 기반 room 흐름 1차 연결
-		- `src/server/sockets/multiplayerSocket.js`에서 `room:create`, `room:join`, `room:leave`, `disconnect` 이벤트 등록
+		- `src/server/sockets/index.js`에서 Socket.IO `connection`을 한 번만 등록
+		- `src/server/sockets/chatHandlers.js`와 `multiplayerHandlers.js`에서 같은 `clientSocket`에 기능별 이벤트 등록
 		- `socket.join(roomId)` 기반 room 참가와 room 단위 `room:updated`, `room:message` broadcast 연결
 		- `src/client/net/roomClient.js`에서 `create / join / leave` 요청과 `room:result / room:updated / room:message` 수신 연결
 		- `src/client/pages/multiLobby.html`에서 방 코드, 상태, 현재 player 수 표시 및 방 코드 복사, 입장, 나가기 흐름 연결
-	•	Node 내장 테스트(`node --test`)로 roomService와 multiplayerSocket 주요 흐름 검증
+	•	Node 내장 테스트(`node --test`)로 roomService와 socket handler 주요 흐름 검증
 	•	게임 플레이 화면 라이트/다크 테마 적용
 
 🧩 다음 단계

@@ -858,3 +858,117 @@ Socket.IO room join/broadcast 흐름과 UI 스타일 정리
 - `game:input` 기반 authoritative 흐름 설계
 - server bag 또는 seed 기반 조각 공급 정책 확정
 - 브라우저 2탭 수동 검증
+
+---
+
+# 2026년 6월 23일
+멀티 로비 재입장 socket 동기화와 snapshot 서버 검증 추가
+
+> 이 항목은 현재 작업 트리의 미커밋 변경 기준입니다. 아직 최종 커밋 메시지는 없습니다.
+
+## 변경 사항
+- **로비 복귀 시 socketId 갱신**
+  `room:sync`에서 현재 로비 socket id를 `syncRoom(roomId, playerId, socketId)`로 전달해, 페이지 이동 후 새로 생성된 Socket.IO 연결을 room player 상태에 반영하도록 했습니다.
+
+- **게임 페이지 socket과 로비 권한 socket 분리**
+  `game:join`에서는 room 권한 기준 socket id를 갱신하지 않고, 게임 room 참가만 처리하도록 유지했습니다.
+
+- **재시작 `NOT_AUTHORIZED` 문제 수정**
+  게임 중 한 명이 홈으로 이동하고 남은 플레이어가 로비로 돌아온 뒤, 같은 방에서 다시 게임을 시작할 때 오래된 socket id 때문에 `NOT_AUTHORIZED`가 발생하던 흐름을 해결했습니다.
+
+- **snapshot 전송 권한 검증**
+  `game:snapshot` 수신 시 `syncRoom(roomId, playerId)`로 room 참가자인지 확인하고, room에 속하지 않은 player의 snapshot은 상대에게 broadcast하지 않도록 했습니다.
+
+- **snapshot payload 최소 검증**
+  `snapshot.board`가 배열이 아닌 경우 `INVALID_SNAPSHOT` 결과를 요청자에게 반환하고, 상대에게 잘못된 snapshot이 전달되지 않도록 했습니다.
+
+- **테스트 보강**
+  `testRoomService.js`와 `testMultiplayerSocket.js`에 다음 케이스를 추가했습니다.
+  - `room:sync`가 새 lobby socket id를 room player 상태에 반영하는지
+  - 새 socket id로 다시 `room:start`를 실행할 수 있는지
+  - room 참가자가 아닌 player의 `game:snapshot`이 차단되는지
+  - 잘못된 snapshot payload가 상대에게 전달되지 않는지
+
+## 의미
+- 로비와 게임 페이지를 오가며 Socket.IO 연결이 새로 생기는 실제 브라우저 흐름을 서버 상태가 따라갈 수 있게 되었습니다.
+- `game:snapshot`은 이제 단순 중계가 아니라 최소한의 room/player 검증과 payload 검증을 거친 뒤 상대에게 전달됩니다.
+- 이후 `game:input`, `match:finish`, server bag 같은 이벤트에도 같은 검증 패턴을 적용할 수 있는 기준이 생겼습니다.
+
+## 검증
+- `node --test test/testMultiplayerSocket.js`
+- `npm test`
+- 총 `58`개 테스트 통과
+
+## 다음 후보
+- `game:snapshot:result` 클라이언트 수신 처리
+- snapshot 전송 주기와 중복 listener 정리
+- `match:finish` / 승패 처리 설계
+- server bag 또는 next queue 동기화 설계
+
+---
+
+# 2026년 6월 24일
+멀티 로비 global/room 채팅 분리와 XSS 방어 기준 추가
+
+> 이 항목은 현재 작업 트리의 미커밋 변경 기준입니다. 아직 최종 커밋 메시지는 없습니다.
+
+## 변경 사항
+- **채팅 이벤트 분리**
+  `global:chat` / `global:message`와 `room:chat` / `room:message`를 분리해 전체 채팅과 방 채팅의 범위를 명확히 나눴습니다.
+
+- **채팅 범위 선택 UI 추가**
+  멀티 로비 메시지 입력창 앞에 `전체` / `방` 선택 UI를 추가했습니다.
+
+- **서버 검증 추가**
+  빈 메시지, 200자 초과 메시지, room 권한 없는 채팅을 차단하고, 같은 socket의 1초 내 연속 채팅을 `CHAT_RATE_LIMITED`로 막도록 했습니다.
+
+- **스크립트 인젝션 방어**
+  로비 채팅 렌더링에서 `innerHTML` 조립을 제거하고 `textContent` / text node 기반으로 메시지를 출력하도록 변경했습니다. 기존 실험용 `chat.js`도 사용자 문자열을 HTML로 조립하지 않도록 정리했습니다.
+
+- **테스트 보강**
+  `testMultiplayerSocket.js`에 global 채팅 broadcast, room 채팅 broadcast, 권한 없는 room 채팅 차단, 빈 메시지/길이 제한, rate limit 검증 케이스를 추가했습니다.
+
+- **채팅 소켓 파일 분리**
+  서버 채팅 이벤트와 검증 로직을 `src/server/sockets/chatHandlers.js`로 분리하고, `multiplayerHandlers.js`는 room/game 이벤트 중심으로 유지했습니다.
+  `sockets/index.js`는 연결 시 `registerChatHandlers(socketServer, clientSocket)`와 `registerMultiplayerHandlers(socketServer, clientSocket)`를 함께 등록합니다.
+
+## 의미
+- 채팅이 더 이상 단순 로컬 출력이 아니라 서버 검증과 broadcast를 거치는 실제 멀티 기능이 됐습니다.
+- 사용자 입력은 서버와 클라이언트 양쪽에서 plain text로 다루는 기준이 생겼습니다.
+- 서버 소켓 계층에서 chat과 multiplayer room/game 책임이 분리되어 다음 match/game 이벤트를 추가하기 쉬워졌습니다.
+
+## 검증
+- `node --test test/testMultiplayerSocket.js`
+- `npm test`
+- 총 `59`개 테스트 통과
+
+---
+
+# 2026년 6월 25일
+`game:input` 1차 배관 추가
+
+> 이 항목은 현재 작업 트리의 미커밋 변경 기준입니다. 아직 최종 커밋 메시지는 없습니다.
+
+## 변경 사항
+- **서버 `game:input` 이벤트 추가**
+  `multiplayerHandlers.js`에서 `game:input`을 받아 `syncRoom(roomId, playerId)`로 room 참가자인지 확인한 뒤, 같은 room의 상대 socket에게 전달하도록 했습니다.
+
+- **input action 검증 추가**
+  서버에서 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold`만 허용하고, 그 외 action은 `INVALID_ACTION`으로 차단합니다.
+
+- **클라이언트 input 송신 추가**
+  `roomClient.js`에 `sendGameInput`, `receiveGameInput`, `onGameInputResult`를 추가했습니다.
+  `tetrisMulti.html`에서는 기존 로컬 입력 처리(`myGame.enqueueInput`)를 유지하면서 같은 action을 서버에도 전송합니다.
+
+- **테스트 보강**
+  `testMultiplayerSocket.js`에 `game:input` 정상 전달, room 참가자가 아닌 player 차단, 잘못된 action 차단 케이스를 추가했습니다.
+
+## 의미
+- 현재 단계는 서버 authoritative 게임 루프가 아니라 input 기반 구조로 가기 위한 첫 배관입니다.
+- snapshot은 아직 상대 보드 표시용으로 유지합니다.
+- 다음 단계에서는 서버 match state에 input log를 저장하고, 그 다음 서버가 input으로 상태를 계산해 authoritative snapshot을 내려주는 방향으로 확장합니다.
+
+## 검증
+- `node --test test/testMultiplayerSocket.js`
+- `npm test`
+- 총 `62`개 테스트 통과

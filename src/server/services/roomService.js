@@ -144,7 +144,7 @@ function removePlayer(roomId, playerId) {
     return success(roomState)
 }
 
-function findRoomBySocketId(socketId) {
+function getRoomSocketContext(socketId) {
     for (const room of rooms.values()) {
         const player = room.players.find(player => player.socketId === socketId);
 
@@ -160,7 +160,7 @@ function findRoomBySocketId(socketId) {
 }
 
 function removePlayerBySocketId(socketId) {
-    const found = findRoomBySocketId(socketId)
+    const found = getRoomSocketContext(socketId)
 
     if (!found) {
         return failure("SOCKET_NOT_FOUND", {
@@ -257,13 +257,56 @@ function leaveGame(roomId, playerId) {
     return removePlayer(roomId, playerId)
 }
 
-function syncRoom(roomId, playerId) {
+function syncRoom(roomId, playerId, socketId = null) {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
         return failure(context.reason)
     }
 
+    if (socketId) {
+        context.player.socketId = socketId
+    }
+
     return success(context.roomState)
+}
+
+function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
+    const context = getRoomPlayerContext(roomId, loserPlayerId)
+    if (!context.ok) {
+        return failure(context.reason, {
+            winnerPlayerId: null,
+            loserPlayerId: null,
+            finishReason,
+        })
+    }
+
+    const { roomState } = context
+
+    if (roomState.status !== "playing") {
+        return failure("GAME_NOT_PLAYING", {
+            winnerPlayerId: null,
+            loserPlayerId,
+            finishReason,
+        })
+    }
+
+    if (roomState.players.length !== 2) {
+        return failure("NOT_ENOUGH_PLAYERS", {
+            winnerPlayerId: null,
+            loserPlayerId,
+            finishReason,
+        })
+    }
+
+    const winnerPlayer = roomState.players.find(player => player.playerId !== loserPlayerId)
+
+    roomState.status = "waiting"
+
+    return success(roomState, {
+        winnerPlayerId: winnerPlayer.playerId,
+        loserPlayerId,
+        finishReason,
+    })
 }
 
 module.exports = {
@@ -271,10 +314,10 @@ module.exports = {
     getRoomState,
     joinRoom,
     removePlayer,
-    findRoomBySocketId,
     removePlayerBySocketId,
     startGame,
     leaveGame,
     syncRoom,
     leaveRoom,
+    finishGame,
 }

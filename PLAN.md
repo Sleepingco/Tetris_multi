@@ -42,9 +42,13 @@
 - [x] `src/client/game/core/step.js`에 `resolveMoveAttempt`, `resolveMoveIntent` 존재
 - [x] `src/client/game/state/stateSerialization.js`에 snapshot serialize/deserialize 보조 함수 존재
 - [x] `src/server/services/roomService.js`에 room 생성/참가/퇴장/소켓 조회 로직 존재
-- [x] `src/server/sockets/multiplayerSocket.js`에 `room:create`, `room:join`, `room:leave`, `disconnect` 흐름 존재
+- [x] `src/server/sockets/multiplayerHandlers.js`에 `room:create`, `room:join`, `room:leave`, `disconnect` 흐름 존재
+- [x] `src/server/sockets/chatHandlers.js`에 `global:chat`, `room:chat`, legacy `chatting` 흐름 분리
 - [x] `src/client/net/roomClient.js`에 create/join/leave 요청과 room 결과/업데이트/메시지 수신 함수 존재
 - [x] `src/client/pages/multiLobby.html`에서 방 코드, 상태, player 수 표시와 방 입장/나가기 UI 연결
+- [x] 로비 채팅을 `global:chat` / `room:chat`으로 분리
+- [x] 채팅 입력은 1초 1회 서버 rate limit과 plain text 렌더링 기준 적용
+- [x] `game:input` 1차 배관 추가: 클라이언트 입력을 서버 검증 후 같은 room 상대에게 전달
 - [x] `npm test`로 roomService와 multiplayerSocket 주요 흐름 검증 가능
 - [x] `.gitignore`에 `node_modules/`, `.DS_Store`, `coverage/`, `dist/` 제외
 
@@ -64,7 +68,7 @@
 - [ ] match/game 이벤트 기반 멀티 프로토콜 구현
 - [ ] remote runtime snapshot 반영 경로
 - [ ] server bag 배포와 소비 경로
-- [ ] `match:ready`, `match:start`, `game:input`, `game:snapshot` 실제 연결
+- [ ] `match:ready`, `match:start`, 서버 authoritative `game:snapshot` 실제 연결
 - [ ] 방 목록, quick match, match 결과 화면
 
 ### 현재 판단
@@ -143,18 +147,22 @@
 - `src/server/services/roomService.js`
   - `Map` 기반 메모리 room 상태를 관리한다.
   - `createRoom`, `joinRoom`, `removePlayer`, `getRoomState`, `findRoomBySocketId`를 제공한다.
-- `src/server/sockets/multiplayerSocket.js`
-  - Socket.IO 이벤트 입구다.
-  - `chatting`, `room:create`, `room:join`, `room:leave`, `disconnect`를 등록한다.
+- `src/server/sockets/multiplayerHandlers.js`
+  - room/game Socket.IO 이벤트 입구다.
+  - `room:create`, `room:join`, `room:leave`, `room:sync`, `room:start`, `game:*`, `disconnect`를 등록한다.
   - room 단위 join/broadcast를 수행한다.
+- `src/server/sockets/chatHandlers.js`
+  - chat Socket.IO 이벤트 입구다.
+  - `global:chat`, `room:chat`, legacy `chatting`, `chat:result` 흐름을 담당한다.
+  - 채팅 입력 검증, 1초 rate limit, room 채팅 권한 확인을 담당한다.
 
 ### Client network layer
 
 - `src/client/net/roomClient.js`
   - 브라우저 Socket.IO room adapter다.
-  - create/join/leave 요청과 room result/update/message 구독을 제공한다.
+  - create/join/leave 요청, room result/update/message 구독, global/room chat 송수신 함수를 제공한다.
 - `src/client/net/chat.js`
-  - 기존 채팅 adapter다.
+  - 기존 채팅 adapter다. 현재 멀티 로비의 주 채팅 경로는 `roomClient.js`다.
 
 ### 현재 구조에 대한 짧은 평가
 
@@ -187,6 +195,57 @@
   - 기본 RNG가 여전히 `Math.random`이다.
   - runtime 구조는 정리 중이고, 먼저 작동하는 멀티 MVP가 필요하다.
 
+### 현재 MVP 인증/소켓 정책
+
+- 현재는 로그인, DB, 서버 세션이 없는 학습/MVP 단계다.
+- 따라서 `playerId`를 임시 신원 값처럼 사용하고, `socketId`는 현재 연결 검증에 사용한다.
+- `room:start`처럼 권한이 필요한 요청은 `playerId`와 현재 요청 socket을 함께 확인한다.
+- 페이지 이동이나 새로고침 후 Socket.IO 연결은 새로 만들어질 수 있으므로, 로비 복귀 시 `room:sync`에서 room에 저장된 player의 `socketId`를 최신 로비 socket id로 갱신한다.
+- 단, `game:join`에서는 room 권한 기준 socket id를 갱신하지 않는다.
+  - 게임 페이지 socket은 게임 sync용 연결이다.
+  - room host 권한 기준은 로비에서 다시 동기화되는 socket을 기준으로 둔다.
+  - 이렇게 해야 게임 페이지 이동, 종료, disconnect 흐름이 room 권한 상태를 덮어쓰지 않는다.
+
+### 실무형 인증/연결 관리 전환 계획
+
+- 실제 서비스에서는 `socketId`를 신원의 원천으로 두지 않는다.
+- `socketId`는 현재 연결 주소이고, 권한 판단의 기준은 로그인 세션, JWT, 서버 세션에서 확인된 `userId`가 된다.
+- 전환 시 room 상태는 의미 상태 중심으로 정리한다.
+  - `userId` 또는 서버가 발급한 안정적인 `playerId`
+  - `nickname`
+  - `role`
+  - `ready`
+  - `status`
+- socket 연결 정보는 room 상태와 분리된 connection map으로 관리한다.
+  - 예: `userId -> socketId`
+  - 예: `socketId -> userId`
+  - 예: `userId -> roomId`
+- Socket.IO 연결 시 인증 middleware에서 토큰/세션을 검증하고, 검증된 사용자만 room 이벤트를 처리한다.
+- 권한 검사는 `socketId === player.socketId`보다 `authenticatedUserId === room.hostUserId` 같은 형태로 이동한다.
+- 이 전환은 멀티 MVP가 동작한 뒤 별도 단계로 진행한다.
+  - 현재 단계에서 로그인, DB, JWT를 먼저 도입하지 않는다.
+  - 먼저 room/start/game sync 흐름을 이해 가능한 상태로 완성한다.
+
+### 채팅 이벤트와 XSS 방어 정책
+
+- 채팅 범위는 이벤트 이름으로 분리한다.
+  - `global:chat`: 로비 전체 채팅 요청
+  - `global:message`: 서버가 전체 socket에 broadcast하는 전체 채팅 메시지
+  - `room:chat`: 현재 room 참가자에게만 보내는 채팅 요청
+  - `room:message`: room 단위 시스템 메시지와 room 채팅 메시지
+  - `chat:result`: 채팅 검증 실패 결과
+- 채팅 도배 방지는 서버 socket 기준으로 먼저 적용한다.
+  - 현재 MVP 규칙: 같은 socket은 1초에 1회만 채팅을 보낼 수 있다.
+  - 이 제한은 global/room 채팅에 공통 적용한다.
+- 사용자 입력 문자열은 HTML이 아니라 plain text로 취급한다.
+  - 서버는 빈 메시지, 최대 길이, 권한, rate limit만 검증한다.
+  - 서버는 사용자 메시지를 HTML로 만들지 않는다.
+  - 클라이언트는 사용자 문자열을 `innerHTML`에 넣지 않고 `textContent` 또는 text node로 렌더링한다.
+  - `<script>alert(1)</script>` 같은 입력은 실행 대상이 아니라 그대로 보이는 텍스트여야 한다.
+- 추후 DB 저장이 생기면 저장 전/후에도 같은 원칙을 유지한다.
+  - 저장 데이터는 plain text다.
+  - 화면 출력 시점에는 반드시 DOM text API로 렌더링한다.
+
 ### action과 moveCause 규약
 
 - 네트워크로 보내는 값은 `action`이다.
@@ -208,10 +267,10 @@
 ### snapshot 방향
 
 - `snapshot`은 멀티 sync와 remote render를 위한 상태 복사본이다.
-- 현재는 serialization helper만 있음
+- 현재는 클라이언트가 만든 snapshot을 서버가 검증 후 상대에게 전달하고, 상대 runtime에 적용한다.
+- 이후 input 중심 구조에서는 서버가 계산한 authoritative snapshot을 클라이언트에게 내려주는 방향으로 전환한다.
 - 아직 없는 것:
   - 서버에서 snapshot 생성
-  - 클라이언트에서 snapshot 적용
   - remote runtime에 authoritative state 반영
 
 ### 현재 멀티 진행 상태
@@ -223,12 +282,12 @@
 - [x] 서버에서 `disconnect` 발생 시 room player 제거 가능
 - [x] Socket.IO room 단위 `room:updated`, `room:message` broadcast 가능
 - [x] 멀티 게임 페이지에서 local/remote canvas 화면 골격 준비
+- [x] local 입력을 `game:input`으로 서버에 전송하고, 서버가 room/player/action 검증 후 상대에게 전달
+- [x] snapshot 수신 후 remote runtime 반영
 - [ ] 두 브라우저 탭 기준 room create/join/leave 수동 검증
 - [ ] 로비에서 match ready/start로 넘어가는 흐름
-- [ ] local 입력을 네트워크로 보내는 경로
 - [ ] 서버 match 상태
 - [ ] server bag 전달
-- [ ] snapshot 수신 후 remote runtime 반영
 - [ ] 승패 판정과 match lifecycle
 
 ## Current Phase
@@ -250,6 +309,7 @@
 - [x] roomService와 multiplayerSocket Node 테스트 추가
 - [~] `src/client/game/runtime/tetris.js` 축소 진행 중
 - [~] snapshot 기반 멀티 준비 중
+- [~] `game:input` 기반 authoritative 전환 준비 중
 - [~] room 흐름은 match/game sync 전 단계까지 진행
 - [ ] 실제 authoritative match/game loop 시작 전
 
@@ -257,8 +317,8 @@
 
 - `src/client/game/runtime/tetris.js`가 아직 크다.
 - snapshot을 만들 수는 있지만 적용 경로가 없다.
-- 로비 room 흐름은 있지만 match ready/start와 game sync가 아직 없다.
-- 멀티 게임 화면은 DOM 골격만 있고 runtime/network 연결이 아직 없다.
+- 현재 snapshot은 클라이언트 생성 상태를 전달하는 단계이며, 서버 authoritative snapshot은 아직 아니다.
+- `game:input`은 서버 검증/전달까지 연결됐지만 서버가 입력으로 게임 상태를 계산하지는 않는다.
 - deterministic 설계는 방향만 있고, 현재 MVP 구현 기준은 아니다.
 
 ### Phase 1 완료 조건
@@ -287,27 +347,25 @@
 2. 로비 UI 문구 정리
    - 이미 동작하는 버튼의 "준비중" 문구 제거
    - quick match처럼 실제 미구현인 기능만 disabled/준비중 상태 유지
-3. match 준비/시작 이벤트 정의
-   - `match:ready`, `match:start` 최소 payload 확정
-   - room이 2명일 때 자동 시작인지 ready 기반 시작인지 결정
-4. 서버 match/player 상태 초안 추가
+3. 서버 match/player 상태 초안 추가
    - room state
    - match state
    - player state
-5. `server bag` 정책 문서화 후 최소 구현
+4. `server bag` 정책 문서화 후 최소 구현
    - 서버가 bag 또는 next queue를 관리
    - 클라이언트는 이를 소비
-6. snapshot apply 경로 설계
-   - `serializeGameState`는 있음
-   - 이제 remote runtime에 state를 반영하는 경로 필요
+5. `game:input` 처리 책임 확장
+   - 현재는 검증 후 상대 전달
+   - 다음 단계에서는 서버 match state에 input log를 저장
+   - 이후 서버가 input으로 상태를 계산하고 authoritative snapshot을 내려준다
 
 ### 권장 구현 순서
 
 - [ ] Step 1. 로비 create/join/leave/disconnect 브라우저 검증
-- [ ] Step 2. `match:start`, `match:ready`, `game:input` 최소 이벤트 정의
+- [x] Step 2. `game:input` 최소 이벤트 정의 및 서버 검증/전달
 - [ ] Step 3. `roomService`와 분리된 match state/service 초안 추가
 - [ ] Step 4. 서버가 local player용 `server bag` 또는 spawn stream을 관리
-- [ ] Step 5. remote runtime에 snapshot 또는 spawn/update 반영 API 추가
+- [ ] Step 5. 서버 match state에 input log를 저장하고 authoritative snapshot 방향으로 전환
 - [ ] Step 6. local/remote 한 화면에서 상태 차이가 눈에 보이게 만들기
 
 ### 이후 단계
@@ -445,15 +503,22 @@
 
 ### `game:input`
 
+현재 구현 기준:
+
 ```json
 {
   "roomId": "room_123",
-  "matchId": "match_001",
   "playerId": "player_a",
   "tick": 42,
   "action": "move_left"
 }
 ```
+
+현재 서버 처리:
+- `syncRoom(roomId, playerId)`로 room 참가자만 허용한다.
+- 허용 action은 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold`다.
+- 정상 input은 같은 Socket.IO room의 상대에게 `game:input`으로 전달한다.
+- 실패 시 요청자에게 `game:input:result`를 보낸다.
 
 ### `game:snapshot`
 

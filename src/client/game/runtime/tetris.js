@@ -110,8 +110,14 @@ export function createTetrisRuntime({
           *
           * @returns {void}
           */
-        function init({ autoStart = true } = {}) {
+        function init({ autoStart = true, serverBagChunks = null } = {}) {
                 resetSessionState()
+                if (Array.isArray(serverBagChunks)) {
+                        setServerBagQueue(serverBagChunks)
+                } else {
+                        runtime.bagMode = "local"
+                        runtime.serverBagQueue = []
+                }
                 setActivePiece({
                         pieceType: "",
                         rotation: 0,
@@ -256,13 +262,18 @@ export function createTetrisRuntime({
           * 현재 게임이 입력을 받을 수 있을 때만 플레이어 액션을 큐에 넣는다.
           *
           * @param {string|null} action - 정규화된 입력 액션
+          * @param {number|null} scheduledTick - 외부에서 지정한 입력 처리 tick
           * @returns {void}
           */
-        function enqueueInput(action) {
+        function enqueueInput(action, scheduledTick = null) {
                 if (!action) return
                 if (!canProcessPlayerInput()) return
+                const nextTick = Number.isFinite(scheduledTick)
+                        ? scheduledTick
+                        : runtime.currentTick + 1
+
                 gameState.inputQueue.push({
-                        tick: runtime.currentTick + 1,
+                        tick: nextTick,
                         action
                 })
         }
@@ -961,14 +972,24 @@ export function createTetrisRuntime({
           * @returns {void}
           */
         function applyServerBag(chunks) {
-                runtime.bagMode = "server"
-                runtime.serverBagQueue = Array.isArray(chunks)
-                        ? chunks.flatMap(chunk => Array.isArray(chunk) ? [...chunk] : [])
-                        : []
+                setServerBagQueue(chunks)
                 gameState.bag = []
                 gameState.pieceQueue = []
                 refillSpawnQueue()
                 ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
+        }
+
+        /**
+          * 서버가 내려준 bag chunks를 런타임의 조각 공급원으로 설정한다.
+          *
+          * @param {string[][]} chunks - 서버가 보낸 7-bag chunk 목록
+          * @returns {void}
+          */
+        function setServerBagQueue(chunks) {
+                runtime.bagMode = "server"
+                runtime.serverBagQueue = Array.isArray(chunks)
+                        ? chunks.flatMap(chunk => Array.isArray(chunk) ? [...chunk] : [])
+                        : []
         }
 
         /**
@@ -983,6 +1004,16 @@ export function createTetrisRuntime({
                 runtime.serverBagQueue.push(...chunk)
                 refillSpawnQueue()
                 ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
+        }
+
+        /**
+          * 현재 런타임이 소비 가능한 서버 조각 수를 반환한다.
+          *
+          * @returns {number} server bag 모드가 아니면 Infinity
+          */
+        function getServerBagRemainingCount() {
+                if (runtime.bagMode !== "server") return Infinity
+                return runtime.serverBagQueue.length + gameState.pieceQueue.length
         }
 
         /**
@@ -1010,6 +1041,7 @@ export function createTetrisRuntime({
                 applySnapshot,
                 applyServerBag,
                 appendServerBag,
+                getServerBagRemainingCount,
                 hideGameOver: ui.hideGameOver,
                 showGameOver: ui.showGameOver,
                 runtime,

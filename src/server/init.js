@@ -2,7 +2,7 @@ const express = require("express")
 const http = require("http")
 const path = require("path")
 const socketIO = require("socket.io")
-const { registerMultiplayerSocket } = require("./sockets/multiplayerSocket.js")
+const { registerSocketHandlers } = require("./sockets/index.js")
 
 const app = express()
 const server = http.createServer(app)
@@ -15,6 +15,6 @@ app.get("/", (_, res) => {
     res.sendFile(path.join(STATIC_ROOT, "pages", "index.html"))
 })
 
-registerMultiplayerSocket(socketServer)
+registerSocketHandlers(socketServer)
 
 server.listen(PORT, () => console.log(`server is running ${PORT}`))

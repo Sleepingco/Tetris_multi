@@ -845,20 +845,20 @@ src/server/services/roomService.js
 `src/app.js`는 실제 서버 로직을 직접 가지고 있는 파일이 아니라, 서버를 실행하기 위한 얇은 진입점이다.
 
 ```js
-require("./server/app.js")
+require("./server/init.js")
 ```
 
-즉 `node src/app.js`로 실행하면 내부적으로는 `src/server/app.js`를 실행한다.
+즉 `node src/app.js`로 실행하면 내부적으로는 `src/server/init.js`를 실행한다.
 
-직접 실행할 때도 `node src/server/app.js`로 서버를 띄울 수 있다.
+직접 실행할 때는 보통 `node src/app.js`를 사용하고, 서버 조립 코드는 `src/server/init.js`에 둔다.
 
 ```txt
 src/app.js
   ↓
-src/server/app.js
+src/server/init.js
 ```
 
-### 2. `src/server/app.js`
+### 2. `src/server/init.js`
 
 이 파일은 서버 전체의 시작점이다.
 
@@ -878,7 +878,7 @@ src/server/app.js
 ```js
 const app = express()
 const server = http.createServer(app)
-const io = socketIO(server)
+const socketServer = socketIO(server)
 ```
 
 여기서 역할을 나누면 다음과 같다.
@@ -905,19 +905,20 @@ HTTP server
 정적 파일 루트는 이 코드로 정해진다.
 
 ```js
-const STATIC_ROOT = path.join(__dirname, "..")
+const STATIC_ROOT = path.join(__dirname, "..", "client")
 app.use(express.static(STATIC_ROOT))
 ```
 
-`src/server/app.js`에서 `__dirname`은 `src/server`를 의미한다.
+`src/server/init.js`에서 `__dirname`은 `src/server`를 의미한다.
 
 따라서 현재 구조에서는 `path.join(__dirname, "..", "client")`가 `src/client` 폴더를 가리킨다.
 
 ```txt
 프로젝트 루트
-└── src                  ← 정적 파일 루트
-    └── pages
-        └── tetrisSingle.html
+└── src
+    └── client           ← 정적 파일 루트
+        └── pages
+            └── tetrisSingle.html
 ```
 
 그래서 브라우저 URL에서는 `src`를 붙이지 않는다.
@@ -1421,8 +1422,8 @@ if (!guestPlayer) {
 답변 요약:
 	•	서버에서 실행되는 Node.js 코드와 브라우저에서 실행되는 정적 파일을 물리적으로 분리함.
 	•	새 구조는 `src/server`와 `src/client` 기준임.
-	•	`src/app.js`는 계속 서버 실행 진입점으로 유지하고, 내부에서 `src/server/app.js`를 실행함.
-	•	`src/server/app.js`는 Express, HTTP server, Socket.IO server 조립만 담당함.
+	•	`src/app.js`는 계속 서버 실행 진입점으로 유지하고, 내부에서 `src/server/init.js`를 실행함.
+	•	`src/server/init.js`는 Express, HTTP server, Socket.IO server 조립만 담당함.
 	•	`src/server/sockets/multiplayerSocket.js`는 서버 Socket.IO 이벤트 핸들러 등록을 담당함.
 	•	`src/server/services/roomService.js`는 Socket.IO를 모르는 순수 방 상태 관리 계층으로 유지함.
 	•	`src/client`는 Express가 공개하는 정적 파일 루트가 됨.
@@ -1436,7 +1437,7 @@ if (!guestPlayer) {
 src/
 ├── app.js
 ├── server/
-│   ├── app.js
+│   ├── init.js
 │   ├── services/
 │   │   └── roomService.js
 │   └── sockets/
@@ -1461,7 +1462,7 @@ src/
 ```txt
 node src/app.js
   ↓
-src/server/app.js
+src/server/init.js
   ↓
 Express 정적 루트 = src/client
   ↓
@@ -1488,3 +1489,1025 @@ server/services/roomService.js
 	•	`node --check`로 server 주요 파일과 client 주요 모듈 문법 확인.
 	•	`npm test`로 roomService 단위 테스트 10개 통과.
 	•	로컬 서버를 `PORT=5599 node src/app.js`로 실행해 `/pages/index.html`, `/pages/multiLobby.html`, `/net/roomClient.js`, `/game/runtime/tetris.js`가 모두 `200 OK`로 응답하는지 확인.
+
+⸻
+
+## Q. Socket.IO 구조에서 `socketServer`, `clientSocket`, `serverConnection`, `handler`가 각각 어떤 의미야? (2026-06-23)
+
+답변 요약:
+	•	`socketServer`는 서버 전체 Socket.IO 관리자임.
+	•	`clientSocket`은 서버가 바라보는 특정 브라우저 연결 1개임.
+	•	`serverConnection`은 브라우저가 들고 있는 서버와의 Socket.IO 연결 객체임.
+	•	`handler`는 이벤트가 도착했을 때 나중에 실행할 콜백 함수임.
+	•	`emit()`은 이벤트를 보내는 함수이고, `on()`은 이벤트를 받을 함수를 등록하는 함수임.
+
+### 1. 서버 시작과 Socket.IO 서버 생성
+
+현재 시작점은 `src/app.js`다.
+
+```js
+require("./server/init.js")
+```
+
+이 파일은 실제 서버 조립을 하지 않고 `src/server/init.js`를 실행하는 얇은 진입점이다.
+
+`src/server/init.js`에서는 다음 순서로 서버를 조립한다.
+
+```js
+const app = express()
+const server = http.createServer(app)
+const socketServer = socketIO(server)
+```
+
+각 객체의 의미는 다음과 같다.
+
+```txt
+app
+  = Express 앱
+  = HTTP 요청을 어떻게 처리할지 담는 객체
+
+server
+  = 실제 HTTP 서버
+  = 포트를 열고 브라우저 요청을 받는 객체
+
+socketServer
+  = Socket.IO 서버 전체 관리자
+  = 같은 HTTP server 위에서 실시간 연결을 관리하는 객체
+```
+
+구조로 보면 다음과 같다.
+
+```txt
+HTTP server
+├── Express app
+│   └── HTML/CSS/JS 정적 파일 제공
+└── Socket.IO server
+    └── 실시간 이벤트 통신
+```
+
+즉 Express와 Socket.IO는 같은 포트를 공유한다.
+
+```txt
+/pages/index.html
+  → Express static 응답
+
+/socket.io/...
+  → Socket.IO 연결 처리
+```
+
+### 2. `/`로 접속할 때와 소켓 연결은 다른 흐름
+
+`src/server/init.js`에는 다음 코드가 있다.
+
+```js
+app.use(express.static(STATIC_ROOT))
+
+app.get("/", (_, res) => {
+  res.sendFile(path.join(STATIC_ROOT, "pages", "index.html"))
+})
+```
+
+브라우저가 `/`로 접속하면 흐름은 다음과 같다.
+
+```txt
+브라우저 GET /
+  ↓
+Express app.get("/")
+  ↓
+src/client/pages/index.html 파일 응답
+```
+
+중요한 점:
+
+```txt
+/ 로 접속한다고 소켓 연결이 자동으로 생기는 것은 아님.
+소켓 연결은 브라우저에서 io()가 실행될 때 생김.
+```
+
+### 3. `registerMultiplayerSocket(socketServer)`의 의미
+
+서버 조립 중 다음 코드가 실행된다.
+
+```js
+registerMultiplayerSocket(socketServer)
+```
+
+이 코드는 바로 방 생성이나 참가를 실행하는 것이 아니다.
+
+의미는 다음과 같다.
+
+```txt
+socketServer에 앞으로 받을 이벤트 규칙을 등록한다.
+```
+
+`src/server/sockets/multiplayerSocket.js` 안에서는 다음처럼 등록한다.
+
+```js
+function registerMultiplayerSocket(socketServer) {
+  socketServer.on("connection", (clientSocket) => {
+    clientSocket.on("room:create", ...)
+    clientSocket.on("room:join", ...)
+    clientSocket.on("room:leave", ...)
+    clientSocket.on("disconnect", ...)
+  })
+}
+```
+
+이 코드는 다음처럼 읽으면 된다.
+
+```txt
+socketServer야,
+나중에 브라우저가 연결되면 clientSocket을 하나 받고,
+그 clientSocket이 room:create를 보내면 이 함수 실행,
+room:join을 보내면 이 함수 실행,
+room:leave를 보내면 이 함수 실행해라.
+```
+
+즉 `registerMultiplayerSocket`은 이벤트를 즉시 실행하는 함수가 아니라, 이벤트 핸들러를 미리 등록하는 함수다.
+
+### 4. `socketServer`와 `clientSocket`의 차이
+
+`socketServer`는 전체 관리자다.
+
+```js
+const socketServer = socketIO(server)
+```
+
+```txt
+socketServer
+  = 모든 Socket.IO 연결을 관리하는 서버 전체 객체
+  = 새 연결을 기다림
+  = 전체 broadcast나 room broadcast에 사용
+```
+
+`clientSocket`은 연결된 클라이언트 1개다.
+
+```js
+socketServer.on("connection", (clientSocket) => {
+  ...
+})
+```
+
+```txt
+clientSocket
+  = 서버가 바라보는 특정 브라우저 연결 1개
+  = 그 브라우저가 보낸 이벤트를 받음
+  = 그 브라우저에게만 응답할 수 있음
+```
+
+브라우저 탭이 3개 연결되면 서버는 대략 이렇게 본다.
+
+```txt
+socketServer
+├── clientSocket A
+├── clientSocket B
+└── clientSocket C
+```
+
+같은 코드 안에서 변수 이름은 `clientSocket` 하나지만, `connection` 콜백이 실행될 때마다 서로 다른 연결 객체가 들어온다.
+
+```txt
+탭 A 연결 → clientSocket = A 전용 연결
+탭 B 연결 → clientSocket = B 전용 연결
+탭 C 연결 → clientSocket = C 전용 연결
+```
+
+그래서 다음 코드는 현재 연결된 그 브라우저 1명에게만 보낸다.
+
+```js
+clientSocket.emit("room:result", result)
+```
+
+반대로 다음 코드는 같은 Socket.IO room에 들어간 모든 클라이언트에게 보낸다.
+
+```js
+socketServer.to(roomId).emit("room:updated", room)
+```
+
+### 5. 브라우저 쪽 `serverConnection`
+
+브라우저 쪽 `src/client/net/roomClient.js`에는 다음 코드가 있다.
+
+```js
+if (typeof io !== "function") {
+  throw new Error("Socket.IO client script must be loaded before client/net/roomClient.js")
+}
+
+const serverConnection = io()
+```
+
+여기서 `io()`는 `roomClient.js`에서 직접 선언한 함수가 아니다.
+
+`multiLobby.html`에서 먼저 다음 스크립트를 로드한다.
+
+```html
+<script src="/socket.io/socket.io.js"></script>
+```
+
+이 스크립트가 브라우저 전역에 `window.io` 함수를 만들어준다.
+
+그래서 다음 코드가 가능하다.
+
+```js
+const serverConnection = io()
+```
+
+의미:
+
+```txt
+브라우저가 서버와 Socket.IO 연결을 시작한다.
+```
+
+이 줄이 실행되면 서버의 다음 핸들러가 실행된다.
+
+```js
+socketServer.on("connection", (clientSocket) => {
+  console.log("a user connected")
+})
+```
+
+정리하면:
+
+```txt
+브라우저 serverConnection
+        ⇄
+서버 clientSocket
+```
+
+### 6. `emit()`과 `on()`의 방향
+
+`emit()`은 이벤트를 보내는 함수다.
+
+`on()`은 이벤트를 받았을 때 실행할 함수를 등록하는 함수다.
+
+Socket.IO 이벤트는 클라이언트와 서버가 실시간으로 주고받는 "이름 붙은 메시지"라고 보면 된다.
+
+```txt
+event name: "player-input"
+data: { roomId, action }
+handler: socket.on("player-input", ...)
+```
+
+브라우저에서 서버로 보내는 경우:
+
+```js
+serverConnection.emit("room:create", player)
+```
+
+서버에서 받는 경우:
+
+```js
+clientSocket.on("room:create", (player) => {
+  ...
+})
+```
+
+서버에서 브라우저로 보내는 경우:
+
+```js
+clientSocket.emit("room:result", result)
+```
+
+브라우저에서 받는 경우:
+
+```js
+serverConnection.on("room:result", handler)
+```
+
+방향으로 보면 다음과 같다.
+
+```txt
+브라우저 → 서버
+serverConnection.emit("room:create", player)
+        ↓
+clientSocket.on("room:create", handler)
+
+서버 → 브라우저
+clientSocket.emit("room:result", result)
+        ↓
+serverConnection.on("room:result", handler)
+```
+
+### 7. `onRoomUpdated(handler)`에서 handler는 언제 인자를 받는가?
+
+`onRoomUpdated`는 다음처럼 생겼다.
+
+```js
+export function onRoomUpdated(handler) {
+  serverConnection.on("room:updated", handler)
+}
+```
+
+로비에서는 이렇게 사용한다.
+
+```js
+onRoomUpdated((room) => {
+  if (!room) return
+  renderRoom(room)
+})
+```
+
+여기서 `(room) => { ... }`는 서버로 보내는 코드가 아니다.
+
+이 함수는 나중에 실행할 콜백으로 등록된다.
+
+```txt
+등록 시점
+  = 함수 모양만 넘김
+  = 아직 room 값 없음
+
+이벤트 도착 시점
+  = 서버가 보낸 데이터를 Socket.IO가 handler 인자로 넣어 실행
+```
+
+서버가 다음 이벤트를 보낸다고 하자.
+
+```js
+socketServer.to(roomId).emit("room:updated", result.room)
+```
+
+그러면 클라이언트의 Socket.IO가 내부적으로 다음처럼 실행한다.
+
+```js
+handler(result.room)
+```
+
+그 순간 로비에서 작성한 화살표 함수의 `room` 파라미터에 값이 들어간다.
+
+```js
+(room) => {
+  renderRoom(room)
+}
+```
+
+즉 `handler`의 인자는 등록할 때 받는 것이 아니라, 이벤트가 도착해서 실행될 때 받는다.
+
+### 8. `onRoomResult(handler)`는 왜 result와 requestType을 같이 받는가?
+
+`roomClient.js`에는 다음 코드가 있다.
+
+```js
+let lastRoomRequestType = null
+
+export function requestCreateRoom(player) {
+  lastRoomRequestType = "create"
+  serverConnection.emit("room:create", player)
+}
+
+export function onRoomResult(handler) {
+  serverConnection.on("room:result", (result) => {
+    handler(result, lastRoomRequestType)
+  })
+}
+```
+
+`result`는 서버가 보낸 값이다.
+
+```js
+clientSocket.emit("room:result", result)
+```
+
+`requestType`은 서버가 보낸 값이 아니라, 클라이언트가 마지막 요청 종류를 기억해둔 값이다.
+
+```txt
+requestCreateRoom() 실행
+  → lastRoomRequestType = "create"
+
+requestJoinRoom() 실행
+  → lastRoomRequestType = "join"
+
+requestLeaveRoom() 실행
+  → lastRoomRequestType = "leave"
+```
+
+서버 응답이 도착하면 `roomClient.js`가 다음처럼 로비 콜백을 실행한다.
+
+```js
+handler(result, lastRoomRequestType)
+```
+
+그래서 로비에서는 다음처럼 받을 수 있다.
+
+```js
+onRoomResult((result, requestType) => {
+  ...
+})
+```
+
+정리:
+
+```txt
+result
+  = 서버가 보낸 결과
+
+requestType
+  = 클라이언트가 마지막으로 보낸 요청 종류
+```
+
+### 9. Socket.IO room과 실시간 게임/음성 통신
+
+실시간 게임은 보통 Socket.IO 이벤트로 주고받는다.
+
+예시:
+
+```js
+serverConnection.emit("game:input", {
+  roomId,
+  playerId,
+  action: "move-left",
+  tick: 120,
+})
+```
+
+서버는 입력을 받고 방 전체에 상태를 보낼 수 있다.
+
+```js
+clientSocket.on("game:input", ({ roomId, playerId, action, tick }) => {
+  socketServer.to(roomId).emit("game:snapshot", snapshot)
+})
+```
+
+즉 게임은 보통 다음 구조다.
+
+```txt
+클라이언트 → 서버
+  입력 이벤트
+
+서버 → 같은 room 클라이언트들
+  상태 snapshot / 상대 입력 / 공격 정보
+```
+
+반면 음성/영상은 보통 Socket.IO 이벤트로 직접 보내지 않는다.
+
+```txt
+Socket.IO
+  = 방 생성, 참가, WebRTC signaling 전달
+
+WebRTC
+  = 실제 음성/영상 데이터 전송
+```
+
+음성에서 Socket.IO가 담당하는 이벤트 예시는 다음과 같다.
+
+```txt
+voice:offer
+voice:answer
+voice:ice-candidate
+voice:user-joined
+voice:user-left
+```
+
+즉:
+
+```txt
+게임 입력/상태
+  = Socket.IO 이벤트로 처리 가능
+
+음성/영상 데이터
+  = Socket.IO는 연결 협상만 돕고, 실제 데이터는 WebRTC 권장
+```
+
+### 10. Spring Boot STOMP와 비교
+
+Socket.IO는 이벤트 이름 중심이다.
+
+```js
+serverConnection.emit("room:create", player)
+clientSocket.on("room:create", handler)
+```
+
+Spring Boot STOMP는 destination 중심이다.
+
+```js
+stompClient.publish({
+  destination: "/app/room/create",
+  body: JSON.stringify(player),
+})
+```
+
+```java
+@MessageMapping("/room/create")
+public void createRoom(PlayerDto player) {
+  ...
+}
+```
+
+`/app/room/create`는 정해진 실제 이름이 아니라 개발자가 정한 메시지 목적지 이름이다.
+
+다만 Spring STOMP에서는 prefix 관례가 있다.
+
+```txt
+/app
+  = 서버 @MessageMapping으로 보내는 요청 prefix
+
+/topic
+  = 여러 클라이언트가 구독하는 broadcast 목적지
+
+/user/queue
+  = 특정 사용자에게 보내는 개인 응답 목적지
+```
+
+현재 Socket.IO 코드와 비교하면 다음과 같다.
+
+```txt
+Socket.IO                         Spring STOMP
+────────────────────────────────────────────
+"room:create"                     "/app/room/create"
+"room:join"                       "/app/room/join"
+"room:leave"                      "/app/room/leave"
+"room:result"                     "/user/queue/room/result"
+"room:updated"                    "/topic/rooms/{roomId}"
+"room:message"                    "/topic/rooms/{roomId}/messages"
+```
+
+Socket.IO의 room broadcast:
+
+```js
+clientSocket.join(roomId)
+socketServer.to(roomId).emit("room:updated", room)
+```
+
+STOMP의 topic broadcast:
+
+```js
+stompClient.subscribe(`/topic/rooms/${roomId}`, handler)
+```
+
+```java
+messagingTemplate.convertAndSend(
+  "/topic/rooms/" + roomId,
+  room
+)
+```
+
+결론:
+
+```txt
+Socket.IO의 emit/on
+  ≈ STOMP의 publish/subscribe
+
+Socket.IO의 room broadcast
+  ≈ STOMP의 topic broadcast
+
+clientSocket.emit(...)
+  ≈ convertAndSendToUser(...)
+```
+
+### 11. 핵심 결론
+
+현재 프로젝트의 소켓 구조는 다음처럼 이해하면 된다.
+
+```txt
+src/server/init.js
+  = Express/HTTP/Socket.IO 서버 조립
+
+socketServer
+  = 전체 Socket.IO 서버 관리자
+
+registerMultiplayerSocket(socketServer)
+  = 소켓 이벤트 규칙 등록
+
+clientSocket
+  = 서버가 바라보는 특정 브라우저 연결 1개
+
+src/client/net/roomClient.js
+  = 브라우저가 서버와 소켓 이벤트를 주고받는 어댑터
+
+serverConnection
+  = 브라우저가 들고 있는 서버 연결 객체
+
+handler
+  = 이벤트가 도착했을 때 실행할 콜백 함수
+```
+
+가장 중요한 문장:
+
+```txt
+socketServer는 전체 문이고,
+clientSocket은 그 문으로 들어온 손님 한 명과 연결된 전용 창구다.
+
+registerMultiplayerSocket은
+그 문으로 손님이 들어왔을 때
+각 손님 창구에서 어떤 말을 들을지 정해두는 곳이다.
+```
+
+### 12. 추가 Q&A: JavaScript `map()` 함수는 어떤 자료구조형이야?
+
+`map()`은 자료구조형이 아니라 배열이 가진 내장 메서드다.
+
+```js
+const numbers = [1, 2, 3]
+
+const doubled = numbers.map((num) => {
+  return num * 2
+})
+
+console.log(doubled) // [2, 4, 6]
+```
+
+정리하면 다음과 같다.
+
+```txt
+Array
+  = 자료구조
+
+array.map(...)
+  = 배열을 순회하면서 새 배열을 만드는 메서드
+```
+
+`map()`은 원본 배열을 직접 바꾸지 않고, 변환된 새 배열을 만든다.
+
+```js
+const original = [1, 2, 3]
+const result = original.map((num) => num + 10)
+
+console.log(original) // [1, 2, 3]
+console.log(result)   // [11, 12, 13]
+```
+
+단, JavaScript에는 이름이 비슷한 `Map` 자료구조도 있다.
+
+```js
+const scoreMap = new Map()
+
+scoreMap.set("player1", 100)
+scoreMap.set("player2", 200)
+```
+
+차이는 다음과 같다.
+
+```txt
+array.map(...)
+  = 배열 메서드
+  = 배열을 변환해서 새 배열 생성
+
+new Map()
+  = key-value 자료구조
+  = 특정 key로 값을 저장하고 조회
+```
+
+### 13. 추가 Q&A: `test/testRoomService.js` 코드는 무슨 의미야?
+
+`test/testRoomService.js`는 `roomService.js`의 방 생성, 조회, 참가 기능이 기대대로 동작하는지 확인하는 테스트 코드다.
+
+전체 흐름은 다음과 같다.
+
+```txt
+테스트 파일
+  ↓ require()
+roomService.js에서 함수 가져오기
+  ↓
+createRoom(), getRoomState(), joinRoom() 실행
+  ↓
+assert.equal()로 결과가 기대값과 같은지 확인
+```
+
+주요 키워드는 다음과 같다.
+
+```js
+const test = require("node:test")
+const assert = require("node:assert/strict")
+```
+
+`require()`는 다른 모듈을 가져오는 CommonJS 문법이다.
+
+```js
+const {
+  createRoom,
+  getRoomState,
+  joinRoom,
+} = require("../src/server/services/roomService.js")
+```
+
+이 코드는 `roomService.js`가 `module.exports`로 내보낸 함수들을 구조 분해 할당으로 꺼내는 코드다.
+
+```js
+test("createRoom은 host player가 들어간 waiting room을 만든다", () => {
+  // 테스트 내용
+})
+```
+
+`test()`는 테스트 케이스 하나를 정의한다.
+
+```js
+assert.equal(result.ok, true)
+```
+
+`assert.equal(a, b)`는 `a`와 `b`가 같은지 검사한다. 다르면 테스트가 실패한다.
+
+첫 번째 테스트는 `createRoom(hostPlayer)`가 다음 상태를 만드는지 확인한다.
+
+```txt
+ok: true
+players.length: 1
+players[0].playerId: "p1"
+status: "waiting"
+roomId type: string
+```
+
+두 번째 테스트는 `getRoomState(roomId)`로 생성된 방을 다시 조회할 수 있는지 확인한다.
+
+세 번째 테스트는 `joinRoom(roomId, guestPlayer)`가 두 번째 플레이어를 추가하고 방 상태를 `waiting`으로 유지하는지 확인한다. 실제 게임 시작 상태인 `playing` 전환은 `startGame(roomId, playerId, socketId)` 흐름에서 처리한다.
+
+### 14. 추가 Q&A: 현재 채팅 이벤트 코드는 무슨 의미야?
+
+현재 채팅 이벤트는 별도 `chatSocket.js`가 아니라 `src/server/sockets/multiplayerSocket.js` 안에서 함께 등록된다.
+
+전체 흐름은 다음과 같다.
+
+```txt
+브라우저 접속
+  ↓
+Socket.IO connection 발생
+  ↓
+서버가 socket 하나를 받음
+  ↓
+클라이언트가 "chatting" 이벤트 전송
+  ↓
+서버가 name, msg를 받음
+  ↓
+연결된 모든 클라이언트에게 다시 전송
+```
+
+```js
+function registerMultiplayerSocket(socketServer) {
+```
+
+`registerMultiplayerSocket`은 Socket.IO 서버 객체인 `socketServer`에 멀티플레이와 채팅 이벤트 규칙을 등록하는 함수다.
+
+```js
+socketServer.on("connection", (clientSocket) => {
+```
+
+새 클라이언트가 서버에 연결될 때 실행된다.
+
+```txt
+socketServer
+  = Socket.IO 서버 전체 객체
+
+clientSocket
+  = 방금 접속한 클라이언트 한 명의 연결 객체
+```
+
+```js
+clientSocket.on("chatting", (data) => {
+```
+
+특정 클라이언트가 `"chatting"` 이벤트를 보냈을 때 실행된다.
+
+```js
+const { name, msg } = data
+```
+
+클라이언트가 보낸 객체에서 `name`, `msg`를 꺼내는 구조 분해 할당이다.
+
+```js
+socketServer.emit("chatting", {
+  name,
+  msg,
+})
+```
+
+연결된 모든 클라이언트에게 `"chatting"` 이벤트를 다시 보낸다.
+
+```txt
+clientSocket.emit(...)
+  = 현재 socket 한 명에게 보냄
+
+socketServer.emit(...)
+  = 연결된 모든 클라이언트에게 보냄
+
+clientSocket.broadcast.emit(...)
+  = 보낸 사람을 제외한 다른 클라이언트에게 보냄
+```
+
+### 15. 추가 Q&A: `"chatting"`은 내가 지정한 이벤트 이름이야? `connection`도 마음대로 바꿀 수 있어?
+
+`"chatting"`은 개발자가 직접 정한 커스텀 이벤트 이름이다.
+
+```js
+socket.emit("chatting", data)
+socket.on("chatting", (data) => {
+  // 처리
+})
+```
+
+이 이름은 마음대로 정할 수 있다.
+
+```js
+socket.emit("lobby-chat", data)
+socket.emit("room-chat", data)
+socket.emit("player-input", data)
+socket.emit("game-start", data)
+```
+
+단, 보내는 쪽과 받는 쪽의 이름은 정확히 같아야 한다.
+
+```js
+// client
+socket.emit("room-chat", data)
+
+// server
+socket.on("room-chat", (data) => {
+  // 실행됨
+})
+```
+
+반면 `"connection"`은 Socket.IO가 미리 정해둔 기본 이벤트 이름이다.
+
+```js
+io.on("connection", (socket) => {
+  console.log("connected")
+})
+```
+
+이 이름을 `"lobby-connection"`처럼 바꾸면 자동 연결 이벤트로 동작하지 않는다.
+
+정리하면 다음과 같다.
+
+```txt
+"chatting"
+  = 개발자가 정한 커스텀 이벤트 이름
+  = 원하는 이름으로 바꿀 수 있음
+
+"connection"
+  = Socket.IO가 정한 기본 연결 이벤트
+  = 자동 연결 이벤트로 쓰려면 그대로 사용해야 함
+```
+
+게임 기준으로는 다음처럼 구성할 수 있다.
+
+```js
+io.on("connection", (socket) => {
+  socket.on("lobby-chat", (data) => {
+    // 로비 채팅
+  })
+
+  socket.on("room-chat", (data) => {
+    // 게임방 채팅
+  })
+
+  socket.on("join-room", (data) => {
+    // 방 입장
+  })
+
+  socket.on("player-input", (data) => {
+    // 이동, 회전, 하드드롭 입력
+  })
+})
+```
+
+구조로 보면 다음과 같다.
+
+```txt
+connection
+  ├─ lobby-chat
+  ├─ room-chat
+  ├─ join-room
+  ├─ leave-room
+  ├─ player-ready
+  ├─ player-input
+  └─ game-over
+```
+
+`connection`은 연결이 열리는 순간이고, 그 안에서 주고받는 `"chatting"`, `"join-room"`, `"player-input"` 같은 이름들은 개발자가 설계하는 메시지 종류다.
+
+---
+
+## Q. 주기적으로 snapshot을 서버에 보내면 input을 보내는 게 의미 없는 거 아니야? snapshot 검증도 전송량이 많은 거 아니야? (2026-06-25)
+
+맞다. **현재 구조 그대로만 보면 `game:input`은 상대 보드 표시 결과에 직접적인 영향을 거의 주지 않는다.**
+
+현재 흐름은 다음에 가깝다.
+
+```txt
+클라이언트 A snapshot -> 서버 -> 클라이언트 B
+클라이언트 B snapshot -> 서버 -> 클라이언트 A
+100ms마다 반복
+```
+
+이 방식은 구현이 쉽고, 다음을 빠르게 검증하기 좋다.
+
+```txt
+두 클라이언트가 같은 room에 들어가는가
+서버가 room 단위로 메시지를 중계하는가
+상대 보드 canvas에 다른 player 상태를 그릴 수 있는가
+snapshot 직렬화/역직렬화 경로가 동작하는가
+```
+
+하지만 장기적으로 좋은 구조는 아니다.
+
+```txt
+문제점
+- 전체 board/state를 자주 보내므로 전송량이 크다.
+- 서버가 게임 규칙을 판단하지 않는다.
+- 클라이언트가 만든 상태를 서버가 거의 믿는 구조가 된다.
+- input을 보내도 화면은 여전히 snapshot이 결정한다.
+```
+
+그래서 지금 `game:input`은 “상대 보드를 움직이기 위한 최종 구현”이 아니라, **input 중심 구조로 넘어가기 위한 첫 배관 검증**이다.
+
+현재 단계의 의미는 다음과 같다.
+
+```txt
+클라이언트 키 입력
+  -> game:input
+  -> 서버 room/player/action 검증
+  -> 같은 room 상대에게 전달
+```
+
+즉 지금은 “서버가 입력을 받을 수 있는가”를 확인한 단계다.
+
+나중 목표는 다음처럼 바뀐다.
+
+```txt
+클라이언트 -> 서버
+game:input
+
+서버
+input으로 게임 상태 계산
+
+서버 -> 클라이언트
+서버가 계산한 snapshot 또는 delta 전송
+```
+
+중요한 차이는 snapshot의 방향이다.
+
+```txt
+현재 snapshot:
+클라이언트가 만든 snapshot을 서버로 보냄
+
+목표 snapshot:
+서버가 인정한 authoritative snapshot을 클라이언트로 내려줌
+```
+
+따라서 최종 구조에서도 snapshot이 완전히 사라지는 것은 아니다. 역할이 바뀐다.
+
+```txt
+현재:
+snapshot = 상대 보드 표시의 중심
+input = 통신 배관 검증
+
+전환 중:
+input = 서버 기록의 중심
+snapshot = 화면 표시/보정용
+
+목표:
+input = 게임 상태 변경의 원인
+snapshot = 서버가 계산한 결과 또는 복구/보정 자료
+```
+
+“snapshot 검증”도 전체 snapshot을 계속 양방향으로 비교한다는 뜻은 아니다. 더 나중에는 전체 snapshot 대신 작은 hash만 비교할 수 있다.
+
+```js
+{
+  roomId,
+  playerId,
+  tick: 300,
+  stateHash: "abc123"
+}
+```
+
+평소에는 input 중심으로 동작하고, 가끔 hash만 비교한다.
+
+```txt
+평소:
+input 위주
+
+가끔:
+stateHash 비교
+
+불일치 시:
+서버 snapshot으로 보정
+```
+
+그래서 결론은 다음과 같다.
+
+```txt
+현재 snapshot 왕복 구조는 전송량이 많다.
+그래서 최종 구조로 유지하면 안 된다.
+
+game:input을 추가한 이유는
+이 snapshot 중심 구조에서 input 중심 구조로 옮겨가기 위해서다.
+```
+
+현재 프로젝트의 권장 전환 순서는 다음이다.
+
+```txt
+1. game:input 서버 도착 확인
+2. 서버에 inputLog 저장
+3. 서버에 player별 match state 만들기
+4. 서버가 input으로 상태 계산
+5. 서버가 snapshot을 클라이언트에게 내려줌
+6. 클라이언트가 보내는 snapshot 주기를 줄임
+7. 클라이언트 snapshot 전송 제거
+8. 필요하면 hash 비교만 남김
+```
+
+정리하면:
+
+```txt
+지금 snapshot = 임시 화면 동기화 장치
+지금 input = 다음 구조로 가기 위한 배관
+최종 목표 = input 중심 + 서버 상태 계산 + 서버 snapshot/보정
+```

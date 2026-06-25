@@ -68,16 +68,29 @@ function LiModel(name, msg, time) {
                 const li = document.createElement("li");
                 // 본인이 보낸 메시지인지 확인하여 클래스 지정
                 li.classList.add(nickName.value === this.name ? "sent" : "received");
-                // 채팅 메시지의 HTML 구조 생성
-                const dom =
-                        `<span class="profile">
-                            <span class="user">${this.name}</span>
-                            <img class="image" src="https://picsum.photos/id/1/200/300" alt="any">
-                        </span>
-                        <span class="message">${this.msg}</span>
-                        <span class="time"> ${this.time}</span>`;
-                // 리스트 아이템의 HTML 설정
-                li.innerHTML = dom;
+
+                const profile = document.createElement("span");
+                profile.className = "profile";
+
+                const user = document.createElement("span");
+                user.className = "user";
+                user.textContent = this.name;
+
+                const image = document.createElement("img");
+                image.className = "image";
+                image.src = "https://picsum.photos/id/1/200/300";
+                image.alt = "profile";
+
+                const message = document.createElement("span");
+                message.className = "message";
+                message.textContent = this.msg;
+
+                const time = document.createElement("span");
+                time.className = "time";
+                time.textContent = ` ${this.time || ""}`;
+
+                profile.append(user, image);
+                li.append(profile, message, time);
                 // 채팅 메시지를 채팅 리스트에 추가
                 chatList.appendChild(li);
         }

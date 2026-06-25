@@ -148,7 +148,7 @@
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
         import { createTetrisRuntime } from "../game/runtime/tetris.js"
         import { attachKeyboardInput } from "../game/runtime/input.js"
-        import { requestJoinGameRoom, onGameJoinResult, sendGameSnapshot, receiveSnapshot, leaveGame, onGameOpponentLeft } from "../net/roomClient.js"
+        import { requestJoinGameRoom, onGameJoinResult, sendGameSnapshot, receiveSnapshot, leaveGame, onGameOpponentLeft, onGameSnapshotResult, sendGameOver, onMatchFinish, onGameOverResult, requestLeaveRoom, sendGameInput, receiveGameInput, onGameInputResult, requestGameBagChunk, receiveGameBagAppend, onGameBagResult } from "../net/roomClient.js"
         const themeToggleBtn = queryElement(document, "#themeToggle")
         const player1Name = queryElement(document, "#player1Name")
         const player2Name = queryElement(document, "#player2Name")
@@ -156,6 +156,7 @@
         const roomCodeText = queryElement(document, "#roomCodeText")
         const player1RoleBadge = queryElement(document, "#player1RoleBadge")
         const player2RoleBadge = queryElement(document, "#player2RoleBadge")
+        const homeBtn = queryElement(document, ".home-btn")
 
         applySavedTheme(themeToggleBtn)
 
@@ -190,6 +191,138 @@
             )
         }
 
+        function setPlayerGameText(playerNumber, text) {
+            const gameTextEl = document.querySelector(`.game-text[data-player="${playerNumber}"]`)
+            const textEl = gameTextEl?.querySelector("span")
+            if (textEl) {
+                textEl.textContent = text
+            }
+            if (gameTextEl) {
+                gameTextEl.style.display = "flex"
+            }
+        }
+
+        function addLobbyButton(playerNumber, onClick) {
+            const gameTextEl = document.querySelector(`.game-text[data-player="${playerNumber}"]`)
+            if (!gameTextEl || gameTextEl.querySelector(".match-lobby-btn")) return
+
+            const lobbyButton = document.createElement("button")
+            lobbyButton.className = "match-lobby-btn"
+            lobbyButton.type = "button"
+            lobbyButton.textContent = "로비로"
+            lobbyButton.addEventListener("click", () => {
+                onClick()
+            })
+
+            gameTextEl.append(lobbyButton)
+        }
+
+        function getPlayerBagChunks(match, targetPlayerId) {
+            const matchPlayer = match?.players?.find(player => player.playerId === targetPlayerId)
+            return Array.isArray(matchPlayer?.bagChunks) ? matchPlayer.bagChunks : null
+        }
+
+        function startMultiplayerGame({ roomId, playerId, opponentPlayerId, match, myCanvas, opponentCanvas }) {
+            // 캔버스가 그려지도록 냅다 생성.
+            const myBagChunks = getPlayerBagChunks(match, playerId)
+            const opponentBagChunks = getPlayerBagChunks(match, opponentPlayerId)
+            const myGame = createTetrisRuntime({
+                boardCanvasEl: myCanvas,
+                // gameOverEl,
+                // scoreEl,
+                // nextPreviewEl,
+                // holdPreviewEl,
+            })
+            // 테스트용
+            myGame.init({ autoStart: true, serverBagChunks: myBagChunks })
+            myGame.runtime.detachKeyboard = attachKeyboardInput({
+                enqueueAction: (action) => {
+                    myGame.enqueueInput(action)
+                    sendGameInput(roomId, playerId, action, myGame.runtime.currentTick + 1)
+                },
+            })
+            const opponentGame = createTetrisRuntime({
+                boardCanvasEl: opponentCanvas,
+            })
+            opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
+
+            let hasReportedGameOver = false
+            let hasPendingBagRequest = false
+            const bagLowWatermark = 7
+            const snapshotTimer = setInterval(() => {
+                const snapshot = myGame.getSnapshot()
+
+                sendGameSnapshot(roomId, playerId, snapshot)
+
+                if (!hasPendingBagRequest && myGame.getServerBagRemainingCount() <= bagLowWatermark) {
+                    hasPendingBagRequest = true
+                    requestGameBagChunk(roomId, playerId)
+                }
+
+                if (!hasReportedGameOver && snapshot.phase === "gameOver") {
+                    hasReportedGameOver = true
+                    sendGameOver(roomId, playerId, "top_out")
+                }
+            }, 100)
+
+            const detachSnapshotResult = onGameSnapshotResult((result) => {
+                if (result.ok) return
+                console.warn("game:snapshot failed:", result.reason)
+            })
+            const detachReceiveSnapshot = receiveSnapshot(({ playerId: remotePlayerId, snapshot }) => {
+                if (remotePlayerId === playerId) return
+                // console.log("received snapshot from", remotePlayerId, snapshot)
+                if (!snapshot || !Array.isArray(snapshot.board)) {
+                    console.error("Invalid snapshot from", remotePlayerId)
+                    return
+                }
+                opponentGame.applySnapshot(snapshot)
+            })
+            const detachGameOverResult = onGameOverResult((result) => {
+                if (result.ok) return
+                console.warn("game:over failed:", result.reason)
+            })
+            const detachGameInput = receiveGameInput(({ playerId: remotePlayerId, action, tick }) => {
+                if (remotePlayerId === playerId) return
+                opponentGame.enqueueInput(action, tick)
+            })
+            const detachGameInputResult = onGameInputResult((result) => {
+                if (result.ok) return
+                console.warn("game:input failed:", result.reason)
+            })
+            const detachGameBagAppend = receiveGameBagAppend(({ playerId: bagPlayerId, bagChunk }) => {
+                if (!Array.isArray(bagChunk)) return
+
+                if (bagPlayerId === playerId) {
+                    myGame.appendServerBag(bagChunk)
+                    hasPendingBagRequest = false
+                    return
+                }
+
+                if (bagPlayerId === opponentPlayerId) {
+                    opponentGame.appendServerBag(bagChunk)
+                }
+            })
+            const detachGameBagResult = onGameBagResult((result) => {
+                if (result.ok) return
+                hasPendingBagRequest = false
+                console.warn("game:bag failed:", result.reason)
+            })
+
+            return {
+                myGame,
+                opponentGame,
+                snapshotTimer,
+                detachSnapshotResult,
+                detachReceiveSnapshot,
+                detachGameOverResult,
+                detachGameInput,
+                detachGameInputResult,
+                detachGameBagAppend,
+                detachGameBagResult,
+            }
+        }
+
         // 세션에서 방 정보와 player 정보를 불러온다. 서버 검증 실패 시 로비로 되돌린다.
         const playerId = sessionStorage.getItem("tetris:playerId")
         const room = readStoredRoom()
@@ -207,18 +340,6 @@
             console.log("hostPlayer : ", hostPlayer)
             console.log("guestPlayer : ", guestPlayer)
             console.log("myRole : ", myRole)
-
-            onGameJoinResult((result) => {
-                if (!result.ok) {
-                    redirectToLobby()
-                    return
-                }
-
-                if (result.room) {
-                    sessionStorage.setItem("tetris:roomId", result.room.roomId)
-                    sessionStorage.setItem("room", JSON.stringify(result.room))
-                }
-            })
 
             if (player1Name) {
                 player1Name.textContent = hostPlayer?.nickname || "Host"
@@ -247,8 +368,6 @@
             const onToggleTheme = () => toggleTheme(themeToggleBtn)
             themeToggleBtn?.addEventListener("click", onToggleTheme)
 
-            requestJoinGameRoom(roomId, playerId)
-
             // 플레이어 캔버스 지정
             const player1Canvas = queryElement(document, '.playground[data-player="1"] .tetrisBoardCanvas')
             const player2Canvas = queryElement(document, '.playground[data-player="2"] .tetrisBoardCanvas')
@@ -263,38 +382,105 @@
             const myColumn = myRole === "host" ? player1Column : player2Column
             myColumn?.classList.add("is-mine")
 
-            // 캔버스가 그려지도록 냅다 생성.
-            const myGame = createTetrisRuntime({
-                boardCanvasEl: myCanvas,
-                // gameOverEl,
-                // scoreEl,
-                // nextPreviewEl,
-                // holdPreviewEl,
-            })
-            // 테스트용
-            myGame.init({ autoStart: true })
-            myGame.runtime.detachKeyboard = attachKeyboardInput({
-                enqueueAction: myGame.enqueueInput,
-            })
-            const opponentGame = createTetrisRuntime({
-                boardCanvasEl: opponentCanvas,
-            })
-            opponentGame.init({ autoStart: false })
-
-            const snapshotTimer = setInterval(() => {
-                sendGameSnapshot(roomId, playerId, myGame.getSnapshot())
-            }, 100)
-
-            receiveSnapshot(({ playerId: remotePlayerId, snapshot }) => {
-                // console.log("received snapshot from", remotePlayerId, snapshot)
-                opponentGame.applySnapshot(snapshot)
-            })
-
+            let gameSession = null
             let shouldNotifyGameLeave = true
+            let hasMatchFinished = false
+
+            function cleanupGameSession() {
+                if (!gameSession) return
+
+                clearInterval(gameSession.snapshotTimer)
+                gameSession.detachSnapshotResult()
+                gameSession.detachReceiveSnapshot()
+                gameSession.detachGameOverResult()
+                gameSession.detachGameInput()
+                gameSession.detachGameInputResult()
+                gameSession.detachGameBagAppend()
+                gameSession.detachGameBagResult()
+                gameSession.myGame.destroy()
+                gameSession.opponentGame.destroy()
+                gameSession = null
+            }
+
+            function moveToHome() {
+                clearRoomSession()
+                setTimeout(() => {
+                    location.replace("./index.html")
+                }, 50)
+            }
+
+            function handleHomeClick(event) {
+                event.preventDefault()
+                shouldNotifyGameLeave = false
+
+                if (hasMatchFinished) {
+                    requestLeaveRoom(roomId, playerId)
+                } else {
+                    leaveGame(roomId, playerId)
+                }
+
+                cleanupGameSession()
+                moveToHome()
+            }
+
+            homeBtn?.addEventListener("click", handleHomeClick)
+
+            const detachMatchFinish = onMatchFinish((result) => {
+                cleanupGameSession()
+                hasMatchFinished = true
+
+                if (result.room) {
+                    sessionStorage.setItem("tetris:roomId", result.room.roomId)
+                    sessionStorage.setItem("room", JSON.stringify(result.room))
+                }
+
+                const hostResultText = result.winnerPlayerId === hostPlayer?.playerId ? "승리" : "패배"
+                const guestResultText = result.winnerPlayerId === guestPlayer?.playerId ? "승리" : "패배"
+
+                setPlayerGameText("1", hostResultText)
+                setPlayerGameText("2", guestResultText)
+                shouldNotifyGameLeave = false
+                addLobbyButton(myRole === "host" ? "1" : "2", () => {
+                    location.replace("./multiLobby.html")
+                })
+                detachMatchFinish()
+            })
+
+            onGameJoinResult((result) => {
+                if (!result.ok) {
+                    redirectToLobby()
+                    return
+                }
+
+                if (result.room) {
+                    sessionStorage.setItem("tetris:roomId", result.room.roomId)
+                    sessionStorage.setItem("room", JSON.stringify(result.room))
+                }
+
+                if (gameSession) return
+
+                const opponentPlayerId = myRole === "host" ? guestPlayer?.playerId : hostPlayer?.playerId
+                const myBagChunks = getPlayerBagChunks(result.match, playerId)
+                const opponentBagChunks = getPlayerBagChunks(result.match, opponentPlayerId)
+
+                console.log("game:join result:", result)
+                console.log("my bag chunks:", myBagChunks)
+                console.log("opponent bag chunks:", opponentBagChunks)
+
+                gameSession = startMultiplayerGame({
+                    roomId,
+                    playerId,
+                    opponentPlayerId,
+                    match: result.match,
+                    myCanvas,
+                    opponentCanvas,
+                })
+            })
+
+            requestJoinGameRoom(roomId, playerId)
+
             onGameOpponentLeft(({ room: updatedRoom }) => {
-                clearInterval(snapshotTimer)
-                myGame.destroy()
-                opponentGame.destroy()
+                cleanupGameSession()
                 if (updatedRoom) {
                     sessionStorage.setItem("tetris:roomId", updatedRoom.roomId)
                     sessionStorage.setItem("room", JSON.stringify(updatedRoom))
@@ -304,12 +490,12 @@
             })
             window.addEventListener("pagehide", () => {
                 themeToggleBtn?.removeEventListener("click", onToggleTheme)
+                homeBtn?.removeEventListener("click", handleHomeClick)
+                detachMatchFinish()
                 if (shouldNotifyGameLeave) {
                     leaveGame(roomId, playerId);
                 }
-                clearInterval(snapshotTimer)
-                myGame.destroy()
-                opponentGame.destroy()
+                cleanupGameSession()
             }, { once: true })
         }
 

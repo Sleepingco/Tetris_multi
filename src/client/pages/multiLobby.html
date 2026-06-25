@@ -50,12 +50,16 @@
         <main class="main" style="padding-top: 10px;">
             <div class="lobby-grid">
                 <section class="card chat-panel">
-                    <h2 class="card-title" style="margin-bottom: 4px;">Global Chat</h2>
+                    <h2 class="card-title" style="margin-bottom: 4px;">Chat</h2>
                     <div class="chat-messages" id="chatMessages">
-                        <div class="chat-msg"><span class="system">[System]</span> 멀티플레이 로직은 roomService 설계 후 연결 예정입니다.
+                        <div class="chat-msg"><span class="system">[System]</span> 전체 채팅 또는 방 채팅을 선택해서 메시지를 보낼 수 있습니다.
                         </div>
                     </div>
                     <form class="chat-input-group" id="chatForm">
+                        <select id="chatScope" class="input-box chat-scope" aria-label="채팅 범위">
+                            <option value="global">전체</option>
+                            <option value="room">방</option>
+                        </select>
                         <input type="text" id="chatInput" class="input-box" placeholder="메시지를 입력하세요..."
                             autocomplete="off">
                         <button type="submit" class="btn primary">전송</button>
@@ -138,15 +142,11 @@
             requestLeaveRoom,
             requestStartGame,
             requestRoomSync,
+            sendGlobalChat,
+            sendRoomChat,
+            onGlobalMessage,
+            onChatResult,
         } from "../net/roomClient.js"
-
-        // =============================
-        // Display Helpers
-        // 채팅/상태 표시 전에 사용자 입력 문자열을 안전하게 이스케이프한다.
-        // =============================
-        function escapeHtml(text) {
-            return text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
-        }
 
         // =============================
         // DOM References
@@ -155,6 +155,7 @@
         const themeToggleBtn = queryElement(document, "#themeToggle")
         const soundToggleBtn = queryElement(document, "#soundToggle")
         const chatForm = requireElement(document, "#chatForm", "lobby")
+        const chatScope = requireElement(document, "#chatScope", "lobby")
         const chatInput = requireElement(document, "#chatInput", "lobby")
         const messages = requireElement(document, "#chatMessages", "lobby")
         const roomStatus = requireElement(document, "#roomStatus", "lobby")
@@ -182,15 +183,24 @@
          *
          * @param {string} sender - 메시지 보낸 사람 (닉네임 또는 "system")
          * @param {string} text - 화면에 출력할 메시지 본문
+         * @param {"global" | "room" | null} scope - 메시지 범위
          * @returns {void}
          */
-        const appendMessage = (sender, text) => {
+        const appendMessage = (sender, text, scope = null) => {
             const div = document.createElement("div")
             div.className = "chat-msg"
-            const tag = sender === "system"
-                ? '<span class="system">[System]</span>'
-                : `<span class="user">[${escapeHtml(sender)}]</span>`
-            div.innerHTML = `${tag} ${escapeHtml(text)}`
+
+            const tag = document.createElement("span")
+            tag.className = sender === "system" ? "system" : "user"
+
+            if (sender === "system") {
+                tag.textContent = "[System]"
+            } else {
+                const scopeLabel = scope === "global" ? "전체 " : scope === "room" ? "방 " : ""
+                tag.textContent = `[${scopeLabel}${sender}]`
+            }
+
+            div.append(tag, document.createTextNode(` ${text}`))
             messages.appendChild(div)
             messages.scrollTop = messages.scrollHeight
         }
@@ -204,7 +214,18 @@
             event.preventDefault()
             const message = chatInput.value.trim()
             if (!message) return
-            appendMessage(currentPlayer.nickname, message)
+
+            if (chatScope.value === "room") {
+                if (!currentRoomId) {
+                    appendMessage("system", "방에 입장한 뒤 방 채팅을 사용할 수 있습니다.")
+                    return
+                }
+
+                sendRoomChat(currentRoomId, currentPlayer.playerId, message)
+            } else {
+                sendGlobalChat(currentPlayer, message)
+            }
+
             chatInput.value = ""
         }
         const onCopyRoomCode = async () => {
@@ -235,12 +256,16 @@
         copyRoomCodeBtn.addEventListener("click", onCopyRoomCode)
         primaryActionBtn.addEventListener("click", onClickPrimaryAction)
         const cleanupSound = initLobbySound(soundToggleBtn)
+        let detachGlobalMessage = null
+        let detachChatResult = null
 
         window.addEventListener("pagehide", () => {
             themeToggleBtn?.removeEventListener("click", onToggleTheme)
             chatForm.removeEventListener("submit", onSubmitChat)
             copyRoomCodeBtn.removeEventListener("click", onCopyRoomCode)
             primaryActionBtn.removeEventListener("click", onClickPrimaryAction)
+            detachGlobalMessage?.()
+            detachChatResult?.()
             cleanupSound?.()
         }, { once: true })
 
@@ -406,7 +431,22 @@
 
         onRoomMessage((message) => {
             if (!message) return
-            appendMessage(message.type || "system", message.text || "")
+            if (message.type === "chat") {
+                appendMessage(message.nickname || "Guest", message.text || "", "room")
+                return
+            }
+
+            appendMessage("system", message.text || "")
+        })
+
+        detachGlobalMessage = onGlobalMessage((message) => {
+            if (!message) return
+            appendMessage(message.nickname || "Guest", message.text || "", "global")
+        })
+
+        detachChatResult = onChatResult((result) => {
+            if (!result || result.ok) return
+            appendMessage("system", result.reason || "CHAT_ERROR")
         })
 
         onRoomResult((result, requestType) => {
