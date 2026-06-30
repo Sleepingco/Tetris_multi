@@ -22,7 +22,7 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
 현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
 싱글플레이 진입점은 `src/client/pages/tetrisSingle.html`의 module script이며,  
-런타임 / 실행 / 상태 / UI / 렌더 / 네트워크가 계층별로 나뉘어 있습니다.  
+런타임 / 상태 / 코어 판정 / UI / 렌더 / 네트워크 / 서버 room·match 계층이 나뉘어 있습니다.
 목표는 단순히 Tetris를 완성하는 것이 아니라,  
 개발자가 모든 컴포넌트를 직접 설계하고 구현하며  
 코딩 능력과 아키텍처 사고, 디버깅 직관을 키우는 데 있습니다.
@@ -35,19 +35,19 @@ src/
 ├── app.js                   # Node.js server entry
 ├── server/                 # Node.js only
 │   ├── init.js              # Express / HTTP / Socket.IO server assembly
-	│   ├── services/
-	│   │   └── roomService.js   # Room state management
-	│   └── sockets/
-	│       ├── index.js             # Socket.IO connection composition
-	│       ├── chatHandlers.js      # Chat event handlers
-	│       └── multiplayerHandlers.js # Room / game event handlers
+│   ├── services/
+│   │   ├── roomService.js   # Room lifecycle / lobby state
+│   │   └── matchService.js  # Match state / input log / server bag chunks
+│   └── sockets/
+│       ├── index.js             # Socket.IO connection composition
+│       ├── chatHandlers.js      # Chat event handlers
+│       └── multiplayerHandlers.js # Room / game event handlers
 └── client/                # Browser static root
     ├── assets/
     │   └── sound/           # BGM / SFX assets
     ├── game/
     │   ├── core/
     │   ├── entry/
-    │   ├── execution/
     │   ├── render/
     │   ├── runtime/
     │   ├── state/
@@ -214,13 +214,18 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 
 - `client/game`은 실행 흐름을 조율한다.  
   입력, 타이머, 상태 전이 순서를 연결한다.  
-  현재는 `entry / runtime / execution / state / ui` 하위 구조를 기준으로 책임을 나눈다.
+  현재는 `core / entry / render / runtime / state / ui` 하위 구조를 기준으로 책임을 나눈다.
 
 - `client/game/render`는 게임 화면 반영만 담당한다.  
   표시용 계산은 할 수 있지만 게임 규칙은 결정하지 않는다.
 
 - `server/sockets`는 서버 Socket.IO 이벤트 입구를 담당한다.
-  메시지 송수신, 라우팅, roomService 호출을 맡고, 게임 규칙 자체는 만들지 않는다.
+  메시지 송수신, 라우팅, roomService/matchService 호출을 맡고, 게임 규칙 자체는 만들지 않는다.
+
+- `server/services/roomService`는 방 생성, 참가, 퇴장, 시작, 종료, 로비 복귀 같은 room lifecycle을 담당한다.
+
+- `server/services/matchService`는 match 단위 input log와 player별 server bag chunk를 담당한다.
+  아직 서버에서 게임 상태를 직접 계산하는 authoritative loop는 담당하지 않는다.
 
 - `client/net`은 브라우저 Socket.IO 어댑터를 담당한다.  
   메시지 송수신, 라우팅, 동기화 연결을 맡고, 게임 규칙 자체는 만들지 않는다.
@@ -297,37 +302,39 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 	•	하드 드롭, 회전, 점수, 홀드, 다음 블록 미리보기 작동 중
 	•	캔버스 기반 보드 렌더링 적용
 	•	멀티플레이 roomService 1차 구현 완료
-		- `createRoom`, `joinRoom`, `removePlayer`, `getRoomState`, `findRoomBySocketId`
+		- `createRoom`, `joinRoom`, `leaveRoom`, `startGame`, `leaveGame`, `syncRoom`, `finishGame`
 		- `Map` 기반 서버 메모리 room 상태 관리
 		- 성공/실패 반환 형태 `{ ok, room, reason }`로 통일
+	•	멀티플레이 matchService 1차 구현 완료
+		- `createMatch`, `getMatchState`, `recordInput`, `appendPlayerBagChunk`
+		- player별 input log와 server bag chunk 관리
 	•	Socket.IO 기반 room 흐름 1차 연결
 		- `src/server/sockets/index.js`에서 Socket.IO `connection`을 한 번만 등록
 		- `src/server/sockets/chatHandlers.js`와 `multiplayerHandlers.js`에서 같은 `clientSocket`에 기능별 이벤트 등록
 		- `socket.join(roomId)` 기반 room 참가와 room 단위 `room:updated`, `room:message` broadcast 연결
 		- `src/client/net/roomClient.js`에서 `create / join / leave` 요청과 `room:result / room:updated / room:message` 수신 연결
 		- `src/client/pages/multiLobby.html`에서 방 코드, 상태, 현재 player 수 표시 및 방 코드 복사, 입장, 나가기 흐름 연결
-	•	Node 내장 테스트(`node --test`)로 roomService와 socket handler 주요 흐름 검증
+		- `room:start`, `game:join`, `game:input`, `game:snapshot`, `game:bag:request`, `game:over` 1차 연결
+	•	`src/client/pages/tetrisMulti.html`에서 local/remote runtime 생성, input relay, snapshot correction, server bag 소비 흐름 연결
+	•	`pieceQueue.js`로 7-bag/next queue 유틸리티 분리
+	•	`snapshotCorrection.js`로 원격 snapshot 보정 판단 분리
+	•	Node 내장 테스트(`node --test`)로 roomService, matchService, socket handler, runtime, move step, snapshot correction 주요 흐름 검증
 	•	게임 플레이 화면 라이트/다크 테마 적용
 
 🧩 다음 단계
-	1. 멀티 로비 room 흐름 브라우저 수동 검증
-		- 두 브라우저 탭으로 create → join → leave → disconnect 흐름 확인
-		- 로비의 "준비중" 문구를 실제 동작 상태에 맞게 정리
-	2. match 준비/시작 흐름 설계
-		- `match:ready`, `match:start` 이벤트와 room 상태 전환 기준 정의
-		- 방이 2명일 때 게임 화면으로 이동할지, 로비에서 ready를 받을지 결정
-	3. 서버 match/player 상태 초안 추가
-		- room 상태와 match 상태를 분리
-		- player의 socketId, nickname, ready, game state 경계를 문서화
-	4. 게임 동기화 전 준비
-		- room 상태와 game 상태의 경계 문서화
-		- `game:snapshot`, `game:action`, server bag은 room 흐름 안정화 후 진행
-	5. 멀티 게임 화면 연결
-		- `src/client/pages/tetrisMulti.html`은 현재 화면 골격 위주이므로 local/remote runtime 또는 snapshot render 경로 연결 필요
-	6. AI 상대 구현 (규칙 기반 → 머신러닝)
-	7. step(game, input) 기반 결정론적 루프 구조화
-	8. 멀티/AI에서 재사용 가능한 상태/렌더 경계 정리
-	9. 플레이 로그/AI 비교/패턴 분석이 준비된 뒤 LLM 코칭 리포트 검토
+	1. 브라우저 2탭 멀티 플레이 회귀 검증
+		- create → join → start → play → game over → lobby 복귀 흐름 확인
+		- 빠른 이동/회전 연타, 블록 안착 직후 입력, 상대 보드 보정 상태 확인
+	2. 현재 input relay + server bag + snapshot correction MVP의 동기화 파라미터 검토
+		- snapshot 주기, input queue 제한, opponent runtime `autoStart` 정책 확인
+	3. 서버 authoritative loop 전환 설계
+		- 서버에서 player별 game state를 어디에 둘지 결정
+		- `step(state, input)`을 서버에서도 호출할 수 있게 core/runtime 경계 정리
+		- 서버가 생성한 authoritative snapshot 형식 정의
+	4. 현재 클라이언트 예측 구조에서 서버 authoritative 구조로 넘어가는 전환 계획 문서화
+	5. AI 상대 구현 (규칙 기반 → 머신러닝)
+	6. 멀티/AI에서 재사용 가능한 상태/렌더 경계 정리
+	7. 플레이 로그/AI 비교/패턴 분석이 준비된 뒤 LLM 코칭 리포트 검토
 
 🎯 학습 목표
 	• DOM 탐색과 이벤트 위임 이해  
@@ -345,7 +352,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 - "배열 기반 canPlace() 로직을 직접 만들어보려는데 설계 순서 알려줘."
 - "줄이 다 찼을 때 배열 기준으로 어떻게 클리어할까?"
 - "멀티플레이 통신에서 어떤 데이터를 보내야 해?"
-- "execution과 runtime 책임을 어떻게 나누는 게 좋아?"
+- "runtime과 core 책임을 어떻게 나누는 게 좋아?"
 - "AI가 블록을 둘 위치를 판단하려면 어떤 특징을 써야 해?"
 - "LLM 코칭을 붙이려면 어떤 플레이 로그와 분석 지표가 먼저 필요해?"
 
@@ -389,7 +396,8 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 사용자는 배열 기반 상태 관리와 모듈 분리 구조를 바탕으로,  
 멀티플레이와 AI까지 확장 가능한 Tetris 시스템을 단계별로 구축 중입니다.
 
-현재 코드는 `client/game(core/entry/execution/render/runtime/state/ui) / client/net / client/pages / client/styles / server/services / server/sockets` 기준으로 분리되어 있으며,  
+현재 코드는 `client/game(core/entry/render/runtime/state/ui) / client/net / client/pages / client/styles / server/services / server/sockets` 기준으로 분리되어 있으며,
+문서 설명에서 실제로 존재하지 않는 디렉터리를 전제로 삼지 않습니다.
 문서 설명이나 변경 제안도 이 실제 구조를 기준으로 맞춰야 합니다.
 
 모든 설명과 수정은 사용자가 이해하고 성장하는 데 도움을 주는 데 집중합니다.

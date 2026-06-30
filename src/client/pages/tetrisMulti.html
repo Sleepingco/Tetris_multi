@@ -148,7 +148,9 @@
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
         import { createTetrisRuntime } from "../game/runtime/tetris.js"
         import { attachKeyboardInput } from "../game/runtime/input.js"
-        import { requestJoinGameRoom, onGameJoinResult, sendGameSnapshot, receiveSnapshot, leaveGame, onGameOpponentLeft, onGameSnapshotResult, sendGameOver, onMatchFinish, onGameOverResult, requestLeaveRoom, sendGameInput, receiveGameInput, onGameInputResult, requestGameBagChunk, receiveGameBagAppend, onGameBagResult } from "../net/roomClient.js"
+        import { shouldCorrectSnapshot } from "../game/runtime/snapshotCorrection.js"
+        import { requestJoinGameRoom, onGameJoinResult, sendGameSnapshot, receiveSnapshot, leaveGame, onGameOpponentLeft, onGameSnapshotResult, sendGameOver, onMatchFinish, onGameOverResult, requestLeaveRoom, sendGameInput, receiveGameInput, onGameInputResult, requestGameBagChunk, receiveGameBagAppend, onGameBagResult, sendGarbageAttack, receiveGarbageAppend, onGarbageResult } from "../net/roomClient.js"
+        import { sendPlacementDecisionLog, onPlacementDecisionLogResult } from "../net/logClient.js"
         const themeToggleBtn = queryElement(document, "#themeToggle")
         const player1Name = queryElement(document, "#player1Name")
         const player2Name = queryElement(document, "#player2Name")
@@ -157,8 +159,16 @@
         const player1RoleBadge = queryElement(document, "#player1RoleBadge")
         const player2RoleBadge = queryElement(document, "#player2RoleBadge")
         const homeBtn = queryElement(document, ".home-btn")
-
+        // off      snapshot 무시
+        // apply    항상 applySnapshot
+        // correct 다를 때만 applySnapshot
+        const SNAPSHOT_MODE = "correct"
         applySavedTheme(themeToggleBtn)
+        onPlacementDecisionLogResult((result) => {
+            if (!result?.ok) {
+                console.warn("placement_decision log save failed:", result?.reason)
+            }
+        })
 
         function clearRoomSession() {
             sessionStorage.removeItem("tetris:roomId")
@@ -222,30 +232,63 @@
             return Array.isArray(matchPlayer?.bagChunks) ? matchPlayer.bagChunks : null
         }
 
-        function startMultiplayerGame({ roomId, playerId, opponentPlayerId, match, myCanvas, opponentCanvas }) {
+        function startMultiplayerGame({
+            roomId,
+            playerId,
+            opponentPlayerId,
+            match,
+            myCanvas,
+            opponentCanvas,
+            myNextPreviewEl,
+            myHoldPreviewEl,
+            opponentNextPreviewEl,
+            opponentHoldPreviewEl,
+        }) {
             // 캔버스가 그려지도록 냅다 생성.
             const myBagChunks = getPlayerBagChunks(match, playerId)
             const opponentBagChunks = getPlayerBagChunks(match, opponentPlayerId)
+            const gameId = match?.createdAt
+                ? `${roomId}-${match.createdAt}`
+                : roomId
             const myGame = createTetrisRuntime({
                 boardCanvasEl: myCanvas,
-                // gameOverEl,
-                // scoreEl,
-                // nextPreviewEl,
-                // holdPreviewEl,
+                nextPreviewEl: myNextPreviewEl,
+                holdPreviewEl: myHoldPreviewEl,
+                mode: "multi",
+                gameId,
+                roomId,
+                playerId,
+                placementDecisionRecorder(log) {
+                    sendPlacementDecisionLog(roomId, playerId, log)
+                    const attackLines = log?.placementResult?.attackLines ?? 0
+                    if (attackLines > 0) {
+                        sendGarbageAttack(roomId, playerId, attackLines)
+                    }
+                },
             })
             // 테스트용
             myGame.init({ autoStart: true, serverBagChunks: myBagChunks })
             myGame.runtime.detachKeyboard = attachKeyboardInput({
                 enqueueAction: (action) => {
-                    myGame.enqueueInput(action)
-                    sendGameInput(roomId, playerId, action, myGame.runtime.currentTick + 1)
+                    const input = myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
+                    if (!input) return
+
+                    sendGameInput(roomId, playerId, input.action, input.tick, input.pieceIndex)
                 },
             })
             const opponentGame = createTetrisRuntime({
                 boardCanvasEl: opponentCanvas,
+                nextPreviewEl: opponentNextPreviewEl,
+                holdPreviewEl: opponentHoldPreviewEl,
+                mode: "multi",
+                gameId,
+                roomId,
+                playerId: opponentPlayerId,
             })
+            // 상대 보드는 현재 input relay + snapshot correction 기반으로 예측 실행한다.
+            // autoStart를 false로 두면 snapshot 도착 시점에만 갱신되어 움직임이 크게 끊긴다.
+            // 서버 authoritative runtime으로 전환하기 전까지는 true를 유지한다.
             opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
-
             let hasReportedGameOver = false
             let hasPendingBagRequest = false
             const bagLowWatermark = 7
@@ -263,7 +306,7 @@
                     hasReportedGameOver = true
                     sendGameOver(roomId, playerId, "top_out")
                 }
-            }, 100)
+            }, 500)
 
             const detachSnapshotResult = onGameSnapshotResult((result) => {
                 if (result.ok) return
@@ -276,19 +319,46 @@
                     console.error("Invalid snapshot from", remotePlayerId)
                     return
                 }
-                opponentGame.applySnapshot(snapshot)
+                if (SNAPSHOT_MODE === "apply") {
+                    opponentGame.applySnapshot(snapshot)
+                    return
+                }
+
+                if (SNAPSHOT_MODE === "correct") {
+                    const localSnapshot = opponentGame.getSnapshot()
+
+                    if (shouldCorrectSnapshot(localSnapshot, snapshot)) {
+                        opponentGame.applySnapshot(snapshot)
+                    }
+                }
+
             })
             const detachGameOverResult = onGameOverResult((result) => {
                 if (result.ok) return
                 console.warn("game:over failed:", result.reason)
             })
-            const detachGameInput = receiveGameInput(({ playerId: remotePlayerId, action, tick }) => {
+            const detachGameInput = receiveGameInput(({ playerId: remotePlayerId, action, tick, pieceIndex }) => {
                 if (remotePlayerId === playerId) return
-                opponentGame.enqueueInput(action, tick)
+                opponentGame.enqueueInput(action, tick, pieceIndex)
             })
             const detachGameInputResult = onGameInputResult((result) => {
                 if (result.ok) return
                 console.warn("game:input failed:", result.reason)
+            })
+            const detachGarbageAppend = receiveGarbageAppend((payload) => {
+                const { targetPlayerId, lines, holeCol } = payload
+                if (targetPlayerId === playerId) {
+                    myGame.queueGarbageLines({ lines, holeCol })
+                    return
+                }
+
+                if (targetPlayerId === opponentPlayerId) {
+                    opponentGame.queueGarbageLines({ lines, holeCol })
+                }
+            })
+            const detachGarbageResult = onGarbageResult((result) => {
+                if (result.ok) return
+                console.warn("game:garbage failed:", result.reason)
             })
             const detachGameBagAppend = receiveGameBagAppend(({ playerId: bagPlayerId, bagChunk }) => {
                 if (!Array.isArray(bagChunk)) return
@@ -318,6 +388,8 @@
                 detachGameOverResult,
                 detachGameInput,
                 detachGameInputResult,
+                detachGarbageAppend,
+                detachGarbageResult,
                 detachGameBagAppend,
                 detachGameBagResult,
             }
@@ -371,8 +443,16 @@
             // 플레이어 캔버스 지정
             const player1Canvas = queryElement(document, '.playground[data-player="1"] .tetrisBoardCanvas')
             const player2Canvas = queryElement(document, '.playground[data-player="2"] .tetrisBoardCanvas')
+            const player1NextPreview = queryElement(document, '.next-preview[data-player="1"]')
+            const player2NextPreview = queryElement(document, '.next-preview[data-player="2"]')
+            const player1HoldPreview = queryElement(document, '.hold-preview[data-player="1"]')
+            const player2HoldPreview = queryElement(document, '.hold-preview[data-player="2"]')
             const myCanvas = myRole === "host" ? player1Canvas : player2Canvas
             const opponentCanvas = myRole === "host" ? player2Canvas : player1Canvas
+            const myNextPreviewEl = myRole === "host" ? player1NextPreview : player2NextPreview
+            const myHoldPreviewEl = myRole === "host" ? player1HoldPreview : player2HoldPreview
+            const opponentNextPreviewEl = myRole === "host" ? player2NextPreview : player1NextPreview
+            const opponentHoldPreviewEl = myRole === "host" ? player2HoldPreview : player1HoldPreview
 
             console.log("myCanvas : ", myCanvas)
             console.log("opponentCanvas : ", opponentCanvas)
@@ -395,6 +475,8 @@
                 gameSession.detachGameOverResult()
                 gameSession.detachGameInput()
                 gameSession.detachGameInputResult()
+                gameSession.detachGarbageAppend()
+                gameSession.detachGarbageResult()
                 gameSession.detachGameBagAppend()
                 gameSession.detachGameBagResult()
                 gameSession.myGame.destroy()
@@ -474,6 +556,10 @@
                     match: result.match,
                     myCanvas,
                     opponentCanvas,
+                    myNextPreviewEl,
+                    myHoldPreviewEl,
+                    opponentNextPreviewEl,
+                    opponentHoldPreviewEl,
                 })
             })
 

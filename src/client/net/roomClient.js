@@ -5,6 +5,10 @@ if (typeof io !== "function") {
 const serverConnection = io()
 let lastRoomRequestType = null
 
+export function getServerConnection() {
+    return serverConnection
+}
+
 export function requestCreateRoom(player) {
     lastRoomRequestType = "create"
     serverConnection.emit("room:create", player)
@@ -79,8 +83,8 @@ export function sendGameSnapshot(roomId, playerId, snapshot) {
     serverConnection.emit("game:snapshot", { roomId, playerId, snapshot })
 }
 
-export function sendGameInput(roomId, playerId, action, tick = null) {
-    serverConnection.emit("game:input", { roomId, playerId, action, tick })
+export function sendGameInput(roomId, playerId, action, tick = null, pieceIndex = null) {
+    serverConnection.emit("game:input", { roomId, playerId, action, tick, pieceIndex })
 }
 
 export function receiveGameInput(handler) {
@@ -96,6 +100,26 @@ export function onGameInputResult(handler) {
 
     return () => {
         serverConnection.off("game:input:result", handler)
+    }
+}
+
+export function sendGarbageAttack(roomId, playerId, lines) {
+    serverConnection.emit("game:garbage:attack", { roomId, playerId, lines })
+}
+
+export function receiveGarbageAppend(handler) {
+    serverConnection.on("game:garbage:append", handler)
+
+    return () => {
+        serverConnection.off("game:garbage:append", handler)
+    }
+}
+
+export function onGarbageResult(handler) {
+    serverConnection.on("game:garbage:result", handler)
+
+    return () => {
+        serverConnection.off("game:garbage:result", handler)
     }
 }
 

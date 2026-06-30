@@ -9,7 +9,8 @@ const BLOCK_COLORS = {
         zee: "#EF4444",    // Red
         eleft: "#3B82F6",  // Blue
         eright: "#F97316", // Orange
-        ess: "#10B981"     // Emerald
+        ess: "#10B981",    // Emerald
+        garbage: "#64748B" // Slate
 };
 
 const CELL_SIZE = 30; // 300px width / 10 cols

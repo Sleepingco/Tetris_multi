@@ -551,7 +551,7 @@ test("leaveGame은 없는 roomId면 ROOM_NOT_FOUND를 반환하고 예외를 던
     })
 })
 
-test("finishGame은 loser를 기준으로 winner를 계산하고 room을 waiting으로 되돌린다", () => {
+test("finishGame은 loser를 기준으로 winner를 계산하고 room을 finished 상태로 바꾼다", () => {
     const hostPlayer = {
         playerId: "finish-host",
         nickname: "Host",
@@ -571,11 +571,67 @@ test("finishGame은 loser를 기준으로 winner를 계산하고 room을 waiting
 
     assert.equal(result.ok, true)
     assert.equal(result.reason, null)
-    assert.equal(result.room.status, "waiting")
+    assert.equal(result.room.status, "finished")
     assert.equal(result.room.players.length, 2)
     assert.equal(result.winnerPlayerId, hostPlayer.playerId)
     assert.equal(result.loserPlayerId, guestPlayer.playerId)
     assert.equal(result.finishReason, "top_out")
+})
+
+test("finishGame 이후 한 명만 로비에 돌아오면 다시 게임을 시작할 수 없다", () => {
+    const hostPlayer = {
+        playerId: "finish-lobby-host",
+        nickname: "Host",
+        socketId: "finish-lobby-host-socket",
+    }
+    const guestPlayer = {
+        playerId: "finish-lobby-guest",
+        nickname: "Guest",
+        socketId: "finish-lobby-guest-socket",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    startGame(createResult.room.roomId, hostPlayer.playerId)
+    finishGame(createResult.room.roomId, guestPlayer.playerId, "top_out")
+
+    const syncResult = syncRoom(createResult.room.roomId, hostPlayer.playerId, "finish-lobby-new-host-socket", {
+        location: "lobby",
+    })
+    const startResult = startGame(createResult.room.roomId, hostPlayer.playerId, "finish-lobby-new-host-socket")
+
+    assert.equal(syncResult.ok, true)
+    assert.equal(syncResult.room.status, "finished")
+    assert.equal(startResult.ok, false)
+    assert.equal(startResult.reason, "GAME_NOT_READY")
+})
+
+test("finishGame 이후 두 명이 모두 로비에 돌아오면 다시 waiting 상태가 된다", () => {
+    const hostPlayer = {
+        playerId: "finish-ready-host",
+        nickname: "Host",
+        socketId: "finish-ready-host-socket",
+    }
+    const guestPlayer = {
+        playerId: "finish-ready-guest",
+        nickname: "Guest",
+        socketId: "finish-ready-guest-socket",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    startGame(createResult.room.roomId, hostPlayer.playerId)
+    finishGame(createResult.room.roomId, guestPlayer.playerId, "top_out")
+
+    syncRoom(createResult.room.roomId, hostPlayer.playerId, "finish-ready-new-host-socket", {
+        location: "lobby",
+    })
+    const syncResult = syncRoom(createResult.room.roomId, guestPlayer.playerId, "finish-ready-new-guest-socket", {
+        location: "lobby",
+    })
+
+    assert.equal(syncResult.ok, true)
+    assert.equal(syncResult.room.status, "waiting")
 })
 
 test("finishGame은 waiting room이면 GAME_NOT_PLAYING을 반환한다", () => {

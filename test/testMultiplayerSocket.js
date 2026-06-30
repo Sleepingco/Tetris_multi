@@ -80,6 +80,11 @@ class FakeClientSocket {
         handlers.forEach(handler => handler(payload))
     }
 
+    async triggerAsync(eventName, payload) {
+        const handlers = this.handlers.get(eventName) || []
+        await Promise.all(handlers.map(handler => handler(payload)))
+    }
+
     lastClientEvent(eventName) {
         return this.clientEvents.findLast(event => event.eventName === eventName)
     }
@@ -561,6 +566,7 @@ test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게
         playerId: "input-host-player",
         action: "move_left",
         tick: 12,
+        pieceIndex: 4,
     })
 
     const guestInputEvent = guestSocket.lastClientEvent("game:input")
@@ -570,11 +576,275 @@ test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게
     assert.equal(guestInputEvent.payload.playerId, "input-host-player")
     assert.equal(guestInputEvent.payload.action, "move_left")
     assert.equal(guestInputEvent.payload.tick, 12)
+    assert.equal(guestInputEvent.payload.pieceIndex, 4)
 
     const matchResult = getMatchState(roomId)
     assert.equal(matchResult.ok, true)
     assert.equal(matchResult.match.players[0].inputLog[0].action, "move_left")
     assert.equal(matchResult.match.players[0].inputLog[0].tick, 12)
+    assert.equal(matchResult.match.players[0].inputLog[0].pieceIndex, 4)
+})
+
+test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 반환한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-host-socket")
+    const guestSocket = new FakeClientSocket("log-guest-socket")
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    const savedLogs = []
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "log-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "log-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "log-host-player",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            playerId: "log-host-player",
+            gameId: `${roomId}-game`,
+            pieceIndex: 2,
+            boardBefore: [[null]],
+            boardAfter: [["square"]],
+            selectedPlacement: {
+                pieceType: "square",
+                rotation: 0,
+                row: 18,
+                col: 4,
+            },
+        },
+    })
+
+    const logResult = hostSocket.lastClientEvent("game:log:result")?.payload
+
+    assert.equal(savedLogs.length, 1)
+    assert.equal(savedLogs[0].eventType, "placement_decision")
+    assert.equal(logResult.ok, true)
+    assert.equal(logResult.reason, null)
+})
+
+test("game:log:placement_decision은 room 참가자가 아닌 playerId면 저장하지 않는다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-auth-host-socket")
+    const intruderSocket = new FakeClientSocket("log-auth-intruder-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(intruderSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "log-auth-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    await intruderSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "log-auth-intruder-player",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            playerId: "log-auth-intruder-player",
+            gameId: `${roomId}-game`,
+            pieceIndex: 2,
+            boardBefore: [[null]],
+            boardAfter: [["square"]],
+            selectedPlacement: {
+                pieceType: "square",
+                rotation: 0,
+                row: 18,
+                col: 4,
+            },
+        },
+    })
+
+    const logResult = intruderSocket.lastClientEvent("game:log:result")?.payload
+
+    assert.equal(savedLogs.length, 0)
+    assert.equal(logResult.ok, false)
+    assert.equal(logResult.reason, "NOT_AUTHORIZED")
+})
+
+test("room:start는 game_start 로그를 저장한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("start-log-host-socket")
+    const guestSocket = new FakeClientSocket("start-log-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        saveGameEventLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "start-log-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "start-log-guest",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "start-log-host",
+    })
+
+    const startLog = savedLogs.find(log => log.eventType === "game_start")
+
+    assert.equal(startLog.roomId, roomId)
+    assert.equal(startLog.mode, "multi")
+    assert.equal(startLog.players.length, 2)
+    assert.equal(startLog.players[0].role, "host")
+    assert.equal(typeof startLog.startedAt, "number")
+})
+
+test("game:over는 game_over 로그를 저장한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("over-log-host-socket")
+    const guestSocket = new FakeClientSocket("over-log-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        saveGameEventLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "over-log-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "over-log-guest",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "over-log-host",
+    })
+    await guestSocket.triggerAsync("game:over", {
+        roomId,
+        playerId: "over-log-guest",
+        reason: "top_out",
+    })
+
+    const overLog = savedLogs.find(log => log.eventType === "game_over")
+
+    assert.equal(overLog.roomId, roomId)
+    assert.equal(overLog.mode, "multi")
+    assert.equal(overLog.winnerPlayerId, "over-log-host")
+    assert.equal(overLog.loserPlayerId, "over-log-guest")
+    assert.equal(overLog.reason, "top_out")
+    assert.equal(overLog.finishType, "normal")
+    assert.equal(typeof overLog.endedAt, "number")
+})
+
+test("game:garbage:attack은 상대 player를 target으로 garbage append를 broadcast한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("garbage-host-socket")
+    const guestSocket = new FakeClientSocket("garbage-guest-socket")
+
+    registerSocketHandlers(socketServer, {
+        createGarbageHoleCol() {
+            return 4
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "garbage-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "garbage-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:garbage:attack", {
+        roomId,
+        playerId: "garbage-host",
+        lines: 2,
+    })
+
+    const hostGarbageEvent = hostSocket.lastClientEvent("game:garbage:append")
+    const guestGarbageEvent = guestSocket.lastClientEvent("game:garbage:append")
+
+    assert.equal(hostGarbageEvent.payload.fromPlayerId, "garbage-host")
+    assert.equal(hostGarbageEvent.payload.targetPlayerId, "garbage-guest")
+    assert.equal(hostGarbageEvent.payload.lines, 2)
+    assert.equal(hostGarbageEvent.payload.holeCol, 4)
+    assert.deepEqual(guestGarbageEvent.payload, hostGarbageEvent.payload)
 })
 
 test("game:input은 room 참가자가 아닌 playerId면 상대에게 전달하지 않는다", () => {
@@ -820,10 +1090,69 @@ test("game:over는 finishGame 결과를 match:finish로 room에 broadcast한다"
     const finishEvent = socketServer.roomEvents.findLast(event => event.eventName === "match:finish")
 
     assert.equal(finishEvent.roomId, roomId)
-    assert.equal(finishEvent.payload.room.status, "waiting")
+    assert.equal(finishEvent.payload.room.status, "finished")
     assert.equal(finishEvent.payload.winnerPlayerId, "finish-host-player")
     assert.equal(finishEvent.payload.loserPlayerId, "finish-guest-player")
     assert.equal(finishEvent.payload.reason, "top_out")
+})
+
+test("game:over 이후 한 명만 로비로 돌아오면 room:start를 허용하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("finish-restart-host-socket")
+    const guestSocket = new FakeClientSocket("finish-restart-guest-socket")
+    const hostLobbySocket = new FakeClientSocket("finish-restart-host-lobby-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+    socketServer.connect(hostLobbySocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "finish-restart-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "finish-restart-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "finish-restart-host-player",
+    })
+
+    guestSocket.trigger("game:over", {
+        roomId,
+        playerId: "finish-restart-guest-player",
+        reason: "top_out",
+    })
+
+    hostLobbySocket.trigger("room:sync", {
+        roomId,
+        playerId: "finish-restart-host-player",
+    })
+
+    hostLobbySocket.trigger("room:start", {
+        roomId,
+        playerId: "finish-restart-host-player",
+    })
+
+    const syncResult = hostLobbySocket.clientEvents
+        .filter(event => event.eventName === "room:result")
+        .at(-2)
+        .payload
+    const startResult = hostLobbySocket.lastClientEvent("room:result").payload
+
+    assert.equal(syncResult.ok, true)
+    assert.equal(syncResult.room.status, "finished")
+    assert.equal(startResult.ok, false)
+    assert.equal(startResult.reason, "GAME_NOT_READY")
 })
 
 test("game:over는 finishGame 실패 시 요청자에게 game:over:result를 반환한다", () => {

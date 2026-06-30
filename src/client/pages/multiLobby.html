@@ -368,10 +368,17 @@
             }
 
             const isHost = room.hostPlayerId === currentPlayer.playerId
-            const canStartGame = isHost && room.players.length === 2
+            const canStartGame = isHost && room.status === "waiting" && room.players.length === 2
 
             primaryActionTitle.textContent = "Game Start"
             primaryActionBtn.textContent = "게임 시작"
+
+            if (room.status === "finished") {
+                primaryActionDesc.textContent = "상대가 로비로 돌아오면 다시 시작할 수 있습니다."
+                primaryActionBtn.textContent = "상대 로비 대기중"
+                primaryActionBtn.disabled = true
+                return
+            }
 
             if (!isHost) {
                 primaryActionDesc.textContent = "방장이 게임을 시작할 수 있습니다."

@@ -53,6 +53,8 @@ export function serializeGameState(gameState) {
                 phase: gameState.phase,
                 lastActionWasRotation: gameState.lastActionWasRotation,
                 isTSpin: gameState.isTSpin,
+                combo: gameState.combo,
+                backToBack: gameState.backToBack,
         }
 }
 
@@ -79,6 +81,8 @@ export function deserializeGameState(snapshot, defaults) {
         gameState.phase = snapshot.phase ?? gameState.phase
         gameState.lastActionWasRotation = Boolean(snapshot.lastActionWasRotation)
         gameState.isTSpin = Boolean(snapshot.isTSpin)
+        gameState.combo = Number.isInteger(snapshot.combo) ? snapshot.combo : gameState.combo
+        gameState.backToBack = Boolean(snapshot.backToBack)
 
         return gameState
 }

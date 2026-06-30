@@ -1,6 +1,6 @@
 // =============================
-// 조각 생명주기 보조 함수
-// bag 랜덤화와 next queue 유지를 담당한다.
+// 조각 큐 상태 유틸리티
+// 7-bag 랜덤화와 next queue 유지를 담당한다.
 // =============================
 
 /**
@@ -12,14 +12,14 @@
   * @returns {string} 다음 조각 타입
   */
 export function pickRandomPiece(gameState, pieceTypes, rng) {
-        if (!gameState.bag || gameState.bag.length === 0) {
-                gameState.bag = [...pieceTypes]
-                for (let i = gameState.bag.length - 1; i > 0; i--) {
-                        const j = Math.floor(rng() * (i + 1));
-                        [gameState.bag[i], gameState.bag[j]] = [gameState.bag[j], gameState.bag[i]]
-                }
+    if (!gameState.bag || gameState.bag.length === 0) {
+        gameState.bag = [...pieceTypes];
+        for (let i = gameState.bag.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [gameState.bag[i], gameState.bag[j]] = [gameState.bag[j], gameState.bag[i]];
         }
-        return gameState.bag.pop()
+    }
+    return gameState.bag.pop();
 }
 
 /**
@@ -31,9 +31,9 @@ export function pickRandomPiece(gameState, pieceTypes, rng) {
   * @returns {void}
   */
 export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng) {
-        while (gameState.pieceQueue.length < nextQueueSize + 1) {
-                gameState.pieceQueue.push(pickRandomPiece(gameState, pieceTypes, rng))
-        }
+    while (gameState.pieceQueue.length < nextQueueSize + 1) {
+        gameState.pieceQueue.push(pickRandomPiece(gameState, pieceTypes, rng));
+    }
 }
 
 /**
@@ -45,8 +45,8 @@ export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng) {
   * @returns {string} 지금 스폰할 조각 타입
   */
 export function takeNextFromQueue(gameState, nextQueueSize, pieceTypes, rng) {
-        ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng)
-        const nextType = gameState.pieceQueue.shift()
-        ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng)
-        return nextType
+    ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng);
+    const nextType = gameState.pieceQueue.shift();
+    ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng);
+    return nextType;
 }

@@ -80,6 +80,7 @@ test("recordInput은 player의 inputLog에 action과 tick을 저장한다", () =
     const result = recordInput("ROOM003", "host-player", {
         action: "move_left",
         tick: 10,
+        pieceIndex: 3,
     });
 
     assert.equal(result.ok, true);
@@ -87,7 +88,57 @@ test("recordInput은 player의 inputLog에 action과 tick을 저장한다", () =
     assert.equal(result.match.players[0].inputLog.length, 1);
     assert.equal(result.match.players[0].inputLog[0].action, "move_left");
     assert.equal(result.match.players[0].inputLog[0].tick, 10);
+    assert.equal(result.match.players[0].inputLog[0].pieceIndex, 3);
     assert.equal(typeof result.match.players[0].inputLog[0].receivedAt, "number");
+});
+
+test("recordInput은 replay를 위해 playerId와 sequence를 함께 저장한다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("REPLAY001"));
+    const result = recordInput("REPLAY001", "host-player", {
+        action: "rotate",
+        tick: 12,
+        pieceIndex: 4,
+    });
+    const replayInput = result.match.players[0].inputLog[0];
+
+    assert.equal(result.ok, true);
+    assert.equal(replayInput.playerId, "host-player");
+    assert.equal(replayInput.action, "rotate");
+    assert.equal(replayInput.tick, 12);
+    assert.equal(replayInput.pieceIndex, 4);
+    assert.equal(replayInput.sequence, 1);
+    assert.equal(typeof replayInput.receivedAt, "number");
+});
+
+test("recordInput은 player별 inputLog sequence를 독립적으로 증가시킨다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("REPLAY002"));
+    recordInput("REPLAY002", "host-player", {
+        action: "move_left",
+        tick: 20,
+        pieceIndex: 5,
+    });
+    recordInput("REPLAY002", "host-player", {
+        action: "move_right",
+        tick: 20,
+        pieceIndex: 5,
+    });
+    const result = recordInput("REPLAY002", "guest-player", {
+        action: "soft_drop",
+        tick: 20,
+        pieceIndex: 5,
+    });
+
+    const hostPlayer = result.match.players.find(player => player.playerId === "host-player");
+    const guestPlayer = result.match.players.find(player => player.playerId === "guest-player");
+
+    assert.deepEqual(hostPlayer.inputLog.map(input => input.sequence), [1, 2]);
+    assert.deepEqual(hostPlayer.inputLog.map(input => input.playerId), ["host-player", "host-player"]);
+    assert.deepEqual(guestPlayer.inputLog.map(input => input.sequence), [1]);
+    assert.deepEqual(guestPlayer.inputLog.map(input => input.playerId), ["guest-player"]);
 });
 
 test("appendPlayerBagChunk는 player의 bagChunks에 새 server bag chunk를 추가한다", () => {

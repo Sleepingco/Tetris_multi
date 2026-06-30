@@ -221,6 +221,10 @@ function startGame(roomId, playerId, socketId = null) {
         return failure("NOT_AUTHORIZED")
     }
 
+    if (roomState.status === "finished") {
+        return failure("GAME_NOT_READY")
+    }
+
     if (roomState.status !== "waiting") {
         return failure("GAME_ALREADY_STARTED")
     }
@@ -257,7 +261,7 @@ function leaveGame(roomId, playerId) {
     return removePlayer(roomId, playerId)
 }
 
-function syncRoom(roomId, playerId, socketId = null) {
+function syncRoom(roomId, playerId, socketId = null, options = {}) {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
         return failure(context.reason)
@@ -265,6 +269,25 @@ function syncRoom(roomId, playerId, socketId = null) {
 
     if (socketId) {
         context.player.socketId = socketId
+    }
+
+    if (options.location === "lobby" && context.roomState.status === "finished") {
+        if (!Array.isArray(context.roomState.lobbyPlayerIds)) {
+            context.roomState.lobbyPlayerIds = []
+        }
+
+        if (!context.roomState.lobbyPlayerIds.includes(playerId)) {
+            context.roomState.lobbyPlayerIds.push(playerId)
+        }
+
+        const allPlayersReturnedToLobby = context.roomState.players.every(player => {
+            return context.roomState.lobbyPlayerIds.includes(player.playerId)
+        })
+
+        if (allPlayersReturnedToLobby) {
+            context.roomState.status = "waiting"
+            delete context.roomState.lobbyPlayerIds
+        }
     }
 
     return success(context.roomState)
@@ -300,7 +323,8 @@ function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
 
     const winnerPlayer = roomState.players.find(player => player.playerId !== loserPlayerId)
 
-    roomState.status = "waiting"
+    roomState.status = "finished"
+    roomState.lobbyPlayerIds = []
 
     return success(roomState, {
         winnerPlayerId: winnerPlayer.playerId,

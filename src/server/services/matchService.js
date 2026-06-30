@@ -78,8 +78,11 @@ function recordInput(roomId, playerId, input) {
     }
 
     player.inputLog.push({
+        playerId,
         action: input.action,
         tick: input.tick ?? null,
+        pieceIndex: input.pieceIndex ?? null,
+        sequence: player.inputLog.length + 1,
         receivedAt: Date.now(),
     });
 

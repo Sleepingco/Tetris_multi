@@ -15,6 +15,10 @@ const {
     getMatchState,
     recordInput,
 } = require("../services/matchService.js")
+const {
+    saveGameEventLog,
+    savePlacementDecisionLog,
+} = require("../services/logService.js")
 
 const VALID_GAME_ACTIONS = new Set([
     "move_left",
@@ -56,7 +60,11 @@ function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
     })
 }
 
-function registerMultiplayerHandlers(socketServer, clientSocket) {
+function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = {}) {
+    const saveLog = dependencies.savePlacementDecisionLog || savePlacementDecisionLog
+    const saveEventLog = dependencies.saveGameEventLog || saveGameEventLog
+    const createGarbageHoleCol = dependencies.createGarbageHoleCol || (() => Math.floor(Math.random() * 10))
+
     clientSocket.on("room:create", (player) => {
         const hostPlayer = player
             ? { ...player, socketId: clientSocket.id }
@@ -102,7 +110,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket) {
         )
     })
 
-    clientSocket.on("room:start", (payload = {}) => {
+    clientSocket.on("room:start", async (payload = {}) => {
         const { roomId, playerId } = payload
         const result = startGame(roomId, playerId, clientSocket.id)
 
@@ -116,7 +124,10 @@ function registerMultiplayerHandlers(socketServer, clientSocket) {
                 text: `${hostPlayer?.nickname || "Host"}님이 게임을 시작했습니다.`,
                 roomId: result.room.roomId,
             })
-            createMatch(result.room)
+            const matchResult = createMatch(result.room)
+            if (matchResult.ok) {
+                await persistGameEventLog(saveEventLog, createGameStartLog(result.room, matchResult.match))
+            }
         } else {
             clientSocket.emit("room:result", result)
         }
@@ -161,7 +172,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket) {
     })
 
     clientSocket.on("game:input", (payload = {}) => {
-        const { roomId, playerId, action, tick } = payload
+        const { roomId, playerId, action, tick, pieceIndex } = payload
         const result = syncRoom(roomId, playerId)
 
         if (!result.ok) {
@@ -180,6 +191,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket) {
         const inputResult = recordInput(roomId, playerId, {
             action,
             tick,
+            pieceIndex,
         })
 
         if (!inputResult.ok) {
@@ -192,7 +204,70 @@ function registerMultiplayerHandlers(socketServer, clientSocket) {
             playerId,
             action,
             tick,
+            pieceIndex,
         })
+    })
+
+    clientSocket.on("game:log:placement_decision", async (payload = {}) => {
+        const { roomId, playerId, log } = payload
+        const result = syncRoom(roomId, playerId)
+
+        if (!result.ok) {
+            clientSocket.emit("game:log:result", result)
+            return
+        }
+
+        if (!log || log.playerId !== playerId) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: "NOT_AUTHORIZED",
+            })
+            return
+        }
+
+        const logResult = await saveLog(log)
+        clientSocket.emit("game:log:result", logResult)
+    })
+
+    clientSocket.on("game:garbage:attack", (payload = {}) => {
+        const { roomId, playerId, lines } = payload
+        const result = syncRoom(roomId, playerId)
+
+        if (!result.ok) {
+            clientSocket.emit("game:garbage:result", result)
+            return
+        }
+
+        if (!Number.isInteger(lines) || lines <= 0 || lines > 12) {
+            clientSocket.emit("game:garbage:result", {
+                ok: false,
+                room: null,
+                reason: "INVALID_GARBAGE_LINES",
+            })
+            return
+        }
+
+        const targetPlayer = result.room.players.find(player => player.playerId !== playerId)
+        if (!targetPlayer) {
+            clientSocket.emit("game:garbage:result", {
+                ok: false,
+                room: null,
+                reason: "TARGET_PLAYER_NOT_FOUND",
+            })
+            return
+        }
+
+        const eventPayload = {
+            roomId,
+            fromPlayerId: playerId,
+            targetPlayerId: targetPlayer.playerId,
+            lines,
+            holeCol: createGarbageHoleCol(),
+        }
+
+        clientSocket.emit("game:garbage:append", eventPayload)
+        clientSocket.to(roomId).emit("game:garbage:append", eventPayload)
     })
 
     clientSocket.on("game:bag:request", (payload = {}) => {
@@ -235,26 +310,31 @@ function registerMultiplayerHandlers(socketServer, clientSocket) {
 
     clientSocket.on("room:sync", (payload = {}) => {
         const { roomId, playerId } = payload
-        const result = syncRoom(roomId, playerId, clientSocket.id)
+        const result = syncRoom(roomId, playerId, clientSocket.id, {
+            location: "lobby",
+        })
 
         if (result.ok && result.room) {
             clientSocket.join(result.room.roomId)
+            socketServer.to(result.room.roomId).emit("room:updated", result.room)
         }
 
         clientSocket.emit("room:result", result)
     })
 
-    clientSocket.on("game:over", (payload = {}) => {
+    clientSocket.on("game:over", async (payload = {}) => {
         const { roomId, playerId, reason = "top_out" } = payload
         const result = finishGame(roomId, playerId, reason)
 
         if (result.ok) {
+            const matchResult = getMatchState(roomId)
             socketServer.to(roomId).emit("match:finish", {
                 room: result.room,
                 winnerPlayerId: result.winnerPlayerId,
                 loserPlayerId: result.loserPlayerId,
                 reason: result.finishReason,
             })
+            await persistGameEventLog(saveEventLog, createGameOverLog(result, matchResult.match))
             return
         }
 
@@ -262,6 +342,50 @@ function registerMultiplayerHandlers(socketServer, clientSocket) {
     })
 }
 
+async function persistGameEventLog(saveEventLog, log) {
+    try {
+        await saveEventLog(log)
+    } catch (error) {
+        console.warn(`[multiplayerHandlers] game event log failed: ${error.message}`)
+    }
+}
+
+function createGameId(roomId, match) {
+    return match?.createdAt
+        ? `${roomId}-${match.createdAt}`
+        : roomId
+}
+
+function createGameStartLog(room, match) {
+    return {
+        eventType: "game_start",
+        schemaVersion: 1,
+        gameId: createGameId(room.roomId, match),
+        roomId: room.roomId,
+        mode: "multi",
+        startedAt: match.createdAt || Date.now(),
+        players: room.players.map(player => ({
+            playerId: player.playerId,
+            nickname: player.nickname,
+            role: player.playerId === room.hostPlayerId ? "host" : "guest",
+        })),
+    }
+}
+
+function createGameOverLog(result, match) {
+    return {
+        eventType: "game_over",
+        schemaVersion: 1,
+        gameId: createGameId(result.room.roomId, match),
+        roomId: result.room.roomId,
+        mode: "multi",
+        endedAt: Date.now(),
+        winnerPlayerId: result.winnerPlayerId,
+        loserPlayerId: result.loserPlayerId,
+        reason: result.finishReason,
+        finishType: "normal",
+    }
+}
 
 module.exports = {
     registerMultiplayerHandlers,

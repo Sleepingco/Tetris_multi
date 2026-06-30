@@ -33,5 +33,7 @@ export function createGameState({ spawnRow, spawnCol, fallIntervalMs, initialPha
                 phase: initialPhase,
                 lastActionWasRotation: false,
                 isTSpin: false,
+                combo: -1,
+                backToBack: false,
         }
 }

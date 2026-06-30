@@ -2511,3 +2511,147 @@ game:input을 추가한 이유는
 지금 input = 다음 구조로 가기 위한 배관
 최종 목표 = input 중심 + 서버 상태 계산 + 서버 snapshot/보정
 ```
+
+---
+
+## Q. 입력에는 `pieceIndex` 검사를 넣었는데, 왜 snapshot에도 `pieceIndex` 검사가 필요해? (2026-06-27)
+
+`pieceIndex`는 쉽게 말해 **현재 몇 번째 블록인지 나타내는 번호표**다.
+
+예를 들어 상대가 이렇게 플레이 중이라고 하자.
+
+```txt
+7번째 블록 조작 중
+  -> 7번째 블록이 바닥에 고정됨
+  -> 8번째 블록 등장
+```
+
+그런데 네트워크 메시지는 항상 정확한 순서와 타이밍으로 도착하지 않는다.
+
+```txt
+내 화면은 이미 상대의 8번째 블록을 보고 있음
+
+그런데 늦게 도착한 메시지:
+"상대의 7번째 블록은 여기 있었어"
+```
+
+이때 늦게 도착한 7번째 블록 snapshot을 그대로 적용하면, 상대 보드가 갑자기 과거 상태로 되돌아갈 수 있다.
+
+```txt
+현재 상대 보드: 8번째 블록
+늦게 온 snapshot: 7번째 블록
+
+그 snapshot을 적용하면:
+8번째 블록 화면이 7번째 블록 화면으로 되돌아감
+```
+
+그래서 snapshot 보정 전에 먼저 확인해야 한다.
+
+```txt
+내가 보고 있는 상대 블록 번호 === 도착한 snapshot의 블록 번호
+  -> 같은 블록 이야기이므로 위치/회전 보정 가능
+
+내가 보고 있는 상대 블록 번호 !== 도착한 snapshot의 블록 번호
+  -> 이미 지난 블록이거나 미래 블록일 수 있으므로 기본적으로 무시
+```
+
+코드로는 이런 의미다.
+
+```js
+if (localSnapshot.pieceIndex !== remoteSnapshot.pieceIndex) {
+    return false
+}
+```
+
+이 줄은 다음 뜻이다.
+
+```txt
+"내가 지금 상대의 8번째 블록을 보고 있는데,
+도착한 snapshot이 7번째 블록 이야기라면 적용하지 마."
+```
+
+입력 동기화에도 같은 원리가 적용된다.
+
+```txt
+상대 입력이 도착함
+  -> 입력의 pieceIndex 확인
+  -> 현재 블록 번호와 같으면 적용
+  -> 다르면 버림
+```
+
+입력은 이미 이 안전장치를 넣었다. 하지만 snapshot에는 아직 같은 검사가 없으면, 입력은 잘 막아도 snapshot이 과거 상태를 덮어쓸 수 있다.
+
+정리하면 다음과 같다.
+
+```txt
+input의 pieceIndex 검사:
+  늦게 도착한 입력이 현재 블록에 잘못 적용되는 것을 막음
+
+snapshot의 pieceIndex 검사:
+  늦게 도착한 상태 복사본이 상대 보드를 과거로 되돌리는 것을 막음
+```
+
+따라서 현재 단계에서 snapshot 보정 함수는 다음 순서가 적절하다.
+
+```txt
+1. snapshot이 없으면 보정하지 않음
+2. gameOver 같은 종료 상태는 예외적으로 반영 가능
+3. pieceIndex가 다르면 기본적으로 보정하지 않음
+4. pieceIndex가 같을 때만 activePiece 위치/회전 차이를 보정
+```
+
+---
+
+## Q. 상대 보드 `autoStart`를 `false`로 두면 더 정확하지 않아? 왜 다시 `true`를 유지해? (2026-06-28)
+
+현재 멀티 화면의 상대 보드는 완전한 서버 authoritative 보드가 아니다. 지금은 다음 두 방식을 섞어서 상대 보드를 보여준다.
+
+```txt
+1. 상대의 game:input을 받아서 opponentGame을 예측 실행
+2. 상대의 game:snapshot을 받아서 틀어진 상태를 보정
+```
+
+그래서 `opponentGame`에는 두 가지 선택지가 있다.
+
+```txt
+autoStart: false
+  -> 상대 보드가 자체 중력으로 진행하지 않음
+  -> input 또는 snapshot이 도착할 때만 화면이 바뀜
+  -> 정확성은 높아질 수 있지만 움직임이 크게 끊김
+
+autoStart: true
+  -> 내 브라우저 안에서 상대 보드를 예측 실행함
+  -> 상대 보드가 부드럽게 움직임
+  -> 오차가 생기면 snapshotCorrection으로 보정
+```
+
+실험 결과 `autoStart: false`는 상대 블록 움직임이 너무 끊겨 보였다. 따라서 현재 MVP 단계에서는 `autoStart: true`를 유지한다.
+
+현재 기준은 다음과 같다.
+
+```txt
+상대 보드 = 예측 실행 + snapshot 보정
+```
+
+즉 상대 보드가 완전히 독립적인 진실 원천이 되는 것이 아니라, 부드러운 표시를 위해 로컬에서 예측하고 snapshot으로 따라잡는 구조다.
+
+코드 주석도 이 의미를 남긴다.
+
+```js
+// 상대 보드는 현재 input relay + snapshot correction 기반으로 예측 실행한다.
+// autoStart를 false로 두면 snapshot 도착 시점에만 갱신되어 움직임이 크게 끊긴다.
+// 서버 authoritative runtime으로 전환하기 전까지는 true를 유지한다.
+opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
+```
+
+나중에 서버가 직접 게임 상태를 계산하는 구조가 되면 방향이 달라진다.
+
+```txt
+현재:
+상대 보드 = 클라이언트 예측 실행 + snapshot 보정
+
+목표:
+상대 보드 = 서버 authoritative snapshot 또는 delta 반영
+```
+
+따라서 `autoStart: true`는 최종 구조가 아니라, 현재 input relay 단계에서 부드러운 상대 보드 표시를 위한 임시 선택이다.
