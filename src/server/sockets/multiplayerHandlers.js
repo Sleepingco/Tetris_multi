@@ -12,13 +12,23 @@ const {
 const {
     appendPlayerBagChunk,
     createMatch,
+    deleteMatch,
+    getPlayerAuthoritativeSnapshot,
+    getPlayerShadowState,
     getMatchState,
+    recordClientSnapshot,
+    recordClientPlacementDecision,
+    recordGarbageAttack,
     recordInput,
+    startShadowMatchLoop,
 } = require("../services/matchService.js")
 const {
     saveGameEventLog,
     savePlacementDecisionLog,
 } = require("../services/logService.js")
+const {
+    validateGameSnapshot,
+} = require("../validators/gameSnapshotValidator.js")
 
 const VALID_GAME_ACTIONS = new Set([
     "move_left",
@@ -28,6 +38,9 @@ const VALID_GAME_ACTIONS = new Set([
     "hard_drop",
     "hold",
 ])
+
+const authoritativeSnapshotSubscribers = new Map()
+const authoritativeSnapshotUpdateSequences = new Map()
 
 function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickname) {
     if (!result.ok) return
@@ -60,9 +73,92 @@ function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
     })
 }
 
+function addAuthoritativeSnapshotSubscriber(roomId, clientSocket) {
+    if (!authoritativeSnapshotSubscribers.has(roomId)) {
+        authoritativeSnapshotSubscribers.set(roomId, new Set())
+    }
+
+    authoritativeSnapshotSubscribers.get(roomId).add(clientSocket)
+}
+
+function removeAuthoritativeSnapshotSubscriber(roomId, clientSocket) {
+    const subscribers = authoritativeSnapshotSubscribers.get(roomId)
+    if (!subscribers) return
+
+    subscribers.delete(clientSocket)
+
+    if (subscribers.size === 0) {
+        authoritativeSnapshotSubscribers.delete(roomId)
+    }
+}
+
+function removeAuthoritativeSnapshotSubscribersForRoom(roomId) {
+    authoritativeSnapshotSubscribers.delete(roomId)
+    clearAuthoritativeSnapshotUpdateSequence(roomId)
+}
+
+function removeAuthoritativeSnapshotSubscriberFromAllRooms(clientSocket) {
+    authoritativeSnapshotSubscribers.forEach((subscribers, roomId) => {
+        subscribers.delete(clientSocket)
+
+        if (subscribers.size === 0) {
+            authoritativeSnapshotSubscribers.delete(roomId)
+        }
+    })
+}
+
+function getNextAuthoritativeSnapshotUpdateSequence(roomId) {
+    const nextSequence = (authoritativeSnapshotUpdateSequences.get(roomId) ?? 0) + 1
+    authoritativeSnapshotUpdateSequences.set(roomId, nextSequence)
+
+    return nextSequence
+}
+
+function clearAuthoritativeSnapshotUpdateSequence(roomId) {
+    authoritativeSnapshotUpdateSequences.delete(roomId)
+}
+
+function broadcastAuthoritativeSnapshotUpdates(roomId, loopResult, updateReason = null) {
+    if (!loopResult?.ok || !loopResult.match) return
+
+    const subscribers = authoritativeSnapshotSubscribers.get(roomId)
+    if (!subscribers || subscribers.size === 0) return
+
+    const updateSequence = getNextAuthoritativeSnapshotUpdateSequence(roomId)
+    subscribers.forEach((subscriberSocket) => {
+        emitAuthoritativeSnapshotUpdatesToSocket(
+            roomId,
+            loopResult.match,
+            subscriberSocket,
+            updateReason,
+            updateSequence,
+        )
+    })
+}
+
+function emitAuthoritativeSnapshotUpdatesToSocket(
+    roomId,
+    match,
+    clientSocket,
+    updateReason = null,
+    updateSequence = null,
+) {
+    if (!match || !Array.isArray(match.players)) return
+
+    match.players.forEach((player) => {
+        const snapshotResult = {
+            ...getPlayerAuthoritativeSnapshot(roomId, player.playerId),
+            updateReason,
+            updateSequence,
+        }
+        clientSocket.emit("game:authoritative:snapshot:update", snapshotResult)
+    })
+}
+
 function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = {}) {
     const saveLog = dependencies.savePlacementDecisionLog || savePlacementDecisionLog
     const saveEventLog = dependencies.saveGameEventLog || saveGameEventLog
+    const startShadowLoop = dependencies.startShadowMatchLoop || startShadowMatchLoop
     const createGarbageHoleCol = dependencies.createGarbageHoleCol || (() => Math.floor(Math.random() * 10))
 
     clientSocket.on("room:create", (player) => {
@@ -87,6 +183,9 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     clientSocket.on("room:leave", ({ roomId, playerId }) => {
         const result = leaveRoom(roomId, playerId)
+        if (result.ok) {
+            removeAuthoritativeSnapshotSubscriber(result.roomId, clientSocket)
+        }
         handlePlayerLeftRoom(
             socketServer,
             clientSocket,
@@ -99,6 +198,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     })
 
     clientSocket.on("disconnect", () => {
+        removeAuthoritativeSnapshotSubscriberFromAllRooms(clientSocket)
+
         const result = removePlayerBySocketId(clientSocket.id)
 
         handlePlayerLeftRoom(
@@ -126,6 +227,10 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             })
             const matchResult = createMatch(result.room)
             if (matchResult.ok) {
+                clearAuthoritativeSnapshotUpdateSequence(result.room.roomId)
+                startShadowLoop(result.room.roomId, undefined, (loopResult) => {
+                    broadcastAuthoritativeSnapshotUpdates(result.room.roomId, loopResult, "shadow_tick")
+                })
                 await persistGameEventLog(saveEventLog, createGameStartLog(result.room, matchResult.match))
             }
         } else {
@@ -159,7 +264,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        if (!snapshot || !Array.isArray(snapshot.board)) {
+        const snapshotValidation = validateGameSnapshot(snapshot)
+        if (!snapshotValidation.ok) {
             clientSocket.emit("game:snapshot:result", {
                 ok: false,
                 room: null,
@@ -168,7 +274,98 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
+        const snapshotRecordResult = recordClientSnapshot(roomId, playerId, snapshot)
+        if (!snapshotRecordResult.ok) {
+            clientSocket.emit("game:snapshot:result", snapshotRecordResult)
+            return
+        }
+
         clientSocket.to(roomId).emit("game:snapshot", { playerId, snapshot })
+    })
+
+    clientSocket.on("game:shadow:state", (payload = {}) => {
+        const { roomId, playerId } = payload
+        const result = syncRoom(roomId, playerId)
+
+        if (!result.ok) {
+            clientSocket.emit("game:shadow:state:result", {
+                ok: false,
+                shadow: null,
+                reason: result.reason,
+            })
+            return
+        }
+
+        const shadowResult = getPlayerShadowState(roomId, playerId)
+        clientSocket.emit("game:shadow:state:result", shadowResult)
+    })
+
+    clientSocket.on("game:authoritative:snapshot", (payload = {}) => {
+        const { roomId, playerId } = payload
+        const result = syncRoom(roomId, playerId)
+
+        if (!result.ok) {
+            clientSocket.emit("game:authoritative:snapshot:result", {
+                ok: false,
+                roomId,
+                playerId,
+                source: "server_shadow",
+                snapshot: null,
+                createdAt: Date.now(),
+                reason: result.reason,
+            })
+            return
+        }
+
+        const snapshotResult = getPlayerAuthoritativeSnapshot(roomId, playerId)
+        clientSocket.emit("game:authoritative:snapshot:result", snapshotResult)
+    })
+
+    clientSocket.on("game:authoritative:snapshot:subscribe", (payload = {}) => {
+        const { roomId, playerId } = payload
+        const result = syncRoom(roomId, playerId)
+
+        if (!result.ok) {
+            clientSocket.emit("game:authoritative:snapshot:subscribe:result", result)
+            return
+        }
+
+        const matchResult = getMatchState(roomId)
+        if (!matchResult.ok) {
+            clientSocket.emit("game:authoritative:snapshot:subscribe:result", matchResult)
+            return
+        }
+
+        addAuthoritativeSnapshotSubscriber(roomId, clientSocket)
+        clientSocket.emit("game:authoritative:snapshot:subscribe:result", {
+            ok: true,
+            room: result.room,
+            reason: null,
+        })
+        emitAuthoritativeSnapshotUpdatesToSocket(
+            roomId,
+            matchResult.match,
+            clientSocket,
+            "subscribe_initial",
+            getNextAuthoritativeSnapshotUpdateSequence(roomId),
+        )
+    })
+
+    clientSocket.on("game:authoritative:snapshot:unsubscribe", (payload = {}) => {
+        const { roomId, playerId } = payload
+        const result = syncRoom(roomId, playerId)
+
+        if (!result.ok) {
+            clientSocket.emit("game:authoritative:snapshot:unsubscribe:result", result)
+            return
+        }
+
+        removeAuthoritativeSnapshotSubscriber(roomId, clientSocket)
+        clientSocket.emit("game:authoritative:snapshot:unsubscribe:result", {
+            ok: true,
+            room: result.room,
+            reason: null,
+        })
     })
 
     clientSocket.on("game:input", (payload = {}) => {
@@ -199,6 +396,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
+        broadcastAuthoritativeSnapshotUpdates(roomId, inputResult, "input")
+
         clientSocket.to(roomId).emit("game:input", {
             roomId,
             playerId,
@@ -227,6 +426,12 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         }
 
         const logResult = await saveLog(log)
+        if (logResult.ok && log.placementResult) {
+            const placementResult = recordClientPlacementDecision(roomId, playerId, log)
+            if (placementResult.ok) {
+                broadcastAuthoritativeSnapshotUpdates(roomId, placementResult, "placement")
+            }
+        }
         clientSocket.emit("game:log:result", logResult)
     })
 
@@ -265,6 +470,19 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             lines,
             holeCol: createGarbageHoleCol(),
         }
+        const garbageResult = recordGarbageAttack(
+            roomId,
+            playerId,
+            targetPlayer.playerId,
+            eventPayload,
+        )
+
+        if (!garbageResult.ok) {
+            clientSocket.emit("game:garbage:result", garbageResult)
+            return
+        }
+
+        broadcastAuthoritativeSnapshotUpdates(roomId, garbageResult, "garbage")
 
         clientSocket.emit("game:garbage:append", eventPayload)
         clientSocket.to(roomId).emit("game:garbage:append", eventPayload)
@@ -286,6 +504,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
+        broadcastAuthoritativeSnapshotUpdates(roomId, bagResult, "bag")
+
         socketServer.to(roomId).emit("game:bag:append", {
             roomId,
             playerId,
@@ -297,6 +517,9 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         const { roomId, playerId } = payload
         const result = leaveGame(roomId, playerId)
         if (result.ok) {
+            removeAuthoritativeSnapshotSubscriber(roomId, clientSocket)
+            deleteMatch(roomId)
+            clearAuthoritativeSnapshotUpdateSequence(roomId)
             clientSocket.leave(roomId)
             clientSocket.to(roomId).emit("game:opponent-left", {
                 room: result.room,
@@ -327,7 +550,9 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         const result = finishGame(roomId, playerId, reason)
 
         if (result.ok) {
+            removeAuthoritativeSnapshotSubscribersForRoom(roomId)
             const matchResult = getMatchState(roomId)
+            deleteMatch(roomId)
             socketServer.to(roomId).emit("match:finish", {
                 room: result.room,
                 winnerPlayerId: result.winnerPlayerId,

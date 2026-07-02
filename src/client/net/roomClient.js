@@ -173,6 +173,62 @@ export function onGameSnapshotResult(handler) {
     }
 }
 
+export function requestGameShadowState(roomId, playerId) {
+    serverConnection.emit("game:shadow:state", { roomId, playerId })
+}
+
+export function onGameShadowStateResult(handler) {
+    serverConnection.on("game:shadow:state:result", handler)
+
+    return () => {
+        serverConnection.off("game:shadow:state:result", handler)
+    }
+}
+
+export function requestGameAuthoritativeSnapshot(roomId, playerId) {
+    serverConnection.emit("game:authoritative:snapshot", { roomId, playerId })
+}
+
+export function onGameAuthoritativeSnapshotResult(handler) {
+    serverConnection.on("game:authoritative:snapshot:result", handler)
+
+    return () => {
+        serverConnection.off("game:authoritative:snapshot:result", handler)
+    }
+}
+
+export function receiveGameAuthoritativeSnapshotUpdate(handler) {
+    serverConnection.on("game:authoritative:snapshot:update", handler)
+
+    return () => {
+        serverConnection.off("game:authoritative:snapshot:update", handler)
+    }
+}
+
+export function subscribeGameAuthoritativeSnapshotUpdates(roomId, playerId) {
+    serverConnection.emit("game:authoritative:snapshot:subscribe", { roomId, playerId })
+}
+
+export function unsubscribeGameAuthoritativeSnapshotUpdates(roomId, playerId) {
+    serverConnection.emit("game:authoritative:snapshot:unsubscribe", { roomId, playerId })
+}
+
+export function onGameAuthoritativeSnapshotSubscribeResult(handler) {
+    serverConnection.on("game:authoritative:snapshot:subscribe:result", handler)
+
+    return () => {
+        serverConnection.off("game:authoritative:snapshot:subscribe:result", handler)
+    }
+}
+
+export function onGameAuthoritativeSnapshotUnsubscribeResult(handler) {
+    serverConnection.on("game:authoritative:snapshot:unsubscribe:result", handler)
+
+    return () => {
+        serverConnection.off("game:authoritative:snapshot:unsubscribe:result", handler)
+    }
+}
+
 export function sendGameOver(roomId, playerId, reason) {
     serverConnection.emit("game:over", { roomId, playerId, reason })
 }

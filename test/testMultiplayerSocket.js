@@ -2,7 +2,14 @@ const test = require("node:test")
 const assert = require("node:assert/strict")
 
 const { registerSocketHandlers } = require("../src/server/sockets/index.js")
-const { getMatchState } = require("../src/server/services/matchService.js")
+const {
+    getMatchState,
+    getPlayerShadowState,
+    recordShadowSnapshot,
+} = require("../src/server/services/matchService.js")
+const {
+    AUTHORITATIVE_SNAPSHOT_FIELDS,
+} = require("../src/server/validators/gameSnapshotValidator.js")
 
 class FakeSocketServer {
     constructor() {
@@ -88,6 +95,12 @@ class FakeClientSocket {
     lastClientEvent(eventName) {
         return this.clientEvents.findLast(event => event.eventName === eventName)
     }
+}
+
+function getAuthoritativeSnapshotUpdateEvents(clientSocket) {
+    return clientSocket.clientEvents.filter((event) => {
+        return event.eventName === "game:authoritative:snapshot:update"
+    })
 }
 
 test("room:leave는 퇴장한 socket을 room에서 제거하고 남은 room 상태를 broadcast한다", () => {
@@ -499,6 +512,10 @@ test("game:snapshot은 game:join으로 같은 room에 들어간 상대 socket에
         },
     })
 
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "host-player",
+    })
     hostSocket.trigger("game:join", {
         roomId,
         playerId: "host-player",
@@ -585,6 +602,685 @@ test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게
     assert.equal(matchResult.match.players[0].inputLog[0].pieceIndex, 4)
 })
 
+test("game:snapshot은 match shadow state에 client snapshot을 기록하고 기존 broadcast를 유지한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("shadow-snapshot-host-socket")
+    const guestSocket = new FakeClientSocket("shadow-snapshot-guest-socket")
+    const snapshot = {
+        board: [["tree"]],
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 1,
+            col: 4,
+        },
+        score: 100,
+        linesClearedTotal: 2,
+        phase: "playing",
+        pendingGarbageQueue: [{ lines: 2, holeCol: 4 }],
+        tick: 30,
+        pieceIndex: 8,
+    }
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "shadow-snapshot-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "shadow-snapshot-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "shadow-snapshot-host",
+    })
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "shadow-snapshot-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "shadow-snapshot-guest",
+    })
+
+    hostSocket.trigger("game:snapshot", {
+        roomId,
+        playerId: "shadow-snapshot-host",
+        snapshot,
+    })
+
+    const guestSnapshotEvent = guestSocket.lastClientEvent("game:snapshot")
+    const matchResult = getMatchState(roomId)
+    const hostMatchPlayer = matchResult.match.players.find(player => {
+        return player.playerId === "shadow-snapshot-host"
+    })
+
+    assert.equal(guestSnapshotEvent.eventName, "game:snapshot")
+    assert.deepEqual(guestSnapshotEvent.payload.snapshot, snapshot)
+    assert.deepEqual(hostMatchPlayer.lastClientSnapshot, snapshot)
+})
+
+test("game:snapshot은 활성 match가 없으면 상대에게 전달하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("snapshot-missing-match-host-socket")
+    const guestSocket = new FakeClientSocket("snapshot-missing-match-guest-socket")
+    const snapshot = {
+        board: [["tree"]],
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 1,
+            col: 4,
+        },
+        score: 100,
+        linesClearedTotal: 2,
+        phase: "playing",
+        pendingGarbageQueue: [],
+        tick: 30,
+        pieceIndex: 8,
+    }
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "snapshot-missing-match-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "snapshot-missing-match-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-missing-match-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-missing-match-guest",
+    })
+
+    hostSocket.trigger("game:snapshot", {
+        roomId,
+        playerId: "snapshot-missing-match-host",
+        snapshot,
+    })
+
+    const snapshotResult = hostSocket.lastClientEvent("game:snapshot:result")?.payload
+    const guestSnapshotEvent = guestSocket.lastClientEvent("game:snapshot")
+
+    assert.equal(snapshotResult?.ok, false)
+    assert.equal(snapshotResult?.reason, "MATCH_NOT_FOUND")
+    assert.equal(guestSnapshotEvent, undefined)
+})
+
+test("game:shadow:state는 room 참가자에게 shadow 상태를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("shadow-state-host-socket")
+    const guestSocket = new FakeClientSocket("shadow-state-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "shadow-state-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "shadow-state-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "shadow-state-host",
+    })
+    hostSocket.trigger("game:shadow:state", {
+        roomId,
+        playerId: "shadow-state-host",
+    })
+
+    const shadowResult = hostSocket.lastClientEvent("game:shadow:state:result").payload
+
+    assert.equal(shadowResult.ok, true)
+    assert.equal(shadowResult.reason, null)
+    assert.equal(shadowResult.shadow.roomId, roomId)
+    assert.equal(shadowResult.shadow.playerId, "shadow-state-host")
+    assert.deepEqual(shadowResult.shadow.desyncLog, [])
+})
+
+test("game:shadow:state는 room 참가자가 아닌 playerId면 NOT_AUTHORIZED를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("shadow-auth-host-socket")
+    const intruderSocket = new FakeClientSocket("shadow-auth-intruder-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(intruderSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "shadow-auth-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    intruderSocket.trigger("game:shadow:state", {
+        roomId,
+        playerId: "shadow-auth-intruder",
+    })
+
+    const shadowResult = intruderSocket.lastClientEvent("game:shadow:state:result").payload
+
+    assert.equal(shadowResult.ok, false)
+    assert.equal(shadowResult.shadow, null)
+    assert.equal(shadowResult.reason, "NOT_AUTHORIZED")
+})
+
+test("game:authoritative:snapshot은 room 참가자에게 서버 snapshot 후보를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-snapshot-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-snapshot-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-snapshot-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-snapshot-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-snapshot-host",
+    })
+    hostSocket.trigger("game:authoritative:snapshot", {
+        roomId,
+        playerId: "authoritative-snapshot-host",
+    })
+
+    const result = hostSocket.lastClientEvent("game:authoritative:snapshot:result").payload
+
+    assert.equal(result.ok, true)
+    assert.equal(result.reason, null)
+    assert.equal(result.roomId, roomId)
+    assert.equal(result.playerId, "authoritative-snapshot-host")
+    assert.equal(result.source, "server_shadow")
+    assert.equal(typeof result.createdAt, "number")
+    assert.deepEqual(Object.keys(result.snapshot), AUTHORITATIVE_SNAPSHOT_FIELDS)
+    assert.equal(result.snapshot.lastClientInputTick, undefined)
+    assert.equal(result.snapshot.lastClientInputPieceIndex, undefined)
+})
+
+test("game:authoritative:snapshot은 room 참가자가 아닌 playerId면 NOT_AUTHORIZED를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-auth-host-socket")
+    const intruderSocket = new FakeClientSocket("authoritative-auth-intruder-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(intruderSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-auth-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+
+    intruderSocket.trigger("game:authoritative:snapshot", {
+        roomId: createResult.room.roomId,
+        playerId: "authoritative-auth-intruder",
+    })
+
+    const result = intruderSocket.lastClientEvent("game:authoritative:snapshot:result").payload
+
+    assert.equal(result.ok, false)
+    assert.equal(result.snapshot, null)
+    assert.equal(result.roomId, createResult.room.roomId)
+    assert.equal(result.playerId, "authoritative-auth-intruder")
+    assert.equal(result.source, "server_shadow")
+    assert.equal(typeof result.createdAt, "number")
+    assert.equal(result.reason, "NOT_AUTHORIZED")
+})
+
+test("game:authoritative:snapshot:subscribe는 현재 authoritative snapshot update를 즉시 보낸다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-subscribe-initial-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-subscribe-initial-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-subscribe-initial-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-subscribe-initial-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-subscribe-initial-host",
+    })
+
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-subscribe-initial-host",
+    })
+
+    const subscribeResult = hostSocket.lastClientEvent("game:authoritative:snapshot:subscribe:result").payload
+    const hostUpdateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+    const guestUpdateEvents = getAuthoritativeSnapshotUpdateEvents(guestSocket)
+
+    assert.equal(subscribeResult.ok, true)
+    assert.equal(hostUpdateEvents.length, 2)
+    assert.equal(guestUpdateEvents.length, 0)
+    assert.deepEqual(
+        hostUpdateEvents.map(event => event.payload.playerId).sort(),
+        ["authoritative-subscribe-initial-guest", "authoritative-subscribe-initial-host"],
+    )
+    hostUpdateEvents.forEach((event) => {
+        assert.equal(event.payload.ok, true)
+        assert.equal(event.payload.roomId, roomId)
+        assert.equal(event.payload.source, "server_shadow")
+        assert.equal(event.payload.updateReason, "subscribe_initial")
+        assert.equal(Number.isInteger(event.payload.updateSequence), true)
+        assert.deepEqual(Object.keys(event.payload.snapshot), AUTHORITATIVE_SNAPSHOT_FIELDS)
+    })
+    assert.equal(hostUpdateEvents[0].payload.updateSequence, hostUpdateEvents[1].payload.updateSequence)
+})
+
+test("room:start는 shadow loop tick 후 authoritative snapshot update를 구독 socket에만 보낸다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-update-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-update-guest-socket")
+    let onShadowAdvance = null
+
+    registerSocketHandlers(socketServer, {
+        startShadowMatchLoop(roomId, intervalMs, callback) {
+            onShadowAdvance = callback
+            return getMatchState(roomId)
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-update-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-update-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-update-host",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-update-host",
+    })
+
+    assert.equal(typeof onShadowAdvance, "function")
+
+    const hostUpdateCountBeforeAdvance = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    onShadowAdvance(getMatchState(roomId))
+
+    const hostUpdateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+        .slice(hostUpdateCountBeforeAdvance)
+    const guestUpdateEvents = getAuthoritativeSnapshotUpdateEvents(guestSocket)
+
+    assert.equal(hostUpdateEvents.length, 2)
+    assert.equal(guestUpdateEvents.length, 0)
+    assert.deepEqual(
+        hostUpdateEvents.map(event => event.payload.playerId).sort(),
+        ["authoritative-update-guest", "authoritative-update-host"],
+    )
+    hostUpdateEvents.forEach((event) => {
+        assert.equal(event.payload.ok, true)
+        assert.equal(event.payload.roomId, roomId)
+        assert.equal(event.payload.source, "server_shadow")
+        assert.equal(typeof event.payload.createdAt, "number")
+        assert.deepEqual(Object.keys(event.payload.snapshot), AUTHORITATIVE_SNAPSHOT_FIELDS)
+    })
+})
+
+test("game:input은 shadow 적용 후 authoritative snapshot update를 구독 socket에만 보낸다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-input-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-input-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-input-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-input-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-input-host",
+    })
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-input-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-input-guest",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-input-host",
+    })
+
+    const hostUpdateCountBeforeInput = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    const initialUpdateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+    const initialUpdateSequence = initialUpdateEvents.at(-1).payload.updateSequence
+    hostSocket.trigger("game:input", {
+        roomId,
+        playerId: "authoritative-input-host",
+        action: "move_left",
+        tick: 12,
+        pieceIndex: 1,
+    })
+
+    const hostUpdateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+        .slice(hostUpdateCountBeforeInput)
+    const guestUpdateEvents = getAuthoritativeSnapshotUpdateEvents(guestSocket)
+    const guestInputEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(guestInputEvent.payload.action, "move_left")
+    assert.equal(hostUpdateEvents.length, 2)
+    assert.equal(guestUpdateEvents.length, 0)
+    assert.deepEqual(
+        hostUpdateEvents.map(event => event.payload.playerId).sort(),
+        ["authoritative-input-guest", "authoritative-input-host"],
+    )
+    hostUpdateEvents.forEach((event) => {
+        assert.equal(event.payload.ok, true)
+        assert.equal(event.payload.roomId, roomId)
+        assert.equal(event.payload.source, "server_shadow")
+        assert.equal(event.payload.updateReason, "input")
+        assert.equal(Number.isInteger(event.payload.updateSequence), true)
+        assert.equal(event.payload.updateSequence > initialUpdateSequence, true)
+        assert.deepEqual(Object.keys(event.payload.snapshot), AUTHORITATIVE_SNAPSHOT_FIELDS)
+    })
+    assert.equal(hostUpdateEvents[0].payload.updateSequence, hostUpdateEvents[1].payload.updateSequence)
+})
+
+test("game:authoritative:snapshot:unsubscribe 이후에는 authoritative snapshot update를 받지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-unsubscribe-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-unsubscribe-guest-socket")
+    let onShadowAdvance = null
+
+    registerSocketHandlers(socketServer, {
+        startShadowMatchLoop(roomId, intervalMs, callback) {
+            onShadowAdvance = callback
+            return getMatchState(roomId)
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-unsubscribe-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-unsubscribe-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-unsubscribe-host",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-unsubscribe-host",
+    })
+    const hostUpdateCountAfterSubscribe = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    hostSocket.trigger("game:authoritative:snapshot:unsubscribe", {
+        roomId,
+        playerId: "authoritative-unsubscribe-host",
+    })
+
+    onShadowAdvance(getMatchState(roomId))
+
+    const updateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+    const unsubscribeResult = hostSocket.lastClientEvent("game:authoritative:snapshot:unsubscribe:result").payload
+
+    assert.equal(unsubscribeResult.ok, true)
+    assert.equal(updateEvents.length, hostUpdateCountAfterSubscribe)
+})
+
+test("game:leave는 authoritative snapshot debug 구독을 정리한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-leave-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-leave-guest-socket")
+    let onShadowAdvance = null
+
+    registerSocketHandlers(socketServer, {
+        startShadowMatchLoop(roomId, intervalMs, callback) {
+            onShadowAdvance = callback
+            return getMatchState(roomId)
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-leave-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-leave-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-leave-host",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-leave-host",
+    })
+    const hostUpdateCountAfterSubscribe = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    hostSocket.trigger("game:leave", {
+        roomId,
+        playerId: "authoritative-leave-host",
+    })
+
+    onShadowAdvance(getMatchState(roomId))
+
+    const updateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+    const leaveResult = hostSocket.lastClientEvent("game:leave:result").payload
+    const matchResult = getMatchState(roomId)
+
+    assert.equal(leaveResult.ok, true)
+    assert.equal(updateEvents.length, hostUpdateCountAfterSubscribe)
+    assert.equal(matchResult.ok, false)
+    assert.equal(matchResult.reason, "MATCH_NOT_FOUND")
+})
+
+test("game:over는 authoritative snapshot debug 구독을 정리한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-over-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-over-guest-socket")
+    let onShadowAdvance = null
+
+    registerSocketHandlers(socketServer, {
+        startShadowMatchLoop(roomId, intervalMs, callback) {
+            onShadowAdvance = callback
+            return getMatchState(roomId)
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-over-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-over-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-over-host",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-over-host",
+    })
+    const hostUpdateCountAfterSubscribe = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    await guestSocket.triggerAsync("game:over", {
+        roomId,
+        playerId: "authoritative-over-guest",
+        reason: "top_out",
+    })
+
+    onShadowAdvance(getMatchState(roomId))
+
+    const updateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+    const finishEvent = socketServer.roomEvents.findLast(event => event.eventName === "match:finish")
+    const matchResult = getMatchState(roomId)
+
+    assert.equal(finishEvent.payload.room.status, "finished")
+    assert.equal(updateEvents.length, hostUpdateCountAfterSubscribe)
+    assert.equal(matchResult.ok, false)
+    assert.equal(matchResult.reason, "MATCH_NOT_FOUND")
+})
+
+test("game:authoritative:snapshot:subscribe는 room 참가자가 아닌 playerId면 NOT_AUTHORIZED를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-subscribe-auth-host-socket")
+    const intruderSocket = new FakeClientSocket("authoritative-subscribe-auth-intruder-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(intruderSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-subscribe-auth-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+
+    intruderSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId: createResult.room.roomId,
+        playerId: "authoritative-subscribe-auth-intruder",
+    })
+
+    const result = intruderSocket.lastClientEvent("game:authoritative:snapshot:subscribe:result").payload
+
+    assert.equal(result.ok, false)
+    assert.equal(result.reason, "NOT_AUTHORIZED")
+})
+
+test("game:authoritative:snapshot:subscribe는 활성 match가 없으면 MATCH_NOT_FOUND를 반환한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-subscribe-missing-match-host-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-subscribe-missing-match-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId: createResult.room.roomId,
+        playerId: "authoritative-subscribe-missing-match-host",
+    })
+
+    const result = hostSocket.lastClientEvent("game:authoritative:snapshot:subscribe:result").payload
+
+    assert.equal(result.ok, false)
+    assert.equal(result.reason, "MATCH_NOT_FOUND")
+})
+
 test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 반환한다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("log-host-socket")
@@ -645,6 +1341,218 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
     assert.equal(savedLogs[0].eventType, "placement_decision")
     assert.equal(logResult.ok, true)
     assert.equal(logResult.reason, null)
+})
+
+test("game:log:placement_decision은 placementResult를 shadow placement 결과와 비교해 기록한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-placement-compare-host-socket")
+    const guestSocket = new FakeClientSocket("log-placement-compare-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "log-placement-compare-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "log-placement-compare-guest",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "log-placement-compare-host",
+    })
+    recordShadowSnapshot(roomId, "log-placement-compare-host", {
+        board: [["tree"]],
+        activePiece: { pieceType: "tree", rotation: 0, row: 1, col: 4 },
+        score: 100,
+        linesClearedTotal: 2,
+        phase: "playing",
+        pendingGarbageQueue: [],
+        tick: 30,
+        pieceIndex: 8,
+        lastPlacementResult: {
+            linesCleared: 4,
+            rawAttackLines: 4,
+            attackLines: 2,
+            canceledGarbageLines: 2,
+            incomingGarbageLines: 2,
+            appliedGarbageLines: 0,
+            gameOver: false,
+        },
+    })
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "log-placement-compare-host",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            playerId: "log-placement-compare-host",
+            gameId: `${roomId}-game`,
+            pieceIndex: 8,
+            boardBefore: [[null]],
+            boardAfter: [["tree"]],
+            selectedPlacement: {
+                pieceType: "tree",
+                rotation: 0,
+                row: 18,
+                col: 4,
+            },
+            placementResult: {
+                linesCleared: 4,
+                rawAttackLines: 4,
+                attackLines: 4,
+                canceledGarbageLines: 0,
+                incomingGarbageLines: 2,
+                appliedGarbageLines: 0,
+                gameOver: false,
+            },
+        },
+    })
+
+    const logResult = hostSocket.lastClientEvent("game:log:result")?.payload
+    const shadowResult = getPlayerShadowState(roomId, "log-placement-compare-host")
+
+    assert.equal(savedLogs.length, 1)
+    assert.equal(logResult.ok, true)
+    assert.equal(shadowResult.shadow.summary.lastPlacementResultMismatch, true)
+    assert.deepEqual(shadowResult.shadow.summary.lastPlacementResultMismatchFields, [
+        "attackLines",
+        "canceledGarbageLines",
+    ])
+    assert.equal(shadowResult.shadow.summary.lastClientPlacementAttackLines, 4)
+    assert.equal(shadowResult.shadow.summary.lastShadowPlacementAttackLines, 2)
+    assert.equal(shadowResult.shadow.summary.lastPlacementAttackLinesDelta, 2)
+})
+
+test("game:log:placement_decision은 shadow placement 비교 후 authoritative snapshot update를 구독 socket에만 보낸다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-placement-log-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-placement-log-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-placement-log-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-placement-log-guest",
+            nickname: "Guest",
+        },
+    })
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "authoritative-placement-log-host",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-placement-log-host",
+    })
+    const hostUpdateCountBeforePlacementLog = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    recordShadowSnapshot(roomId, "authoritative-placement-log-host", {
+        board: [["tree"]],
+        activePiece: { pieceType: "tree", rotation: 0, row: 1, col: 4 },
+        score: 100,
+        linesClearedTotal: 2,
+        phase: "playing",
+        pendingGarbageQueue: [],
+        tick: 30,
+        pieceIndex: 8,
+        lastPlacementResult: {
+            linesCleared: 4,
+            rawAttackLines: 4,
+            attackLines: 2,
+            canceledGarbageLines: 2,
+            incomingGarbageLines: 2,
+            appliedGarbageLines: 0,
+            gameOver: false,
+        },
+    })
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "authoritative-placement-log-host",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            playerId: "authoritative-placement-log-host",
+            gameId: `${roomId}-game`,
+            pieceIndex: 8,
+            boardBefore: [[null]],
+            boardAfter: [["tree"]],
+            selectedPlacement: {
+                pieceType: "tree",
+                rotation: 0,
+                row: 18,
+                col: 4,
+            },
+            placementResult: {
+                linesCleared: 4,
+                rawAttackLines: 4,
+                attackLines: 4,
+                canceledGarbageLines: 0,
+                incomingGarbageLines: 2,
+                appliedGarbageLines: 0,
+                gameOver: false,
+            },
+        },
+    })
+
+    const hostUpdateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+        .slice(hostUpdateCountBeforePlacementLog)
+    const guestUpdateEvents = getAuthoritativeSnapshotUpdateEvents(guestSocket)
+
+    assert.equal(savedLogs.length, 1)
+    assert.equal(hostUpdateEvents.length, 2)
+    assert.equal(guestUpdateEvents.length, 0)
+    assert.deepEqual(
+        hostUpdateEvents.map(event => event.payload.playerId).sort(),
+        ["authoritative-placement-log-guest", "authoritative-placement-log-host"],
+    )
+    hostUpdateEvents.forEach((event) => {
+        assert.equal(event.payload.ok, true)
+        assert.equal(event.payload.roomId, roomId)
+        assert.equal(event.payload.source, "server_shadow")
+        assert.deepEqual(Object.keys(event.payload.snapshot), AUTHORITATIVE_SNAPSHOT_FIELDS)
+    })
 })
 
 test("game:log:placement_decision은 room 참가자가 아닌 playerId면 저장하지 않는다", async () => {
@@ -803,7 +1711,7 @@ test("game:over는 game_over 로그를 저장한다", async () => {
     assert.equal(typeof overLog.endedAt, "number")
 })
 
-test("game:garbage:attack은 상대 player를 target으로 garbage append를 broadcast한다", () => {
+test("game:garbage:attack은 상대 player를 target으로 garbage append를 broadcast하고 shadow pending queue를 갱신한다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("garbage-host-socket")
     const guestSocket = new FakeClientSocket("garbage-guest-socket")
@@ -831,6 +1739,11 @@ test("game:garbage:attack은 상대 player를 target으로 garbage append를 bro
         },
     })
 
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "garbage-host",
+    })
+
     hostSocket.trigger("game:garbage:attack", {
         roomId,
         playerId: "garbage-host",
@@ -845,6 +1758,83 @@ test("game:garbage:attack은 상대 player를 target으로 garbage append를 bro
     assert.equal(hostGarbageEvent.payload.lines, 2)
     assert.equal(hostGarbageEvent.payload.holeCol, 4)
     assert.deepEqual(guestGarbageEvent.payload, hostGarbageEvent.payload)
+
+    const hostShadow = getPlayerShadowState(roomId, "garbage-host").shadow
+    const guestShadow = getPlayerShadowState(roomId, "garbage-guest").shadow
+
+    assert.deepEqual(hostShadow.shadowState.pendingGarbageQueue, [])
+    assert.deepEqual(guestShadow.shadowState.pendingGarbageQueue, [
+        { lines: 2, holeCol: 4 },
+    ])
+})
+
+test("game:garbage:attack은 shadow garbage 적용 후 authoritative snapshot update를 구독 socket에만 보낸다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-garbage-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-garbage-guest-socket")
+
+    registerSocketHandlers(socketServer, {
+        createGarbageHoleCol() {
+            return 3
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-garbage-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-garbage-guest",
+            nickname: "Guest",
+        },
+    })
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "authoritative-garbage-host",
+    })
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-garbage-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-garbage-guest",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-garbage-host",
+    })
+
+    const hostUpdateCountBeforeGarbage = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    hostSocket.trigger("game:garbage:attack", {
+        roomId,
+        playerId: "authoritative-garbage-host",
+        lines: 3,
+    })
+
+    const hostUpdateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+        .slice(hostUpdateCountBeforeGarbage)
+    const guestUpdateEvents = getAuthoritativeSnapshotUpdateEvents(guestSocket)
+    const guestSnapshotUpdate = hostUpdateEvents.find((event) => {
+        return event.payload.playerId === "authoritative-garbage-guest"
+    })
+
+    assert.equal(hostUpdateEvents.length, 2)
+    assert.equal(guestUpdateEvents.length, 0)
+    assert.equal(guestSnapshotUpdate.payload.ok, true)
+    assert.equal(guestSnapshotUpdate.payload.roomId, roomId)
+    assert.equal(guestSnapshotUpdate.payload.source, "server_shadow")
+    assert.deepEqual(Object.keys(guestSnapshotUpdate.payload.snapshot), AUTHORITATIVE_SNAPSHOT_FIELDS)
+    assert.deepEqual(guestSnapshotUpdate.payload.snapshot.pendingGarbageQueue, [
+        { lines: 3, holeCol: 3 },
+    ])
 })
 
 test("game:input은 room 참가자가 아닌 playerId면 상대에게 전달하지 않는다", () => {
@@ -1041,6 +2031,59 @@ test("game:snapshot은 snapshot board가 배열이 아니면 상대에게 전달
     hostSocket.trigger("game:snapshot", {
         roomId,
         playerId: "snapshot-payload-host",
+        snapshot: invalidSnapshot,
+    })
+
+    const snapshotResult = hostSocket.lastClientEvent("game:snapshot:result")?.payload
+    const guestSnapshotEvent = guestSocket.lastClientEvent("game:snapshot")
+
+    assert.equal(snapshotResult?.ok, false)
+    assert.equal(snapshotResult?.reason, "INVALID_SNAPSHOT")
+    assert.equal(guestSnapshotEvent, undefined)
+})
+
+test("game:snapshot은 snapshot field 타입이 잘못되면 상대에게 전달하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("snapshot-field-host-socket")
+    const guestSocket = new FakeClientSocket("snapshot-field-guest-socket")
+    const invalidSnapshot = {
+        tick: 30,
+        board: [[null]],
+        activePiece: "not-a-piece",
+        score: "100",
+    }
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "snapshot-field-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "snapshot-field-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-field-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-field-guest",
+    })
+
+    hostSocket.trigger("game:snapshot", {
+        roomId,
+        playerId: "snapshot-field-host",
         snapshot: invalidSnapshot,
     })
 
@@ -1340,6 +2383,72 @@ test("game:bag:request는 새 server bag chunk를 room에 broadcast한다", () =
     assert.deepEqual([...bagAppendEvent.payload.bagChunk].sort(), expectedPieces)
     assert.equal(hostMatchPlayer.bagChunks.length, 4)
     assert.deepEqual(hostMatchPlayer.bagChunks[3], bagAppendEvent.payload.bagChunk)
+})
+
+test("game:bag:request는 shadow bag 갱신 후 authoritative snapshot update를 구독 socket에만 보낸다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-bag-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-bag-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-bag-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-bag-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "authoritative-bag-host",
+    })
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-bag-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-bag-guest",
+    })
+    hostSocket.trigger("game:authoritative:snapshot:subscribe", {
+        roomId,
+        playerId: "authoritative-bag-host",
+    })
+
+    const hostUpdateCountBeforeBagRequest = getAuthoritativeSnapshotUpdateEvents(hostSocket).length
+    hostSocket.trigger("game:bag:request", {
+        roomId,
+        playerId: "authoritative-bag-host",
+    })
+
+    const hostUpdateEvents = getAuthoritativeSnapshotUpdateEvents(hostSocket)
+        .slice(hostUpdateCountBeforeBagRequest)
+    const guestUpdateEvents = getAuthoritativeSnapshotUpdateEvents(guestSocket)
+    const bagAppendEvent = socketServer.roomEvents.findLast(event => event.eventName === "game:bag:append")
+
+    assert.equal(bagAppendEvent.payload.playerId, "authoritative-bag-host")
+    assert.equal(hostUpdateEvents.length, 2)
+    assert.equal(guestUpdateEvents.length, 0)
+    assert.deepEqual(
+        hostUpdateEvents.map(event => event.payload.playerId).sort(),
+        ["authoritative-bag-guest", "authoritative-bag-host"],
+    )
+    hostUpdateEvents.forEach((event) => {
+        assert.equal(event.payload.ok, true)
+        assert.equal(event.payload.roomId, roomId)
+        assert.equal(event.payload.source, "server_shadow")
+        assert.deepEqual(Object.keys(event.payload.snapshot), AUTHORITATIVE_SNAPSHOT_FIELDS)
+    })
 })
 
 test("room:sync는 roomService DTO 결과를 요청 socket에 반환한다", () => {

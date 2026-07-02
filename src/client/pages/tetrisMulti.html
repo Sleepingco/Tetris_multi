@@ -51,6 +51,15 @@
                 <a class="home-btn" href="./index.html">홈으로</a>
             </div>
         </header>
+        <section class="debug-panel" id="multiDebugPanel" hidden>
+            <span class="debug-label">Debug</span>
+            <span class="debug-mode" id="multiDebugModeText">Debug off | Apply off</span>
+            <span class="debug-route" id="multiDebugRouteText">Route waiting</span>
+            <button type="button" data-debug-action="send-garbage-2" disabled>Send 2</button>
+            <button type="button" data-debug-action="send-garbage-4" disabled>Send 4</button>
+            <button type="button" data-debug-action="queue-garbage-4" disabled>Queue 4</button>
+            <button type="button" data-debug-action="auto-hard-drop" disabled>Auto Hard Drop</button>
+        </section>
 
         <main class="multi-grid">
             <section class="player-column" data-player="1">
@@ -62,11 +71,16 @@
                     <div class="player-stats">
                         <div class="stat">
                             <span class="label">Score</span>
-                            <span class="score">0</span>
+                            <span class="score" data-player="1">0</span>
                         </div>
                         <div class="stat">
                             <span class="label">Lines</span>
-                            <span class="lines">0</span>
+                            <span class="lines" data-player="1">0</span>
+                        </div>
+                        <div class="stat stat--incoming">
+                            <span class="label">Incoming</span>
+                            <span class="pending-garbage" data-player="1">0</span>
+                            <span class="garbage-log" data-player="1" aria-live="polite"></span>
                         </div>
                     </div>
                 </div>
@@ -105,11 +119,16 @@
                     <div class="player-stats">
                         <div class="stat">
                             <span class="label">Score</span>
-                            <span class="score">0</span>
+                            <span class="score" data-player="2">0</span>
                         </div>
                         <div class="stat">
                             <span class="label">Lines</span>
-                            <span class="lines">0</span>
+                            <span class="lines" data-player="2">0</span>
+                        </div>
+                        <div class="stat stat--incoming">
+                            <span class="label">Incoming</span>
+                            <span class="pending-garbage" data-player="2">0</span>
+                            <span class="garbage-log" data-player="2" aria-live="polite"></span>
                         </div>
                     </div>
                 </div>
@@ -147,9 +166,11 @@
         import { queryElement } from "../game/entry/dom.js"
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
         import { createTetrisRuntime } from "../game/runtime/tetris.js"
-        import { attachKeyboardInput } from "../game/runtime/input.js"
+        import { attachKeyboardInput, INPUT_ACTION } from "../game/runtime/input.js"
+        import { attachAuthoritativeSnapshotUpdateDebug, createAuthoritativeRouteStatusTracker, createAuthoritativeSnapshotDebugRow, createDebugAutoInputController, createMultiplayerDebugModeLabel, createPlacementComparisonDebugRows, createShadowStateDebugRow, isMultiplayerDebugEnabled, warnCriticalPlacementDebug } from "../game/debug/multiplayerDebug.js"
+        import { applyResolvedAuthoritativeSnapshotTarget, getAuthoritativeSnapshotApplyMode, shouldApplyClientSnapshotCorrection, shouldApplyOpponentBagPrediction, shouldApplyOpponentGarbagePrediction, shouldApplyOpponentInputPrediction, shouldAutoStartOpponentRuntime } from "../game/runtime/authoritativeSnapshotRouting.js"
         import { shouldCorrectSnapshot } from "../game/runtime/snapshotCorrection.js"
-        import { requestJoinGameRoom, onGameJoinResult, sendGameSnapshot, receiveSnapshot, leaveGame, onGameOpponentLeft, onGameSnapshotResult, sendGameOver, onMatchFinish, onGameOverResult, requestLeaveRoom, sendGameInput, receiveGameInput, onGameInputResult, requestGameBagChunk, receiveGameBagAppend, onGameBagResult, sendGarbageAttack, receiveGarbageAppend, onGarbageResult } from "../net/roomClient.js"
+        import { requestJoinGameRoom, onGameJoinResult, sendGameSnapshot, receiveSnapshot, leaveGame, onGameOpponentLeft, onGameSnapshotResult, requestGameShadowState, onGameShadowStateResult, requestGameAuthoritativeSnapshot, onGameAuthoritativeSnapshotResult, receiveGameAuthoritativeSnapshotUpdate, subscribeGameAuthoritativeSnapshotUpdates, unsubscribeGameAuthoritativeSnapshotUpdates, onGameAuthoritativeSnapshotSubscribeResult, onGameAuthoritativeSnapshotUnsubscribeResult, sendGameOver, onMatchFinish, onGameOverResult, requestLeaveRoom, sendGameInput, receiveGameInput, onGameInputResult, requestGameBagChunk, receiveGameBagAppend, onGameBagResult, sendGarbageAttack, receiveGarbageAppend, onGarbageResult } from "../net/roomClient.js"
         import { sendPlacementDecisionLog, onPlacementDecisionLogResult } from "../net/logClient.js"
         const themeToggleBtn = queryElement(document, "#themeToggle")
         const player1Name = queryElement(document, "#player1Name")
@@ -159,6 +180,9 @@
         const player1RoleBadge = queryElement(document, "#player1RoleBadge")
         const player2RoleBadge = queryElement(document, "#player2RoleBadge")
         const homeBtn = queryElement(document, ".home-btn")
+        const debugPanel = queryElement(document, "#multiDebugPanel")
+        const debugModeText = queryElement(document, "#multiDebugModeText")
+        const debugRouteText = queryElement(document, "#multiDebugRouteText")
         // off      snapshot 무시
         // apply    항상 applySnapshot
         // correct 다를 때만 applySnapshot
@@ -241,8 +265,16 @@
             opponentCanvas,
             myNextPreviewEl,
             myHoldPreviewEl,
+            myScoreEl,
+            myLinesEl,
+            myPendingGarbageEl,
+            myGarbageLogEl,
             opponentNextPreviewEl,
             opponentHoldPreviewEl,
+            opponentScoreEl,
+            opponentLinesEl,
+            opponentPendingGarbageEl,
+            opponentGarbageLogEl,
         }) {
             // 캔버스가 그려지도록 냅다 생성.
             const myBagChunks = getPlayerBagChunks(match, playerId)
@@ -252,6 +284,10 @@
                 : roomId
             const myGame = createTetrisRuntime({
                 boardCanvasEl: myCanvas,
+                scoreEl: myScoreEl,
+                linesEl: myLinesEl,
+                pendingGarbageEl: myPendingGarbageEl,
+                garbageLogEl: myGarbageLogEl,
                 nextPreviewEl: myNextPreviewEl,
                 holdPreviewEl: myHoldPreviewEl,
                 mode: "multi",
@@ -268,16 +304,23 @@
             })
             // 테스트용
             myGame.init({ autoStart: true, serverBagChunks: myBagChunks })
-            myGame.runtime.detachKeyboard = attachKeyboardInput({
-                enqueueAction: (action) => {
-                    const input = myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
-                    if (!input) return
+            function enqueueLocalAction(action) {
+                const input = myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
+                if (!input) return null
 
-                    sendGameInput(roomId, playerId, input.action, input.tick, input.pieceIndex)
-                },
+                sendGameInput(roomId, playerId, input.action, input.tick, input.pieceIndex)
+                return input
+            }
+
+            myGame.runtime.detachKeyboard = attachKeyboardInput({
+                enqueueAction: enqueueLocalAction,
             })
             const opponentGame = createTetrisRuntime({
                 boardCanvasEl: opponentCanvas,
+                scoreEl: opponentScoreEl,
+                linesEl: opponentLinesEl,
+                pendingGarbageEl: opponentPendingGarbageEl,
+                garbageLogEl: opponentGarbageLogEl,
                 nextPreviewEl: opponentNextPreviewEl,
                 holdPreviewEl: opponentHoldPreviewEl,
                 mode: "multi",
@@ -285,10 +328,12 @@
                 roomId,
                 playerId: opponentPlayerId,
             })
-            // 상대 보드는 현재 input relay + snapshot correction 기반으로 예측 실행한다.
-            // autoStart를 false로 두면 snapshot 도착 시점에만 갱신되어 움직임이 크게 끊긴다.
-            // 서버 authoritative runtime으로 전환하기 전까지는 true를 유지한다.
-            opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
+            // 기본 모드에서는 상대 보드를 input relay + snapshot correction 기반으로 예측 실행한다.
+            // authoritativeApply=opponent 실험에서는 서버 snapshot 후보만 보도록 자동 진행을 끈다.
+            opponentGame.init({
+                autoStart: shouldAutoStartOpponentRuntime(authoritativeSnapshotApplyMode),
+                serverBagChunks: opponentBagChunks,
+            })
             let hasReportedGameOver = false
             let hasPendingBagRequest = false
             const bagLowWatermark = 7
@@ -319,6 +364,9 @@
                     console.error("Invalid snapshot from", remotePlayerId)
                     return
                 }
+                if (!shouldApplyClientSnapshotCorrection(authoritativeSnapshotApplyMode)) {
+                    return
+                }
                 if (SNAPSHOT_MODE === "apply") {
                     opponentGame.applySnapshot(snapshot)
                     return
@@ -339,6 +387,9 @@
             })
             const detachGameInput = receiveGameInput(({ playerId: remotePlayerId, action, tick, pieceIndex }) => {
                 if (remotePlayerId === playerId) return
+                if (!shouldApplyOpponentInputPrediction(authoritativeSnapshotApplyMode)) {
+                    return
+                }
                 opponentGame.enqueueInput(action, tick, pieceIndex)
             })
             const detachGameInputResult = onGameInputResult((result) => {
@@ -352,7 +403,10 @@
                     return
                 }
 
-                if (targetPlayerId === opponentPlayerId) {
+                if (
+                    targetPlayerId === opponentPlayerId
+                    && shouldApplyOpponentGarbagePrediction(authoritativeSnapshotApplyMode)
+                ) {
                     opponentGame.queueGarbageLines({ lines, holeCol })
                 }
             })
@@ -369,7 +423,10 @@
                     return
                 }
 
-                if (bagPlayerId === opponentPlayerId) {
+                if (
+                    bagPlayerId === opponentPlayerId
+                    && shouldApplyOpponentBagPrediction(authoritativeSnapshotApplyMode)
+                ) {
                     opponentGame.appendServerBag(bagChunk)
                 }
             })
@@ -392,6 +449,7 @@
                 detachGarbageResult,
                 detachGameBagAppend,
                 detachGameBagResult,
+                enqueueLocalAction,
             }
         }
 
@@ -447,12 +505,28 @@
             const player2NextPreview = queryElement(document, '.next-preview[data-player="2"]')
             const player1HoldPreview = queryElement(document, '.hold-preview[data-player="1"]')
             const player2HoldPreview = queryElement(document, '.hold-preview[data-player="2"]')
+            const player1Score = queryElement(document, '.score[data-player="1"]')
+            const player2Score = queryElement(document, '.score[data-player="2"]')
+            const player1Lines = queryElement(document, '.lines[data-player="1"]')
+            const player2Lines = queryElement(document, '.lines[data-player="2"]')
+            const player1PendingGarbage = queryElement(document, '.pending-garbage[data-player="1"]')
+            const player2PendingGarbage = queryElement(document, '.pending-garbage[data-player="2"]')
+            const player1GarbageLog = queryElement(document, '.garbage-log[data-player="1"]')
+            const player2GarbageLog = queryElement(document, '.garbage-log[data-player="2"]')
             const myCanvas = myRole === "host" ? player1Canvas : player2Canvas
             const opponentCanvas = myRole === "host" ? player2Canvas : player1Canvas
             const myNextPreviewEl = myRole === "host" ? player1NextPreview : player2NextPreview
             const myHoldPreviewEl = myRole === "host" ? player1HoldPreview : player2HoldPreview
+            const myScoreEl = myRole === "host" ? player1Score : player2Score
+            const myLinesEl = myRole === "host" ? player1Lines : player2Lines
+            const myPendingGarbageEl = myRole === "host" ? player1PendingGarbage : player2PendingGarbage
+            const myGarbageLogEl = myRole === "host" ? player1GarbageLog : player2GarbageLog
             const opponentNextPreviewEl = myRole === "host" ? player2NextPreview : player1NextPreview
             const opponentHoldPreviewEl = myRole === "host" ? player2HoldPreview : player1HoldPreview
+            const opponentScoreEl = myRole === "host" ? player2Score : player1Score
+            const opponentLinesEl = myRole === "host" ? player2Lines : player1Lines
+            const opponentPendingGarbageEl = myRole === "host" ? player2PendingGarbage : player1PendingGarbage
+            const opponentGarbageLogEl = myRole === "host" ? player2GarbageLog : player1GarbageLog
 
             console.log("myCanvas : ", myCanvas)
             console.log("opponentCanvas : ", opponentCanvas)
@@ -465,10 +539,194 @@
             let gameSession = null
             let shouldNotifyGameLeave = true
             let hasMatchFinished = false
+            let shadowDebugTimer = null
+            let detachShadowDebugResult = null
+            let detachAuthoritativeSnapshotResult = null
+            let detachAuthoritativeSnapshotUpdate = null
+            const criticalPlacementDebugWarningState = {}
+            const debugEnabled = isMultiplayerDebugEnabled(location.search)
+            const authoritativeSnapshotApplyMode = getAuthoritativeSnapshotApplyMode(location.search)
+            const authoritativeRouteStatusTracker = createAuthoritativeRouteStatusTracker()
+            if (debugModeText) {
+                debugModeText.textContent = createMultiplayerDebugModeLabel({
+                    debugEnabled,
+                    authoritativeApplyMode: authoritativeSnapshotApplyMode,
+                })
+            }
+            if (debugRouteText) {
+                debugRouteText.textContent = authoritativeRouteStatusTracker.getLabel()
+            }
+            const autoHardDrop = createDebugAutoInputController({
+                intervalMs: 800,
+                runAction() {
+                    gameSession?.enqueueLocalAction(INPUT_ACTION.HARD_DROP)
+                },
+            })
+
+            function setDebugControlsEnabled(isEnabled) {
+                debugPanel?.querySelectorAll("button").forEach(button => {
+                    button.disabled = !isEnabled
+                })
+            }
+
+            function updateAutoHardDropButton() {
+                const button = debugPanel?.querySelector('[data-debug-action="auto-hard-drop"]')
+                if (!button) return
+
+                button.textContent = autoHardDrop.isRunning()
+                    ? "Stop Auto"
+                    : "Auto Hard Drop"
+            }
+
+            function handleDebugClick(event) {
+                const button = event.target.closest("button[data-debug-action]")
+                if (!button || !gameSession) return
+
+                const action = button.dataset.debugAction
+                if (action === "send-garbage-2") {
+                    sendGarbageAttack(roomId, playerId, 2)
+                    return
+                }
+
+                if (action === "send-garbage-4") {
+                    sendGarbageAttack(roomId, playerId, 4)
+                    return
+                }
+
+                if (action === "queue-garbage-4") {
+                    gameSession.myGame.queueGarbageLines({
+                        lines: 4,
+                        holeCol: 4,
+                    })
+                    return
+                }
+
+                if (action === "auto-hard-drop") {
+                    autoHardDrop.toggle()
+                    updateAutoHardDropButton()
+                }
+            }
+
+            function stopShadowDebugPolling() {
+                if (shadowDebugTimer !== null) {
+                    clearInterval(shadowDebugTimer)
+                    shadowDebugTimer = null
+                }
+
+                detachShadowDebugResult?.()
+                detachShadowDebugResult = null
+                detachAuthoritativeSnapshotResult?.()
+                detachAuthoritativeSnapshotResult = null
+                detachAuthoritativeSnapshotUpdate?.()
+                detachAuthoritativeSnapshotUpdate = null
+                criticalPlacementDebugWarningState.lastCriticalPlacementWarningKey = null
+            }
+
+            function startShadowDebugPolling() {
+                if (!debugEnabled) return
+
+                stopShadowDebugPolling()
+
+                detachShadowDebugResult = onGameShadowStateResult((result) => {
+                    if (!result?.ok) {
+                        console.warn("shadow debug failed:", result?.reason)
+                        return
+                    }
+
+                    const shadowStateDebugRow = createShadowStateDebugRow(result.shadow, playerId)
+                    console.table(shadowStateDebugRow)
+                    warnCriticalPlacementDebug(
+                        shadowStateDebugRow,
+                        console.warn,
+                        criticalPlacementDebugWarningState,
+                    )
+                    const placementComparisonRows = createPlacementComparisonDebugRows(result.shadow)
+                    if (placementComparisonRows.length > 0) {
+                        console.table(placementComparisonRows)
+                    }
+                })
+                detachAuthoritativeSnapshotResult = onGameAuthoritativeSnapshotResult((result) => {
+                    if (!result?.ok) {
+                        console.warn("authoritative snapshot debug failed:", result?.reason)
+                        return
+                    }
+
+                    console.table(createAuthoritativeSnapshotDebugRow(result, "request", playerId))
+                })
+                detachAuthoritativeSnapshotUpdate = attachAuthoritativeSnapshotUpdateDebug({
+                    debugEnabled,
+                    roomId,
+                    playerId,
+                    subscribeUpdate: subscribeGameAuthoritativeSnapshotUpdates,
+                    unsubscribeUpdate: unsubscribeGameAuthoritativeSnapshotUpdates,
+                    receiveUpdate: receiveGameAuthoritativeSnapshotUpdate,
+                    receiveSubscribeResult: onGameAuthoritativeSnapshotSubscribeResult,
+                    receiveUnsubscribeResult: onGameAuthoritativeSnapshotUnsubscribeResult,
+                    handleResolvedTarget(result) {
+                        let applyResult = null
+                        if (authoritativeSnapshotApplyMode === "opponent") {
+                            applyResult = applyResolvedAuthoritativeSnapshotTarget(
+                                result,
+                                {
+                                    localGame: gameSession?.myGame,
+                                    opponentGame: gameSession?.opponentGame,
+                                },
+                                {
+                                    allowedTargets: ["opponent"],
+                                },
+                            )
+                        }
+                        if (debugRouteText) {
+                            debugRouteText.textContent = authoritativeRouteStatusTracker.record(
+                                result,
+                                applyResult,
+                            )
+                        }
+
+                        console.table({
+                            debugType: "authoritative_snapshot_route",
+                            ok: result.ok,
+                            target: result.target,
+                            applyMode: authoritativeSnapshotApplyMode,
+                            applied: applyResult?.applied ?? false,
+                            roomId: result.roomId,
+                            playerId: result.playerId,
+                            updateReason: result.updateReason,
+                            updateSequence: result.updateSequence,
+                            snapshotTick: result.snapshot?.tick ?? null,
+                            snapshotPieceIndex: result.snapshot?.pieceIndex ?? null,
+                            reason: applyResult?.reason ?? result.reason,
+                        })
+                    },
+                    handleSubscribeResult(result) {
+                        if (debugRouteText) {
+                            debugRouteText.textContent = authoritativeRouteStatusTracker.recordSubscribeResult(result)
+                        }
+                    },
+                })
+
+                const requestShadowState = () => {
+                    requestGameShadowState(roomId, playerId)
+                    requestGameAuthoritativeSnapshot(roomId, playerId)
+                }
+
+                requestShadowState()
+                shadowDebugTimer = setInterval(requestShadowState, 2000)
+            }
+
+            if (debugEnabled && debugPanel) {
+                debugPanel.hidden = false
+                setDebugControlsEnabled(false)
+                debugPanel.addEventListener("click", handleDebugClick)
+            }
 
             function cleanupGameSession() {
                 if (!gameSession) return
 
+                autoHardDrop.stop()
+                updateAutoHardDropButton()
+                setDebugControlsEnabled(false)
+                stopShadowDebugPolling()
                 clearInterval(gameSession.snapshotTimer)
                 gameSession.detachSnapshotResult()
                 gameSession.detachReceiveSnapshot()
@@ -558,9 +816,19 @@
                     opponentCanvas,
                     myNextPreviewEl,
                     myHoldPreviewEl,
+                    myScoreEl,
+                    myLinesEl,
+                    myPendingGarbageEl,
+                    myGarbageLogEl,
                     opponentNextPreviewEl,
                     opponentHoldPreviewEl,
+                    opponentScoreEl,
+                    opponentLinesEl,
+                    opponentPendingGarbageEl,
+                    opponentGarbageLogEl,
                 })
+                setDebugControlsEnabled(debugEnabled)
+                startShadowDebugPolling()
             })
 
             requestJoinGameRoom(roomId, playerId)
@@ -577,6 +845,7 @@
             window.addEventListener("pagehide", () => {
                 themeToggleBtn?.removeEventListener("click", onToggleTheme)
                 homeBtn?.removeEventListener("click", handleHomeClick)
+                debugPanel?.removeEventListener("click", handleDebugClick)
                 detachMatchFinish()
                 if (shouldNotifyGameLeave) {
                     leaveGame(roomId, playerId);

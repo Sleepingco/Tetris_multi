@@ -1,4 +1,21 @@
 const DEFAULT_MAX_LOG_BYTES = 256 * 1024;
+const PLACEMENT_RESULT_NUMBER_FIELDS = Object.freeze([
+    ["linesCleared", "LINES_CLEARED"],
+    ["scoreBefore", "SCORE_BEFORE"],
+    ["scoreAfter", "SCORE_AFTER"],
+    ["scoreDelta", "SCORE_DELTA"],
+    ["combo", "COMBO"],
+    ["rawAttackLines", "RAW_ATTACK_LINES"],
+    ["attackLines", "ATTACK_LINES"],
+    ["canceledGarbageLines", "CANCELED_GARBAGE_LINES"],
+    ["incomingGarbageLines", "INCOMING_GARBAGE_LINES"],
+    ["appliedGarbageLines", "APPLIED_GARBAGE_LINES"],
+]);
+const PLACEMENT_RESULT_BOOLEAN_FIELDS = Object.freeze([
+    ["isTSpin", "IS_T_SPIN"],
+    ["backToBack", "BACK_TO_BACK"],
+    ["gameOver", "GAME_OVER"],
+]);
 
 function createSuccess(log) {
     return {
@@ -47,6 +64,9 @@ function validatePlacementDecisionLog(log, options = {}) {
     if (!log.selectedPlacement || typeof log.selectedPlacement !== "object" || Array.isArray(log.selectedPlacement)) {
         return createFailure("SELECTED_PLACEMENT_REQUIRED");
     }
+
+    const placementResultValidation = validatePlacementResult(log.placementResult);
+    if (!placementResultValidation.ok) return placementResultValidation;
 
     return createSuccess(log);
 }
@@ -174,6 +194,30 @@ function validateBaseLog(log, options = {}) {
 
 function isNonEmptyString(value) {
     return typeof value === "string" && value.trim().length > 0;
+}
+
+function validatePlacementResult(placementResult) {
+    if (placementResult === undefined || placementResult === null) {
+        return createSuccess(placementResult);
+    }
+
+    if (typeof placementResult !== "object" || Array.isArray(placementResult)) {
+        return createFailure("PLACEMENT_RESULT_INVALID");
+    }
+
+    for (const [field, reasonName] of PLACEMENT_RESULT_NUMBER_FIELDS) {
+        if (field in placementResult && !Number.isFinite(placementResult[field])) {
+            return createFailure(`PLACEMENT_RESULT_${reasonName}_INVALID`);
+        }
+    }
+
+    for (const [field, reasonName] of PLACEMENT_RESULT_BOOLEAN_FIELDS) {
+        if (field in placementResult && typeof placementResult[field] !== "boolean") {
+            return createFailure(`PLACEMENT_RESULT_${reasonName}_INVALID`);
+        }
+    }
+
+    return createSuccess(placementResult);
 }
 
 module.exports = {

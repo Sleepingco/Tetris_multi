@@ -41,6 +41,7 @@ function clonePiece(piece) {
 export function serializeGameState(gameState) {
         return {
                 score: gameState.score,
+                linesClearedTotal: gameState.linesClearedTotal,
                 fallIntervalMs: gameState.fallIntervalMs,
                 board: cloneBoard(gameState.board),
                 pieceQueue: [...gameState.pieceQueue],
@@ -69,6 +70,9 @@ export function deserializeGameState(snapshot, defaults) {
         const gameState = createGameState(defaults)
 
         gameState.score = snapshot.score ?? gameState.score
+        gameState.linesClearedTotal = Number.isInteger(snapshot.linesClearedTotal)
+                ? snapshot.linesClearedTotal
+                : gameState.linesClearedTotal
         gameState.fallIntervalMs = snapshot.fallIntervalMs ?? gameState.fallIntervalMs
         gameState.board = cloneBoard(snapshot.board)
         gameState.pieceQueue = Array.isArray(snapshot.pieceQueue) ? [...snapshot.pieceQueue] : []

@@ -69,6 +69,9 @@ export function createTetrisRuntime({
     multiCanvasEls = [],
     gameOverEl = null,
     scoreEl = null,
+    linesEl = null,
+    pendingGarbageEl = null,
+    garbageLogEl = null,
     nextPreviewEl = null,
     holdPreviewEl = null,
     rng = Math.random,
@@ -110,6 +113,9 @@ export function createTetrisRuntime({
 
     const ui = createGameUi({
         scoreEl,
+        linesEl,
+        pendingGarbageEl,
+        garbageLogEl,
         gameOverEl,
         nextPreviewEl,
         holdPreviewEl,
@@ -132,7 +138,7 @@ export function createTetrisRuntime({
       * - 렌더러 컨텍스트와 미리보기 DOM을 다시 준비한다.
       * - 큐를 채우고 빈 보드를 렌더한 뒤 첫 조각을 스폰한다.
       *
-      * @returns {{gameOver: boolean}} garbage 적용까지 포함한 최종 game over 여부
+      * @returns {void}
       */
     function init({ autoStart = true, serverBagChunks = null } = {}) {
         resetSessionState()
@@ -165,7 +171,10 @@ export function createTetrisRuntime({
     function resetSessionState() {
         stopGameLoops()
         gameState.score = 0
+        gameState.linesClearedTotal = 0
         ui.renderScore(gameState.score)
+        ui.renderLines(gameState.linesClearedTotal)
+        ui.renderPendingGarbage(0)
         gameState.fallIntervalMs = INITIAL_FALL_INTERVAL_MS
         gameState.pieceQueue = []
         gameState.holdPieceType = null
@@ -177,6 +186,7 @@ export function createTetrisRuntime({
         runtime.inputLog = []
         runtime.placementDecisionLog = []
         runtime.pendingLockScoreBefore = null
+        runtime.pendingGarbageQueue = []
     }
 
     /**
@@ -721,7 +731,9 @@ export function createTetrisRuntime({
                 let points = clearedLines * 10
                 if (gameState.isTSpin) points *= 5
                 gameState.score += points
+                gameState.linesClearedTotal += clearedLines
                 ui.renderScore(gameState.score)
+                ui.renderLines(gameState.linesClearedTotal)
             } else if (gameState.isTSpin) {
                 gameState.score += 15
                 ui.renderScore(gameState.score)
@@ -816,6 +828,7 @@ export function createTetrisRuntime({
         stopGameLoops()
         runtime.detachKeyboard?.()
         runtime.detachKeyboard = null
+        ui.dispose()
         ui.hideGameOver()
         gameState.inputQueue = []
         runtime.boardCtx = null
@@ -1036,6 +1049,12 @@ export function createTetrisRuntime({
         })
         const rawAttackLines = calculateGarbageAttack(attackState)
         const garbageResolution = resolveGarbageCancel(rawAttackLines)
+        if (garbageResolution.canceledGarbageLines > 0) {
+            ui.renderGarbageEvent({
+                type: "cancel",
+                lines: garbageResolution.canceledGarbageLines,
+            })
+        }
         const log = {
             ...logBase,
             boardAfter: serializeGameState(gameState).board,
@@ -1111,6 +1130,8 @@ export function createTetrisRuntime({
             holeCol: garbage.holeCol,
         })
 
+        ui.renderPendingGarbage(getPendingGarbageLines(), { pulse: true })
+
         return getPendingGarbageLines()
     }
 
@@ -1118,6 +1139,17 @@ export function createTetrisRuntime({
         return runtime.pendingGarbageQueue.reduce((total, garbage) => {
             return total + garbage.lines
         }, 0)
+    }
+
+    function clonePendingGarbageQueue(queue) {
+        if (!Array.isArray(queue)) return []
+
+        return queue
+            .filter(garbage => Number.isInteger(garbage?.lines) && garbage.lines > 0)
+            .map(garbage => ({
+                lines: garbage.lines,
+                holeCol: garbage.holeCol,
+            }))
     }
 
     function resolveGarbageCancel(rawAttackLines) {
@@ -1155,6 +1187,8 @@ export function createTetrisRuntime({
             appliedLines += result.appliedLines
             overflow = overflow || result.overflow
         }
+
+        ui.renderPendingGarbage(getPendingGarbageLines())
 
         return {
             appliedLines,
@@ -1311,10 +1345,12 @@ export function createTetrisRuntime({
             holdPieceType: gameState.holdPieceType,
             holdUsedThisDrop: gameState.holdUsedThisDrop,
             score: gameState.score,
+            linesClearedTotal: gameState.linesClearedTotal,
             phase: gameState.phase,
             fallIntervalMs: gameState.fallIntervalMs,
             combo: gameState.combo,
             backToBack: gameState.backToBack,
+            pendingGarbageQueue: clonePendingGarbageQueue(runtime.pendingGarbageQueue),
             tick: runtime.currentTick,
             pieceIndex: runtime.pieceIndex,
         }
@@ -1340,6 +1376,7 @@ export function createTetrisRuntime({
         })
 
         gameState.score = restored.score
+        gameState.linesClearedTotal = restored.linesClearedTotal
         gameState.fallIntervalMs = restored.fallIntervalMs
         gameState.board = restored.board
         gameState.pieceQueue = restored.pieceQueue
@@ -1358,8 +1395,11 @@ export function createTetrisRuntime({
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
         runtime.pieceIndex = snapshot.pieceIndex ?? runtime.pieceIndex
+        runtime.pendingGarbageQueue = clonePendingGarbageQueue(snapshot.pendingGarbageQueue)
 
         ui.renderScore(gameState.score)
+        ui.renderLines(gameState.linesClearedTotal)
+        ui.renderPendingGarbage(getPendingGarbageLines())
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
         if (gameState.phase === GAME_PHASE.GAME_OVER) {

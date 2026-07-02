@@ -34,6 +34,60 @@ test("validatePlacementDecisionLog는 최소 placement_decision 로그를 허용
     assert.equal(result.reason, null);
 });
 
+test("validatePlacementDecisionLog는 placementResult 숫자/boolean 필드를 허용한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        placementResult: {
+            linesCleared: 4,
+            scoreBefore: 100,
+            scoreAfter: 500,
+            scoreDelta: 400,
+            isTSpin: false,
+            combo: 1,
+            backToBack: true,
+            rawAttackLines: 6,
+            attackLines: 4,
+            canceledGarbageLines: 2,
+            incomingGarbageLines: 2,
+            appliedGarbageLines: 0,
+            gameOver: false,
+        },
+    }));
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+});
+
+test("validatePlacementDecisionLog는 placementResult가 객체가 아니면 실패한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        placementResult: "invalid",
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "PLACEMENT_RESULT_INVALID");
+});
+
+test("validatePlacementDecisionLog는 placementResult 숫자 필드 타입이 틀리면 실패한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        placementResult: {
+            attackLines: "4",
+        },
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "PLACEMENT_RESULT_ATTACK_LINES_INVALID");
+});
+
+test("validatePlacementDecisionLog는 placementResult boolean 필드 타입이 틀리면 실패한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        placementResult: {
+            gameOver: "false",
+        },
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "PLACEMENT_RESULT_GAME_OVER_INVALID");
+});
+
 test("validatePlacementDecisionLog는 필수 필드가 없으면 실패한다", () => {
     const result = validatePlacementDecisionLog(createPlacementDecisionLog({
         selectedPlacement: null,

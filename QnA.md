@@ -2655,3 +2655,268 @@ opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
 ```
 
 따라서 `autoStart: true`는 최종 구조가 아니라, 현재 input relay 단계에서 부드러운 상대 보드 표시를 위한 임시 선택이다.
+
+---
+
+## Q. 이번에 추가된 garbage cancel, combo/back-to-back, T-Spin attack은 코드에서 어떻게 동작해? (2026-07-01)
+
+이번 추가는 크게 보면 다음 흐름이다.
+
+```txt
+상대 공격 수신
+  -> pendingGarbageQueue에 저장
+  -> 내 조각이 lock됨
+  -> 내 line clear / T-Spin / combo / B2B로 공격량 계산
+  -> pending garbage와 먼저 상쇄
+  -> 남은 공격만 상대에게 전송
+  -> 남은 garbage만 내 보드에 적용
+```
+
+### 1. Garbage Cancel
+
+상대에게 garbage를 받으면 바로 보드에 올리지 않는다.
+멀티 페이지에서 `game:garbage:append`를 받으면 `queueGarbageLines()`로 대기열에 넣는다.
+
+```js
+const detachGarbageAppend = receiveGarbageAppend((payload) => {
+    const { targetPlayerId, lines, holeCol } = payload
+    if (targetPlayerId === playerId) {
+        myGame.queueGarbageLines({ lines, holeCol })
+        return
+    }
+
+    if (targetPlayerId === opponentPlayerId) {
+        opponentGame.queueGarbageLines({ lines, holeCol })
+    }
+})
+```
+
+대기열은 runtime 내부의 `pendingGarbageQueue`에 저장된다.
+
+```js
+function queueGarbageLines(garbage = {}) {
+    const lines = Number.isInteger(garbage.lines) && garbage.lines > 0
+        ? garbage.lines
+        : 0
+    if (lines === 0) return getPendingGarbageLines()
+
+    runtime.pendingGarbageQueue.push({
+        lines,
+        holeCol: garbage.holeCol,
+    })
+
+    return getPendingGarbageLines()
+}
+```
+
+상쇄는 조각이 lock된 뒤 `finalizePlacementDecision()` 안에서 일어난다.
+
+```js
+const rawAttackLines = calculateGarbageAttack(attackState)
+const garbageResolution = resolveGarbageCancel(rawAttackLines)
+```
+
+`rawAttackLines`는 내가 만든 원래 공격량이고, `resolveGarbageCancel()`이 pending garbage와 먼저 상쇄한다.
+
+```js
+function resolveGarbageCancel(rawAttackLines) {
+    const incomingGarbageLines = getPendingGarbageLines()
+    let remainingAttackLines = rawAttackLines
+    let canceledGarbageLines = 0
+
+    while (remainingAttackLines > 0 && runtime.pendingGarbageQueue.length > 0) {
+        const nextGarbage = runtime.pendingGarbageQueue[0]
+        const cancelLines = Math.min(remainingAttackLines, nextGarbage.lines)
+
+        nextGarbage.lines -= cancelLines
+        remainingAttackLines -= cancelLines
+        canceledGarbageLines += cancelLines
+
+        if (nextGarbage.lines === 0) {
+            runtime.pendingGarbageQueue.shift()
+        }
+    }
+
+    return {
+        incomingGarbageLines,
+        canceledGarbageLines,
+        attackLines: remainingAttackLines,
+    }
+}
+```
+
+예를 들어 상대 공격 4줄이 pending 상태일 때 내가 Double로 1줄 공격을 만들면, 1줄만 상쇄하고 남은 3줄이 내 보드에 올라온다.
+
+반대로 상대 공격 2줄이 pending 상태일 때 내가 Tetris로 4줄 공격을 만들면, 2줄을 상쇄하고 남은 2줄만 상대에게 보낸다.
+
+### 2. Combo / Back-to-Back
+
+combo와 back-to-back은 `gameState`에 상태로 추가했다.
+
+```js
+combo: -1,
+backToBack: false,
+```
+
+`combo: -1`인 이유는 첫 line clear를 combo 0으로 보기 위해서다.
+
+```txt
+첫 줄 삭제        combo 0
+연속 두 번째 삭제  combo 1
+연속 세 번째 삭제  combo 2
+중간에 줄 삭제 없음 combo -1로 reset
+```
+
+상태 업데이트는 `updateAttackState()`에서 한다.
+
+```js
+function updateAttackState({ linesCleared, isTSpin }) {
+    const combo = updateCombo(linesCleared)
+    const backToBack = gameState.backToBack
+    const eligibleForNextBackToBack = isBackToBackEligible({ linesCleared, isTSpin })
+
+    if (linesCleared > 0) {
+        gameState.backToBack = eligibleForNextBackToBack
+    }
+
+    return {
+        linesCleared,
+        isTSpin,
+        combo,
+        backToBack,
+    }
+}
+```
+
+중요한 점은 `backToBack`은 이번 공격 계산에 사용할 이전 상태라는 점이다.
+
+```txt
+첫 Tetris
+  기존 backToBack false
+  공격량 4
+  이후 gameState.backToBack = true
+
+두 번째 연속 Tetris
+  기존 backToBack true
+  공격량 4 + B2B 보너스 1
+  총 5
+```
+
+combo 업데이트는 다음처럼 단순하다.
+
+```js
+function updateCombo(linesCleared) {
+    if (linesCleared > 0) {
+        gameState.combo += 1
+        return gameState.combo
+    }
+
+    gameState.combo = -1
+    return 0
+}
+```
+
+실제 공격량은 `calculateGarbageAttack()`에서 계산한다.
+
+```js
+return baseAttack + getComboBonus(combo) + b2bBonus;
+```
+
+현재 combo 보너스는 다음 기준이다.
+
+```js
+function getComboBonus(combo) {
+    if (!Number.isInteger(combo) || combo <= 0) return 0;
+    if (combo <= 2) return 1;
+    if (combo <= 4) return 2;
+    return 3;
+}
+```
+
+### 3. T-Spin Attack
+
+T-Spin 판정 자체는 runtime에 있다.
+
+```js
+function isTSpinLock({ board, piece, lastActionWasRotation }) {
+    if (!piece || piece.pieceType !== "tree") return false
+    if (!lastActionWasRotation) return false
+
+    const centerCol = piece.col + 1
+    const centerRow = piece.row + 1
+    ...
+    return filledCorners >= 3
+}
+```
+
+조건은 다음과 같다.
+
+```txt
+T 조각이어야 함
+마지막 성공 액션이 회전이어야 함
+중심 4코너 중 3개 이상 막혀 있어야 함
+```
+
+이번 작업에서는 이 판정 결과를 공격량 계산에 연결했다.
+
+```js
+const T_SPIN_GARBAGE_ATTACK_BY_LINES = {
+    1: 2,
+    2: 4,
+    3: 6,
+};
+```
+
+`calculateGarbageAttack()`에서 `isTSpin`이면 일반 line clear 표가 아니라 T-Spin 표를 사용한다.
+
+```js
+const baseAttack = isTSpin
+    ? T_SPIN_GARBAGE_ATTACK_BY_LINES[linesCleared] ?? 0
+    : BASIC_GARBAGE_ATTACK_BY_LINES[linesCleared] ?? 0;
+```
+
+현재 공격량 기준은 다음과 같다.
+
+```txt
+Double          1
+Triple          2
+Tetris          4
+
+T-Spin Single   2
+T-Spin Double   4
+T-Spin Triple   6
+```
+
+마지막으로 상대에게 보내는 값은 `rawAttackLines`가 아니라, 상쇄 후 남은 `attackLines`다.
+
+```js
+placementDecisionRecorder(log) {
+    sendPlacementDecisionLog(roomId, playerId, log)
+    const attackLines = log?.placementResult?.attackLines ?? 0
+    if (attackLines > 0) {
+        sendGarbageAttack(roomId, playerId, attackLines)
+    }
+}
+```
+
+정리하면 다음과 같다.
+
+```txt
+rawAttackLines
+  combo / B2B / T-Spin까지 포함한 원래 공격량
+
+attackLines
+  pending garbage를 상쇄하고 남은 실제 전송량
+```
+
+검증은 다음 테스트들이 담당한다.
+
+```txt
+test/testGarbageRules.js
+  T-Spin / combo / B2B 공격량
+
+test/testTetrisRuntime.js
+  pending garbage 상쇄
+  pending보다 공격량이 클 때 남은 공격 전송
+  연속 Tetris combo + back-to-back
+```

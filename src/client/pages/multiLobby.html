@@ -131,8 +131,10 @@
     <script src="/socket.io/socket.io.js"></script>
     <script type="module">
         import { initLobbySound } from "../game/runtime/sound.js"
+        import { appendMultiplayerDebugParam } from "../game/debug/multiplayerDebug.js"
         import { queryElement, requireElement } from "../game/entry/dom.js"
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
+        import { resolveFailedRoomResultEffect, shouldResetPlayerSession } from "./multiLobbyState.js"
         import {
             requestCreateRoom,
             onRoomResult,
@@ -296,6 +298,14 @@
             sessionStorage.setItem("tetris:playerId", playerId)
             return playerId
         }
+
+        if (shouldResetPlayerSession(location.search)) {
+            sessionStorage.removeItem("tetris:playerId")
+            sessionStorage.removeItem("tetris:nickname")
+            sessionStorage.removeItem("tetris:roomId")
+            sessionStorage.removeItem("room")
+        }
+
         const currentPlayer = {
             playerId: getSavedPlayerId(),
             nickname: getSavedNickname(),
@@ -430,7 +440,7 @@
             if (room.status === "playing") {
                 saveRoomSession(room)
                 sessionStorage.setItem("tetris:playerId", currentPlayer.playerId);
-                location.href = `/pages/tetrisMulti.html?roomId=${room.roomId}`
+                location.href = appendMultiplayerDebugParam(`/pages/tetrisMulti.html?roomId=${room.roomId}`, location.search)
                 return;
             }
             renderRoom(room)
@@ -458,14 +468,13 @@
 
         onRoomResult((result, requestType) => {
             if (!result.ok) {
-                if (requestType === "sync") {
+                const effect = resolveFailedRoomResultEffect(result, requestType)
+                if (effect.shouldClearRoom) {
                     clearRoom()
                 }
-
-                if (requestType === "join" && result.reason === "ROOM_NOT_FOUND") {
-                    clearRoom()
+                if (effect.message) {
+                    appendMessage("system", effect.message)
                 }
-                appendMessage("system", result.reason)
                 return
             }
 
