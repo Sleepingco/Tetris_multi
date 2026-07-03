@@ -307,6 +307,73 @@
   - 서버에서 snapshot 생성
   - remote runtime에 authoritative state 반영
 
+### placementResult 의미
+
+- `placementResult`는 조각 lock 1회에 대한 결과 기록이다.
+- 현재는 runtime의 placement decision log 안에 포함되며, 다음 정보를 함께 담는다.
+  - score 변화
+  - line clear 결과
+  - T-Spin, combo, back-to-back 기반 attack 계산 결과
+  - pending garbage cancel/apply 결과
+  - game over 여부
+- 이 값은 AI 분석, replay 검증, 서버 authoritative 전환 시 client/server 결과 비교 후보 데이터다.
+
+#### 주요 필드
+
+- `linesCleared`
+  - 이번 lock 이후 실제로 삭제된 줄 수.
+- `scoreBefore`
+  - 이번 lock 결과를 반영하기 전 점수.
+- `scoreAfter`
+  - 이번 lock 결과를 반영한 뒤 점수.
+- `scoreDelta`
+  - `scoreAfter - scoreBefore`.
+  - 점수 drift 확인과 서버 검증에 사용하기 좋다.
+- `isTSpin`
+  - 이번 lock이 T-Spin으로 판정됐는지 여부.
+- `combo`
+  - 이번 attack 계산에 사용된 combo 값.
+  - 저장될 다음 combo 상태와 같은 의미로 단정하지 않는다.
+- `backToBack`
+  - 현재 의미는 "이번 lock 이후의 B2B 상태"가 아니다.
+  - 현재 의미는 "이번 공격 계산에 사용된 이전 B2B 상태"에 가깝다.
+  - 예를 들어 Tetris 다음 일반 Double clear가 발생하면, 그 Double clear는 B2B를 끊는 역할을 하지만 해당 clear의 `placementResult.backToBack`만 보면 true일 수 있다.
+  - 현재 테스트에서는 B2B reset을 "일반 line clear 직후 값"만으로 판단하지 않고, 다음 eligible clear에 B2B bonus가 붙지 않는지로 검증한다.
+- `rawAttackLines`
+  - combo/back-to-back/T-Spin 규칙을 반영한 원 공격량.
+  - pending garbage cancel을 적용하기 전 값이다.
+- `attackLines`
+  - pending garbage cancel 후 실제 상대에게 보낼 공격량.
+- `incomingGarbageLines`
+  - 이번 lock 시점에 대기 중이던 incoming garbage 총량.
+- `canceledGarbageLines`
+  - 이번 공격으로 상쇄한 incoming garbage 줄 수.
+- `appliedGarbageLines`
+  - cancel 후 남아서 실제 보드에 적용된 pending garbage 줄 수.
+- `gameOver`
+  - 이번 lock 처리 결과로 game over가 발생했는지 여부.
+  - top out뿐 아니라 garbage apply overflow도 포함될 수 있다.
+
+#### 추후 정리 후보
+
+- 서버 authoritative 전환 전에 필요하면 `backToBack` 의미를 더 명확한 필드로 나눌 수 있다.
+  - `backToBackBefore`
+  - `backToBackAfter`
+  - `usedBackToBack`
+- 이번 단계에서는 새 필드를 추가하지 않는다.
+- 지금은 기존 runtime/log 의미를 문서화하고, 테스트 작성 시 혼동을 줄이는 것을 우선한다.
+
+#### server authoritative 연결
+
+- 서버가 나중에 placement 결과를 직접 계산하려면 `placementResult` 필드 의미가 client와 server에서 같아야 한다.
+- 특히 다음 필드는 서버 garbage 판정 후보가 된다.
+  - `rawAttackLines`
+  - `attackLines`
+  - `canceledGarbageLines`
+  - `appliedGarbageLines`
+- `scoreBefore`, `scoreAfter`, `scoreDelta`는 client 예측 점수와 서버 계산 점수의 drift를 확인하는 데 필요하다.
+- `linesCleared`, `isTSpin`, `combo`, `backToBack`은 attack 계산의 입력/중간 상태 검증에 필요하다.
+
 ### 현재 멀티 진행 상태
 
 - [x] 로비에서 `room:create` 요청 가능
