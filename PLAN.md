@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: `matchService`, server bag, `game:input`, `game:snapshot`, `game:over`, `snapshotCorrection`, `pieceQueue`, 멀티 게임 local/remote runtime 연결 이후 기준으로 정리했다.
+- Last update: 2026-07-03 기준. main은 `input relay + server bag + snapshot correction + garbage` 기반 멀티 MVP 상태로 본다. 과하게 커졌던 shadow/debug 실험은 별도 브랜치로 분리했고, main 계획에서는 서버 authoritative 재진입 전 client 책임 정리를 우선한다.
 
 ## Document Role
 
@@ -55,6 +55,7 @@
 - [x] `game:snapshot` 1차 배관 추가: 클라이언트 snapshot을 서버 검증 후 상대에게 전달
 - [x] `game:bag:request` / `game:bag:append` 1차 배관 추가: 서버가 player별 bag chunk를 생성해 room에 전달
 - [x] `game:over` / `match:finish` 1차 배관 추가: top out 기준 승패 결과 broadcast
+- [x] 멀티플레이 garbage cancel / combo / back-to-back / T-Spin attack 규칙 1차 추가
 - [x] `npm test`로 roomService, matchService, multiplayerSocket, runtime, move step, snapshot correction 주요 흐름 검증 가능
 - [x] `.gitignore`에 `node_modules/`, `.DS_Store`, `coverage/`, `dist/` 제외
 
@@ -66,6 +67,7 @@
 - [~] 기본 RNG는 아직 `Math.random`
 - [~] 로비와 멀티 게임 흐름은 연결됐지만 브라우저 2탭 기준 반복 회귀 검증이 필요함
 - [~] 멀티 게임은 input relay + server bag + snapshot correction 기반으로 동작하지만 서버 authoritative loop는 아님
+- [x] `src/client/pages/tetrisMulti.html`의 `snapshotTimer`에서 bag request와 game over 보고 조건을 함수 단위로 분리했다.
 
 ### 아직 미구현
 
@@ -78,8 +80,9 @@
 
 ### 현재 판단
 
-- 현재 구조는 "싱글 런타임 정리 + 멀티 로비 + 멀티 게임 MVP 동기화 1차 구현" 단계다.
+- 현재 구조는 "싱글 런타임 정리 + 멀티 로비 + 멀티 게임 MVP 동기화 + 게임성 규칙 1차 구현" 단계다.
 - 실제 멀티 게임은 동작 흐름이 생겼지만, 최종 진실 원천은 아직 서버가 아니라 클라이언트 예측 + snapshot 보정에 가깝다.
+- shadow/server authoritative 방향은 유지하지만, main에서는 바로 debug 실험을 키우지 않는다. 먼저 현재 client loop의 책임을 작게 정리한 뒤 shadow로 재진입한다.
 
 ## Current Architecture
 
@@ -98,6 +101,7 @@
   - local snapshot은 500ms마다 서버에 보내고, 상대 snapshot은 `snapshotCorrection` 기준으로 opponent runtime에 보정 적용한다.
   - server bag chunk를 받아 local/opponent runtime에 append한다.
   - `match:finish`를 받아 승패 표시와 로비 복귀 버튼을 처리한다.
+  - 현재 `snapshotTimer`는 snapshot 전송 후 server bag 부족 확인/request와 game over 보고를 함수 단위로 호출한다.
 - `src/client/pages/multiLobby.html`
   - room create/join/leave UI와 Socket.IO room 상태 표시 연결
   - `room:result`, `room:updated`, `room:message`를 받아 방 코드, 상태, 인원 수, 시스템 메시지 반영
@@ -328,7 +332,7 @@
 
 ### 현재 단계
 
-- 이름: Multiplayer MVP sync stabilization before authoritative server loop
+- 이름: Multiplayer MVP gameplay and sync stabilization before shadow/server authoritative re-entry
 
 ### 진행 현황
 
@@ -346,6 +350,8 @@
 - [~] `game:input` 기반 authoritative 전환 준비 중
 - [~] room/start/game sync MVP는 연결됐고 안정화 검증이 필요함
 - [~] 현재 멀티 게임은 input relay + server bag + snapshot correction 기반으로 동작
+- [~] garbage cancel / combo / back-to-back / T-Spin attack은 구현됐고, 2탭 기준 안정성 확인이 필요함
+- [~] shadow/debug 실험은 별도 브랜치로 분리했고, main에서는 바로 확장하지 않음
 - [ ] 실제 authoritative match/game loop 시작 전
 
 ### 현재 단계의 핵심 문제
@@ -355,6 +361,8 @@
 - `game:input`은 서버 검증/전달/inputLog 저장까지 연결됐지만 서버가 입력으로 게임 상태를 계산하지는 않는다.
 - 상대 보드는 `autoStart: true`로 로컬 예측 실행 중이므로, 최종 진실 원천은 아직 서버가 아니다.
 - deterministic 설계는 방향만 있고, 현재 MVP 구현 기준은 아니다.
+- `src/client/pages/tetrisMulti.html`의 `snapshotTimer` 책임은 함수 단위로 1차 분리됐다.
+- 다만 network orchestration 책임은 여전히 페이지 진입점에 모여 있어, 2탭 회귀 검증으로 snapshot, bag request, game over 흐름을 확인해야 한다.
 
 ### Phase 1 완료 조건
 
@@ -377,21 +385,26 @@
 ### 바로 해야 할 일
 
 1. 브라우저 2탭 멀티 플레이 회귀 검증
+   - garbage cancel, combo, back-to-back, T-Spin attack이 실제 플레이에서 안정적인지 확인
    - 빠른 이동/회전 연타
    - 블록 안착 직후 다음 블록 조작
    - 상대 보드가 과거 블록으로 되돌아가지 않고 snapshot으로 보정되는지 확인
-2. 현재 MVP 동기화 파라미터 유지 여부 결정
-   - snapshot 주기 500ms 유지 또는 조정
-   - same tick/pieceIndex 입력 제한값 4 유지 또는 조정
-   - opponentGame `autoStart: true` 유지
-3. 서버 authoritative 전환 설계 시작
+   - game over, lobby 복귀, 재입장 흐름 확인
+2. `src/client/pages/tetrisMulti.html`의 `snapshotTimer` 책임 분리 후 2탭 회귀 확인
+   - snapshot 전송
+   - server bag 부족 확인/request
+   - game over 보고
+3. pure logic으로 뺄 후보 정리
+   - 당장 전체 runtime을 옮기지 않는다.
+   - 서버에서도 쓸 수 있는 후보와 DOM/canvas에 묶인 후보를 구분한다.
+   - 우선 후보: gravity tick, input 적용, lock/spawn, line clear, garbage cancel/apply, game over 판정
+4. shadow 재진입
+   - debug 시스템을 다시 키우는 것이 아니라, 최소 비교 기준으로 서버 계산 실험을 재개한다.
+   - 비교 대상은 `tick`, `pieceIndex`, `phase`, `board`, `activePiece`, `pendingGarbage`, score/lines 정도로 제한한다.
+5. 서버 authoritative 전환 설계 시작
    - 서버에서 player별 game state를 어디에 둘지 결정
    - 서버에서 `step(state, input)`을 호출할 수 있게 runtime/core 경계 정리
    - 서버가 내려줄 authoritative snapshot 형식 정의
-4. 현재 클라이언트 예측 구조와 서버 authoritative 목표 구조의 전환 계획 문서화
-   - input relay 유지 범위
-   - snapshot correction 제거 또는 축소 시점
-   - client-generated snapshot 제거 시점
 
 ### 권장 구현 순서
 
@@ -401,8 +414,11 @@
 - [x] Step 4. 서버가 local player용 `server bag` 또는 spawn stream을 관리
 - [x] Step 5. 서버 match state에 input log를 저장
 - [x] Step 6. local/remote 한 화면에서 상태 차이가 눈에 보이게 만들기
-- [ ] Step 7. 서버가 input으로 game state를 계산할 수 있는 순수 step 경계 만들기
-- [ ] Step 8. 서버 authoritative snapshot 방향으로 전환
+- [ ] Step 7. 멀티 gameplay 회귀 검증: garbage cancel / combo / back-to-back / T-Spin attack
+- [x] Step 8. `tetrisMulti.html`의 snapshot timer 책임을 작은 함수로 분리
+- [ ] Step 9. 서버가 input으로 game state를 계산할 수 있는 순수 step 후보 정리
+- [ ] Step 10. shadow 서버 계산 실험으로 재진입
+- [ ] Step 11. 서버 authoritative snapshot 방향으로 전환
 
 ### 이후 단계
 
