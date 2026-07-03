@@ -14,6 +14,51 @@ const BLOCK_COLORS = {
 };
 
 const CELL_SIZE = 30; // 300px width / 10 cols
+const BREAK_START_PROGRESS = 0.45;
+
+/**
+  * 라인 클리어 후반부에 블록이 깨지는 파편 좌표를 계산한다.
+  *
+  * @param {Object} params
+  * @param {number} params.row - 보드 행 인덱스
+  * @param {number} params.col - 보드 열 인덱스
+  * @param {number} params.progress - 라인 클리어 애니메이션 진행률(0~1)
+  * @param {number} params.cellSize - 셀 한 칸 크기
+  * @returns {Array<{x: number, y: number, width: number, height: number, alpha: number}>} 파편 렌더 정보
+  */
+export function createLineClearFragments({
+        row,
+        col,
+        progress,
+        cellSize = CELL_SIZE,
+} = {}) {
+        const safeProgress = Number.isFinite(progress)
+                ? Math.max(0, Math.min(progress, 1))
+                : 0;
+        if (safeProgress < BREAK_START_PROGRESS) return [];
+
+        const breakProgress = (safeProgress - BREAK_START_PROGRESS) / (1 - BREAK_START_PROGRESS);
+        const baseX = col * cellSize;
+        const baseY = row * cellSize;
+        const centerX = baseX + cellSize / 2;
+        const centerY = baseY + cellSize / 2;
+        const fragmentSize = Math.max(5, cellSize * (0.42 - breakProgress * 0.12));
+        const travel = cellSize * (0.15 + breakProgress * 0.65);
+        const alpha = Math.max(0, 1 - breakProgress * 0.95);
+
+        return [
+                [-1, -1],
+                [1, -1],
+                [-1, 1],
+                [1, 1],
+        ].map(([xDirection, yDirection]) => ({
+                x: centerX + xDirection * travel - fragmentSize / 2,
+                y: centerY + yDirection * travel - fragmentSize / 2,
+                width: fragmentSize,
+                height: fragmentSize,
+                alpha,
+        }));
+}
 
 /**
   * 대상 Canvas 요소를 가져오고 컨텍스트를 반환합니다.
@@ -61,6 +106,37 @@ function drawBlock(ctx, col, row, color) {
         } else {
                 ctx.fillRect(x + padding, y + padding, size, size * 0.4);
         }
+}
+
+function drawBlockFragment(ctx, fragment, color) {
+        ctx.save();
+        const inheritedAlpha = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+        ctx.globalAlpha = inheritedAlpha * Math.max(0, Math.min(fragment.alpha, 1));
+        ctx.fillStyle = color;
+
+        if (ctx.roundRect) {
+                ctx.beginPath();
+                ctx.roundRect(fragment.x, fragment.y, fragment.width, fragment.height, 3);
+                ctx.fill();
+        } else {
+                ctx.fillRect(fragment.x, fragment.y, fragment.width, fragment.height);
+        }
+
+        ctx.fillStyle = "rgba(255, 255, 255, 0.22)";
+        ctx.fillRect(fragment.x, fragment.y, fragment.width, fragment.height * 0.35);
+        ctx.restore();
+}
+
+function drawBreakingBlock(ctx, col, row, color, progress) {
+        const fragments = createLineClearFragments({ row, col, progress });
+        if (fragments.length === 0) {
+                drawBlock(ctx, col, row, color);
+                return;
+        }
+
+        fragments.forEach(fragment => {
+                drawBlockFragment(ctx, fragment, color);
+        });
 }
 /**
   * 다음 블록 미리보기 DOM(4x4)을 2개 생성하고 셀 참조를 반환한다.
@@ -186,7 +262,9 @@ export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks,
                         ctx.shadowBlur = 0;
                         for (let col = 0; col < cols; col++) {
                                 const pieceType = board[row][col];
-                                if (pieceType) drawBlock(ctx, col, row, BLOCK_COLORS[pieceType]);
+                                if (pieceType) {
+                                        drawBreakingBlock(ctx, col, row, BLOCK_COLORS[pieceType], progress);
+                                }
                         }
                         ctx.restore();
                         continue;

@@ -69,6 +69,8 @@ export function createTetrisRuntime({
     multiCanvasEls = [],
     gameOverEl = null,
     scoreEl = null,
+    pendingGarbageEl = null,
+    garbageLogEl = null,
     nextPreviewEl = null,
     holdPreviewEl = null,
     rng = Math.random,
@@ -110,6 +112,8 @@ export function createTetrisRuntime({
 
     const ui = createGameUi({
         scoreEl,
+        pendingGarbageEl,
+        garbageLogEl,
         gameOverEl,
         nextPreviewEl,
         holdPreviewEl,
@@ -177,6 +181,8 @@ export function createTetrisRuntime({
         runtime.inputLog = []
         runtime.placementDecisionLog = []
         runtime.pendingLockScoreBefore = null
+        runtime.pendingGarbageQueue = []
+        ui.renderPendingGarbage(0)
     }
 
     /**
@@ -816,6 +822,7 @@ export function createTetrisRuntime({
         stopGameLoops()
         runtime.detachKeyboard?.()
         runtime.detachKeyboard = null
+        ui.dispose()
         ui.hideGameOver()
         gameState.inputQueue = []
         runtime.boardCtx = null
@@ -1036,6 +1043,12 @@ export function createTetrisRuntime({
         })
         const rawAttackLines = calculateGarbageAttack(attackState)
         const garbageResolution = resolveGarbageCancel(rawAttackLines)
+        if (garbageResolution.canceledGarbageLines > 0) {
+            ui.renderGarbageEvent({
+                type: "cancel",
+                lines: garbageResolution.canceledGarbageLines,
+            })
+        }
         const log = {
             ...logBase,
             boardAfter: serializeGameState(gameState).board,
@@ -1111,6 +1124,8 @@ export function createTetrisRuntime({
             holeCol: garbage.holeCol,
         })
 
+        ui.renderPendingGarbage(getPendingGarbageLines(), { pulse: true })
+
         return getPendingGarbageLines()
     }
 
@@ -1155,6 +1170,8 @@ export function createTetrisRuntime({
             appliedLines += result.appliedLines
             overflow = overflow || result.overflow
         }
+
+        ui.renderPendingGarbage(getPendingGarbageLines())
 
         return {
             appliedLines,

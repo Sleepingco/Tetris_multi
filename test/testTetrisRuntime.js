@@ -60,7 +60,15 @@ function createFakeElement(tagName = "div") {
         textContent: "",
         _className: "",
         append(...nodes) {
+            nodes.forEach(node => {
+                if (node && typeof node === "object") {
+                    node.parentElement = this;
+                }
+            });
             this.children.push(...nodes);
+        },
+        get offsetWidth() {
+            return 0;
         },
     };
 
@@ -87,6 +95,14 @@ function createFakeElement(tagName = "div") {
             const current = new Set(element.className.split(" ").filter(Boolean));
             classNames.forEach(className => current.add(className));
             element.className = [...current].join(" ");
+        },
+        remove(...classNames) {
+            const removed = new Set(classNames);
+            const current = element.className.split(" ").filter(Boolean);
+            element.className = current.filter(className => !removed.has(className)).join(" ");
+        },
+        contains(className) {
+            return element.className.split(" ").filter(Boolean).includes(className);
         },
     };
 
@@ -423,6 +439,29 @@ test("runtime applyGarbageLines는 board 아래에서 garbage를 올린다", asy
     assert.equal(snapshot.board[19][9], "garbage");
 });
 
+test("queueGarbageLines는 incoming을 위험 상태로 강조하고 수신 pulse를 남긴다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const incomingStatEl = createFakeElement();
+    const pendingGarbageEl = createFakeElement();
+    pendingGarbageEl.parentElement = incomingStatEl;
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        pendingGarbageEl,
+    });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: false });
+    game.queueGarbageLines({
+        lines: 3,
+        holeCol: 4,
+    });
+
+    assert.equal(game.getPendingGarbageLines(), 3);
+    assert.equal(pendingGarbageEl.innerText, 3);
+    assert.ok(incomingStatEl.classList.contains("is-danger"));
+    assert.ok(incomingStatEl.classList.contains("is-receiving"));
+});
+
 test("placement_decision은 line clear 결과로 garbage attackLines를 기록한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const game = createTetrisRuntime({ rng: () => 0 });
@@ -520,7 +559,11 @@ test("runtime은 pending garbage를 line clear 공격으로 먼저 상쇄한다"
 
 test("runtime은 pending garbage보다 공격량이 크면 남은 공격만 전송 대상으로 기록한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
+    const garbageLogEl = createFakeElement();
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        garbageLogEl,
+    });
     t.after(() => game.destroy());
 
     const board = createEmptyBoard();
@@ -565,6 +608,8 @@ test("runtime은 pending garbage보다 공격량이 크면 남은 공격만 전�
     assert.equal(log.placementResult.canceledGarbageLines, 2);
     assert.equal(log.placementResult.appliedGarbageLines, 0);
     assert.equal(log.placementResult.attackLines, 2);
+    assert.equal(garbageLogEl.textContent, "Canceled 2");
+    assert.ok(garbageLogEl.classList.contains("is-cancel"));
 });
 
 test("runtime은 연속 Tetris에 combo와 back-to-back 보너스를 적용한다", async (t) => {
