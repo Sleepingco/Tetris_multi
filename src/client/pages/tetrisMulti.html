@@ -251,10 +251,14 @@
             opponentCanvas,
             myNextPreviewEl,
             myHoldPreviewEl,
+            myScoreEl,
+            myLinesEl,
             myPendingGarbageEl,
             myGarbageLogEl,
             opponentNextPreviewEl,
             opponentHoldPreviewEl,
+            opponentScoreEl,
+            opponentLinesEl,
             opponentPendingGarbageEl,
             opponentGarbageLogEl,
         }) {
@@ -266,6 +270,8 @@
                 : roomId
             const myGame = createTetrisRuntime({
                 boardCanvasEl: myCanvas,
+                scoreEl: myScoreEl,
+                linesEl: myLinesEl,
                 pendingGarbageEl: myPendingGarbageEl,
                 garbageLogEl: myGarbageLogEl,
                 nextPreviewEl: myNextPreviewEl,
@@ -294,6 +300,8 @@
             })
             const opponentGame = createTetrisRuntime({
                 boardCanvasEl: opponentCanvas,
+                scoreEl: opponentScoreEl,
+                linesEl: opponentLinesEl,
                 pendingGarbageEl: opponentPendingGarbageEl,
                 garbageLogEl: opponentGarbageLogEl,
                 nextPreviewEl: opponentNextPreviewEl,
@@ -465,6 +473,10 @@
             // 플레이어 캔버스 지정
             const player1Canvas = queryElement(document, '.playground[data-player="1"] .tetrisBoardCanvas')
             const player2Canvas = queryElement(document, '.playground[data-player="2"] .tetrisBoardCanvas')
+            const player1Score = queryElement(document, '.player-column[data-player="1"] .score')
+            const player2Score = queryElement(document, '.player-column[data-player="2"] .score')
+            const player1Lines = queryElement(document, '.player-column[data-player="1"] .lines')
+            const player2Lines = queryElement(document, '.player-column[data-player="2"] .lines')
             const player1NextPreview = queryElement(document, '.next-preview[data-player="1"]')
             const player2NextPreview = queryElement(document, '.next-preview[data-player="2"]')
             const player1HoldPreview = queryElement(document, '.hold-preview[data-player="1"]')
@@ -475,10 +487,14 @@
             const player2GarbageLog = queryElement(document, '.garbage-log[data-player="2"]')
             const myCanvas = myRole === "host" ? player1Canvas : player2Canvas
             const opponentCanvas = myRole === "host" ? player2Canvas : player1Canvas
+            const myScoreEl = myRole === "host" ? player1Score : player2Score
+            const myLinesEl = myRole === "host" ? player1Lines : player2Lines
             const myNextPreviewEl = myRole === "host" ? player1NextPreview : player2NextPreview
             const myHoldPreviewEl = myRole === "host" ? player1HoldPreview : player2HoldPreview
             const myPendingGarbageEl = myRole === "host" ? player1PendingGarbage : player2PendingGarbage
             const myGarbageLogEl = myRole === "host" ? player1GarbageLog : player2GarbageLog
+            const opponentScoreEl = myRole === "host" ? player2Score : player1Score
+            const opponentLinesEl = myRole === "host" ? player2Lines : player1Lines
             const opponentNextPreviewEl = myRole === "host" ? player2NextPreview : player1NextPreview
             const opponentHoldPreviewEl = myRole === "host" ? player2HoldPreview : player1HoldPreview
             const opponentPendingGarbageEl = myRole === "host" ? player2PendingGarbage : player1PendingGarbage
@@ -588,10 +604,14 @@
                     opponentCanvas,
                     myNextPreviewEl,
                     myHoldPreviewEl,
+                    myScoreEl,
+                    myLinesEl,
                     myPendingGarbageEl,
                     myGarbageLogEl,
                     opponentNextPreviewEl,
                     opponentHoldPreviewEl,
+                    opponentScoreEl,
+                    opponentLinesEl,
                     opponentPendingGarbageEl,
                     opponentGarbageLogEl,
                 })

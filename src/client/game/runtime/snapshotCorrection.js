@@ -21,7 +21,7 @@ export function isSamePiece(left, right) {
  * 원격 snapshot을 로컬 표시용 runtime에 적용해야 하는지 판단한다.
  * - 과거 pieceIndex snapshot은 무시한다.
  * - 미래 pieceIndex snapshot은 뒤처진 보드를 따라잡기 위해 적용한다.
- * - 같은 pieceIndex에서는 phase 또는 activePiece 차이가 있을 때만 보정한다.
+ * - 같은 pieceIndex에서는 phase, activePiece, score, lines 차이가 있을 때 보정한다.
  *
  * @param {{phase?: string, pieceIndex?: number, activePiece?: Object}|null} localSnapshot - 현재 표시 중인 snapshot
  * @param {{phase?: string, pieceIndex?: number, activePiece?: Object}|null} remoteSnapshot - 새로 받은 snapshot
@@ -43,6 +43,16 @@ export function shouldCorrectSnapshot(localSnapshot, remoteSnapshot) {
     }
 
     if (localSnapshot.phase !== remoteSnapshot.phase) {
+        return true
+    }
+
+    if (Number.isFinite(localSnapshot.score) && Number.isFinite(remoteSnapshot.score)
+        && localSnapshot.score !== remoteSnapshot.score) {
+        return true
+    }
+
+    if (Number.isFinite(localSnapshot.lines) && Number.isFinite(remoteSnapshot.lines)
+        && localSnapshot.lines !== remoteSnapshot.lines) {
         return true
     }
 

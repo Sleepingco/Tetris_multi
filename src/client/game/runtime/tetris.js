@@ -71,6 +71,7 @@ export function createTetrisRuntime({
     multiCanvasEls = [],
     gameOverEl = null,
     scoreEl = null,
+    linesEl = null,
     pendingGarbageEl = null,
     garbageLogEl = null,
     nextPreviewEl = null,
@@ -114,6 +115,7 @@ export function createTetrisRuntime({
 
     const ui = createGameUi({
         scoreEl,
+        linesEl,
         pendingGarbageEl,
         garbageLogEl,
         gameOverEl,
@@ -171,7 +173,9 @@ export function createTetrisRuntime({
     function resetSessionState() {
         stopGameLoops()
         gameState.score = 0
+        gameState.lines = 0
         ui.renderScore(gameState.score)
+        ui.renderLines(gameState.lines)
         gameState.fallIntervalMs = INITIAL_FALL_INTERVAL_MS
         gameState.pieceQueue = []
         gameState.holdPieceType = null
@@ -729,7 +733,9 @@ export function createTetrisRuntime({
                 let points = clearedLines * 10
                 if (gameState.isTSpin) points *= 5
                 gameState.score += points
+                gameState.lines += clearedLines
                 ui.renderScore(gameState.score)
+                ui.renderLines(gameState.lines)
             } else if (gameState.isTSpin) {
                 gameState.score += 15
                 ui.renderScore(gameState.score)
@@ -1277,6 +1283,7 @@ export function createTetrisRuntime({
             holdPieceType: gameState.holdPieceType,
             holdUsedThisDrop: gameState.holdUsedThisDrop,
             score: gameState.score,
+            lines: gameState.lines,
             phase: gameState.phase,
             fallIntervalMs: gameState.fallIntervalMs,
             combo: gameState.combo,
@@ -1306,6 +1313,7 @@ export function createTetrisRuntime({
         })
 
         gameState.score = restored.score
+        gameState.lines = restored.lines
         gameState.fallIntervalMs = restored.fallIntervalMs
         gameState.board = restored.board
         gameState.pieceQueue = restored.pieceQueue
@@ -1326,6 +1334,7 @@ export function createTetrisRuntime({
         runtime.pieceIndex = snapshot.pieceIndex ?? runtime.pieceIndex
 
         ui.renderScore(gameState.score)
+        ui.renderLines(gameState.lines)
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
         if (gameState.phase === GAME_PHASE.GAME_OVER) {

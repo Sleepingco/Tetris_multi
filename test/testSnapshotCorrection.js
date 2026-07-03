@@ -43,6 +43,22 @@ test("shouldCorrectSnapshot은 같은 pieceIndex와 같은 activePiece면 보정
     assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), false);
 });
 
+test("shouldCorrectSnapshot은 score가 다르면 보정한다", async () => {
+    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
+    const localSnapshot = createSnapshot({ score: 20 });
+    const remoteSnapshot = createSnapshot({ score: 18 });
+
+    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), true);
+});
+
+test("shouldCorrectSnapshot은 lines가 다르면 보정한다", async () => {
+    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
+    const localSnapshot = createSnapshot({ lines: 2 });
+    const remoteSnapshot = createSnapshot({ lines: 1 });
+
+    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), true);
+});
+
 test("shouldCorrectSnapshot은 같은 pieceIndex에서 activePiece 위치가 다르면 보정한다", async () => {
     const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
     const localSnapshot = createSnapshot();

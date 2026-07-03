@@ -16,6 +16,7 @@
 export function createGameState({ spawnRow, spawnCol, fallIntervalMs, initialPhase }) {
         return {
                 score: 0,
+                lines: 0,
                 fallIntervalMs: fallIntervalMs,
                 board: null,
                 pieceQueue: [],

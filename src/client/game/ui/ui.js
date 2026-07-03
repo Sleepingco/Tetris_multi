@@ -8,6 +8,7 @@
   *
   * @param {Object} params - UI 연결에 필요한 DOM 요소와 렌더러 함수들
   * @param {HTMLElement|null} params.scoreEl - 점수 표시 요소
+  * @param {HTMLElement|null} params.linesEl - 삭제한 줄 수 표시 요소
   * @param {HTMLElement|null} params.pendingGarbageEl - 대기 garbage 표시 요소
   * @param {HTMLElement|null} params.garbageLogEl - garbage 이벤트 로그 요소
   * @param {HTMLElement|null} params.gameOverEl - 게임오버 레이어 요소
@@ -23,6 +24,7 @@
   */
 export function createGameUi({
         scoreEl,
+        linesEl,
         pendingGarbageEl,
         garbageLogEl,
         gameOverEl,
@@ -90,6 +92,16 @@ export function createGameUi({
                 renderScore(score) {
                         if (!scoreEl) return
                         scoreEl.innerText = score
+                },
+                /**
+                  * 삭제한 줄 수 표시 영역에 최신 값을 반영한다.
+                  *
+                  * @param {number} lines - 표시할 누적 line 수
+                  * @returns {void}
+                  */
+                renderLines(lines) {
+                        if (!linesEl) return
+                        linesEl.innerText = lines
                 },
                 /**
                   * lock 전까지 대기 중인 incoming garbage 수를 표시한다.

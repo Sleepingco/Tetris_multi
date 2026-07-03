@@ -245,7 +245,13 @@ test("enqueueInput은 같은 tick에 과도하게 입력을 쌓지 않는다", a
 
 test("applySnapshot은 snapshot의 pieceIndex를 runtime에 반영한다", async (t) => {
     const { createTetrisRuntime } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
+    const scoreEl = createFakeElement();
+    const linesEl = createFakeElement();
+    const game = createTetrisRuntime({
+        scoreEl,
+        linesEl,
+        rng: () => 0,
+    });
     t.after(() => game.destroy());
 
     game.init({ autoStart: false });
@@ -253,11 +259,17 @@ test("applySnapshot은 snapshot의 pieceIndex를 runtime에 반영한다", async
     const before = game.getSnapshot();
     game.applySnapshot({
         ...before,
+        score: 40,
+        lines: 3,
         tick: before.tick + 10,
         pieceIndex: before.pieceIndex + 3,
     });
 
     const after = game.getSnapshot();
+    assert.equal(after.score, 40);
+    assert.equal(after.lines, 3);
+    assert.equal(scoreEl.innerText, 40);
+    assert.equal(linesEl.innerText, 3);
     assert.equal(after.tick, before.tick + 10);
     assert.equal(after.pieceIndex, before.pieceIndex + 3);
     assert.equal(game.runtime.pieceIndex, before.pieceIndex + 3);
@@ -365,7 +377,13 @@ test("piece lock 시점에 최소 placement_decision 로그를 생성한다", as
 
 test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
+    const scoreEl = createFakeElement();
+    const linesEl = createFakeElement();
+    const game = createTetrisRuntime({
+        scoreEl,
+        linesEl,
+        rng: () => 0,
+    });
     t.after(() => game.destroy());
 
     const board = createEmptyBoard();
@@ -407,6 +425,9 @@ test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한
     assert.equal(log.placementResult.scoreBefore, 0);
     assert.equal(log.placementResult.scoreAfter, 10);
     assert.equal(log.placementResult.scoreDelta, 10);
+    assert.equal(scoreEl.innerText, 10);
+    assert.equal(linesEl.innerText, 1);
+    assert.equal(game.getSnapshot().lines, 1);
     assert.equal(log.boardAfter[19][4], "square");
     assert.equal(log.boardAfter[19][5], "square");
 });
