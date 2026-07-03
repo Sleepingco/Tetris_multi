@@ -472,6 +472,10 @@ test("game:snapshot은 game:join으로 같은 room에 들어간 상대 socket에
     const snapshot = {
         tick: 10,
         board: [["I"]],
+        score: 0,
+        lines: 0,
+        phase: "playing",
+        pieceIndex: 2,
         activePiece: {
             pieceType: "I",
             rotation: 0,
@@ -830,6 +834,10 @@ test("game:garbage:attack은 상대 player를 target으로 garbage append를 bro
             nickname: "Guest",
         },
     })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "garbage-host",
+    })
 
     hostSocket.trigger("game:garbage:attack", {
         roomId,
@@ -845,6 +853,50 @@ test("game:garbage:attack은 상대 player를 target으로 garbage append를 bro
     assert.equal(hostGarbageEvent.payload.lines, 2)
     assert.equal(hostGarbageEvent.payload.holeCol, 4)
     assert.deepEqual(guestGarbageEvent.payload, hostGarbageEvent.payload)
+})
+
+test("game:garbage:attack은 playing 상태가 아니면 broadcast하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("garbage-waiting-host-socket")
+    const guestSocket = new FakeClientSocket("garbage-waiting-guest-socket")
+
+    registerSocketHandlers(socketServer, {
+        createGarbageHoleCol() {
+            return 4
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "garbage-waiting-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "garbage-waiting-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:garbage:attack", {
+        roomId,
+        playerId: "garbage-waiting-host",
+        lines: 2,
+    })
+
+    const garbageResult = hostSocket.lastClientEvent("game:garbage:result")?.payload
+    const hostGarbageEvent = hostSocket.lastClientEvent("game:garbage:append")
+    const guestGarbageEvent = guestSocket.lastClientEvent("game:garbage:append")
+
+    assert.equal(garbageResult?.ok, false)
+    assert.equal(garbageResult?.reason, "GAME_NOT_PLAYING")
+    assert.equal(hostGarbageEvent, undefined)
+    assert.equal(guestGarbageEvent, undefined)
 })
 
 test("game:input은 room 참가자가 아닌 playerId면 상대에게 전달하지 않는다", () => {
@@ -933,6 +985,46 @@ test("game:input은 허용되지 않은 action이면 상대에게 전달하지 �
 
     assert.equal(inputResult?.ok, false)
     assert.equal(inputResult?.reason, "INVALID_ACTION")
+    assert.equal(guestInputEvent, undefined)
+})
+
+test("game:input은 invalid tick 또는 pieceIndex면 상대에게 전달하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("input-invalid-timing-host-socket")
+    const guestSocket = new FakeClientSocket("input-invalid-timing-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "input-invalid-timing-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "input-invalid-timing-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:input", {
+        roomId,
+        playerId: "input-invalid-timing-host",
+        action: "move_left",
+        tick: -1,
+        pieceIndex: 4,
+    })
+
+    const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
+    const guestInputEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(inputResult?.ok, false)
+    assert.equal(inputResult?.reason, "INVALID_INPUT")
     assert.equal(guestInputEvent, undefined)
 })
 
@@ -1052,6 +1144,67 @@ test("game:snapshot은 snapshot board가 배열이 아니면 상대에게 전달
     assert.equal(guestSnapshotEvent, undefined)
 })
 
+test("game:snapshot은 invalid scalar field가 있으면 상대에게 전달하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("snapshot-scalar-host-socket")
+    const guestSocket = new FakeClientSocket("snapshot-scalar-guest-socket")
+    const invalidSnapshot = {
+        tick: 30,
+        board: [["T"]],
+        score: 0,
+        lines: 0,
+        phase: "paused",
+        pieceIndex: 3,
+        activePiece: {
+            pieceType: "T",
+            rotation: 0,
+            row: 1,
+            col: 4,
+        },
+    }
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "snapshot-scalar-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "snapshot-scalar-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-scalar-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-scalar-guest",
+    })
+
+    hostSocket.trigger("game:snapshot", {
+        roomId,
+        playerId: "snapshot-scalar-host",
+        snapshot: invalidSnapshot,
+    })
+
+    const snapshotResult = hostSocket.lastClientEvent("game:snapshot:result")?.payload
+    const guestSnapshotEvent = guestSocket.lastClientEvent("game:snapshot")
+
+    assert.equal(snapshotResult?.ok, false)
+    assert.equal(snapshotResult?.reason, "INVALID_SNAPSHOT")
+    assert.equal(guestSnapshotEvent, undefined)
+})
+
 test("game:over는 finishGame 결과를 match:finish로 room에 broadcast한다", () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("finish-host-socket")
@@ -1094,6 +1247,49 @@ test("game:over는 finishGame 결과를 match:finish로 room에 broadcast한다"
     assert.equal(finishEvent.payload.winnerPlayerId, "finish-host-player")
     assert.equal(finishEvent.payload.loserPlayerId, "finish-guest-player")
     assert.equal(finishEvent.payload.reason, "top_out")
+})
+
+test("game:over는 허용되지 않은 reason이면 match finish를 처리하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("finish-invalid-reason-host-socket")
+    const guestSocket = new FakeClientSocket("finish-invalid-reason-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "finish-invalid-reason-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "finish-invalid-reason-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "finish-invalid-reason-host",
+    })
+
+    guestSocket.trigger("game:over", {
+        roomId,
+        playerId: "finish-invalid-reason-guest",
+        reason: "client_claimed_win",
+    })
+
+    const finishResult = guestSocket.lastClientEvent("game:over:result")?.payload
+    const finishEvent = socketServer.roomEvents.findLast(event => event.eventName === "match:finish")
+
+    assert.equal(finishResult?.ok, false)
+    assert.equal(finishResult?.reason, "INVALID_GAME_OVER_REASON")
+    assert.equal(finishEvent, undefined)
 })
 
 test("game:over 이후 한 명만 로비로 돌아오면 room:start를 허용하지 않는다", () => {
@@ -1340,6 +1536,43 @@ test("game:bag:request는 새 server bag chunk를 room에 broadcast한다", () =
     assert.deepEqual([...bagAppendEvent.payload.bagChunk].sort(), expectedPieces)
     assert.equal(hostMatchPlayer.bagChunks.length, 4)
     assert.deepEqual(hostMatchPlayer.bagChunks[3], bagAppendEvent.payload.bagChunk)
+})
+
+test("game:bag:request는 playing 상태가 아니면 bag chunk를 append하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("bag-waiting-host-socket")
+    const guestSocket = new FakeClientSocket("bag-waiting-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "bag-waiting-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "bag-waiting-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:bag:request", {
+        roomId,
+        playerId: "bag-waiting-host",
+    })
+
+    const bagResult = hostSocket.lastClientEvent("game:bag:result")?.payload
+    const bagAppendEvent = socketServer.roomEvents.findLast(event => event.eventName === "game:bag:append")
+
+    assert.equal(bagResult?.ok, false)
+    assert.equal(bagResult?.reason, "GAME_NOT_PLAYING")
+    assert.equal(bagAppendEvent, undefined)
 })
 
 test("room:sync는 roomService DTO 결과를 요청 socket에 반환한다", () => {

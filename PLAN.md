@@ -56,6 +56,11 @@
 - [x] `game:bag:request` / `game:bag:append` 1차 배관 추가: 서버가 player별 bag chunk를 생성해 room에 전달
 - [x] `game:over` / `match:finish` 1차 배관 추가: top out 기준 승패 결과 broadcast
 - [x] 멀티플레이 garbage cancel / combo / back-to-back / T-Spin attack 규칙 1차 추가
+- [x] `src/client/game/core/tSpin.js`에 T-Spin lock 판정 pure function 추가
+- [x] `src/client/game/core/attackState.js`에 combo/back-to-back 상태 전이 pure function 추가
+- [x] `src/client/game/core/garbage.js`에 garbage cancel/apply/attack 계산 pure function 정리
+- [x] 상대 보드 score/lines drift를 snapshot correction에서 보정하도록 수정
+- [x] runtime 통합 테스트로 T-Spin, back-to-back, combo, 일반 line clear의 B2B reset이 `placementResult`에 반영되는지 검증
 - [x] `npm test`로 roomService, matchService, multiplayerSocket, runtime, move step, snapshot correction 주요 흐름 검증 가능
 - [x] `.gitignore`에 `node_modules/`, `.DS_Store`, `coverage/`, `dist/` 제외
 
@@ -68,6 +73,8 @@
 - [~] 로비와 멀티 게임 흐름은 연결됐지만 브라우저 2탭 기준 반복 회귀 검증이 필요함
 - [~] 멀티 게임은 input relay + server bag + snapshot correction 기반으로 동작하지만 서버 authoritative loop는 아님
 - [x] `src/client/pages/tetrisMulti.html`의 `snapshotTimer`에서 bag request와 game over 보고 조건을 함수 단위로 분리했다.
+- [x] `src/client/game/runtime/tetris.js`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
+- [~] `placementResult.backToBack`은 현재 “이번 lock 이후 상태”가 아니라 “이번 공격 계산에 사용된 이전 B2B 상태”에 가깝다. 추후 필요하면 `backToBackBefore` / `backToBackAfter`처럼 의미를 명확히 나누는 정리를 검토한다.
 
 ### 아직 미구현
 
@@ -82,7 +89,7 @@
 
 - 현재 구조는 "싱글 런타임 정리 + 멀티 로비 + 멀티 게임 MVP 동기화 + 게임성 규칙 1차 구현" 단계다.
 - 실제 멀티 게임은 동작 흐름이 생겼지만, 최종 진실 원천은 아직 서버가 아니라 클라이언트 예측 + snapshot 보정에 가깝다.
-- shadow/server authoritative 방향은 유지하지만, main에서는 바로 debug 실험을 키우지 않는다. 먼저 현재 client loop의 책임을 작게 정리한 뒤 shadow로 재진입한다.
+- shadow/server authoritative 방향은 유지하지만, main에서는 바로 debug 실험을 키우지 않는다. 먼저 현재 client loop 책임 정리, pure logic 후보 분리, runtime 통합 테스트 보강을 진행한 뒤 shadow로 재진입한다.
 
 ## Current Architecture
 
@@ -143,6 +150,14 @@
 - `src/client/game/core/step.js`
   - `resolveMoveAttempt`
   - `resolveMoveIntent`
+- `src/client/game/core/tSpin.js`
+  - `isTSpinLock`
+- `src/client/game/core/attackState.js`
+  - `resolveAttackState`
+- `src/client/game/core/garbage.js`
+  - `calculateGarbageAttack`
+  - `resolveGarbageCancel`
+  - `applyGarbageLines`
 - 현재 core는 순수 함수 중심으로 유지되고 있다.
 - 이 방향은 맞다.
 
@@ -158,6 +173,7 @@
 - `src/client/game/runtime/snapshotCorrection.js`
   - `isSamePiece`
   - `shouldCorrectSnapshot`
+- `shouldCorrectSnapshot`은 `pieceIndex`, `phase`, `activePiece` 차이뿐 아니라 상대 표시용 `score` / `lines` drift도 보정 대상으로 본다.
 - 현재 snapshot은 멀티 화면에서 500ms 주기로 전송되고, 상대 runtime 보정에 사용된다.
 - 단, snapshot을 만드는 주체는 아직 클라이언트다. 서버 authoritative snapshot은 아니다.
 
@@ -302,6 +318,7 @@
   - 과거 `pieceIndex` snapshot은 무시한다.
   - 미래 `pieceIndex` snapshot은 뒤처진 상대 보드를 따라잡기 위해 적용한다.
   - 같은 `pieceIndex`에서는 `phase` 또는 `activePiece` 차이가 있을 때만 적용한다.
+- 상대 runtime이 hard drop을 예측 실행하면서 drop distance가 1칸 다르면 score가 2점 어긋날 수 있으므로, 현재는 `score` / `lines` 차이도 snapshot correction 조건에 포함한다.
 - 이후 input 중심 구조에서는 서버가 계산한 authoritative snapshot을 클라이언트에게 내려주는 방향으로 전환한다.
 - 아직 없는 것:
   - 서버에서 snapshot 생성
@@ -389,6 +406,7 @@
 - [x] `pieceIndex`를 snapshot/input에 포함하고, 오래된 입력이 현재 조각에 적용되지 않도록 제한
 - [x] 같은 tick/pieceIndex에 과도한 입력이 쌓이지 않도록 runtime input queue에서 제한
 - [x] 상대 보드는 현재 `autoStart: true`로 예측 실행하고 snapshot으로 보정
+- [x] 상대 보드 score/lines drift도 snapshot correction으로 보정
 - [ ] 두 브라우저 탭 기준 create/join/start/play/finish/lobby 복귀 수동 회귀 검증
 - [ ] 명시적 ready 흐름 도입 여부 결정
 - [x] 서버 match 상태 초안
@@ -418,6 +436,7 @@
 - [~] room/start/game sync MVP는 연결됐고 안정화 검증이 필요함
 - [~] 현재 멀티 게임은 input relay + server bag + snapshot correction 기반으로 동작
 - [~] garbage cancel / combo / back-to-back / T-Spin attack은 구현됐고, 2탭 기준 안정성 확인이 필요함
+- [x] T-Spin, back-to-back, combo, 일반 line clear의 B2B reset은 runtime 통합 테스트로 `placementResult` 반영을 검증함
 - [~] shadow/debug 실험은 별도 브랜치로 분리했고, main에서는 바로 확장하지 않음
 - [ ] 실제 authoritative match/game loop 시작 전
 
@@ -430,6 +449,7 @@
 - deterministic 설계는 방향만 있고, 현재 MVP 구현 기준은 아니다.
 - `src/client/pages/tetrisMulti.html`의 `snapshotTimer` 책임은 함수 단위로 1차 분리됐다.
 - 다만 network orchestration 책임은 여전히 페이지 진입점에 모여 있어, 2탭 회귀 검증으로 snapshot, bag request, game over 흐름을 확인해야 한다.
+- `placementResult.backToBack`은 현재 계산에 사용된 이전 B2B 상태를 나타내므로, 테스트와 문서에서 “이번 lock 이후 상태”로 오해하지 않도록 주의해야 한다.
 
 ### Phase 1 완료 조건
 
@@ -450,21 +470,21 @@
 ## Next Actions
 
 ### 바로 해야 할 일
-
 1. 브라우저 2탭 멀티 플레이 회귀 검증
    - garbage cancel, combo, back-to-back, T-Spin attack이 실제 플레이에서 안정적인지 확인
    - 빠른 이동/회전 연타
    - 블록 안착 직후 다음 블록 조작
    - 상대 보드가 과거 블록으로 되돌아가지 않고 snapshot으로 보정되는지 확인
+   - score/lines drift가 snapshot correction으로 보정되는지 확인
    - game over, lobby 복귀, 재입장 흐름 확인
-2. `src/client/pages/tetrisMulti.html`의 `snapshotTimer` 책임 분리 후 2탭 회귀 확인
-   - snapshot 전송
-   - server bag 부족 확인/request
-   - game over 보고
+2. runtime 통합 테스트 보강 상태 정리
+   - T-Spin Single, back-to-back Tetris, combo bonus, 일반 line clear의 B2B reset은 검증됨
+   - 남은 테스트 후보는 socket/client 경계의 `placementDecisionRecorder -> sendGarbageAttack`과 `receiveGarbageAppend -> queueGarbageLines` 연결이다.
 3. pure logic으로 뺄 후보 정리
    - 당장 전체 runtime을 옮기지 않는다.
    - 서버에서도 쓸 수 있는 후보와 DOM/canvas에 묶인 후보를 구분한다.
-   - 우선 후보: gravity tick, input 적용, lock/spawn, line clear, garbage cancel/apply, game over 판정
+   - 이미 분리된 후보: T-Spin 판정, attack state 전이, garbage cancel/attack 계산
+   - 다음 후보: gravity tick, input 적용, lock/spawn, line clear, game over 판정
 4. shadow 재진입
    - debug 시스템을 다시 키우는 것이 아니라, 최소 비교 기준으로 서버 계산 실험을 재개한다.
    - 비교 대상은 `tick`, `pieceIndex`, `phase`, `board`, `activePiece`, `pendingGarbage`, score/lines 정도로 제한한다.
@@ -481,8 +501,13 @@
 - [x] Step 4. 서버가 local player용 `server bag` 또는 spawn stream을 관리
 - [x] Step 5. 서버 match state에 input log를 저장
 - [x] Step 6. local/remote 한 화면에서 상태 차이가 눈에 보이게 만들기
-- [ ] Step 7. 멀티 gameplay 회귀 검증: garbage cancel / combo / back-to-back / T-Spin attack
+- [~] Step 7. 멀티 gameplay 회귀 검증: garbage cancel / combo / back-to-back / T-Spin attack
+  - core/runtime 자동 테스트는 보강됨
+  - 브라우저 2탭 체감 검증은 아직 필요함
 - [x] Step 8. `tetrisMulti.html`의 snapshot timer 책임을 작은 함수로 분리
+- [x] Step 8-1. 상대 보드 score/lines drift를 snapshot correction 조건에 포함
+- [x] Step 8-2. T-Spin / attack state / garbage cancel 계산 일부를 core pure logic으로 분리
+- [x] Step 8-3. T-Spin / B2B / combo / B2B reset runtime 통합 테스트 추가
 - [ ] Step 9. 서버가 input으로 game state를 계산할 수 있는 순수 step 후보 정리
 - [ ] Step 10. shadow 서버 계산 실험으로 재진입
 - [ ] Step 11. 서버 authoritative snapshot 방향으로 전환
@@ -702,6 +727,9 @@
 - `snapshot.board`가 배열인지 최소 검증한다.
 - 정상 snapshot은 같은 Socket.IO room의 상대에게 `game:snapshot`으로 전달한다.
 - 실패 시 요청자에게 `game:snapshot:result`를 보낸다.
+현재 클라이언트 처리:
+- 상대 snapshot은 `shouldCorrectSnapshot()` 기준으로 opponent runtime에 보정 적용한다.
+- 현재 correction 기준에는 `pieceIndex`, `phase`, `activePiece`, `score`, `lines` 차이가 포함된다.
 
 ### `game:bag:request`
 

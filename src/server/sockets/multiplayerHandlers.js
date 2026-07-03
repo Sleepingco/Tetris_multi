@@ -28,6 +28,16 @@ const VALID_GAME_ACTIONS = new Set([
     "hard_drop",
     "hold",
 ])
+const VALID_GAME_OVER_REASONS = new Set([
+    "top_out",
+    "garbage_overflow",
+    "leave",
+])
+const VALID_SNAPSHOT_PHASES = new Set([
+    "playing",
+    "lineClearing",
+    "gameOver",
+])
 
 function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickname) {
     if (!result.ok) return
@@ -159,7 +169,18 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        if (!snapshot || !Array.isArray(snapshot.board)) {
+        const hasValidSnapshotScalars = snapshot
+            && VALID_SNAPSHOT_PHASES.has(snapshot.phase)
+            && Number.isInteger(snapshot.pieceIndex)
+            && snapshot.pieceIndex >= 0
+            && Number.isInteger(snapshot.tick)
+            && snapshot.tick >= 0
+            && Number.isFinite(snapshot.score)
+            && snapshot.score >= 0
+            && Number.isInteger(snapshot.lines)
+            && snapshot.lines >= 0
+
+        if (!snapshot || !Array.isArray(snapshot.board) || !hasValidSnapshotScalars) {
             clientSocket.emit("game:snapshot:result", {
                 ok: false,
                 room: null,
@@ -188,6 +209,17 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             })
             return
         }
+
+        if (!Number.isInteger(tick) || tick < 0
+            || !Number.isInteger(pieceIndex) || pieceIndex < 0) {
+            clientSocket.emit("game:input:result", {
+                ok: false,
+                room: null,
+                reason: "INVALID_INPUT",
+            })
+            return
+        }
+
         const inputResult = recordInput(roomId, playerId, {
             action,
             tick,
@@ -239,6 +271,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
+        if (result.room.status !== "playing") {
+            clientSocket.emit("game:garbage:result", {
+                ok: false,
+                room: null,
+                reason: "GAME_NOT_PLAYING",
+            })
+            return
+        }
+
         if (!Number.isInteger(lines) || lines <= 0 || lines > 12) {
             clientSocket.emit("game:garbage:result", {
                 ok: false,
@@ -276,6 +317,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         if (!result.ok) {
             clientSocket.emit("game:bag:result", result)
+            return
+        }
+
+        if (result.room.status !== "playing") {
+            clientSocket.emit("game:bag:result", {
+                ok: false,
+                room: null,
+                reason: "GAME_NOT_PLAYING",
+            })
             return
         }
 
@@ -324,6 +374,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     clientSocket.on("game:over", async (payload = {}) => {
         const { roomId, playerId, reason = "top_out" } = payload
+        if (!VALID_GAME_OVER_REASONS.has(reason)) {
+            clientSocket.emit("game:over:result", {
+                ok: false,
+                room: null,
+                reason: "INVALID_GAME_OVER_REASON",
+            })
+            return
+        }
+
         const result = finishGame(roomId, playerId, reason)
 
         if (result.ok) {
