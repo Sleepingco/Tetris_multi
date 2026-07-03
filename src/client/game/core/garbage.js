@@ -28,6 +28,40 @@ export function calculateGarbageAttack({
     return baseAttack + getComboBonus(combo) + b2bBonus;
 }
 
+export function resolveGarbageCancel({
+    pendingGarbageQueue = [],
+    rawAttackLines = 0,
+} = {}) {
+    const nextPendingGarbageQueue = Array.isArray(pendingGarbageQueue)
+        ? pendingGarbageQueue.map(garbage => ({ ...garbage }))
+        : [];
+    const incomingGarbageLines = nextPendingGarbageQueue.reduce((total, garbage) => {
+        return total + garbage.lines;
+    }, 0);
+    let remainingAttackLines = rawAttackLines;
+    let canceledGarbageLines = 0;
+
+    while (remainingAttackLines > 0 && nextPendingGarbageQueue.length > 0) {
+        const nextGarbage = nextPendingGarbageQueue[0];
+        const cancelLines = Math.min(remainingAttackLines, nextGarbage.lines);
+
+        nextGarbage.lines -= cancelLines;
+        remainingAttackLines -= cancelLines;
+        canceledGarbageLines += cancelLines;
+
+        if (nextGarbage.lines === 0) {
+            nextPendingGarbageQueue.shift();
+        }
+    }
+
+    return {
+        pendingGarbageQueue: nextPendingGarbageQueue,
+        incomingGarbageLines,
+        canceledGarbageLines,
+        attackLines: remainingAttackLines,
+    };
+}
+
 export function applyGarbageLines(board, { lines, holeCol, cellType = "garbage" } = {}) {
     if (!Array.isArray(board) || board.length === 0) {
         return {

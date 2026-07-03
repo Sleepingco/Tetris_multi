@@ -8,12 +8,14 @@ import {
 import {
     applyGarbageLines as applyGarbageLinesToBoard,
     calculateGarbageAttack,
-    isBackToBackEligible,
+    resolveGarbageCancel as resolveGarbageCancelPure,
 } from "../core/garbage.js"
+import { resolveAttackState } from "../core/attackState.js"
 import {
     resolveMoveAttempt,
     resolveMoveIntent,
 } from "../core/step.js"
+import { isTSpinLock } from "../core/tSpin.js"
 import { playLineClearSfx } from "./sound.js"
 import { INPUT_ACTION } from "./input.js"
 import {
@@ -943,40 +945,6 @@ export function createTetrisRuntime({
     // 상태 보조 함수
     // 작은 계산과 상태 갱신 helper를 모아 둔다.
     // =============================
-    /** 현재 고정이 T-Spin 조건을 만족하는지 검사한다.
-    * - T 조각(`tree`)이 아니면 false다.
-    * - 마지막 액션이 회전이 아니면 false다.
-    * - 중심 4코너 중 3개 이상이 막혀 있으면 T-Spin으로 본다.
-    *
-    * @param {Object} params - T-Spin 판정 입력값
-    * @param {Array<Array<string|null>>} params.board - 현재 보드 배열
-    * @param {{pieceType: string, rotation: number, row: number, col: number}} params.piece - 현재 고정 중인 조각
-    * @param {boolean} params.lastActionWasRotation - 마지막 성공 액션이 회전인지 여부
-    * @returns {boolean} T-Spin 조건을 만족하면 true
-    */
-    function isTSpinLock({ board, piece, lastActionWasRotation }) {
-        if (!piece || piece.pieceType !== "tree") return false
-        if (!lastActionWasRotation) return false
-
-        const centerCol = piece.col + 1
-        const centerRow = piece.row + 1
-        const corners = [
-            [centerCol - 1, centerRow - 1],
-            [centerCol + 1, centerRow - 1],
-            [centerCol - 1, centerRow + 1],
-            [centerCol + 1, centerRow + 1],
-        ]
-
-        let filledCorners = 0
-        for (const [cx, cy] of corners) {
-            if (cx < 0 || cx >= COLS || cy >= ROWS || (cy >= 0 && board[cy][cx])) {
-                filledCorners++
-            }
-        }
-
-        return filledCorners >= 3
-    }
-
     /**
       * 현재 조각에 적용된 입력을 placement_decision에서 재사용할 수 있게 기록한다.
       *
@@ -1136,27 +1104,16 @@ export function createTetrisRuntime({
     }
 
     function resolveGarbageCancel(rawAttackLines) {
-        const incomingGarbageLines = getPendingGarbageLines()
-        let remainingAttackLines = rawAttackLines
-        let canceledGarbageLines = 0
-
-        while (remainingAttackLines > 0 && runtime.pendingGarbageQueue.length > 0) {
-            const nextGarbage = runtime.pendingGarbageQueue[0]
-            const cancelLines = Math.min(remainingAttackLines, nextGarbage.lines)
-
-            nextGarbage.lines -= cancelLines
-            remainingAttackLines -= cancelLines
-            canceledGarbageLines += cancelLines
-
-            if (nextGarbage.lines === 0) {
-                runtime.pendingGarbageQueue.shift()
-            }
-        }
+        const garbageCancelResult = resolveGarbageCancelPure({
+            pendingGarbageQueue: runtime.pendingGarbageQueue,
+            rawAttackLines,
+        })
+        runtime.pendingGarbageQueue = garbageCancelResult.pendingGarbageQueue
 
         return {
-            incomingGarbageLines,
-            canceledGarbageLines,
-            attackLines: remainingAttackLines,
+            incomingGarbageLines: garbageCancelResult.incomingGarbageLines,
+            canceledGarbageLines: garbageCancelResult.canceledGarbageLines,
+            attackLines: garbageCancelResult.attackLines,
         }
     }
 
@@ -1180,30 +1137,22 @@ export function createTetrisRuntime({
     }
 
     function updateAttackState({ linesCleared, isTSpin }) {
-        const combo = updateCombo(linesCleared)
-        const backToBack = gameState.backToBack
-        const eligibleForNextBackToBack = isBackToBackEligible({ linesCleared, isTSpin })
-
-        if (linesCleared > 0) {
-            gameState.backToBack = eligibleForNextBackToBack
-        }
-
-        return {
+        const attackState = resolveAttackState({
+            combo: gameState.combo,
+            backToBack: gameState.backToBack,
             linesCleared,
             isTSpin,
-            combo,
-            backToBack,
-        }
-    }
+        })
 
-    function updateCombo(linesCleared) {
-        if (linesCleared > 0) {
-            gameState.combo += 1
-            return gameState.combo
-        }
+        gameState.combo = attackState.nextCombo
+        gameState.backToBack = attackState.nextBackToBack
 
-        gameState.combo = -1
-        return 0
+        return {
+            linesCleared: attackState.linesCleared,
+            isTSpin: attackState.isTSpin,
+            combo: attackState.combo,
+            backToBack: attackState.backToBack,
+        }
     }
 
     /**
