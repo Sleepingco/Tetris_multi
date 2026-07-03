@@ -526,6 +526,55 @@ test("placement_decision은 line clear 결과로 garbage attackLines를 기록�
     assert.equal(log.placementResult.attackLines, 4);
 });
 
+test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기록한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    const board = createEmptyBoard();
+    board[18][4] = "square";
+    board[19] = Array(10).fill("square");
+    board[19][4] = null;
+    board[19][5] = null;
+    board[19][6] = null;
+
+    game.init({ autoStart: true });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board,
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pendingPiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        lastActionWasRotation: true,
+        tick: 55,
+        pieceIndex: 10,
+        score: 0,
+        phase: "playing",
+    });
+
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, 10);
+
+    await waitForTick(game, targetTick);
+
+    const [log] = game.getPlacementDecisionLog();
+
+    assert.equal(log.placementResult.linesCleared, 1);
+    assert.equal(log.placementResult.isTSpin, true);
+    assert.equal(log.placementResult.rawAttackLines, 2);
+    assert.equal(log.placementResult.attackLines, 2);
+    assert.equal(log.placementResult.scoreDelta, 50);
+});
+
 test("runtime은 pending garbage를 line clear 공격으로 먼저 상쇄한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const game = createTetrisRuntime({ rng: () => 0 });
@@ -631,6 +680,187 @@ test("runtime은 pending garbage보다 공격량이 크면 남은 공격만 전�
     assert.equal(log.placementResult.attackLines, 2);
     assert.equal(garbageLogEl.textContent, "Canceled 2");
     assert.ok(garbageLogEl.classList.contains("is-cancel"));
+});
+
+test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    const firstTetrisBoard = createEmptyBoard();
+    for (let row = 16; row <= 19; row++) {
+        firstTetrisBoard[row] = Array(10).fill("square");
+        firstTetrisBoard[row][4] = null;
+    }
+
+    game.init({ autoStart: true });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: firstTetrisBoard,
+        activePiece: {
+            pieceType: "bar",
+            rotation: 1,
+            row: 16,
+            col: 2,
+        },
+        pendingPiece: {
+            pieceType: "bar",
+            rotation: 1,
+            row: 16,
+            col: 2,
+        },
+        tick: 75,
+        pieceIndex: 12,
+        phase: "playing",
+    });
+
+    const firstTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, firstTick, 12);
+
+    await waitForTick(game, firstTick);
+
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: createEmptyBoard(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pendingPiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        tick: game.runtime.currentTick,
+        pieceIndex: 13,
+        phase: "playing",
+    });
+
+    const noClearTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, noClearTick, 13);
+
+    await waitForTick(game, noClearTick);
+
+    const secondTetrisBoard = createEmptyBoard();
+    for (let row = 16; row <= 19; row++) {
+        secondTetrisBoard[row] = Array(10).fill("square");
+        secondTetrisBoard[row][4] = null;
+    }
+
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: secondTetrisBoard,
+        activePiece: {
+            pieceType: "bar",
+            rotation: 1,
+            row: 16,
+            col: 2,
+        },
+        pendingPiece: {
+            pieceType: "bar",
+            rotation: 1,
+            row: 16,
+            col: 2,
+        },
+        tick: game.runtime.currentTick,
+        pieceIndex: 14,
+        phase: "playing",
+    });
+
+    const secondTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, secondTick, 14);
+
+    await waitForTick(game, secondTick);
+
+    const logs = game.getPlacementDecisionLog();
+    const firstLog = logs[0];
+    const secondLog = logs[2];
+
+    assert.equal(firstLog.placementResult.rawAttackLines, 4);
+    assert.equal(secondLog.placementResult.rawAttackLines, 5);
+    assert.equal(secondLog.placementResult.backToBack, true);
+});
+
+test("runtime은 combo bonus를 placementResult rawAttackLines에 반영한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    function createDoubleClearBoard() {
+        const board = createEmptyBoard();
+        board[18] = Array(10).fill("square");
+        board[19] = Array(10).fill("square");
+        board[18][4] = null;
+        board[18][5] = null;
+        board[19][4] = null;
+        board[19][5] = null;
+        return board;
+    }
+
+    game.init({ autoStart: true });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: createDoubleClearBoard(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pendingPiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        tick: 76,
+        pieceIndex: 15,
+        phase: "playing",
+    });
+
+    const firstTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, firstTick, 15);
+
+    await waitForTick(game, firstTick);
+
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: createDoubleClearBoard(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pendingPiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        tick: game.runtime.currentTick,
+        pieceIndex: 16,
+        phase: "playing",
+    });
+
+    const secondTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, secondTick, 16);
+
+    await waitForTick(game, secondTick);
+
+    const logs = game.getPlacementDecisionLog();
+    const firstLog = logs[0];
+    const secondLog = logs[1];
+
+    assert.equal(firstLog.placementResult.linesCleared, 2);
+    assert.equal(firstLog.placementResult.rawAttackLines, 1);
+    assert.equal(firstLog.placementResult.backToBack, false);
+    assert.equal(secondLog.placementResult.linesCleared, 2);
+    assert.equal(secondLog.placementResult.rawAttackLines, 2);
+    assert.equal(secondLog.placementResult.backToBack, false);
 });
 
 test("runtime은 연속 Tetris에 combo와 back-to-back 보너스를 적용한다", async (t) => {
