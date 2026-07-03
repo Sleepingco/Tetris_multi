@@ -4,6 +4,7 @@ import {
     canPlacePiece,
     lockPieceOnBoard,
     clearFilledLines,
+    isPieceAboveTop,
 } from "../core/board.js"
 import {
     applyGarbageLines as applyGarbageLinesToBoard,
@@ -635,7 +636,7 @@ export function createTetrisRuntime({
 
         const lockedPiece = clonePendingPiece(activePiece)
         const placementContext = createPlacementDecisionContext(lockedPiece)
-        const touchesAboveTop = BLOCKS[pieceType][rotation].some(([, offsetY]) => row + offsetY < 0)
+        const touchesAboveTop = isPieceAboveTop(activePiece, BLOCKS)
         gameState.isTSpin = isTSpinLock({
             board,
             piece: activePiece,

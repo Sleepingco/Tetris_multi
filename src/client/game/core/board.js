@@ -78,6 +78,23 @@ export function lockPieceOnBoard(board, piece, blocks) {
 }
 
 /**
+  * 조각 cell 중 보드 상단 위에 걸친 칸이 있는지 검사한다.
+  *
+  * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 검사할 조각 상태
+  * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 타입과 회전별 오프셋 정의
+  * @returns {boolean} 조각 cell 하나라도 row 0보다 위에 있으면 true
+  */
+export function isPieceAboveTop(piece, blocks) {
+        if (!piece || !blocks) return false
+
+        const rotations = blocks[piece.pieceType]
+        const cells = rotations?.[piece.rotation]
+        if (!Array.isArray(cells)) return false
+
+        return cells.some(([, offsetY]) => piece.row + offsetY < 0)
+}
+
+/**
   * 가득 찬 줄을 모두 제거하고, 위쪽에 빈 줄을 추가한다.
   *
   * @param {Array<Array<string|null>>} board - 제자리에서 수정되는 보드 배열
