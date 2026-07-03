@@ -16,6 +16,7 @@ import {
     resolveMoveAttempt,
     resolveMoveIntent,
 } from "../core/step.js"
+import { createSpawnedPiece } from "../core/piece.js"
 import { isTSpinLock } from "../core/tSpin.js"
 import { playLineClearSfx } from "./sound.js"
 import { INPUT_ACTION } from "./input.js"
@@ -204,23 +205,6 @@ export function createTetrisRuntime({
         refillSpawnQueue()
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
-    }
-
-    /**
-      * 스폰 위치 기준으로 회전이 초기화된 새 조각 상태를 만든다.
-      *
-      * @param {string} pieceType - 생성할 조각 타입
-      * @param {number} spawnRow - 기본 스폰 행
-      * @param {number} spawnCol - 기본 스폰 열
-      * @returns {{pieceType: string, rotation: number, row: number, col: number}} 스폰용 조각 상태
-      */
-    function createSpawnedPiece(pieceType, spawnRow, spawnCol) {
-        return {
-            pieceType,
-            row: spawnRow,
-            col: spawnCol,
-            rotation: 0,
-        }
     }
 
     /**
