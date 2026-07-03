@@ -310,20 +310,24 @@
             let hasReportedGameOver = false
             let hasPendingBagRequest = false
             const bagLowWatermark = 7
-            const snapshotTimer = setInterval(() => {
-                const snapshot = myGame.getSnapshot()
 
-                sendGameSnapshot(roomId, playerId, snapshot)
-
+            function requestBagIfNeeded() {
                 if (!hasPendingBagRequest && myGame.getServerBagRemainingCount() <= bagLowWatermark) {
                     hasPendingBagRequest = true
                     requestGameBagChunk(roomId, playerId)
                 }
-
+            }
+            function reportGameOverIfNeeded(snapshot) {
                 if (!hasReportedGameOver && snapshot.phase === "gameOver") {
                     hasReportedGameOver = true
                     sendGameOver(roomId, playerId, "top_out")
                 }
+            }
+            const snapshotTimer = setInterval(() => {
+                const snapshot = myGame.getSnapshot()
+                sendGameSnapshot(roomId, playerId, snapshot)
+                requestBagIfNeeded()
+                reportGameOverIfNeeded(snapshot)
             }, 500)
 
             const detachSnapshotResult = onGameSnapshotResult((result) => {
