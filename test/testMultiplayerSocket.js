@@ -502,6 +502,10 @@ test("game:snapshot은 game:join으로 같은 room에 들어간 상대 socket에
             nickname: "Guest",
         },
     })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "host-player",
+    })
 
     hostSocket.trigger("game:join", {
         roomId,
@@ -622,6 +626,10 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
             nickname: "Guest",
         },
     })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "log-host-player",
+    })
 
     await hostSocket.triggerAsync("game:log:placement_decision", {
         roomId,
@@ -629,11 +637,27 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
         log: {
             eventType: "placement_decision",
             schemaVersion: 1,
+            roomId,
             playerId: "log-host-player",
             gameId: `${roomId}-game`,
             pieceIndex: 2,
             boardBefore: [[null]],
             boardAfter: [["square"]],
+            placementResult: {
+                linesCleared: 0,
+                isTSpin: false,
+                combo: 0,
+                backToBack: false,
+                rawAttackLines: 0,
+                attackLines: 0,
+                canceledGarbageLines: 0,
+                incomingGarbageLines: 0,
+                appliedGarbageLines: 0,
+                scoreBefore: 100,
+                scoreAfter: 100,
+                scoreDelta: 0,
+                gameOver: false,
+            },
             selectedPlacement: {
                 pieceType: "square",
                 rotation: 0,
@@ -647,6 +671,268 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
 
     assert.equal(savedLogs.length, 1)
     assert.equal(savedLogs[0].eventType, "placement_decision")
+    assert.equal(logResult.ok, true)
+    assert.equal(logResult.reason, null)
+})
+
+test("game:log:placement_decision은 waiting 상태이면 저장하지 않는다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-waiting-host-socket")
+    const guestSocket = new FakeClientSocket("log-waiting-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "log-waiting-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "log-waiting-guest",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "log-waiting-host",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            roomId,
+            playerId: "log-waiting-host",
+            placementResult: {
+                linesCleared: 0,
+            },
+        },
+    })
+
+    const logResult = hostSocket.lastClientEvent("game:log:result")?.payload
+
+    assert.equal(savedLogs.length, 0)
+    assert.equal(logResult.ok, false)
+    assert.equal(logResult.reason, "GAME_LOG_NOT_ALLOWED")
+})
+
+test("game:log:placement_decision은 invalid schema이면 저장하지 않는다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-schema-host-socket")
+    const guestSocket = new FakeClientSocket("log-schema-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "log-schema-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "log-schema-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "log-schema-host",
+    })
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "log-schema-host",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            roomId: "different-room",
+            playerId: "log-schema-host",
+            placementResult: {
+                linesCleared: 0,
+            },
+        },
+    })
+
+    const logResult = hostSocket.lastClientEvent("game:log:result")?.payload
+
+    assert.equal(savedLogs.length, 0)
+    assert.equal(logResult.ok, false)
+    assert.equal(logResult.reason, "INVALID_PLACEMENT_DECISION_LOG")
+})
+
+test("game:log:placement_decision은 placementResult scalar가 invalid이면 저장하지 않는다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-result-schema-host-socket")
+    const guestSocket = new FakeClientSocket("log-result-schema-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "log-result-schema-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "log-result-schema-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "log-result-schema-host",
+    })
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "log-result-schema-host",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            roomId,
+            playerId: "log-result-schema-host",
+            placementResult: {
+                linesCleared: 0,
+                isTSpin: false,
+                combo: 0,
+                backToBack: false,
+                rawAttackLines: -1,
+                attackLines: 0,
+                canceledGarbageLines: 0,
+                incomingGarbageLines: 0,
+                appliedGarbageLines: 0,
+                scoreBefore: 100,
+                scoreAfter: 100,
+                scoreDelta: 0,
+                gameOver: false,
+            },
+        },
+    })
+
+    const logResult = hostSocket.lastClientEvent("game:log:result")?.payload
+
+    assert.equal(savedLogs.length, 0)
+    assert.equal(logResult.ok, false)
+    assert.equal(logResult.reason, "INVALID_PLACEMENT_DECISION_LOG")
+})
+
+test("game:log:placement_decision은 finished 상태의 늦은 로그 저장을 허용한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-finished-host-socket")
+    const guestSocket = new FakeClientSocket("log-finished-guest-socket")
+    const savedLogs = []
+
+    registerSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({
+                ok: true,
+                log,
+                reason: null,
+            })
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "log-finished-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "log-finished-guest",
+            nickname: "Guest",
+        },
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "log-finished-host",
+    })
+    guestSocket.trigger("game:over", {
+        roomId,
+        playerId: "log-finished-guest",
+        reason: "top_out",
+    })
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        playerId: "log-finished-host",
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            roomId,
+            playerId: "log-finished-host",
+            placementResult: {
+                linesCleared: 0,
+                isTSpin: false,
+                combo: 0,
+                backToBack: false,
+                rawAttackLines: 0,
+                attackLines: 0,
+                canceledGarbageLines: 0,
+                incomingGarbageLines: 0,
+                appliedGarbageLines: 0,
+                scoreBefore: 100,
+                scoreAfter: 100,
+                scoreDelta: 0,
+                gameOver: false,
+            },
+        },
+    })
+
+    const logResult = hostSocket.lastClientEvent("game:log:result")?.payload
+
+    assert.equal(savedLogs.length, 1)
+    assert.equal(savedLogs[0].roomId, roomId)
     assert.equal(logResult.ok, true)
     assert.equal(logResult.reason, null)
 })
@@ -972,6 +1258,10 @@ test("game:input은 허용되지 않은 action이면 상대에게 전달하지 �
             nickname: "Guest",
         },
     })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "input-invalid-host",
+    })
 
     hostSocket.trigger("game:input", {
         roomId,
@@ -1011,6 +1301,10 @@ test("game:input은 invalid tick 또는 pieceIndex면 상대에게 전달하지 
             nickname: "Guest",
         },
     })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "input-invalid-timing-host",
+    })
 
     hostSocket.trigger("game:input", {
         roomId,
@@ -1025,6 +1319,46 @@ test("game:input은 invalid tick 또는 pieceIndex면 상대에게 전달하지 
 
     assert.equal(inputResult?.ok, false)
     assert.equal(inputResult?.reason, "INVALID_INPUT")
+    assert.equal(guestInputEvent, undefined)
+})
+
+test("game:input은 playing 상태가 아니면 상대에게 전달하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("input-waiting-host-socket")
+    const guestSocket = new FakeClientSocket("input-waiting-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "input-waiting-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "input-waiting-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:input", {
+        roomId,
+        playerId: "input-waiting-host",
+        action: "move_left",
+        tick: 12,
+        pieceIndex: 4,
+    })
+
+    const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
+    const guestInputEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(inputResult?.ok, false)
+    assert.equal(inputResult?.reason, "GAME_NOT_PLAYING")
     assert.equal(guestInputEvent, undefined)
 })
 
@@ -1120,6 +1454,10 @@ test("game:snapshot은 snapshot board가 배열이 아니면 상대에게 전달
             nickname: "Guest",
         },
     })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "snapshot-payload-host",
+    })
 
     hostSocket.trigger("game:join", {
         roomId,
@@ -1181,6 +1519,10 @@ test("game:snapshot은 invalid scalar field가 있으면 상대에게 전달하�
             nickname: "Guest",
         },
     })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "snapshot-scalar-host",
+    })
 
     hostSocket.trigger("game:join", {
         roomId,
@@ -1202,6 +1544,67 @@ test("game:snapshot은 invalid scalar field가 있으면 상대에게 전달하�
 
     assert.equal(snapshotResult?.ok, false)
     assert.equal(snapshotResult?.reason, "INVALID_SNAPSHOT")
+    assert.equal(guestSnapshotEvent, undefined)
+})
+
+test("game:snapshot은 playing 상태가 아니면 상대에게 전달하지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("snapshot-waiting-host-socket")
+    const guestSocket = new FakeClientSocket("snapshot-waiting-guest-socket")
+    const snapshot = {
+        tick: 30,
+        board: [["T"]],
+        score: 0,
+        lines: 0,
+        phase: "playing",
+        pieceIndex: 3,
+        activePiece: {
+            pieceType: "T",
+            rotation: 0,
+            row: 1,
+            col: 4,
+        },
+    }
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "snapshot-waiting-host",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "snapshot-waiting-guest",
+            nickname: "Guest",
+        },
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-waiting-host",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "snapshot-waiting-guest",
+    })
+
+    hostSocket.trigger("game:snapshot", {
+        roomId,
+        playerId: "snapshot-waiting-host",
+        snapshot,
+    })
+
+    const snapshotResult = hostSocket.lastClientEvent("game:snapshot:result")?.payload
+    const guestSnapshotEvent = guestSocket.lastClientEvent("game:snapshot")
+
+    assert.equal(snapshotResult?.ok, false)
+    assert.equal(snapshotResult?.reason, "GAME_NOT_PLAYING")
     assert.equal(guestSnapshotEvent, undefined)
 })
 

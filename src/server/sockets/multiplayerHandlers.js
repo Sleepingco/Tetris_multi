@@ -38,6 +38,27 @@ const VALID_SNAPSHOT_PHASES = new Set([
     "lineClearing",
     "gameOver",
 ])
+const PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS = [
+    "linesCleared",
+    "combo",
+    "rawAttackLines",
+    "attackLines",
+    "canceledGarbageLines",
+    "incomingGarbageLines",
+    "appliedGarbageLines",
+]
+const PLACEMENT_RESULT_NON_NEGATIVE_NUMBER_FIELDS = [
+    "scoreBefore",
+    "scoreAfter",
+]
+const PLACEMENT_RESULT_FINITE_NUMBER_FIELDS = [
+    "scoreDelta",
+]
+const PLACEMENT_RESULT_BOOLEAN_FIELDS = [
+    "isTSpin",
+    "backToBack",
+    "gameOver",
+]
 
 function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickname) {
     if (!result.ok) return
@@ -169,6 +190,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
+        if (result.room.status !== "playing") {
+            clientSocket.emit("game:snapshot:result", {
+                ok: false,
+                room: null,
+                reason: "GAME_NOT_PLAYING",
+            })
+            return
+        }
+
         const hasValidSnapshotScalars = snapshot
             && VALID_SNAPSHOT_PHASES.has(snapshot.phase)
             && Number.isInteger(snapshot.pieceIndex)
@@ -198,6 +228,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         if (!result.ok) {
             clientSocket.emit("game:input:result", result)
+            return
+        }
+
+        if (result.room.status !== "playing") {
+            clientSocket.emit("game:input:result", {
+                ok: false,
+                room: null,
+                reason: "GAME_NOT_PLAYING",
+            })
             return
         }
 
@@ -249,11 +288,44 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        if (!log || log.playerId !== playerId) {
+        if (result.room.status !== "playing" && result.room.status !== "finished") {
             clientSocket.emit("game:log:result", {
                 ok: false,
                 log: null,
-                reason: "NOT_AUTHORIZED",
+                reason: "GAME_LOG_NOT_ALLOWED",
+            })
+            return
+        }
+
+        const placementResult = log?.placementResult
+        const hasValidPlacementResultScalars = placementResult
+            && typeof placementResult === "object"
+            && !Array.isArray(placementResult)
+            && PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS.every(field => (
+                Number.isInteger(placementResult[field]) && placementResult[field] >= 0
+            ))
+            && PLACEMENT_RESULT_NON_NEGATIVE_NUMBER_FIELDS.every(field => (
+                Number.isFinite(placementResult[field]) && placementResult[field] >= 0
+            ))
+            && PLACEMENT_RESULT_FINITE_NUMBER_FIELDS.every(field => (
+                Number.isFinite(placementResult[field])
+            ))
+            && PLACEMENT_RESULT_BOOLEAN_FIELDS.every(field => (
+                typeof placementResult[field] === "boolean"
+            ))
+        const hasValidPlacementDecisionLog = log
+            && typeof log === "object"
+            && !Array.isArray(log)
+            && log.playerId === playerId
+            && log.roomId === roomId
+            && log.eventType === "placement_decision"
+            && hasValidPlacementResultScalars
+
+        if (!hasValidPlacementDecisionLog) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: "INVALID_PLACEMENT_DECISION_LOG",
             })
             return
         }
