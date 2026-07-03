@@ -784,6 +784,106 @@ test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", 
     assert.equal(secondLog.placementResult.backToBack, true);
 });
 
+test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris에 bonus를 붙이지 않는다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    function createTetrisBoard() {
+        const board = createEmptyBoard();
+        for (let row = 16; row <= 19; row++) {
+            board[row] = Array(10).fill("square");
+            board[row][4] = null;
+        }
+        return board;
+    }
+
+    function createDoubleClearBoard() {
+        const board = createEmptyBoard();
+        board[18] = Array(10).fill("square");
+        board[19] = Array(10).fill("square");
+        board[18][4] = null;
+        board[18][5] = null;
+        board[19][4] = null;
+        board[19][5] = null;
+        return board;
+    }
+
+    async function lockPiece({ board, activePiece, pieceIndex }) {
+        game.applySnapshot({
+            ...game.getSnapshot(),
+            board,
+            activePiece,
+            pendingPiece: activePiece,
+            tick: game.runtime.currentTick,
+            pieceIndex,
+            phase: "playing",
+        });
+
+        const targetTick = game.runtime.currentTick + 1;
+        game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, pieceIndex);
+
+        await waitForTick(game, targetTick);
+    }
+
+    game.init({ autoStart: true });
+
+    await lockPiece({
+        board: createTetrisBoard(),
+        activePiece: {
+            pieceType: "bar",
+            rotation: 1,
+            row: 16,
+            col: 2,
+        },
+        pieceIndex: 17,
+    });
+
+    await lockPiece({
+        board: createDoubleClearBoard(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pieceIndex: 18,
+    });
+
+    await lockPiece({
+        board: createEmptyBoard(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pieceIndex: 19,
+    });
+
+    await lockPiece({
+        board: createTetrisBoard(),
+        activePiece: {
+            pieceType: "bar",
+            rotation: 1,
+            row: 16,
+            col: 2,
+        },
+        pieceIndex: 20,
+    });
+
+    const logs = game.getPlacementDecisionLog();
+    const firstTetrisLog = logs[0];
+    const doubleLog = logs[1];
+    const finalTetrisLog = logs[3];
+
+    assert.equal(firstTetrisLog.placementResult.rawAttackLines, 4);
+    assert.equal(doubleLog.placementResult.linesCleared, 2);
+    assert.equal(doubleLog.placementResult.backToBack, true);
+    assert.equal(finalTetrisLog.placementResult.rawAttackLines, 4);
+    assert.equal(finalTetrisLog.placementResult.backToBack, false);
+});
+
 test("runtime은 combo bonus를 placementResult rawAttackLines에 반영한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const game = createTetrisRuntime({ rng: () => 0 });
