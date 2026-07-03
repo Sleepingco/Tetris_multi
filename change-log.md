@@ -1,207 +1,4 @@
-# 2026-07-01
-
----
-
-## 멀티플레이 garbage cancel / combo / back-to-back / T-Spin 공격 규칙 추가
-
-### 목적
-
-- 멀티플레이에서 줄 삭제가 단순 점수 변화로 끝나지 않고 상대에게 공격으로 이어지게 했다.
-- 상대에게서 받은 garbage가 즉시 올라오는 방식은 방어 타이밍을 만들 수 없어서, 다음 조각 lock 시점에 먼저 상쇄하고 남은 garbage만 적용하는 구조로 바꿨다.
-- 향후 AI 학습/분석에서 "어떤 배치가 공격, 방어, 상쇄를 만들었는지"를 판단할 수 있도록 placement 결과에 공격 관련 값을 함께 기록했다.
-
-### 변경 사항
-
-- `src/client/game/core/garbage.js`에 공격량 계산 규칙을 확장했다.
-  - Double: 1줄
-  - Triple: 2줄
-  - Tetris: 4줄
-  - T-Spin Single: 2줄
-  - T-Spin Double: 4줄
-  - T-Spin Triple: 6줄
-  - combo는 연속 line clear 단계에 따라 추가 garbage를 더한다.
-  - back-to-back은 Tetris 또는 T-Spin clear가 연속될 때 1줄 보너스를 더한다.
-- `createGameState()`에 `combo`, `backToBack` 상태를 추가했다.
-  - `combo`는 첫 line clear를 0으로 기록하기 위해 초기값을 `-1`로 둔다.
-  - line clear가 끊기면 combo는 다시 `-1`로 돌아간다.
-  - back-to-back은 Tetris 또는 T-Spin clear가 이어질 때만 유지된다.
-- snapshot 직렬화/복원에 `combo`, `backToBack`을 포함했다.
-  - 멀티플레이 보정 시 공격 상태도 같이 맞출 수 있게 했다.
-- runtime에 pending garbage queue를 추가했다.
-  - `queueGarbageLines()`로 받은 garbage를 즉시 board에 올리지 않고 대기시킨다.
-  - 조각이 lock될 때 내 공격량이 먼저 pending garbage를 상쇄한다.
-  - 공격량이 더 크면 남은 공격만 상대에게 보낸다.
-  - pending garbage가 더 크면 남은 garbage만 내 board 아래에서 올라온다.
-- placement 결과에 공격/방어 값을 추가했다.
-  - `rawAttackLines`: combo/back-to-back/T-Spin까지 계산한 원래 공격량
-  - `attackLines`: pending garbage를 상쇄한 뒤 실제 상대에게 보낼 공격량
-  - `incomingGarbageLines`: lock 시점에 대기 중이던 garbage 수
-  - `canceledGarbageLines`: 내 공격으로 상쇄한 garbage 수
-  - `appliedGarbageLines`: 상쇄 후 실제 내 board에 올라온 garbage 수
-  - `combo`, `backToBack`, `isTSpin`
-- `tetrisMulti.html`의 garbage 수신 흐름을 즉시 적용에서 queue 방식으로 바꿨다.
-  - `game:garbage:append`를 받으면 local/opponent runtime 모두에 pending garbage로 넣는다.
-  - 실제 적용은 해당 player의 다음 lock 시점에 일어난다.
-- 서버의 `game:garbage:attack` 검증 최대값을 8줄에서 12줄로 늘렸다.
-  - T-Spin Triple + combo + back-to-back 조합처럼 8줄을 넘을 수 있는 합법 공격을 막지 않기 위해서다.
-
-### 의미
-
-- 이제 멀티플레이 공격 흐름은 다음 순서로 읽을 수 있다.
-
-```text
-line clear / T-Spin
-  -> rawAttackLines 계산
-  -> pending garbage 먼저 상쇄
-  -> 남은 attackLines만 상대에게 전송
-  -> 남은 pending garbage만 내 board에 적용
-```
-
-- 이 구조는 "공격을 보냈다"와 "상대 공격을 방어했다"를 분리해서 기록한다.
-- 즉, AI 분석에서는 단순히 줄을 많이 지운 배치뿐 아니라, 위험한 incoming garbage를 얼마나 상쇄했는지도 평가할 수 있다.
-
-### 검증
-
-- `node --test test/testGarbageRules.js test/testTetrisRuntime.js test/testMultiplayerSocket.js` 통과
-  - 58개 테스트 통과
-- `npm test` 통과
-  - 124개 테스트 통과
-- `git diff --check` 통과
-
-# 2026-06-30
-
----
-
-## placement_decision 로그 생성
-
-### 목적
-
-- 향후 AI 추천, 플레이 분석, 리플레이, 학습 데이터 생성을 위해 "플레이어가 한 조각을 어디에 두기로 결정했는지"를 이벤트 단위로 남길 수 있게 했다.
-- 매 프레임 전체 상태를 저장하면 데이터가 너무 커지고 의미 있는 의사결정 단위를 찾기 어렵기 때문에, 우선 piece lock 시점만 기록 대상으로 삼았다.
-- 이번 단계에서는 AI 판단, board metrics, ML 학습, DB 저장까지 확장하지 않고, `placement_decision` 로그 객체를 안정적으로 만드는 것에 집중했다.
-
-### 변경 사항
-
-- `createTetrisRuntime()`에 `placementDecisionRecorder` 옵션을 추가했다.
-  - 런타임은 로그 객체를 만들기만 하고, 저장 방식은 외부 recorder가 결정한다.
-  - 이 덕분에 싱글/멀티/테스트/서버 전송을 같은 런타임 구조에서 다룰 수 있다.
-- piece lock 시점에 `placement_decision` 로그를 생성한다.
-  - 실제 lock 흐름은 `seizeBlock()`에서 시작되고, 보드 병합은 `commitLockedPiece()`의 `lockPieceOnBoard()`에서 일어난다.
-  - 로그 문맥은 보드 병합 전에 만들고, 최종 로그는 line clear와 score 갱신 이후 확정한다.
-- `boardBefore`는 activePiece가 board에 merge되기 전 상태로 저장한다.
-  - 즉, 현재 조각은 아직 board에 들어가지 않은 상태다.
-  - 이후 AI가 "이 배치 전 보드가 어땠는지"를 평가할 수 있다.
-- `boardAfter`는 piece merge와 line clear가 반영된 뒤 상태로 저장한다.
-  - line clear가 발생하면 줄 삭제 이후의 최종 board가 들어간다.
-  - 단순히 조각이 붙은 직후가 아니라, 실제 게임 규칙 처리가 끝난 결과를 남긴다.
-- `selectedPlacement`는 board diff로 역산하지 않고, lock 직전 activePiece 기준으로 기록한다.
-  - board diff로 계산하면 line clear, T-spin, top-out 같은 후처리 때문에 원래 위치를 잃을 수 있다.
-  - 그래서 `pieceType`, `rotation`, `row`, `col`, `cells`를 lock 직전 조각 상태에서 직접 만든다.
-- `inputSequence`는 현재 `playerId`와 `pieceIndex` 기준으로 실제 적용된 입력만 묶는다.
-  - 입력 큐에 들어왔지만 현재 조각에 적용되지 않은 입력은 제외한다.
-  - 이전 조각 입력이나 상대 player 입력이 섞이지 않도록 `pieceIndex`를 기준으로 분리한다.
-- `placementResult`에 `linesCleared`, `scoreBefore`, `scoreAfter`, `scoreDelta`, `gameOver`를 기록한다.
-  - 이후 AI 평가에서 "이 배치가 어떤 결과를 만들었는지"를 바로 비교할 수 있다.
-
-### 의미
-
-- 이제 한 조각의 결정 단위를 다음처럼 설명할 수 있다.
-  1. 배치 전 보드 상태
-  2. 어떤 조각을 어떤 입력 순서로 조작했는지
-  3. 최종적으로 어디에 놓았는지
-  4. 놓은 뒤 보드와 점수가 어떻게 바뀌었는지
-- 이 구조는 나중에 heuristic AI, 리플레이, ML 데이터셋, LLM 코칭 리포트로 확장하기 위한 가장 작은 기반이다.
-- 아직 서버 authoritative game state는 아니며, 현재는 클라이언트 런타임이 만든 의사결정 로그를 기록하는 단계다.
-
-### 이번에 하지 않은 것
-
-- AI 추천 결과 저장
-- board metrics 계산
-- DB 저장
-- 서버에서 game state 직접 계산
-- JSONL 외 분석 파이프라인
-
-검증:
-- `npm test` 통과
-- `git diff --check` 통과
-
-## placement_decision JSONL 저장
-
-### 목적
-
-- 클라이언트에서 만든 `placement_decision` 로그를 서버 파일로 누적 저장할 수 있게 했다.
-- 아직 DB나 분석 서버를 붙이기 전 단계이므로, 가장 단순하고 확인하기 쉬운 JSON Lines 파일을 사용했다.
-- JSONL은 한 줄에 하나의 JSON object를 저장하므로, 나중에 로그를 줄 단위로 읽어 분석하거나 학습 데이터로 변환하기 쉽다.
-
-### 변경 사항
-
-- 클라이언트에 `src/client/net/logClient.js`를 추가했다.
-  - `sendPlacementDecisionLog(roomId, playerId, log)`가 Socket.IO 이벤트 `game:log:placement_decision`으로 로그를 전송한다.
-  - emit 중 예외가 나도 게임이 멈추지 않도록 `console.warn`만 남긴다.
-- `tetrisMulti.html`에서 `placementDecisionRecorder`를 `sendPlacementDecisionLog()`에 연결했다.
-  - 조각이 lock될 때마다 생성된 로그가 서버로 전송된다.
-  - 서버 저장 결과는 `game:log:result`로 받을 수 있고, 실패해도 경고만 출력한다.
-- 서버 소켓 핸들러에 `game:log:placement_decision` 이벤트를 추가했다.
-  - 먼저 `syncRoom(roomId, playerId)`로 해당 player가 room에 속해 있는지 확인한다.
-  - payload의 `playerId`와 log 내부 `playerId`가 다르면 저장하지 않는다.
-  - 인증이 통과한 로그만 `logService`로 넘긴다.
-- `src/server/services/logService.js`를 추가했다.
-  - 로그 저장 흐름의 중심 계층이다.
-  - validator를 먼저 호출하고, 통과한 로그만 repository에 넘긴다.
-  - repository 저장 실패가 발생해도 예외를 밖으로 던지지 않고 warning과 실패 결과만 반환한다.
-- `src/server/validators/gameLogValidator.js`를 추가했다.
-  - `schemaVersion`, `eventType`, `playerId`, `gameId`, `pieceIndex`, `boardBefore`, `boardAfter`, `selectedPlacement`를 검증한다.
-  - payload 크기가 제한을 넘으면 `LOG_PAYLOAD_TOO_LARGE`로 저장을 거부한다.
-- `src/server/repositories/jsonlLogRepository.js`를 추가했다.
-  - 기본 저장 경로는 `data/logs/game-events.jsonl`이다.
-  - 저장 전 `data/logs` 디렉터리를 `recursive: true`로 생성한다.
-  - `JSON.stringify(log) + "\n"` 형태로 append해서 한 줄에 하나의 JSON object만 저장한다.
-- 런타임 로그 파일은 저장소 변경 목록에 계속 잡히지 않도록 `.gitignore`에 `data/logs/*.jsonl`을 추가했다.
-
-### 저장 흐름
-
-```text
-tetris runtime
-  -> placementDecisionRecorder(log)
-  -> client/net/logClient.js
-  -> Socket.IO game:log:placement_decision
-  -> server/sockets/multiplayerHandlers.js
-  -> server/services/logService.js
-  -> server/validators/gameLogValidator.js
-  -> server/repositories/jsonlLogRepository.js
-  -> data/logs/game-events.jsonl
-```
-
-### 실패 처리
-
-- 클라이언트 전송 실패:
-  - `console.warn`만 남기고 게임 루프는 계속 진행한다.
-- 서버 검증 실패:
-  - 저장하지 않고 `game:log:result`로 실패 이유를 반환한다.
-- 서버 파일 저장 실패:
-  - 서버 프로세스를 죽이지 않고 warning만 남긴다.
-  - 게임 진행과 Socket.IO room 흐름은 계속 유지된다.
-
-### JSONL 예시
-
-```json
-{"eventType":"placement_decision","schemaVersion":1,"playerId":"sample-player","gameId":"sample-game","pieceIndex":1,"boardBefore":[[null]],"boardAfter":[["square"]],"selectedPlacement":{"pieceType":"square","rotation":0,"row":18,"col":4}}
-```
-
-### 의미
-
-- 이제 멀티 게임 플레이 중 조각 배치 단위의 분석 로그를 서버에 남길 수 있다.
-- 기존 `matchService`의 inputLog는 멀티 동기화/replay 준비용으로 유지하고, JSONL 로그는 AI/분석 데이터 수집용으로 분리했다.
-- 두 로그의 목적이 다르기 때문에 하나로 합치지 않았다.
-  - `matchService.inputLog`: 현재 match 내부에서 입력 순서를 추적
-  - `game-events.jsonl`: 장기적으로 저장할 분석 이벤트
-
-검증:
-- `npm test` 통과
-- `git diff --check` 통과
-- 기본 경로 `data/logs/game-events.jsonl` append 확인
-
-# 10월 20일
+# 2025년 10월 20일
 
 ---
 
@@ -544,7 +341,7 @@ activePiece.rotation = 0
 
 ---
 
-# 10월 24일
+# 2025년 10월 24일
 
 ## 엔진 정리
 
@@ -566,7 +363,7 @@ activePiece.rotation = 0
 - 브라우저에서 `src/html/tetrisSingle.html`을 실행해 좌우 이동·소프트/하드 드롭·라인 클리어·게임 오버가 모두 정상 동작하는지 점검해 주세요.  
 - 앞으로 홀드나 멀티플레이 동기화를 구현할 때는 이제 `gameState` 객체만 넘기면 되므로, 상태 관리와 직렬화가 한층 수월해질 것입니다.
 
-# 12월 5일
+# 2025년 12월 5일
 오늘 작업 정리
 
 src/js/sound.js 신규 모듈 도입: 로비/게임 BGM, 라인클리어 SFX, 사운드 토글 상태(localStorage) 관리. initLobbySound, initGameSound, tryPlayMusic, playLineClearSfx 제공.
@@ -1231,3 +1028,206 @@ Socket.IO room join/broadcast 흐름과 UI 스타일 정리
 - 브라우저 2탭 기준 빠른 입력/안착/다음 블록 조작 회귀 검증 계속
 - 서버가 input으로 game state를 계산할 수 있게 `step(state, input)` 경계 정리
 - 서버 authoritative snapshot 전환 설계
+
+# 2026-06-30
+
+---
+
+## placement_decision 로그 생성
+
+### 목적
+
+- 향후 AI 추천, 플레이 분석, 리플레이, 학습 데이터 생성을 위해 "플레이어가 한 조각을 어디에 두기로 결정했는지"를 이벤트 단위로 남길 수 있게 했다.
+- 매 프레임 전체 상태를 저장하면 데이터가 너무 커지고 의미 있는 의사결정 단위를 찾기 어렵기 때문에, 우선 piece lock 시점만 기록 대상으로 삼았다.
+- 이번 단계에서는 AI 판단, board metrics, ML 학습, DB 저장까지 확장하지 않고, `placement_decision` 로그 객체를 안정적으로 만드는 것에 집중했다.
+
+### 변경 사항
+
+- `createTetrisRuntime()`에 `placementDecisionRecorder` 옵션을 추가했다.
+  - 런타임은 로그 객체를 만들기만 하고, 저장 방식은 외부 recorder가 결정한다.
+  - 이 덕분에 싱글/멀티/테스트/서버 전송을 같은 런타임 구조에서 다룰 수 있다.
+- piece lock 시점에 `placement_decision` 로그를 생성한다.
+  - 실제 lock 흐름은 `seizeBlock()`에서 시작되고, 보드 병합은 `commitLockedPiece()`의 `lockPieceOnBoard()`에서 일어난다.
+  - 로그 문맥은 보드 병합 전에 만들고, 최종 로그는 line clear와 score 갱신 이후 확정한다.
+- `boardBefore`는 activePiece가 board에 merge되기 전 상태로 저장한다.
+  - 즉, 현재 조각은 아직 board에 들어가지 않은 상태다.
+  - 이후 AI가 "이 배치 전 보드가 어땠는지"를 평가할 수 있다.
+- `boardAfter`는 piece merge와 line clear가 반영된 뒤 상태로 저장한다.
+  - line clear가 발생하면 줄 삭제 이후의 최종 board가 들어간다.
+  - 단순히 조각이 붙은 직후가 아니라, 실제 게임 규칙 처리가 끝난 결과를 남긴다.
+- `selectedPlacement`는 board diff로 역산하지 않고, lock 직전 activePiece 기준으로 기록한다.
+  - board diff로 계산하면 line clear, T-spin, top-out 같은 후처리 때문에 원래 위치를 잃을 수 있다.
+  - 그래서 `pieceType`, `rotation`, `row`, `col`, `cells`를 lock 직전 조각 상태에서 직접 만든다.
+- `inputSequence`는 현재 `playerId`와 `pieceIndex` 기준으로 실제 적용된 입력만 묶는다.
+  - 입력 큐에 들어왔지만 현재 조각에 적용되지 않은 입력은 제외한다.
+  - 이전 조각 입력이나 상대 player 입력이 섞이지 않도록 `pieceIndex`를 기준으로 분리한다.
+- `placementResult`에 `linesCleared`, `scoreBefore`, `scoreAfter`, `scoreDelta`, `gameOver`를 기록한다.
+  - 이후 AI 평가에서 "이 배치가 어떤 결과를 만들었는지"를 바로 비교할 수 있다.
+
+### 의미
+
+- 이제 한 조각의 결정 단위를 다음처럼 설명할 수 있다.
+  1. 배치 전 보드 상태
+  2. 어떤 조각을 어떤 입력 순서로 조작했는지
+  3. 최종적으로 어디에 놓았는지
+  4. 놓은 뒤 보드와 점수가 어떻게 바뀌었는지
+- 이 구조는 나중에 heuristic AI, 리플레이, ML 데이터셋, LLM 코칭 리포트로 확장하기 위한 가장 작은 기반이다.
+- 아직 서버 authoritative game state는 아니며, 현재는 클라이언트 런타임이 만든 의사결정 로그를 기록하는 단계다.
+
+### 이번에 하지 않은 것
+
+- AI 추천 결과 저장
+- board metrics 계산
+- DB 저장
+- 서버에서 game state 직접 계산
+- JSONL 외 분석 파이프라인
+
+검증:
+- `npm test` 통과
+- `git diff --check` 통과
+
+## placement_decision JSONL 저장
+
+### 목적
+
+- 클라이언트에서 만든 `placement_decision` 로그를 서버 파일로 누적 저장할 수 있게 했다.
+- 아직 DB나 분석 서버를 붙이기 전 단계이므로, 가장 단순하고 확인하기 쉬운 JSON Lines 파일을 사용했다.
+- JSONL은 한 줄에 하나의 JSON object를 저장하므로, 나중에 로그를 줄 단위로 읽어 분석하거나 학습 데이터로 변환하기 쉽다.
+
+### 변경 사항
+
+- 클라이언트에 `src/client/net/logClient.js`를 추가했다.
+  - `sendPlacementDecisionLog(roomId, playerId, log)`가 Socket.IO 이벤트 `game:log:placement_decision`으로 로그를 전송한다.
+  - emit 중 예외가 나도 게임이 멈추지 않도록 `console.warn`만 남긴다.
+- `tetrisMulti.html`에서 `placementDecisionRecorder`를 `sendPlacementDecisionLog()`에 연결했다.
+  - 조각이 lock될 때마다 생성된 로그가 서버로 전송된다.
+  - 서버 저장 결과는 `game:log:result`로 받을 수 있고, 실패해도 경고만 출력한다.
+- 서버 소켓 핸들러에 `game:log:placement_decision` 이벤트를 추가했다.
+  - 먼저 `syncRoom(roomId, playerId)`로 해당 player가 room에 속해 있는지 확인한다.
+  - payload의 `playerId`와 log 내부 `playerId`가 다르면 저장하지 않는다.
+  - 인증이 통과한 로그만 `logService`로 넘긴다.
+- `src/server/services/logService.js`를 추가했다.
+  - 로그 저장 흐름의 중심 계층이다.
+  - validator를 먼저 호출하고, 통과한 로그만 repository에 넘긴다.
+  - repository 저장 실패가 발생해도 예외를 밖으로 던지지 않고 warning과 실패 결과만 반환한다.
+- `src/server/validators/gameLogValidator.js`를 추가했다.
+  - `schemaVersion`, `eventType`, `playerId`, `gameId`, `pieceIndex`, `boardBefore`, `boardAfter`, `selectedPlacement`를 검증한다.
+  - payload 크기가 제한을 넘으면 `LOG_PAYLOAD_TOO_LARGE`로 저장을 거부한다.
+- `src/server/repositories/jsonlLogRepository.js`를 추가했다.
+  - 기본 저장 경로는 `data/logs/game-events.jsonl`이다.
+  - 저장 전 `data/logs` 디렉터리를 `recursive: true`로 생성한다.
+  - `JSON.stringify(log) + "\n"` 형태로 append해서 한 줄에 하나의 JSON object만 저장한다.
+- 런타임 로그 파일은 저장소 변경 목록에 계속 잡히지 않도록 `.gitignore`에 `data/logs/*.jsonl`을 추가했다.
+
+### 저장 흐름
+
+```text
+tetris runtime
+  -> placementDecisionRecorder(log)
+  -> client/net/logClient.js
+  -> Socket.IO game:log:placement_decision
+  -> server/sockets/multiplayerHandlers.js
+  -> server/services/logService.js
+  -> server/validators/gameLogValidator.js
+  -> server/repositories/jsonlLogRepository.js
+  -> data/logs/game-events.jsonl
+```
+
+### 실패 처리
+
+- 클라이언트 전송 실패:
+  - `console.warn`만 남기고 게임 루프는 계속 진행한다.
+- 서버 검증 실패:
+  - 저장하지 않고 `game:log:result`로 실패 이유를 반환한다.
+- 서버 파일 저장 실패:
+  - 서버 프로세스를 죽이지 않고 warning만 남긴다.
+  - 게임 진행과 Socket.IO room 흐름은 계속 유지된다.
+
+### JSONL 예시
+
+```json
+{"eventType":"placement_decision","schemaVersion":1,"playerId":"sample-player","gameId":"sample-game","pieceIndex":1,"boardBefore":[[null]],"boardAfter":[["square"]],"selectedPlacement":{"pieceType":"square","rotation":0,"row":18,"col":4}}
+```
+
+### 의미
+
+- 이제 멀티 게임 플레이 중 조각 배치 단위의 분석 로그를 서버에 남길 수 있다.
+- 기존 `matchService`의 inputLog는 멀티 동기화/replay 준비용으로 유지하고, JSONL 로그는 AI/분석 데이터 수집용으로 분리했다.
+- 두 로그의 목적이 다르기 때문에 하나로 합치지 않았다.
+  - `matchService.inputLog`: 현재 match 내부에서 입력 순서를 추적
+  - `game-events.jsonl`: 장기적으로 저장할 분석 이벤트
+
+검증:
+- `npm test` 통과
+- `git diff --check` 통과
+- 기본 경로 `data/logs/game-events.jsonl` append 확인
+
+# 2026-07-01
+
+---
+
+## 멀티플레이 garbage cancel / combo / back-to-back / T-Spin 공격 규칙 추가
+
+### 목적
+
+- 멀티플레이에서 줄 삭제가 단순 점수 변화로 끝나지 않고 상대에게 공격으로 이어지게 했다.
+- 상대에게서 받은 garbage가 즉시 올라오는 방식은 방어 타이밍을 만들 수 없어서, 다음 조각 lock 시점에 먼저 상쇄하고 남은 garbage만 적용하는 구조로 바꿨다.
+- 향후 AI 학습/분석에서 "어떤 배치가 공격, 방어, 상쇄를 만들었는지"를 판단할 수 있도록 placement 결과에 공격 관련 값을 함께 기록했다.
+
+### 변경 사항
+
+- `src/client/game/core/garbage.js`에 공격량 계산 규칙을 확장했다.
+  - Double: 1줄
+  - Triple: 2줄
+  - Tetris: 4줄
+  - T-Spin Single: 2줄
+  - T-Spin Double: 4줄
+  - T-Spin Triple: 6줄
+  - combo는 연속 line clear 단계에 따라 추가 garbage를 더한다.
+  - back-to-back은 Tetris 또는 T-Spin clear가 연속될 때 1줄 보너스를 더한다.
+- `createGameState()`에 `combo`, `backToBack` 상태를 추가했다.
+  - `combo`는 첫 line clear를 0으로 기록하기 위해 초기값을 `-1`로 둔다.
+  - line clear가 끊기면 combo는 다시 `-1`로 돌아간다.
+  - back-to-back은 Tetris 또는 T-Spin clear가 이어질 때만 유지된다.
+- snapshot 직렬화/복원에 `combo`, `backToBack`을 포함했다.
+  - 멀티플레이 보정 시 공격 상태도 같이 맞출 수 있게 했다.
+- runtime에 pending garbage queue를 추가했다.
+  - `queueGarbageLines()`로 받은 garbage를 즉시 board에 올리지 않고 대기시킨다.
+  - 조각이 lock될 때 내 공격량이 먼저 pending garbage를 상쇄한다.
+  - 공격량이 더 크면 남은 공격만 상대에게 보낸다.
+  - pending garbage가 더 크면 남은 garbage만 내 board 아래에서 올라온다.
+- placement 결과에 공격/방어 값을 추가했다.
+  - `rawAttackLines`: combo/back-to-back/T-Spin까지 계산한 원래 공격량
+  - `attackLines`: pending garbage를 상쇄한 뒤 실제 상대에게 보낼 공격량
+  - `incomingGarbageLines`: lock 시점에 대기 중이던 garbage 수
+  - `canceledGarbageLines`: 내 공격으로 상쇄한 garbage 수
+  - `appliedGarbageLines`: 상쇄 후 실제 내 board에 올라온 garbage 수
+  - `combo`, `backToBack`, `isTSpin`
+- `tetrisMulti.html`의 garbage 수신 흐름을 즉시 적용에서 queue 방식으로 바꿨다.
+  - `game:garbage:append`를 받으면 local/opponent runtime 모두에 pending garbage로 넣는다.
+  - 실제 적용은 해당 player의 다음 lock 시점에 일어난다.
+- 서버의 `game:garbage:attack` 검증 최대값을 8줄에서 12줄로 늘렸다.
+  - T-Spin Triple + combo + back-to-back 조합처럼 8줄을 넘을 수 있는 합법 공격을 막지 않기 위해서다.
+
+### 의미
+
+- 이제 멀티플레이 공격 흐름은 다음 순서로 읽을 수 있다.
+
+```text
+line clear / T-Spin
+  -> rawAttackLines 계산
+  -> pending garbage 먼저 상쇄
+  -> 남은 attackLines만 상대에게 전송
+  -> 남은 pending garbage만 내 board에 적용
+```
+
+- 이 구조는 "공격을 보냈다"와 "상대 공격을 방어했다"를 분리해서 기록한다.
+- 즉, AI 분석에서는 단순히 줄을 많이 지운 배치뿐 아니라, 위험한 incoming garbage를 얼마나 상쇄했는지도 평가할 수 있다.
+
+### 검증
+
+- `node --test test/testGarbageRules.js test/testTetrisRuntime.js test/testMultiplayerSocket.js` 통과
+  - 58개 테스트 통과
+- `npm test` 통과
+  - 124개 테스트 통과
+- `git diff --check` 통과
