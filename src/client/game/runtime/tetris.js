@@ -16,7 +16,7 @@ import {
     resolveMoveAttempt,
     resolveMoveIntent,
 } from "../core/step.js"
-import { createSpawnedPiece } from "../core/piece.js"
+import { createSpawnedPiece, getHardDropRow } from "../core/piece.js"
 import { isTSpinLock } from "../core/tSpin.js"
 import { playLineClearSfx } from "./sound.js"
 import { INPUT_ACTION } from "./input.js"
@@ -408,12 +408,11 @@ export function createTetrisRuntime({
         if (!activePiece.pieceType) return
         stopGravity()
 
-        const { pieceType, rotation, col, row } = activePiece
-        let nextRow = row
-
-        while (canPlace({ pieceType, rotation, col, row: nextRow + 1 })) {
-            nextRow++
-        }
+        const { row } = activePiece
+        const nextRow = getHardDropRow(activePiece, targetRow => canPlace({
+            ...activePiece,
+            row: targetRow,
+        }))
 
         const dropped = nextRow - row
         runtime.pendingLockScoreBefore = gameState.score

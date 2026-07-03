@@ -14,3 +14,22 @@ export function createSpawnedPiece(pieceType, spawnRow, spawnCol) {
         rotation: 0,
     };
 }
+
+/**
+  * 현재 조각이 아래로 내려갈 수 있는 마지막 row를 계산한다.
+  *
+  * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 기준 조각 상태
+  * @param {(row: number) => boolean} canPlaceAt - 특정 row 배치 가능 여부를 반환하는 함수
+  * @returns {number} 마지막으로 배치 가능한 row
+  */
+export function getHardDropRow(piece, canPlaceAt) {
+    const currentRow = piece?.row ?? 0;
+    if (typeof canPlaceAt !== "function") return currentRow;
+
+    let nextRow = currentRow;
+    while (canPlaceAt(nextRow + 1)) {
+        nextRow++;
+    }
+
+    return nextRow;
+}
