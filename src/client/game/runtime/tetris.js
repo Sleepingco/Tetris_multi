@@ -13,6 +13,7 @@ import {
 } from "../core/garbage.js"
 import { resolveAttackState } from "../core/attackState.js"
 import {
+    resolveInputMoveIntent,
     resolveMoveAttempt,
     resolveMoveIntent,
 } from "../core/step.js"
@@ -432,24 +433,17 @@ export function createTetrisRuntime({
       * @returns {string|null} 이동 판정에 사용할 moveType
       */
     function applyInputAction(action) {
-        if (action === INPUT_ACTION.MOVE_RIGHT) {
-            shiftActivePiece(0, 1)
-            return "horizontal"
+        const intent = resolveInputMoveIntent(action)
+        if (!intent) return null
+
+        if (intent.kind === "shift") {
+            shiftActivePiece(intent.rowDelta, intent.colDelta)
+            return intent.moveType
         }
 
-        if (action === INPUT_ACTION.MOVE_LEFT) {
-            shiftActivePiece(0, -1)
-            return "horizontal"
-        }
-
-        if (action === INPUT_ACTION.SOFT_DROP) {
-            shiftActivePiece(1, 0)
-            return "fall"
-        }
-
-        if (action === INPUT_ACTION.ROTATE) {
+        if (intent.kind === "rotate") {
             rotatePendingPiece()
-            return "rotate"
+            return intent.moveType
         }
 
         return null

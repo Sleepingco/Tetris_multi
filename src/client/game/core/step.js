@@ -6,6 +6,50 @@ import { canPlacePiece } from "./board.js"
 // =============================
 
 /**
+  * 입력 action 문자열을 런타임이 실행할 이동 intent로 변환한다.
+  *
+  * @param {string} action - 입력 계층에서 넘어온 action 문자열
+  * @returns {{kind: string, rowDelta?: number, colDelta?: number, moveType: string}|null} 이동 intent
+  */
+export function resolveInputMoveIntent(action) {
+        if (action === "move_left") {
+                return {
+                        kind: "shift",
+                        rowDelta: 0,
+                        colDelta: -1,
+                        moveType: "horizontal",
+                };
+        }
+
+        if (action === "move_right") {
+                return {
+                        kind: "shift",
+                        rowDelta: 0,
+                        colDelta: 1,
+                        moveType: "horizontal",
+                };
+        }
+
+        if (action === "soft_drop") {
+                return {
+                        kind: "shift",
+                        rowDelta: 1,
+                        colDelta: 0,
+                        moveType: "fall",
+                };
+        }
+
+        if (action === "rotate") {
+                return {
+                        kind: "rotate",
+                        moveType: "rotate",
+                };
+        }
+
+        return null;
+}
+
+/**
   * `pendingPiece`를 적용하려는 시도의 결과를 계산한다.
   * - 유효한 하드 드롭이면 즉시 고정한다.
   * - 하강 실패면 이전 active 위치에서 고정한다.

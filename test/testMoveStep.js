@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 async function loadMoveStep() {
     const [
-        { resolveMoveAttempt, resolveMoveIntent },
+        { resolveInputMoveIntent, resolveMoveAttempt, resolveMoveIntent },
         { createEmptyBoard },
         { default: blocks },
         { WALL_KICKS },
@@ -15,6 +15,7 @@ async function loadMoveStep() {
     ]);
 
     return {
+        resolveInputMoveIntent,
         resolveMoveAttempt,
         resolveMoveIntent,
         createEmptyBoard,
@@ -93,4 +94,39 @@ test("resolveMoveAttempt는 입력 activePiece와 pendingPiece를 직접 변경�
 
     assert.deepEqual(activePiece, beforeActivePiece);
     assert.deepEqual(pendingPiece, beforePendingPiece);
+});
+
+test("resolveInputMoveIntent는 input action을 runtime move intent로 매핑한다", async () => {
+    const { resolveInputMoveIntent } = await loadMoveStep();
+
+    assert.deepEqual(resolveInputMoveIntent("move_left"), {
+        kind: "shift",
+        rowDelta: 0,
+        colDelta: -1,
+        moveType: "horizontal",
+    });
+    assert.deepEqual(resolveInputMoveIntent("move_right"), {
+        kind: "shift",
+        rowDelta: 0,
+        colDelta: 1,
+        moveType: "horizontal",
+    });
+    assert.deepEqual(resolveInputMoveIntent("soft_drop"), {
+        kind: "shift",
+        rowDelta: 1,
+        colDelta: 0,
+        moveType: "fall",
+    });
+    assert.deepEqual(resolveInputMoveIntent("rotate"), {
+        kind: "rotate",
+        moveType: "rotate",
+    });
+});
+
+test("resolveInputMoveIntent는 runtime 전용 action이면 null을 반환한다", async () => {
+    const { resolveInputMoveIntent } = await loadMoveStep();
+
+    assert.equal(resolveInputMoveIntent("hard_drop"), null);
+    assert.equal(resolveInputMoveIntent("hold"), null);
+    assert.equal(resolveInputMoveIntent("unknown"), null);
 });
