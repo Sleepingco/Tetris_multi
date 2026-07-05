@@ -1,10 +1,14 @@
 // =============================
 // In-memory Match Store
-// match는 보드 상태가 아니라 player별 input log와 server bag chunk만 저장한다.
+// match는 player별 input log, server bag chunk, authoritative state 초안을 저장한다.
 // =============================
 const matches = new Map();
 const BAG_PIECES = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
 const INITIAL_BAG_CHUNK_COUNT = 3;
+const BOARD_ROWS = 20;
+const BOARD_COLS = 10;
+const SPAWN_ROW = -1;
+const SPAWN_COL = 3;
 
 function createSuccess(match, extra = {}) {
     return {
@@ -49,6 +53,7 @@ function createMatch(room) {
             playerId: player.playerId,
             inputLog: [],
             bagChunks: createInitialBagChunks(),
+            state: createInitialPlayerState(),
         })),
         createdAt: Date.now(),
     };
@@ -152,6 +157,34 @@ function createBagChunk() {
 
 function createInitialBagChunks(count = INITIAL_BAG_CHUNK_COUNT) {
     return Array.from({ length: count }, () => createBagChunk());
+}
+
+function createInitialPlayerState() {
+    return {
+        board: createEmptyBoard(),
+        activePiece: {
+            pieceType: "",
+            rotation: 0,
+            row: SPAWN_ROW,
+            col: SPAWN_COL,
+        },
+        pendingPiece: null,
+        pieceQueue: [],
+        holdPieceType: null,
+        holdUsedThisDrop: false,
+        score: 0,
+        lines: 0,
+        phase: "playing",
+        combo: -1,
+        backToBack: false,
+        currentTick: 0,
+        pieceIndex: 0,
+        pendingGarbageQueue: [],
+    };
+}
+
+function createEmptyBoard() {
+    return Array.from({ length: BOARD_ROWS }, () => Array(BOARD_COLS).fill(null));
 }
 
 function resetMatches() {

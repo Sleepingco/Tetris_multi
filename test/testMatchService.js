@@ -62,6 +62,41 @@ test("createMatch는 player별 server bag chunks를 만든다", () => {
     });
 });
 
+test("createMatch는 player별 최소 authoritative state를 만든다", () => {
+    resetMatches();
+
+    const result = createMatch(createPlayingRoom("STATE001"));
+    const [hostPlayer, guestPlayer] = result.match.players;
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(hostPlayer.state, {
+        board: Array.from({ length: 20 }, () => Array(10).fill(null)),
+        activePiece: {
+            pieceType: "",
+            rotation: 0,
+            row: -1,
+            col: 3,
+        },
+        pendingPiece: null,
+        pieceQueue: [],
+        holdPieceType: null,
+        holdUsedThisDrop: false,
+        score: 0,
+        lines: 0,
+        phase: "playing",
+        combo: -1,
+        backToBack: false,
+        currentTick: 0,
+        pieceIndex: 0,
+        pendingGarbageQueue: [],
+    });
+    assert.notEqual(hostPlayer.state, guestPlayer.state);
+    assert.notEqual(hostPlayer.state.board, guestPlayer.state.board);
+    assert.notEqual(hostPlayer.state.activePiece, guestPlayer.state.activePiece);
+    assert.notEqual(hostPlayer.state.pieceQueue, guestPlayer.state.pieceQueue);
+    assert.notEqual(hostPlayer.state.pendingGarbageQueue, guestPlayer.state.pendingGarbageQueue);
+});
+
 test("getMatchState는 roomId로 생성된 match를 다시 조회한다", () => {
     resetMatches();
 
