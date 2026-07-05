@@ -1,5 +1,9 @@
 const { randomUUID } = require("crypto")
 
+// =============================
+// In-memory Room Store
+// 현재 MVP에서는 단일 Node 프로세스 메모리에 room lifecycle을 저장한다.
+// =============================
 const rooms = new Map()
 
 function success(room, meta = {}) {
@@ -114,6 +118,13 @@ function joinRoom(roomId, guestPlayer) {
     return success(roomState)
 }
 
+/**
+ * room에서 player를 제거하고, 빈 방 삭제/host 위임/waiting 복귀까지 처리한다.
+ *
+ * @param {string} roomId - 대상 room id
+ * @param {string} playerId - 제거할 player id
+ * @returns {{ok: boolean, room: Object|null, reason: string|null}} 제거 결과
+ */
 function removePlayer(roomId, playerId) {
     const roomState = getRoomState(roomId)
 
@@ -159,6 +170,13 @@ function getRoomSocketContext(socketId) {
     return null
 }
 
+/**
+ * disconnect된 socket의 player를 room에서 제거한다.
+ * - playing 중인 room은 게임 화면 재연결 가능성을 위해 자동 제거하지 않는다.
+ *
+ * @param {string} socketId - 끊어진 socket id
+ * @returns {{ok: boolean, room: Object|null, reason: string|null, roomId?: string|null, player?: Object|null}} 제거 결과와 player 문맥
+ */
 function removePlayerBySocketId(socketId) {
     const found = getRoomSocketContext(socketId)
 
@@ -261,6 +279,17 @@ function leaveGame(roomId, playerId) {
     return removePlayer(roomId, playerId)
 }
 
+/**
+ * 현재 room 상태를 반환하면서 필요한 연결 상태를 동기화한다.
+ * - socketId가 있으면 해당 player의 최신 socket으로 갱신한다.
+ * - finished room에서 양쪽이 로비에 복귀하면 다시 waiting 상태로 되돌린다.
+ *
+ * @param {string} roomId - 동기화할 room id
+ * @param {string} playerId - 요청 player id
+ * @param {string|null} socketId - 최신 socket id
+ * @param {{location?: string}} options - 요청 위치 정보
+ * @returns {{ok: boolean, room: Object|null, reason: string|null}} 동기화 결과
+ */
 function syncRoom(roomId, playerId, socketId = null, options = {}) {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
@@ -293,6 +322,15 @@ function syncRoom(roomId, playerId, socketId = null, options = {}) {
     return success(context.roomState)
 }
 
+/**
+ * 패배자를 기준으로 승자를 계산하고 room을 finished 상태로 전환한다.
+ * - player를 제거하지 않고, 두 플레이어가 결과 화면에서 로비로 돌아올 수 있게 유지한다.
+ *
+ * @param {string} roomId - 종료할 room id
+ * @param {string} loserPlayerId - 패배한 player id
+ * @param {string} [finishReason="top_out"] - 종료 사유
+ * @returns {{ok: boolean, room: Object|null, reason: string|null, winnerPlayerId?: string|null, loserPlayerId?: string|null, finishReason?: string}} 종료 결과
+ */
 function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
     const context = getRoomPlayerContext(roomId, loserPlayerId)
     if (!context.ok) {

@@ -37,6 +37,12 @@ function normalizeChatText(text) {
     return success({ text: normalizedText })
 }
 
+/**
+ * socketId 기준 채팅 쿨다운을 검사하고, 통과한 시점에는 마지막 전송 시간을 갱신한다.
+ *
+ * @param {string} socketId - 채팅을 보낸 socket id
+ * @returns {{ok: boolean, reason: string|null}} 전송 가능 여부
+ */
 function checkChatRateLimit(socketId) {
     const now = Date.now()
     const lastSentAt = lastChatAtBySocketId.get(socketId) || 0
@@ -89,6 +95,7 @@ function registerChatHandlers(socketServer, clientSocket) {
 
     clientSocket.on("room:chat", (payload = {}) => {
         const { roomId, playerId, text } = payload
+        // 채팅 전송 전에 room/player 소속만 검증한다. 게임 판정이나 room 상태 전이는 하지 않는다.
         const roomResult = syncRoom(roomId, playerId)
         if (!roomResult.ok) {
             clientSocket.emit("chat:result", roomResult)

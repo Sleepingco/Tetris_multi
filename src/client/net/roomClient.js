@@ -5,6 +5,11 @@ if (typeof io !== "function") {
 const serverConnection = io()
 let lastRoomRequestType = null
 
+// =============================
+// Socket.IO Room Adapter
+// 브라우저 전역 socket을 한 번만 만들고, 페이지 코드는 이 얇은 함수들만 사용한다.
+// =============================
+
 export function getServerConnection() {
     return serverConnection
 }
@@ -66,6 +71,7 @@ export function requestLeaveRoom(roomId, playerId) {
     serverConnection.emit("room:leave", { roomId, playerId })
 }
 
+// 게임 화면에서 이미 시작된 room/match 상태와 server bag 정보를 다시 받는다.
 export function requestJoinGameRoom(roomId, playerId) {
     serverConnection.emit("game:join", { roomId, playerId })
 }
@@ -78,6 +84,11 @@ export function requestStartGame(roomId, playerId) {
     lastRoomRequestType = "start"
     serverConnection.emit("room:start", { roomId, playerId })
 }
+
+// =============================
+// Game Sync Channel
+// 현재 MVP에서는 서버 판정 요청이 아니라 prediction/correction용 relay 채널이다.
+// =============================
 
 export function sendGameSnapshot(roomId, playerId, snapshot) {
     serverConnection.emit("game:snapshot", { roomId, playerId, snapshot })

@@ -2655,3 +2655,84 @@ opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
 ```
 
 따라서 `autoStart: true`는 최종 구조가 아니라, 현재 input relay 단계에서 부드러운 상대 보드 표시를 위한 임시 선택이다.
+
+---
+
+## Q. 변수명에 쓰이는 `resolve`, `pending`, `attach`, `detach` 같은 단어는 무슨 뜻이야? (2026-07-05)
+
+코드에서 쓰이는 영어 단어는 일반 사전 뜻보다 **프로그래밍 문맥에서의 역할**로 이해하는 것이 좋다.
+
+예를 들어 `pendingGarbageQueue`, `resolveGarbageCancel`, `attachKeyboardInput`, `detachKeyboard` 같은 이름은 단어를 쪼개면 역할이 드러난다.
+
+| 단어 | 기본 의미 | 코드에서의 의미 | 프로젝트 예시 | 읽는 방법 |
+|---|---|---|---|---|
+| `pending` | 대기 중인 | 이미 발생했지만 아직 처리/적용되지 않은 상태 | `pendingGarbageQueue` | 상대 공격은 도착했지만 아직 보드에 올라오지 않은 garbage 대기열 |
+| `queue` | 대기열 | 먼저 들어온 것을 먼저 처리하는 목록 | `pendingGarbageQueue` | pending garbage를 순서대로 쌓아두는 배열 |
+| `resolve` | 해결하다, 정리하다 | 여러 상태를 계산해서 최종 결과를 만든다 | `resolveGarbageCancel()` | garbage 상쇄 결과를 계산해서 정리한다 |
+| `raw` | 가공 전의 | 보정/상쇄/후처리 전 원본 값 | `rawAttackLines` | line clear로 생긴 순수 공격량 |
+| `remaining` | 남아 있는 | 처리 후 아직 남은 값 | `remainingAttackLines` | garbage를 상쇄하고도 남은 공격량 |
+| `incoming` | 들어오는 | 나에게 들어오는 데이터나 공격 | `incomingGarbageLines` | 상대에게서 들어온 garbage 총 줄 수 |
+| `outgoing` | 나가는 | 내가 상대에게 보내는 데이터나 공격 | `outgoingAttackLines` | 상쇄 후 상대에게 보낼 공격 줄 수 |
+| `canceled` | 취소된, 상쇄된 | 내 공격으로 막아낸 값 | `canceledGarbageLines` | 이번에 방어한 garbage 줄 수 |
+| `apply` | 적용하다 | 계산 결과를 실제 상태에 반영한다 | `applyGarbageLines()` | board 배열에 garbage line을 실제로 넣는다 |
+| `calculate` | 계산하다 | 상태를 바꾸지 않고 결과값만 만든다 | `calculateGarbageAttack()` | 지운 줄 수를 보고 공격량을 계산한다 |
+| `enqueue` | queue에 넣다 | 바로 처리하지 않고 대기열에 추가한다 | `enqueueGarbage()` | garbage를 보드에 바로 넣지 않고 pending queue에 저장한다 |
+| `dequeue` | queue에서 꺼내다 | 대기열에서 처리할 항목을 꺼낸다 | `dequeueGarbage()` | pending queue에서 다음 garbage를 꺼낸다 |
+| `append` | 뒤에 추가하다 | 기존 데이터의 끝에 덧붙인다 | `game:garbage:append` | garbage 정보를 추가하라는 이벤트 |
+| `sync` | 동기화하다 | 서로 다른 상태를 맞춘다 | `syncRoom()` | room 상태와 socket/player 상태를 맞춘다 |
+| `handler` | 처리기 | 이벤트가 발생했을 때 실행되는 함수 | `registerMultiplayerHandlers()` | 멀티플레이 socket 이벤트 처리 함수를 등록한다 |
+| `intent` | 의도, 목적 | 사용자가 하려는 행동이나 입력의 목적을 표현한다 | `inputIntent`, `moveIntent` | 실제 상태 변경 전, 어떤 행동을 하려는지 나타낸다 |
+| `attach` | 붙이다 | 이벤트 리스너나 기능을 등록/연결한다 | `attachKeyboardInput()` | document에 키보드 입력 이벤트를 등록한다 |
+| `detach` | 떼다 | 등록했던 이벤트 리스너나 연결을 해제한다 | `detachKeyboard()` | 등록했던 키보드 입력 이벤트를 제거한다 |
+| `clone` | 복사하다 | 원본을 직접 바꾸지 않기 위해 새 객체/배열을 만든다 | `clonePendingGarbageQueue()` | pending garbage queue를 복사한다 |
+| `emit` | 내보내다 | Socket.IO 이벤트를 보낸다 | `socket.emit("game:over", payload)` | `game:over` 이벤트를 서버나 클라이언트에 보낸다 |
+| `on` | 켜다, 받다 | 특정 이벤트를 받았을 때 실행할 함수를 등록한다 | `socket.on("game:over", handler)` | `game:over` 이벤트가 오면 handler를 실행한다 |
+
+예를 들어 다음 코드는 단어 단위로 읽을 수 있다.
+
+```js
+resolveGarbageCancel({
+    pendingGarbageQueue,
+    rawAttackLines,
+})
+```
+
+의미는 다음과 같다.
+
+```txt
+아직 처리 대기 중인 garbage 목록과
+가공 전 공격량을 받아서
+garbage 상쇄 결과를 계산한다.
+```
+
+반환값도 단어 의미로 해석하면 쉽다.
+
+```js
+{
+    pendingGarbageQueue,
+    incomingGarbageLines,
+    canceledGarbageLines,
+    attackLines,
+}
+```
+
+| 반환값 | 의미 |
+|---|---|
+| `pendingGarbageQueue` | 상쇄 후 아직 남은 garbage 대기열 |
+| `incomingGarbageLines` | 상쇄 전 들어와 있던 garbage 총량 |
+| `canceledGarbageLines` | 이번 공격으로 막아낸 garbage 줄 수 |
+| `attackLines` | 막고도 남아서 상대에게 보낼 공격량 |
+
+핵심 감각은 다음과 같다.
+
+```txt
+pending   = 기다리는 중
+raw       = 아직 손대기 전
+resolve   = 계산해서 정리
+remaining = 정리 후 남은 것
+intent    = 하려는 행동의 의도
+apply     = 실제로 반영
+enqueue   = 나중에 처리하려고 줄 세움
+attach    = 등록하거나 연결함
+detach    = 등록한 것을 제거함
+```

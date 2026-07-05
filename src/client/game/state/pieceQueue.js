@@ -9,6 +9,7 @@
   *
   * @param {Object} gameState - 변경 가능한 게임 상태 객체
   * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
+  * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
   * @returns {string} 다음 조각 타입
   */
 export function pickRandomPiece(gameState, pieceTypes, rng) {
@@ -28,9 +29,11 @@ export function pickRandomPiece(gameState, pieceTypes, rng) {
   * @param {Object} gameState - 변경 가능한 게임 상태 객체
   * @param {number} nextQueueSize - 화면에 보여줄 다음 조각 개수
   * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
+  * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
   * @returns {void}
   */
 export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng) {
+    // nextQueueSize는 화면 preview 개수이고, +1은 지금 스폰할 조각 몫이다.
     while (gameState.pieceQueue.length < nextQueueSize + 1) {
         gameState.pieceQueue.push(pickRandomPiece(gameState, pieceTypes, rng));
     }
@@ -42,6 +45,7 @@ export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng) {
   * @param {Object} gameState - 변경 가능한 게임 상태 객체
   * @param {number} nextQueueSize - 화면에 보여줄 다음 조각 개수
   * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
+  * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
   * @returns {string} 지금 스폰할 조각 타입
   */
 export function takeNextFromQueue(gameState, nextQueueSize, pieceTypes, rng) {

@@ -60,6 +60,17 @@ const PLACEMENT_RESULT_BOOLEAN_FIELDS = [
     "gameOver",
 ]
 
+/**
+ * room 퇴장 결과를 Socket.IO room leave와 남은 참가자 broadcast로 연결한다.
+ * - 마지막 참가자가 나가 room이 삭제된 경우에는 broadcast할 room이 없으므로 조용히 종료한다.
+ *
+ * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
+ * @param {import("socket.io").Socket} clientSocket - 요청한 클라이언트 socket
+ * @param {string|null} roomId - Socket.IO room id
+ * @param {{ok: boolean, room: Object|null}} result - roomService 퇴장 결과
+ * @param {string} nickname - 시스템 메시지에 표시할 닉네임
+ * @returns {void}
+ */
 function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickname) {
     if (!result.ok) return
 
@@ -91,6 +102,16 @@ function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
     })
 }
 
+/**
+ * 멀티플레이 Socket.IO 이벤트를 등록한다.
+ * - 서버는 room/match 상태, 입력 로그, bag chunk, 이벤트 relay를 담당한다.
+ * - 현재 MVP에서는 서버가 보드 충돌이나 점수 판정을 직접 실행하지 않는다.
+ *
+ * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
+ * @param {import("socket.io").Socket} clientSocket - 연결된 클라이언트 socket
+ * @param {Object} dependencies - 테스트에서 주입할 저장소/난수 의존성
+ * @returns {void}
+ */
 function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = {}) {
     const saveLog = dependencies.savePlacementDecisionLog || savePlacementDecisionLog
     const saveEventLog = dependencies.saveGameEventLog || saveGameEventLog
@@ -141,6 +162,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         )
     })
 
+    // room 상태를 playing으로 바꾸고 matchService에 player별 input log/server bag을 만든다.
     clientSocket.on("room:start", async (payload = {}) => {
         const { roomId, playerId } = payload
         const result = startGame(roomId, playerId, clientSocket.id)
@@ -181,6 +203,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         })
     })
 
+    // 스냅샷은 모양만 검증한 뒤 상대에게 relay한다. 서버가 board 결과를 확정하지 않는다.
     clientSocket.on("game:snapshot", (payload = {}) => {
         const { roomId, playerId, snapshot } = payload
         const result = syncRoom(roomId, playerId)
@@ -222,6 +245,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.to(roomId).emit("game:snapshot", { playerId, snapshot })
     })
 
+    // 입력은 match input log에 남기고 상대 예측 runtime으로 전달한다. 서버 step 실행은 아직 하지 않는다.
     clientSocket.on("game:input", (payload = {}) => {
         const { roomId, playerId, action, tick, pieceIndex } = payload
         const result = syncRoom(roomId, playerId)
@@ -334,6 +358,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.emit("game:log:result", logResult)
     })
 
+    // 공격 줄 수는 클라이언트 계산값을 검증하고, 서버는 대상과 hole column만 정해 양쪽에 알린다.
     clientSocket.on("game:garbage:attack", (payload = {}) => {
         const { roomId, playerId, lines } = payload
         const result = syncRoom(roomId, playerId)
@@ -383,6 +408,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.to(roomId).emit("game:garbage:append", eventPayload)
     })
 
+    // server bag chunk를 player별로 추가해 로컬/상대 런타임의 다음 조각 공급을 맞춘다.
     clientSocket.on("game:bag:request", (payload = {}) => {
         const { roomId, playerId } = payload
         const result = syncRoom(roomId, playerId)
@@ -430,6 +456,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     })
 
+    // 로비 복귀 시 최신 socketId를 room player에 다시 연결하고 finished room 복귀 조건을 확인한다.
     clientSocket.on("room:sync", (payload = {}) => {
         const { roomId, playerId } = payload
         const result = syncRoom(roomId, playerId, clientSocket.id, {
@@ -444,6 +471,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.emit("room:result", result)
     })
 
+    // 클라이언트의 패배 보고를 기준으로 match를 종료한다. top-out 판정은 아직 클라이언트 런타임이 맡는다.
     clientSocket.on("game:over", async (payload = {}) => {
         const { roomId, playerId, reason = "top_out" } = payload
         if (!VALID_GAME_OVER_REASONS.has(reason)) {

@@ -427,6 +427,7 @@
         onRoomUpdated((room) => {
             if (!room) return
             if (room.status === "playing") {
+                // 서버의 room:updated broadcast가 로비에서 게임 화면으로 넘어가는 트리거다.
                 saveRoomSession(room)
                 sessionStorage.setItem("tetris:playerId", currentPlayer.playerId);
                 location.href = `/pages/tetrisMulti.html?roomId=${room.roomId}`
@@ -455,6 +456,7 @@
             appendMessage("system", result.reason || "CHAT_ERROR")
         })
 
+        // requestType은 서버 응답 필드가 아니라 roomClient가 기억한 마지막 요청 종류다.
         onRoomResult((result, requestType) => {
             if (!result.ok) {
                 if (requestType === "sync") {

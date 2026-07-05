@@ -69,6 +69,15 @@ const GAME_PHASE = {
     GAME_OVER: "gameOver",
 }
 
+/**
+  * 테트리스 게임 런타임을 생성한다.
+  * - 싱글/멀티 화면에서 같은 보드 실행 흐름을 재사용한다.
+  * - 게임 규칙 상태는 gameState에, 루프/입력/동기화/로그 상태는 runtime에 둔다.
+  * - 반환된 API는 페이지 진입점과 네트워크 동기화 코드가 호출하는 외부 경계다.
+  *
+  * @param {Object} options - 런타임 생성 옵션
+  * @returns {Object} init, enqueueInput, snapshot, garbage 처리 API를 가진 런타임 컨트롤러
+  */
 export function createTetrisRuntime({
     boardCanvasEl = null,
     multiCanvasEls = [],
@@ -93,6 +102,8 @@ export function createTetrisRuntime({
         initialPhase: GAME_PHASE.PLAYING,
     })
 
+    // gameState는 보드/점수/현재 조각 같은 게임 규칙의 원천 상태다.
+    // runtime은 타이머, 입력 로그, 서버 bag, 멀티 동기화처럼 실행 중에만 필요한 상태다.
     const runtime = {
         boardCtx: null,
         inputTimer: undefined,
@@ -143,7 +154,7 @@ export function createTetrisRuntime({
       * - 렌더러 컨텍스트와 미리보기 DOM을 다시 준비한다.
       * - 큐를 채우고 빈 보드를 렌더한 뒤 첫 조각을 스폰한다.
       *
-      * @returns {{gameOver: boolean}} garbage 적용까지 포함한 최종 game over 여부
+      * @returns {void}
       */
     function init({ autoStart = true, serverBagChunks = null } = {}) {
         resetSessionState()
@@ -332,6 +343,7 @@ export function createTetrisRuntime({
     /**
       * 한 번의 입력 틱에서 제한된 개수만큼 입력 큐를 소비한다.
       *
+      * @param {number} currentTick - 현재 처리 중인 고정 입력 tick
       * @param {number} [maxPerTick=8] - 이번 틱에서 처리할 최대 액션 수
       * @returns {void}
       */
@@ -650,6 +662,7 @@ export function createTetrisRuntime({
       * 고정 후 top-out 여부에 따라 게임오버 또는 라인 클리어 흐름으로 분기한다.
       *
       * @param {boolean} touchesAboveTop - 고정된 조각이 보드 상단 밖 칸을 포함하는지 여부
+      * @param {Object|null} placementContext - lock 직전 생성한 placement_decision 로그 문맥
       * @returns {void}
       */
     function handlePostLockFlow(touchesAboveTop, placementContext) {
@@ -979,10 +992,12 @@ export function createTetrisRuntime({
 
     /**
       * lock 후 보드와 결과값을 채워 placement_decision 로그를 확정한다.
+      * - 공격 줄 계산, pending garbage 상쇄, 대기 garbage 적용까지 한 번에 확정한다.
+      * - 멀티플레이에서는 placementDecisionRecorder를 통해 서버 로그와 공격 이벤트로 이어진다.
       *
       * @param {Object|null} placementContext - lock 직전 생성한 로그 문맥
       * @param {{linesCleared: number, isTSpin: boolean, gameOver: boolean}} result - lock 처리 결과
-      * @returns {void}
+      * @returns {{gameOver: boolean}} garbage 적용까지 포함한 최종 game over 여부
       */
     function finalizePlacementDecision(placementContext, result) {
         if (!placementContext) return { gameOver: false }
@@ -1081,12 +1096,23 @@ export function createTetrisRuntime({
         return getPendingGarbageLines()
     }
 
+    /**
+      * 현재 대기 중인 garbage queue의 총 줄 수를 계산한다.
+      *
+      * @returns {number} 아직 보드에 적용되지 않은 garbage 총 줄 수
+      */
     function getPendingGarbageLines() {
         return runtime.pendingGarbageQueue.reduce((total, garbage) => {
             return total + garbage.lines
         }, 0)
     }
 
+    /**
+      * 이번 공격 줄로 대기 garbage를 상쇄하고, 남은 pending queue를 runtime에 반영한다.
+      *
+      * @param {number} rawAttackLines - 라인 클리어 결과로 계산된 상쇄 전 공격 줄 수
+      * @returns {{incomingGarbageLines: number, canceledGarbageLines: number, attackLines: number}} 상쇄 결과
+      */
     function resolveGarbageCancel(rawAttackLines) {
         const garbageCancelResult = resolveGarbageCancelPure({
             pendingGarbageQueue: runtime.pendingGarbageQueue,
@@ -1101,6 +1127,12 @@ export function createTetrisRuntime({
         }
     }
 
+    /**
+      * 다음 조각으로 넘어가기 전에 대기 중인 garbage를 모두 보드에 적용한다.
+      * - overflow가 발생하면 game over 상태까지 함께 확정한다.
+      *
+      * @returns {{appliedLines: number, overflow: boolean}} 적용된 줄 수와 overflow 여부
+      */
     function applyPendingGarbageQueue() {
         let appliedLines = 0
         let overflow = false
@@ -1120,6 +1152,12 @@ export function createTetrisRuntime({
         }
     }
 
+    /**
+      * 라인 클리어 결과를 combo/back-to-back 원천 상태에 반영한다.
+      *
+      * @param {{linesCleared: number, isTSpin: boolean}} params - 방금 고정된 조각의 공격 판정 입력
+      * @returns {{linesCleared: number, isTSpin: boolean, combo: number, backToBack: boolean}} 공격 계산에 사용할 현재 상태
+      */
     function updateAttackState({ linesCleared, isTSpin }) {
         const attackState = resolveAttackState({
             combo: gameState.combo,

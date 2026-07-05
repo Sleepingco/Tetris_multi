@@ -34,6 +34,7 @@ function clonePiece(piece) {
 
 /**
   * 변경 가능한 런타임 상태를 분리된 스냅샷 객체로 직렬화한다.
+  * - tick, pieceIndex, serverBagQueue 같은 실행 전용 runtime 값은 포함하지 않는다.
   *
   * @param {Object} gameState - 변경 가능한 게임 상태 객체
   * @returns {Object} 직렬화 가능한 스냅샷
