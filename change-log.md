@@ -1231,3 +1231,101 @@ line clear / T-Spin
 - `npm test` 통과
   - 124개 테스트 통과
 - `git diff --check` 통과
+
+---
+
+# 2026년 7월 6일
+최근 변경 사항 정리
+
+## 멀티 MVP 안정화
+- **input relay + server bag + snapshot correction 흐름 정착**
+  멀티 게임은 Socket.IO 기반 2인 플레이, 입력 중계, 서버 bag 공급, snapshot correction을 조합해 MVP 시연 가능한 흐름으로 정리되었습니다.
+
+- **snapshot timer 책임 분리**
+  snapshot 전송, bag request, game over report를 helper로 나눠 `tetrisMulti.html`의 주기 처리 책임을 줄였습니다.
+
+- **score/lines drift 보정 추가**
+  hard drop 예측 차이로 생기던 score/lines 불일치를 snapshot correction에서 보정하도록 개선했습니다.
+
+- **garbage attack/cancel/apply 흐름 정리**
+  공격량 계산, garbage cancel, garbage 적용 계산을 core pure function으로 정리해 멀티 공격 흐름의 기준을 명확히 했습니다.
+
+## 공격 판정과 placementResult 정리
+- **T-Spin 판정 pure function 분리**
+  `isTSpinLock()`을 `src/client/game/core/tSpin.js`로 분리해 lock 결과 분석과 공격 계산에서 재사용 가능한 형태로 만들었습니다.
+
+- **combo/back-to-back 상태 전이 분리**
+  `resolveAttackState()`를 `src/client/game/core/attackState.js`로 분리해 combo와 back-to-back 갱신 규칙을 core logic으로 고정했습니다.
+
+- **placementResult 의미 문서화**
+  `placementResult.backToBack`은 “이번 lock 이후 상태”가 아니라 “이번 공격 계산에 사용된 이전 B2B 상태”에 가깝다는 의미를 `PLAN.md`에 정리했습니다.
+
+- **runtime 통합 테스트 보강**
+  T-Spin Single, back-to-back Tetris bonus, combo bonus, 일반 line clear 후 B2B reset 등 공격 계산 결과를 runtime 테스트로 검증했습니다.
+
+## 서버 payload 검증 강화
+- **`game:garbage:attack` 상태 검증 추가**
+  room이 `playing` 상태가 아닐 때 garbage attack을 broadcast하지 않도록 막았습니다.
+
+- **`game:over` reason enum 제한**
+  client가 임의 문자열 reason으로 match finish를 처리하지 못하도록 `top_out`, `garbage_overflow`, `leave`만 허용했습니다.
+
+- **`game:snapshot` 최소 scalar schema 검증**
+  `phase`, `pieceIndex`, `tick`, `score`, `lines`를 최소 검증해 snapshot correction에 쓰이는 핵심 값의 오염 가능성을 줄였습니다.
+
+- **`game:input` 최소 검증 강화**
+  action enum 외에 `tick`, `pieceIndex`가 0 이상 정수인지 확인하도록 했습니다.
+
+- **playing 상태 제한 추가**
+  `game:input`, `game:snapshot`, `game:bag:request`가 `playing` 상태에서만 처리되도록 정리했습니다.
+
+- **placement decision log 검증 추가**
+  `game:log:placement_decision`은 `waiting` 상태에서 저장하지 않고, 마지막 lock 로그 누락을 피하기 위해 `playing`/`finished`에서는 허용하도록 정리했습니다. `placementResult` scalar field도 얕게 검증합니다.
+
+## core pure logic 추가 분리
+- **top-out 판정 분리**
+  `isPieceAboveTop(piece, blocks)`를 core로 분리해 lock 후 game over 판정의 서버 재사용 가능성을 높였습니다.
+
+- **spawn piece 생성 분리**
+  `createSpawnedPiece(pieceType, spawnRow, spawnCol)`를 `src/client/game/core/piece.js`로 분리했습니다.
+
+- **hard drop row 계산 분리**
+  `getHardDropRow(piece, canPlaceAt)`를 pure function으로 분리해 hard drop의 “도달 가능한 최하단 row 계산”만 독립적으로 테스트할 수 있게 했습니다.
+
+- **input action intent 매핑 분리**
+  `resolveInputMoveIntent(action)`을 `src/client/game/core/step.js`로 분리해 `move_left`, `move_right`, `soft_drop`, `rotate`를 runtime move intent로 바꾸는 규칙을 core에 고정했습니다.
+
+- **board metrics helper 추가**
+  AI 분석 준비용으로 board 상태를 수치화하는 helper 기반을 추가했습니다.
+
+## server authoritative 준비
+- **player별 authoritative state 초안 추가**
+  `matchService.createMatch()`에서 player별 `state`를 생성하도록 추가했습니다. 아직 input 적용, snapshot broadcast, server tick loop는 붙이지 않았습니다.
+
+- **client ESM core를 server CommonJS에서 로딩하는 bridge 추가**
+  `gameCoreLoader.js`를 추가해 `resolveInputMoveIntent`, `resolveMoveAttempt`, `resolveMoveIntent`, `canPlacePiece`, `createEmptyBoard`, `BLOCKS`, `WALL_KICKS`를 cached dynamic import로 로딩할 수 있게 했습니다.
+
+- **server player state input 적용 함수 추가**
+  `applyServerInputToPlayerState(playerState, input, gameCore)`를 추가해 `move_left`, `move_right`, `soft_drop`, `rotate`를 서버 state에 적용할 수 있게 했습니다. `hard_drop`, `hold`, lock, spawn, score, garbage는 아직 보류 상태입니다.
+
+- **match player state wrapper 추가**
+  `applyInputToMatchPlayerState(roomId, playerId, input, gameCore)`를 추가해 match/player를 찾아 해당 player의 server state에 input 1개를 적용할 수 있게 했습니다. 아직 `game:input` socket handler에는 연결하지 않았습니다.
+
+## 현재 의미
+- 멀티 MVP는 client prediction + input relay + server bag + snapshot correction 구조로 안정화되었습니다.
+- 서버는 아직 완전 authoritative는 아니지만, player별 state를 들고 client core 판정을 재사용해 input을 적용하기 시작할 수 있는 기반이 생겼습니다.
+- AI 기능으로 넘어가기 위해 필요한 “서버 기준 placement/result log”의 전 단계가 준비되었습니다.
+
+## 다음 우선순위
+- 서버에서 한 player의 조각 lifecycle을 test-only로 먼저 완성합니다.
+  - spawn
+  - hard drop
+  - lock
+  - line clear
+  - score
+  - next spawn
+- 이후 hold, garbage, game over, socket 연결, authoritative snapshot 순서로 확장합니다.
+
+## 검증
+- 각 단계별 단위 테스트와 runtime/socket 통합 테스트를 보강했습니다.
+- 최근 기준 `npm test`와 `git diff --check` 통과 상태로 정리되었습니다.

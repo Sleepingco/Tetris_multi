@@ -11,6 +11,17 @@ test("loadGameCore는 server에서 재사용할 client game core를 로딩한다
     assert.equal(typeof gameCore.resolveMoveIntent, "function");
     assert.equal(typeof gameCore.canPlacePiece, "function");
     assert.equal(typeof gameCore.createEmptyBoard, "function");
+    assert.equal(typeof gameCore.lockPieceOnBoard, "function");
+    assert.equal(typeof gameCore.clearFilledLines, "function");
+    assert.equal(typeof gameCore.isPieceAboveTop, "function");
+    assert.equal(typeof gameCore.createSpawnedPiece, "function");
+    assert.equal(typeof gameCore.getHardDropRow, "function");
+    assert.equal(gameCore.BOARD_ROWS, 20);
+    assert.equal(gameCore.BOARD_COLS, 10);
+    assert.deepEqual(gameCore.SPAWN_POSITION, {
+        row: -1,
+        col: 3,
+    });
     assert.equal(Array.isArray(gameCore.BLOCKS.tree), true);
     assert.equal(Array.isArray(gameCore.WALL_KICKS.normal["0->1"]), true);
 });
