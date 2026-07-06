@@ -3,11 +3,13 @@ const assert = require("node:assert/strict");
 
 const {
     appendPlayerBagChunk,
+    applyInputToMatchPlayerState,
     createMatch,
     recordInput,
     getMatchState,
     resetMatches,
 } = require("../src/server/services/matchService.js");
+const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
 
 function createPlayingRoom(roomId = "ROOM001") {
     return {
@@ -190,6 +192,82 @@ test("appendPlayerBagChunk는 player의 bagChunks에 새 server bag chunk를 추
     assert.equal(result.bagChunk.length, 7);
     assert.deepEqual([...result.bagChunk].sort(), expectedPieces);
     assert.deepEqual(hostPlayer.bagChunks[3], result.bagChunk);
+});
+
+test("applyInputToMatchPlayerState는 특정 player state에 input 1개를 적용한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("INPUT001"));
+    const matchBefore = getMatchState("INPUT001").match;
+    const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
+    hostPlayer.state.activePiece = {
+        pieceType: "tree",
+        rotation: 0,
+        row: 0,
+        col: 4,
+    };
+
+    const result = applyInputToMatchPlayerState("INPUT001", "host-player", {
+        action: "move_left",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.inputResult.ok, true);
+    assert.equal(result.inputResult.moveIntent.kind, "ok");
+    assert.deepEqual(hostPlayer.state.activePiece, {
+        pieceType: "tree",
+        rotation: 0,
+        row: 0,
+        col: 3,
+    });
+});
+
+test("applyInputToMatchPlayerState는 없는 match면 실패 결과를 반환한다", () => {
+    resetMatches();
+
+    const result = applyInputToMatchPlayerState("MISSING", "host-player", {
+        action: "move_left",
+    }, null);
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    });
+});
+
+test("applyInputToMatchPlayerState는 match에 없는 player면 실패 결과를 반환한다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("INPUT002"));
+    const result = applyInputToMatchPlayerState("INPUT002", "unknown-player", {
+        action: "move_left",
+    }, null);
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "PLAYER_NOT_FOUND",
+    });
+});
+
+test("applyInputToMatchPlayerState는 player state가 없으면 실패 결과를 반환한다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("INPUT003"));
+    const matchBefore = getMatchState("INPUT003").match;
+    const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
+    hostPlayer.state = null;
+
+    const result = applyInputToMatchPlayerState("INPUT003", "host-player", {
+        action: "move_left",
+    }, null);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.match.roomId, "INPUT003");
+    assert.equal(result.reason, "PLAYER_STATE_NOT_FOUND");
 });
 
 test("recordInput은 없는 match면 실패 결과를 반환한다", () => {

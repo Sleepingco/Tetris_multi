@@ -2,6 +2,10 @@
 // In-memory Match Store
 // match는 player별 input log, server bag chunk, authoritative state 초안을 저장한다.
 // =============================
+const {
+    applyServerInputToPlayerState,
+} = require("./playerStateInput.js");
+
 const matches = new Map();
 const BAG_PIECES = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
 const INITIAL_BAG_CHUNK_COUNT = 3;
@@ -142,6 +146,42 @@ function appendPlayerBagChunk(roomId, playerId) {
     return createSuccess(match, { bagChunk });
 }
 
+function applyInputToMatchPlayerState(roomId, playerId, input, gameCore) {
+    const match = matches.get(roomId);
+
+    if (!match) {
+        return createFailure("MATCH_NOT_FOUND");
+    }
+
+    const player = match.players.find((matchPlayer) => {
+        return matchPlayer.playerId === playerId;
+    });
+
+    if (!player) {
+        return createFailure("PLAYER_NOT_FOUND");
+    }
+
+    if (!player.state) {
+        return {
+            ok: false,
+            match,
+            reason: "PLAYER_STATE_NOT_FOUND",
+        };
+    }
+
+    const inputResult = applyServerInputToPlayerState(player.state, input, gameCore);
+    if (!inputResult.ok) {
+        return {
+            ok: false,
+            match,
+            reason: inputResult.reason,
+            inputResult,
+        };
+    }
+
+    return createSuccess(match, { inputResult });
+}
+
 function createBagChunk() {
     const chunk = [...BAG_PIECES];
 
@@ -193,6 +233,7 @@ function resetMatches() {
 
 module.exports = {
     appendPlayerBagChunk,
+    applyInputToMatchPlayerState,
     createMatch,
     getMatchState,
     recordInput,
