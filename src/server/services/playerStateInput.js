@@ -1,4 +1,4 @@
-function applyServerInputToPlayerState(playerState, input, gameCore) {
+function applyServerInputToPlayerState(authoritativeState, input, gameCore) {
     const inputIntent = gameCore?.resolveInputMoveIntent?.(input?.action);
     if (!inputIntent) {
         return {
@@ -8,7 +8,7 @@ function applyServerInputToPlayerState(playerState, input, gameCore) {
         };
     }
 
-    if (!playerState?.activePiece?.pieceType) {
+    if (!authoritativeState?.activePiece?.pieceType) {
         return {
             ok: false,
             reason: "INVALID_PLAYER_STATE",
@@ -16,7 +16,7 @@ function applyServerInputToPlayerState(playerState, input, gameCore) {
         };
     }
 
-    const nextPendingPiece = createPendingPiece(playerState, inputIntent);
+    const nextPendingPiece = createPendingPiece(authoritativeState, inputIntent);
     if (!nextPendingPiece) {
         return {
             ok: false,
@@ -26,8 +26,8 @@ function applyServerInputToPlayerState(playerState, input, gameCore) {
     }
 
     const outcome = gameCore.resolveMoveAttempt({
-        board: playerState.board,
-        activePiece: playerState.activePiece,
+        board: authoritativeState.board,
+        activePiece: authoritativeState.activePiece,
         pendingPiece: nextPendingPiece,
         moveCause: inputIntent.moveType,
         blocks: gameCore.BLOCKS,
@@ -46,11 +46,11 @@ function applyServerInputToPlayerState(playerState, input, gameCore) {
         };
     }
 
-    playerState.pendingPiece = { ...outcome.pending };
+    authoritativeState.pendingPiece = { ...outcome.pending };
 
     if (moveIntent.kind === "ok") {
-        playerState.activePiece = { ...moveIntent.active };
-        playerState.lastActionWasRotation = moveIntent.moveCause === "rotate";
+        authoritativeState.activePiece = { ...moveIntent.active };
+        authoritativeState.lastActionWasRotation = moveIntent.moveCause === "rotate";
         return {
             ok: true,
             reason: null,
@@ -59,7 +59,7 @@ function applyServerInputToPlayerState(playerState, input, gameCore) {
     }
 
     if (moveIntent.kind === "retry") {
-        playerState.activePiece = { ...moveIntent.active };
+        authoritativeState.activePiece = { ...moveIntent.active };
         return {
             ok: false,
             reason: "MOVE_RETRY",
@@ -74,11 +74,11 @@ function applyServerInputToPlayerState(playerState, input, gameCore) {
     };
 }
 
-function createPendingPiece(playerState, inputIntent) {
+function createPendingPiece(authoritativeState, inputIntent) {
     if (inputIntent.kind === "shift") {
-        const pendingPiece = playerState.pendingPiece
-            ? { ...playerState.pendingPiece }
-            : { ...playerState.activePiece };
+        const pendingPiece = authoritativeState.pendingPiece
+            ? { ...authoritativeState.pendingPiece }
+            : { ...authoritativeState.activePiece };
 
         pendingPiece.row += inputIntent.rowDelta;
         pendingPiece.col += inputIntent.colDelta;
@@ -87,9 +87,9 @@ function createPendingPiece(playerState, inputIntent) {
     }
 
     if (inputIntent.kind === "rotate") {
-        if (!playerState.pendingPiece) return null;
+        if (!authoritativeState.pendingPiece) return null;
 
-        const pendingPiece = { ...playerState.pendingPiece };
+        const pendingPiece = { ...authoritativeState.pendingPiece };
         pendingPiece.rotation = pendingPiece.rotation === 3
             ? 0
             : pendingPiece.rotation + 1;

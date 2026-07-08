@@ -1,5 +1,5 @@
-function applyServerGameplayInput(playerState, input, gameCore) {
-    if (!playerState) {
+function applyServerGameplayInput(authoritativeState, input, gameCore) {
+    if (!authoritativeState) {
         return createFailure("INVALID_PLAYER_STATE");
     }
 
@@ -7,8 +7,8 @@ function applyServerGameplayInput(playerState, input, gameCore) {
         return createFailure("INVALID_GAME_CORE");
     }
 
-    if (!playerState.activePiece?.pieceType) {
-        const spawnedPiece = spawnNextPiece(playerState, gameCore);
+    if (!authoritativeState.activePiece?.pieceType) {
+        const spawnedPiece = spawnNextPiece(authoritativeState, gameCore);
         if (!spawnedPiece) {
             return createFailure("NO_PIECE_AVAILABLE");
         }
@@ -18,19 +18,19 @@ function applyServerGameplayInput(playerState, input, gameCore) {
         return createFailure("UNSUPPORTED_ACTION");
     }
 
-    const activePiece = playerState.activePiece;
+    const activePiece = authoritativeState.activePiece;
     if (!activePiece?.pieceType) {
         return createFailure("INVALID_PLAYER_STATE");
     }
 
-    const scoreBefore = normalizeNumber(playerState.score);
-    const linesBefore = normalizeInteger(playerState.lines);
-    playerState.score = scoreBefore;
-    playerState.lines = linesBefore;
+    const scoreBefore = normalizeNumber(authoritativeState.score);
+    const linesBefore = normalizeInteger(authoritativeState.lines);
+    authoritativeState.score = scoreBefore;
+    authoritativeState.lines = linesBefore;
 
-    const lockedPieceIndex = normalizeInteger(playerState.pieceIndex);
+    const lockedPieceIndex = normalizeInteger(authoritativeState.pieceIndex);
     const droppedRow = gameCore.getHardDropRow(activePiece, (targetRow) => {
-        return gameCore.canPlacePiece(playerState.board, {
+        return gameCore.canPlacePiece(authoritativeState.board, {
             ...activePiece,
             row: targetRow,
         }, gameCore.BLOCKS);
@@ -41,25 +41,25 @@ function applyServerGameplayInput(playerState, input, gameCore) {
         row: droppedRow,
     };
 
-    playerState.score += droppedRows * 2;
-    gameCore.lockPieceOnBoard(playerState.board, lockedPiece, gameCore.BLOCKS);
+    authoritativeState.score += droppedRows * 2;
+    gameCore.lockPieceOnBoard(authoritativeState.board, lockedPiece, gameCore.BLOCKS);
 
-    const linesCleared = gameCore.clearFilledLines(playerState.board);
+    const linesCleared = gameCore.clearFilledLines(authoritativeState.board);
     if (linesCleared > 0) {
-        playerState.score += linesCleared * 10;
-        playerState.lines += linesCleared;
+        authoritativeState.score += linesCleared * 10;
+        authoritativeState.lines += linesCleared;
     }
 
-    const scoreAfter = playerState.score;
-    playerState.activePiece = {
+    const scoreAfter = authoritativeState.score;
+    authoritativeState.activePiece = {
         pieceType: "",
         rotation: lockedPiece.rotation,
         row: lockedPiece.row,
         col: lockedPiece.col,
     };
-    playerState.pendingPiece = null;
+    authoritativeState.pendingPiece = null;
 
-    const nextPiece = spawnNextPiece(playerState, gameCore);
+    const nextPiece = spawnNextPiece(authoritativeState, gameCore);
 
     return {
         ok: true,
@@ -77,12 +77,12 @@ function applyServerGameplayInput(playerState, input, gameCore) {
     };
 }
 
-function spawnNextPiece(playerState, gameCore) {
-    if (!Array.isArray(playerState.pieceQueue) || playerState.pieceQueue.length === 0) {
+function spawnNextPiece(authoritativeState, gameCore) {
+    if (!Array.isArray(authoritativeState.pieceQueue) || authoritativeState.pieceQueue.length === 0) {
         return null;
     }
 
-    const pieceType = playerState.pieceQueue.shift();
+    const pieceType = authoritativeState.pieceQueue.shift();
     const spawnPosition = gameCore.SPAWN_POSITION ?? {
         row: -1,
         col: 3,
@@ -93,11 +93,11 @@ function spawnNextPiece(playerState, gameCore) {
         spawnPosition.col,
     );
 
-    playerState.pieceIndex = normalizeInteger(playerState.pieceIndex) + 1;
-    playerState.activePiece = { ...spawnedPiece };
-    playerState.pendingPiece = { ...spawnedPiece };
-    playerState.holdUsedThisDrop = false;
-    playerState.phase = "playing";
+    authoritativeState.pieceIndex = normalizeInteger(authoritativeState.pieceIndex) + 1;
+    authoritativeState.activePiece = { ...spawnedPiece };
+    authoritativeState.pendingPiece = { ...spawnedPiece };
+    authoritativeState.holdUsedThisDrop = false;
+    authoritativeState.phase = "playing";
 
     return spawnedPiece;
 }

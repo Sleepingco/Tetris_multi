@@ -1,6 +1,6 @@
 // =============================
 // In-memory Match Store
-// match는 player별 input log, server bag chunk, authoritative state 초안을 저장한다.
+// match는 player별 input log, server bag chunk, authoritativeState 초안을 저장한다.
 // =============================
 const {
     applyServerInputToPlayerState,
@@ -53,12 +53,16 @@ function createMatch(room) {
     const match = {
         roomId: room.roomId,
         status: room.status || "playing",
-        players: room.players.map((player) => ({
-            playerId: player.playerId,
-            inputLog: [],
-            bagChunks: createInitialBagChunks(),
-            state: createInitialPlayerState(),
-        })),
+        players: room.players.map((player) => {
+            const bagChunks = createInitialBagChunks();
+
+            return {
+                playerId: player.playerId,
+                inputLog: [],
+                bagChunks,
+                authoritativeState: createInitialPlayerState(bagChunks),
+            };
+        }),
         createdAt: Date.now(),
     };
 
@@ -142,6 +146,9 @@ function appendPlayerBagChunk(roomId, playerId) {
 
     const bagChunk = createBagChunk();
     player.bagChunks.push(bagChunk);
+    if (Array.isArray(player.authoritativeState?.pieceQueue)) {
+        player.authoritativeState.pieceQueue.push(...bagChunk);
+    }
 
     return createSuccess(match, { bagChunk });
 }
@@ -161,15 +168,15 @@ function applyInputToMatchPlayerState(roomId, playerId, input, gameCore) {
         return createFailure("PLAYER_NOT_FOUND");
     }
 
-    if (!player.state) {
+    if (!player.authoritativeState) {
         return {
             ok: false,
             match,
-            reason: "PLAYER_STATE_NOT_FOUND",
+            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
         };
     }
 
-    const inputResult = applyServerInputToPlayerState(player.state, input, gameCore);
+    const inputResult = applyServerInputToPlayerState(player.authoritativeState, input, gameCore);
     if (!inputResult.ok) {
         return {
             ok: false,
@@ -199,7 +206,7 @@ function createInitialBagChunks(count = INITIAL_BAG_CHUNK_COUNT) {
     return Array.from({ length: count }, () => createBagChunk());
 }
 
-function createInitialPlayerState() {
+function createInitialPlayerState(bagChunks = []) {
     return {
         board: createEmptyBoard(),
         activePiece: {
@@ -209,7 +216,7 @@ function createInitialPlayerState() {
             col: SPAWN_COL,
         },
         pendingPiece: null,
-        pieceQueue: [],
+        pieceQueue: flattenBagChunks(bagChunks),
         holdPieceType: null,
         holdUsedThisDrop: false,
         score: 0,
@@ -221,6 +228,11 @@ function createInitialPlayerState() {
         pieceIndex: 0,
         pendingGarbageQueue: [],
     };
+}
+
+function flattenBagChunks(bagChunks) {
+    if (!Array.isArray(bagChunks)) return [];
+    return bagChunks.flat();
 }
 
 function createEmptyBoard() {
