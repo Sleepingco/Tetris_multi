@@ -187,7 +187,7 @@ test("getAuthoritativePlayerSnapshotDto는 client snapshot 후보 필드와 tick
     assert.equal(dto.tick, hostPlayer.authoritativeState.currentTick);
     assert.equal(Object.hasOwn(dto, "currentTick"), false);
     assert.equal(Object.hasOwn(dto, "pendingPiece"), false);
-    assert.equal(Object.hasOwn(dto, "pendingGarbageQueue"), false);
+    assert.equal(Object.hasOwn(dto, "pendingGarbageQueue"), true);
     assert.equal(Object.hasOwn(dto, "lastActionWasRotation"), false);
     assert.deepEqual(Object.keys(dto), [
         "board",
@@ -202,6 +202,7 @@ test("getAuthoritativePlayerSnapshotDto는 client snapshot 후보 필드와 tick
         "backToBack",
         "tick",
         "pieceIndex",
+        "pendingGarbageQueue",
     ]);
     assert.equal(dto.pieceIndex, hostPlayer.authoritativeState.pieceIndex);
     assert.equal(dto.score, hostPlayer.authoritativeState.score);

@@ -1107,6 +1107,22 @@ export function createTetrisRuntime({
         }, 0)
     }
 
+    function clonePendingGarbageQueue(pendingGarbageQueue) {
+        if (!Array.isArray(pendingGarbageQueue)) return []
+
+        return pendingGarbageQueue
+            .filter((garbage) => {
+                return Number.isInteger(garbage?.lines) && garbage.lines > 0
+                    && Number.isInteger(garbage?.holeCol)
+            })
+            .map((garbage) => {
+                return {
+                    lines: garbage.lines,
+                    holeCol: garbage.holeCol,
+                }
+            })
+    }
+
     /**
       * 이번 공격 줄로 대기 garbage를 상쇄하고, 남은 pending queue를 runtime에 반영한다.
       *
@@ -1306,6 +1322,7 @@ export function createTetrisRuntime({
             backToBack: gameState.backToBack,
             tick: runtime.currentTick,
             pieceIndex: runtime.pieceIndex,
+            pendingGarbageQueue: clonePendingGarbageQueue(runtime.pendingGarbageQueue),
         }
     }
 
@@ -1348,9 +1365,11 @@ export function createTetrisRuntime({
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
         runtime.pieceIndex = snapshot.pieceIndex ?? runtime.pieceIndex
+        runtime.pendingGarbageQueue = clonePendingGarbageQueue(snapshot.pendingGarbageQueue)
 
         ui.renderScore(gameState.score)
         ui.renderLines(gameState.lines)
+        ui.renderPendingGarbage(getPendingGarbageLines())
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
         if (gameState.phase === GAME_PHASE.GAME_OVER) {

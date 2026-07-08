@@ -139,16 +139,8 @@ export function startMultiplayerGame({
         if (result.ok) return
         console.warn("game:input failed:", result.reason)
     })
-    const detachGarbageAppend = receiveGarbageAppend((payload) => {
-        const { targetPlayerId, lines, holeCol } = payload
-        if (targetPlayerId === playerId) {
-            myGame.queueGarbageLines({ lines, holeCol })
-            return
-        }
-
-        if (targetPlayerId === opponentPlayerId) {
-            opponentGame.queueGarbageLines({ lines, holeCol })
-        }
+    const detachGarbageAppend = receiveGarbageAppend(() => {
+        // garbage rules are applied from authoritative snapshots.
     })
     const detachGameBagAppend = receiveGameBagAppend(({ playerId: bagPlayerId, bagChunk }) => {
         if (!Array.isArray(bagChunk)) return

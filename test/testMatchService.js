@@ -422,6 +422,26 @@ test("applyGravityStepToMatchPlayerState는 player authoritativeState에 gravity
     assert.deepEqual(snapshotResult.snapshot.activePiece, hostPlayer.authoritativeState.activePiece);
 });
 
+test("getAuthoritativePlayerSnapshotDto는 pendingGarbageQueue를 client snapshot에 포함한다", () => {
+    resetMatches();
+    createMatch(createPlayingRoom("SNAPSHOT_GARBAGE_001"));
+    const match = getMatchState("SNAPSHOT_GARBAGE_001").match;
+    const guestPlayer = match.players.find(player => player.playerId === "guest-player");
+    guestPlayer.authoritativeState.pendingGarbageQueue.push({ lines: 2, holeCol: 3 });
+
+    const snapshotResult = getAuthoritativePlayerSnapshotDto("SNAPSHOT_GARBAGE_001", "guest-player");
+
+    assert.equal(snapshotResult.ok, true);
+    assert.deepEqual(snapshotResult.snapshot.pendingGarbageQueue, [
+        { lines: 2, holeCol: 3 },
+    ]);
+
+    snapshotResult.snapshot.pendingGarbageQueue[0].lines = 99;
+    assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, [
+        { lines: 2, holeCol: 3 },
+    ]);
+});
+
 test("applyGravityStepToMatchPlayerState는 없는 match면 실패 결과를 반환한다", async () => {
     resetMatches();
 

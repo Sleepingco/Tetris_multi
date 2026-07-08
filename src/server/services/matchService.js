@@ -433,6 +433,9 @@ function createClientSnapshotDto(authoritativeSnapshot) {
         backToBack: authoritativeSnapshot.backToBack,
         tick: authoritativeSnapshot.currentTick,
         pieceIndex: authoritativeSnapshot.pieceIndex,
+        pendingGarbageQueue: authoritativeSnapshot.pendingGarbageQueue.map((garbage) => {
+            return { ...garbage };
+        }),
     };
 }
 

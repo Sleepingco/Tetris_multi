@@ -356,6 +356,67 @@ test("상대 game:input relay 수신은 opponentGame 상태를 바꾸지 않는�
     assert.equal(opponentSnapshot.score, opponentBaseSnapshot.score);
 });
 
+test("game:garbage:append 수신은 client runtime에 garbage를 queue하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    let myQueueCallCount = 0;
+    let opponentQueueCallCount = 0;
+    session.myGame.queueGarbageLines = () => {
+        myQueueCallCount += 1;
+        return 0;
+    };
+    session.opponentGame.queueGarbageLines = () => {
+        opponentQueueCallCount += 1;
+        return 0;
+    };
+
+    sharedFakeSocket.emitServer("game:garbage:append", {
+        roomId: "room-1",
+        fromPlayerId: "player-opponent",
+        targetPlayerId: "player-me",
+        lines: 2,
+        holeCol: 3,
+    });
+    sharedFakeSocket.emitServer("game:garbage:append", {
+        roomId: "room-1",
+        fromPlayerId: "player-me",
+        targetPlayerId: "player-opponent",
+        lines: 4,
+        holeCol: 5,
+    });
+
+    assert.equal(myQueueCallCount, 0);
+    assert.equal(opponentQueueCallCount, 0);
+});
+
+test("authoritative snapshot의 pendingGarbageQueue가 상대 pending garbage 표시 원천이 된다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const params = createSessionParams();
+    const session = startMultiplayerGame(params);
+    t.after(() => cleanupSession(session));
+
+    const opponentBaseSnapshot = session.opponentGame.getSnapshot();
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-opponent",
+        snapshot: {
+            ...snapshotWithScore(opponentBaseSnapshot, 20),
+            pendingGarbageQueue: [
+                { lines: 2, holeCol: 3 },
+                { lines: 1, holeCol: 5 },
+            ],
+        },
+    });
+
+    assert.deepEqual(session.opponentGame.getSnapshot().pendingGarbageQueue, [
+        { lines: 2, holeCol: 3 },
+        { lines: 1, holeCol: 5 },
+    ]);
+    assert.equal(params.opponentPendingGarbageEl.innerText, 3);
+});
+
 test("내 playerId의 authoritative snapshot은 보수적 조건을 통과하면 myGame에 적용한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
