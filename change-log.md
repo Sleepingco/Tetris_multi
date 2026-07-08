@@ -1329,3 +1329,259 @@ line clear / T-Spin
 ## 검증
 - 각 단계별 단위 테스트와 runtime/socket 통합 테스트를 보강했습니다.
 - 최근 기준 `npm test`와 `git diff --check` 통과 상태로 정리되었습니다.
+
+---
+
+# 2026년 7월 9일
+server authoritative 전환 작업 정리
+
+## 큰 방향 전환
+
+- 멀티플레이 구조를 기존 `client prediction + input relay + client snapshot relay` 중심에서 `server authoritative state + server snapshot` 중심으로 옮기기 시작했습니다.
+- 기존 목표였던 "클라이언트가 서로 snapshot을 주고받고 서버가 중계하는 구조"를 줄이고, 서버가 계산한 `game:authoritative:snapshot`을 내려주는 방향으로 정리했습니다.
+- 단, 내 보드는 여전히 즉각적인 조작감을 위해 client prediction을 유지하고, 서버 snapshot은 보수적인 correction 후보로만 적용합니다.
+
+```text
+이전 흐름:
+client input
+  -> local runtime prediction
+  -> game:input relay
+  -> 상대 client prediction
+  -> client game:snapshot relay/correction
+
+현재 전환 흐름:
+client input
+  -> local runtime prediction
+  -> game:input
+  -> server authoritativeState 적용
+  -> game:authoritative:snapshot emit
+  -> 상대 board는 server snapshot 적용
+  -> 내 board는 필요한 경우에만 보수적 correction
+```
+
+## server authoritative state와 input 처리
+
+- `matchService`의 player별 게임 상태 이름을 `authoritativeState`로 정리했습니다.
+  - client runtime의 `gameState`와 서버 기준 상태를 구분하기 위한 이름입니다.
+  - snapshot payload나 client 상태 이름은 바꾸지 않았습니다.
+- `createMatch()`에서 각 player의 `bagChunks`를 기준으로 `authoritativeState.pieceQueue`를 초기화합니다.
+  - 첫 조각은 즉시 `activePiece` / `pendingPiece`로 올립니다.
+  - `pieceIndex`는 첫 조각을 이미 소비한 상태라 `1`부터 시작합니다.
+  - hard drop 시점의 lazy spawn은 제거했습니다.
+- `applyAuthoritativeInput(authoritativeState, input, gameCore)`를 server gameplay의 public entry로 정리했습니다.
+  - 처리 action:
+    - `move_left`
+    - `move_right`
+    - `soft_drop`
+    - `rotate`
+    - `hard_drop`
+    - `hold`
+  - 기존 `applyHardDropInput()`은 외부 entry가 아니라 내부 helper가 되었습니다.
+- `applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)`를 match 단위 진입점으로 정리했습니다.
+  - `pieceIndex` mismatch면 state를 변경하지 않고 실패 반환합니다.
+  - socket relay와 input log는 MVP 호환을 위해 유지하되, stale input은 authoritative state에는 반영하지 않습니다.
+
+## 서버 lock / 공격 / garbage 계산
+
+- server authoritative lock 경로에서 다음 계산을 처리합니다.
+  - hard drop score
+  - line clear score
+  - `lines`
+  - `combo`
+  - `backToBack`
+  - T-Spin
+  - `rawAttackLines`
+  - `attackLines`
+  - incoming garbage cancel
+  - 남은 pending garbage apply
+  - next spawn
+- `placementResult.backToBack`은 기존 문서화한 의미를 유지합니다.
+  - "이번 lock 이후 상태"가 아니라 "이번 공격 계산에 사용된 이전 B2B 상태"입니다.
+  - 저장 상태는 `authoritativeState.backToBack = nextBackToBack`으로 갱신합니다.
+- top-out lock에서는 line clear, attack, T-Spin no-line score를 만들지 않도록 정리했습니다.
+  - `placementResult.gameOver: true`
+  - `linesCleared: 0`
+  - `rawAttackLines: 0`
+  - `attackLines: 0`
+  - `nextPiece: null`
+- 조각 spawn / hold swap 후에는 `lastActionWasRotation`을 `false`로 reset합니다.
+  - 이전 조각의 rotate 상태가 다음 T 조각의 T-Spin 판정으로 새는 문제를 막기 위함입니다.
+
+## server authoritative snapshot
+
+- `getAuthoritativePlayerSnapshot(roomId, playerId)`를 추가해 서버 내부 state 복사본을 조회할 수 있게 했습니다.
+  - `board`, `activePiece`, `pendingPiece`, `pieceQueue`, `pendingGarbageQueue` 등 내부 확인에 필요한 값을 포함합니다.
+  - 원본 `authoritativeState`를 직접 반환하지 않고 복사본을 반환합니다.
+- `getAuthoritativePlayerSnapshotDto(roomId, playerId)`를 추가했습니다.
+  - client `applySnapshot()` 후보 형태에 맞춰 `currentTick` 대신 `tick`을 노출합니다.
+  - DTO에서는 `pendingPiece`, `pendingGarbageQueue`, `lastActionWasRotation` 같은 서버 내부 필드는 제외했습니다.
+- 서버 `game:input` 처리 후 authoritative apply가 성공하면 `game:authoritative:snapshot`을 room 전체에 emit합니다.
+  - payload 형태:
+
+```js
+{
+    roomId,
+    playerId,
+    snapshot,
+}
+```
+
+- `roomClient.js`에 `receiveAuthoritativeSnapshot(handler)`를 추가해 client가 새 snapshot channel을 받을 수 있게 했습니다.
+
+## 멀티 페이지 책임 분리
+
+- `tetrisMulti.html`에서 게임 세션 구성 책임을 분리했습니다.
+  - 새 모듈: `src/client/game/entry/multiplayerGameSession.js`
+- `tetrisMulti.html`에 남긴 책임:
+  - sessionStorage에서 room/player 정보 복원
+  - host/guest role 계산
+  - DOM element 조회
+  - player label 설정
+  - `startMultiplayerGame()` 호출
+  - match finish UI
+  - lobby/home 이동
+  - pagehide cleanup
+- `multiplayerGameSession.js`로 옮긴 책임:
+  - local/opponent `createTetrisRuntime()` 생성
+  - keyboard input relay
+  - server bag request / append
+  - authoritative snapshot 수신
+  - garbage append 수신
+  - runtime cleanup handle 반환
+
+## client snapshot relay 제거와 authoritative 적용
+
+- 기존 client-driven `game:snapshot` 송신/수신 경로를 제거했습니다.
+  - client가 만든 snapshot을 서버가 상대에게 중계하는 구조를 더 이상 사용하지 않습니다.
+  - legacy `game:snapshot`은 테스트에서 더 이상 상대에게 전달되지 않는 것으로 고정했습니다.
+- 상대 보드는 `game:authoritative:snapshot`만 적용하도록 변경했습니다.
+  - `opponentGame.init({ autoStart: false, ... })`
+  - 상대 `game:input` relay를 받아 `opponentGame.enqueueInput()`으로 예측 실행하던 경로를 제거했습니다.
+- 내 보드는 server snapshot으로 무조건 덮지 않습니다.
+  - `shouldCorrectMyPrediction(serverSnapshot, localSnapshot)`을 통과한 경우에만 `myGame.applySnapshot(snapshot)`을 호출합니다.
+  - active piece 위치 차이만으로는 내 보드를 즉시 보정하지 않습니다.
+  - `pieceIndex`, `phase`, `score`, `lines`처럼 의미 있는 drift가 있을 때만 correction 후보로 봅니다.
+
+## legacy client-driven event 정리
+
+- client 송신 API에서 다음 경로를 제거했습니다.
+  - `sendGameSnapshot()`
+  - `receiveSnapshot()`
+  - `onGameSnapshotResult()`
+  - `sendGarbageAttack()`
+  - `onGarbageResult()`
+  - `sendGameOver()`
+  - `onGameOverResult()`
+- `placementDecisionRecorder()`는 분석용 placement log만 보냅니다.
+  - garbage attack은 client가 선언하지 않고 server lock 결과를 따릅니다.
+- `heartbeatTimer`는 이제 server bag request만 유지합니다.
+  - client가 `phase: "gameOver"`를 감지해도 `game:over`를 emit하지 않습니다.
+- server의 legacy event는 match 결과를 바꾸지 않는 방향으로 테스트가 유지됩니다.
+  - legacy `game:snapshot`
+  - legacy `game:garbage:attack`
+  - legacy `game:over`
+
+## server authoritative ticker
+
+- `applyAuthoritativeGravityStep(authoritativeState, gameCore)`를 추가했습니다.
+  - 서버가 player state에 gravity 1회를 적용합니다.
+  - 이동 성공 시 `currentTick`을 증가시킵니다.
+  - 아래가 막히면 기존 lock/spawn helper를 재사용합니다.
+  - `phase !== "playing"`이면 state를 변경하지 않습니다.
+- `applyGravityStepToMatchPlayerState(roomId, playerId, gameCore)` wrapper를 추가했습니다.
+  - match/player lookup만 담당하고 실제 gravity 처리는 `applyAuthoritativeGravityStep()`에 위임합니다.
+- `authoritativeTickerService`를 추가했습니다.
+  - room별 ticker lifecycle을 관리합니다.
+  - timer는 100ms마다 돌지만, gravity/snapshot은 500ms 누적 기준으로 실행합니다.
+  - `room:start` 성공 후 ticker를 시작합니다.
+  - `game:leave`와 authoritative match finish 시 ticker를 정리합니다.
+  - playing 중 disconnect는 재입장 여지를 위해 ticker를 멈추지 않습니다.
+- ticker 경로에서도 lock 결과의 `attackLines`를 상대 `pendingGarbageQueue`에 추가하고 `game:garbage:append`를 emit합니다.
+
+## authoritative match finish 정리
+
+- client `game:over` report를 제거하고, match finish 소유권을 server authoritative 결과로 옮겼습니다.
+- input 경로와 ticker 경로에서 gameOver가 발생할 수 있어, 공통 helper를 추가했습니다.
+  - 새 파일: `src/server/services/authoritativeMatchFinish.js`
+  - 함수: `finishAuthoritativeMatch(...)`
+- `finishAuthoritativeMatch()`가 담당하는 side effect:
+  - `finishGame(roomId, loserPlayerId, "top_out")`
+  - room ticker stop
+  - `match:finish` emit
+  - `game_over` log 저장
+- `finishGame()`이 `GAME_NOT_PLAYING`을 반환하면 이미 처리된 finish로 보고 중복 emit/log를 만들지 않습니다.
+
+## 테스트 보강
+
+- server gameplay 단위 테스트를 보강했습니다.
+  - `applyAuthoritativeInput()` action 전체
+  - hard drop lock/score/line clear
+  - hold / hold swap / same drop hold 실패
+  - combo / back-to-back / T-Spin attack scalar
+  - garbage cancel / garbage apply
+  - top-out lock
+  - gravity step
+- match service 테스트를 보강했습니다.
+  - authoritative state 초기화
+  - pieceQueue와 bagChunks 동기화
+  - `pieceIndex` mismatch 차단
+  - authoritative snapshot DTO
+  - gravity wrapper
+  - pending garbage append
+- socket 테스트를 보강했습니다.
+  - input relay 유지 + authoritative state apply
+  - stale input은 relay/inputLog는 유지하되 authoritative state는 변경하지 않음
+  - authoritative snapshot emit
+  - legacy snapshot/garbage/gameOver 차단
+  - authoritative gameOver finish/log/ticker stop
+- client session 테스트를 보강했습니다.
+  - heartbeat가 `game:snapshot` / `game:over`를 보내지 않음
+  - 내 keyboard input은 `game:input`으로 전송됨
+  - legacy snapshot은 상대 보드를 덮지 않음
+  - 상대 `game:input` relay는 opponent runtime을 움직이지 않음
+  - 내 authoritative snapshot은 보수적 조건을 통과한 경우에만 적용됨
+- ticker service 테스트를 추가했습니다.
+  - room ticker start/stop
+  - 500ms 누적 후 gravity/snapshot 실행
+  - garbage append
+  - gameOver finish/log
+  - stop 후 restart 시 accumulator 초기화
+  - finish 중복 방지
+
+## 현재 의미
+
+- 멀티플레이는 더 이상 client snapshot relay를 중심으로 동작하지 않습니다.
+- 상대 보드는 server authoritative snapshot을 단일 기준으로 삼기 시작했습니다.
+- 내 보드는 조작감을 위해 client prediction을 유지하되, 서버 기준 correction을 점진적으로 받아들이는 구조입니다.
+- game over / match finish는 client report가 아니라 server authoritative lock/tick 결과가 결정합니다.
+
+## 아직 남은 blocker
+
+- **garbage 표시/DTO 정리**
+  - 서버는 `pendingGarbageQueue`를 authoritative state에 갖고 있지만, client 표시와 snapshot DTO의 의미는 아직 완전히 정리되지 않았습니다.
+  - `game:garbage:append` 이벤트를 계속 표시용으로 둘지, snapshot DTO에 pending garbage를 포함할지 결정해야 합니다.
+- **내 보드 correction 안정화**
+  - `myGame.applySnapshot()`이 조작감과 gravity loop에 미치는 영향을 2탭 플레이에서 확인해야 합니다.
+- **ticker 지연 정책**
+  - event loop 지연 시 밀린 gravity를 catch-up할지, callback당 최대 1 step으로 제한할지 정책이 아직 남아 있습니다.
+- **2탭 수동 회귀**
+  - `start -> input -> attack -> garbage -> top-out -> match finish -> lobby/rejoin` 흐름은 실제 브라우저 2탭에서 확인해야 합니다.
+
+## 검증
+
+- 최근 작업 단위에서 다음 검증을 반복했습니다.
+  - `node --test test/testPlayerGameplayStep.js`
+  - `node --test test/testMatchService.js`
+  - `node --test test/testMultiplayerSocket.js`
+  - `node --test test/testMultiplayerGameSession.js`
+  - `node --test test/testAuthoritativeTickerService.js`
+  - `npm test -- --test-reporter=dot`
+  - `git diff --check`
+
+## 다음 우선순위
+
+1. server `pendingGarbageQueue`와 client garbage 표시/DTO 의미 정리
+2. 내 보드 authoritative correction 안정화
+3. 2탭 수동 회귀
+4. ticker 지연/catch-up 정책 결정
+5. 커밋 분리와 changelog 정리

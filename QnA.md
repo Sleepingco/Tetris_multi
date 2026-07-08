@@ -2736,3 +2736,407 @@ enqueue   = 나중에 처리하려고 줄 세움
 attach    = 등록하거나 연결함
 detach    = 등록한 것을 제거함
 ```
+
+---
+
+## Q. 서버 authoritative까지는 얼마나 남았고, 멀티 완성은 server auth가 끝이야? (2026-07-09)
+
+server authoritative 전환은 한 번에 끝나는 기능이 아니라, 여러 책임을 서버 쪽으로 옮기는 과정이다.
+
+현재까지 옮긴 큰 축은 다음과 같다.
+
+```txt
+서버가 player별 authoritativeState 보유
+서버가 input을 authoritativeState에 적용
+서버가 lock / line clear / score / attack / garbage 계산
+서버가 gravity tick 실행
+서버가 authoritative snapshot emit
+상대 보드는 server snapshot 기준으로 표시
+game over / match finish는 서버 결과 기준으로 처리
+```
+
+그래서 server auth MVP 기준으로는 상당히 많이 왔다. 하지만 "멀티 완성"은 server auth만으로 끝나지 않는다.
+
+```txt
+server auth = 게임 결과의 진실 원천을 서버로 옮기는 것
+멀티 완성 = 그 구조가 실제 사용자 플레이에서 안정적이고 자연스럽게 보이는 것
+```
+
+server auth 이후에도 남는 작업은 있다.
+
+- garbage 표시와 pending queue 의미 정리
+- 내 보드 prediction과 server correction 충돌 완화
+- disconnect/rejoin 안정화
+- match finish 후 결과 표시와 로비 복귀 흐름
+- 2탭 수동 회귀
+- 이후 AI 분석용 로그 신뢰도 정리
+
+즉, server auth는 멀티 완성의 **끝**이 아니라, AI 분석과 공정한 멀티플레이를 위한 **핵심 기반**이다.
+
+---
+
+## Q. pure function 분리는 언제까지 해야 하고, 언제 server auth로 넘어가야 해? (2026-07-09)
+
+pure function 분리는 server auth를 위한 준비 작업이었다.
+
+예를 들어 다음 함수들은 서버에서도 재사용하기 쉬운 형태가 되었다.
+
+- `isPieceAboveTop()`
+- `createSpawnedPiece()`
+- `getHardDropRow()`
+- `resolveInputMoveIntent()`
+- `isTSpinLock()`
+- `resolveAttackState()`
+- `calculateGarbageAttack()`
+- `resolveGarbageCancel()`
+- `applyGarbageLines()`
+
+하지만 pure function 분리를 계속 늘리는 것이 목표는 아니다. 기준은 이 질문이다.
+
+```txt
+이 분리가 server authoritative 전환에 직접 필요한가?
+```
+
+직접 필요하면 한다. 직접 필요하지 않으면 나중으로 미룬다.
+
+이번에는 서버가 실제로 player state를 계산해야 했기 때문에 다음 단계로 넘어갔다.
+
+```txt
+pure logic 준비
+  -> server authoritativeState 생성
+  -> server input 적용
+  -> server lock/attack/garbage 계산
+  -> server gravity ticker
+  -> server snapshot emit
+```
+
+즉, 지금은 더 많은 pure function 후보를 찾는 단계가 아니라, 이미 분리한 core logic을 서버 실행 흐름에 연결하는 단계다.
+
+---
+
+## Q. `applyInputToMatchPlayerState()`와 hard drop 처리가 왜 나뉘어 있었고, 왜 `applyAuthoritativeInput()` 하나로 합쳤어? (2026-07-09)
+
+초기에는 위험을 줄이기 위해 이동 입력과 hard drop lifecycle을 나눴다.
+
+```txt
+move_left / move_right / rotate / soft_drop
+  -> 단순 위치/회전 변경
+
+hard_drop
+  -> 최하단 row 계산
+  -> lock
+  -> line clear
+  -> score
+  -> attack
+  -> next spawn
+```
+
+처음부터 모두 한 함수에 넣으면 lock/spawn/score/garbage까지 한 번에 흔들릴 수 있었다.
+
+하지만 server authoritative 입장에서 보면 최종 public entry는 하나여야 한다.
+
+```js
+applyAuthoritativeInput(authoritativeState, input, gameCore)
+```
+
+이 함수 하나가 모든 action을 받아야 한다.
+
+- `move_left`
+- `move_right`
+- `soft_drop`
+- `rotate`
+- `hard_drop`
+- `hold`
+
+테스트도 특정 내부 helper를 직접 보는 방식보다 public entry를 기준으로 보는 것이 맞다.
+
+```txt
+좋은 테스트 방향:
+applyAuthoritativeInput({ action: "hard_drop" }) 결과 확인
+
+피해야 할 방향:
+applyHardDropInput() 같은 내부 helper를 직접 테스트
+```
+
+이렇게 해야 socket, matchService, ticker가 모두 같은 server authoritative 진입점을 기준으로 동작한다.
+
+---
+
+## Q. server snapshot과 client snapshot의 최종 형태는 뭐야? snapshot을 계속 보내면 비용이 너무 크지 않아? (2026-07-09)
+
+snapshot이 완전히 사라지는 것은 아니다. 역할이 바뀐다.
+
+이전 구조는 다음에 가까웠다.
+
+```txt
+client A snapshot -> server -> client B
+client B snapshot -> server -> client A
+```
+
+이 구조의 문제는 서버가 상태의 진실 원천이 아니라는 점이다. client가 만든 board, score, lines를 상대에게 보여주는 흐름이 된다.
+
+목표 구조는 이렇다.
+
+```txt
+client input -> server
+server authoritativeState 계산
+server authoritative snapshot -> clients
+```
+
+중요한 차이는 snapshot의 방향이다.
+
+```txt
+이전 snapshot:
+client가 만든 상태를 서버가 중계
+
+목표 snapshot:
+server가 계산한 상태를 client에게 내려줌
+```
+
+통신 비용은 당연히 봐야 한다. 그래서 최종적으로는 모든 frame마다 큰 board snapshot을 보내는 구조가 아니라, 아래처럼 단계적으로 줄일 수 있다.
+
+```txt
+초기 server auth MVP:
+주기적 authoritative snapshot
+
+안정화 후:
+input 결과 / lock 결과 / 변경된 필드 중심 delta
+
+더 이후:
+snapshot은 복구, 재접속, drift correction 용도
+```
+
+지금은 먼저 정확한 구조를 만들고, 그 다음 전송량을 줄이는 순서가 맞다.
+
+---
+
+## Q. 내 보드는 내가 직접 플레이한 결과인데, 서버 계산이 늦거나 틀리면 강제로 덮여서 이상해지지 않을까? (2026-07-09)
+
+이 걱정은 맞다. 그래서 내 보드는 상대 보드와 다르게 처리한다.
+
+상대 보드는 내가 조작하는 보드가 아니므로 server authoritative snapshot을 그대로 적용해도 된다.
+
+```txt
+opponent board:
+server authoritative snapshot을 그대로 적용
+```
+
+하지만 내 보드는 조작감이 중요하다.
+
+```txt
+my board:
+client prediction 유지
+server snapshot은 보수적인 correction 후보
+```
+
+그래서 `shouldCorrectMyPrediction(serverSnapshot, localSnapshot)` 같은 보수적 기준을 둔다.
+
+예를 들어 active piece 위치만 조금 다르면 바로 덮지 않는다.
+
+```txt
+activePiece만 다름
+  -> 즉시 보정하지 않음
+  -> 입력감 보호
+```
+
+하지만 의미 있는 drift는 보정 후보가 된다.
+
+```txt
+server pieceIndex가 더 앞섬
+score 다름
+lines 다름
+phase 다름
+  -> 보정 후보
+```
+
+핵심은 다음이다.
+
+```txt
+상대 보드 = 서버 snapshot이 기준
+내 보드 = client prediction 우선, 서버 snapshot은 안전장치
+```
+
+이 정책은 아직 2탭 실제 플레이에서 조작감 확인이 필요하다.
+
+---
+
+## Q. 왜 기존 `game:snapshot`, `game:garbage:attack`, `game:over`를 제거했어? (2026-07-09)
+
+server authoritative로 가면 client가 결과를 선언하는 이벤트는 점점 줄어야 한다.
+
+기존 구조에서는 client가 이런 값을 직접 보냈다.
+
+```txt
+game:snapshot
+  -> 내 board/score/lines를 client가 만들어 서버에 보냄
+
+game:garbage:attack
+  -> 내 공격량 lines를 client가 선언
+
+game:over
+  -> 내가 졌다고 client가 선언
+```
+
+MVP 초반에는 빠르게 멀티 흐름을 만들기 위해 괜찮은 선택이었다. 하지만 server authoritative 전환 후에는 위험하다.
+
+```txt
+공격량은 서버 lock 결과가 계산해야 함
+game over는 서버 top-out 판정이 결정해야 함
+상대 보드는 서버 authoritative snapshot이 내려줘야 함
+```
+
+그래서 client 송신 경로를 제거했다.
+
+- `sendGameSnapshot()`
+- `sendGarbageAttack()`
+- `sendGameOver()`
+
+그리고 서버 legacy event는 match 결과를 바꾸지 않도록 테스트로 고정했다.
+
+이건 기능을 없앤 것이 아니라, 결과 결정권을 client에서 server로 옮긴 것이다.
+
+---
+
+## Q. 상대 보드는 왜 이제 `game:input` relay를 적용하지 않고 `autoStart: false`로 뒀어? (2026-07-09)
+
+예전에는 상대 보드를 부드럽게 보이게 하려고 두 가지를 섞었다.
+
+```txt
+상대 game:input relay
+  -> opponentGame.enqueueInput()
+  -> 내 브라우저가 상대 보드를 예측 실행
+
+상대 game:snapshot
+  -> 틀어진 부분 보정
+```
+
+하지만 server authoritative snapshot을 적용하기 시작하면 문제가 생긴다.
+
+```txt
+opponent input relay로 한 번 움직임
+server authoritative snapshot으로 다시 움직임
+```
+
+즉, 같은 상대 상태를 두 경로가 동시에 바꾸게 된다.
+
+그래서 전환 후에는 상대 보드를 server snapshot 전용으로 바꿨다.
+
+```js
+opponentGame.init({ autoStart: false, serverBagChunks: opponentBagChunks })
+```
+
+그리고 client에서 `receiveGameInput()`으로 상대 입력을 받아 `opponentGame.enqueueInput()` 하던 경로를 제거했다.
+
+현재 의미는 다음과 같다.
+
+```txt
+내 보드:
+내 입력으로 client prediction 실행
+
+상대 보드:
+server authoritative snapshot으로만 갱신
+```
+
+단점은 상대 보드 움직임이 500ms snapshot 주기에 따라 끊겨 보일 수 있다는 점이다. 이건 correctness를 먼저 확보한 뒤, 나중에 interpolation이나 더 작은 delta 전송으로 개선할 수 있다.
+
+---
+
+## Q. `gameOver` finish 처리를 왜 공통 helper로 모았어? (2026-07-09)
+
+server authoritative 전환 후 game over는 두 경로에서 발생할 수 있다.
+
+```txt
+1. client input 처리 중 lock -> top-out
+2. server gravity ticker 중 lock -> top-out
+```
+
+두 경로 모두 같은 side effect를 가져야 한다.
+
+```txt
+finishGame()
+ticker stop
+match:finish emit
+game_over log 저장
+```
+
+처음에는 input 경로와 ticker 경로가 각각 이 일을 했다. 그러면 한쪽만 수정되거나, 거의 동시에 gameOver가 발생했을 때 중복 처리될 위험이 있다.
+
+그래서 `finishAuthoritativeMatch()`로 모았다.
+
+```js
+finishAuthoritativeMatch({
+    roomId,
+    loserPlayerId,
+    finishGame,
+    stopRoomTicker,
+    emitMatchFinish,
+    saveGameEventLog,
+})
+```
+
+이 helper는 첫 finish만 처리하고, 이미 `finishGame()`이 `GAME_NOT_PLAYING`을 반환하면 `ALREADY_FINISHED`로 보고 emit/log를 반복하지 않는다.
+
+```txt
+첫 호출:
+finish + ticker stop + match:finish + game_over log
+
+두 번째 호출:
+ALREADY_FINISHED
+추가 emit/log 없음
+```
+
+이렇게 해야 match 결과와 game log가 한 번만 남는다.
+
+---
+
+## Q. 지금 남은 작업은 뭐야? (2026-07-09)
+
+현재 큰 blocker는 네 가지다.
+
+1. `pendingGarbageQueue`와 client 표시/DTO 정리
+
+```txt
+서버는 pendingGarbageQueue를 들고 있음
+client는 game:garbage:append로 표시/queue를 받음
+authoritative snapshot DTO에는 pending garbage가 빠져 있음
+```
+
+이 의미를 정해야 한다.
+
+2. 내 보드 correction 안정화
+
+```txt
+client prediction 유지
+server snapshot correction
+applySnapshot() 이후 gravity/input 흐름 유지
+```
+
+이 세 가지가 실제 플레이에서 부딪히지 않는지 확인해야 한다.
+
+3. ticker 지연 정책
+
+```txt
+event loop가 밀렸을 때:
+  밀린 시간만큼 catch-up 할지
+  callback당 최대 1 step만 처리할지
+```
+
+이 정책을 정해야 한다.
+
+4. 2탭 수동 회귀
+
+자동 테스트로는 통신 흐름을 많이 잡았지만, 실제 사용자 체감은 2탭에서 봐야 한다.
+
+```txt
+create room
+join room
+start
+input
+attack
+garbage
+top-out
+match finish
+lobby/rejoin
+```
+
+이 흐름이 자연스럽게 이어지는지 확인해야 한다.
