@@ -7,6 +7,7 @@ import {
     receiveAuthoritativeSnapshot,
     onGameSnapshotResult,
     sendGameOver,
+    onGameOverResult,
     sendGameInput,
     receiveGameInput,
     onGameInputResult,
@@ -117,6 +118,7 @@ export function startMultiplayerGame({
 
     let hasReportedGameOver = false
     let hasPendingBagRequest = false
+    let hasReceivedOpponentAuthoritativeSnapshot = false
     const bagLowWatermark = 7
 
     /**
@@ -153,10 +155,13 @@ export function startMultiplayerGame({
     })
     const detachReceiveSnapshot = receiveSnapshot(({ playerId: remotePlayerId, snapshot }) => {
         if (remotePlayerId === playerId) return
+        if (remotePlayerId !== opponentPlayerId) return
         if (!snapshot || !Array.isArray(snapshot.board)) {
             console.error("Invalid snapshot from", remotePlayerId)
             return
         }
+        if (hasReceivedOpponentAuthoritativeSnapshot) return
+
         // snapshot은 상대 runtime 보정용이다. 입력 relay보다 늦게 도착할 수 있어 모드별로 적용 범위를 제한한다.
         if (SNAPSHOT_MODE === "apply") {
             opponentGame.applySnapshot(snapshot)
@@ -176,6 +181,7 @@ export function startMultiplayerGame({
         if (!snapshot || !Array.isArray(snapshot.board)) return
 
         opponentGame.applySnapshot(snapshot)
+        hasReceivedOpponentAuthoritativeSnapshot = true
     })
     const detachGameOverResult = onGameOverResult((result) => {
         if (result.ok) return
