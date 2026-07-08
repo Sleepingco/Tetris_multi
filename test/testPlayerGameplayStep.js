@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
 const {
     applyAuthoritativeInput,
+    applyAuthoritativeGravityStep,
 } = require("../src/server/services/playerGameplayStep.js");
 
 function createPlayerState(gameCore, overrides = {}) {
@@ -30,7 +31,7 @@ function createPlayerState(gameCore, overrides = {}) {
         holdUsedThisDrop: overrides.holdUsedThisDrop ?? false,
         score: overrides.score ?? 0,
         lines: overrides.lines ?? 0,
-        phase: "playing",
+        phase: overrides.phase ?? "playing",
         combo: overrides.combo ?? -1,
         backToBack: overrides.backToBack ?? false,
         currentTick: 0,
@@ -61,6 +62,148 @@ function createLineClearBoard(gameCore, piece, rowsToClear, extraFilledCells = [
 
     return board;
 }
+
+test("applyAuthoritativeGravityStep은 조각을 아래로 1칸 내리고 currentTick을 증가시킨다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        activePiece,
+        pendingPiece: { ...activePiece },
+    });
+
+    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.gravityResult.kind, "move");
+    assert.deepEqual(playerState.activePiece, {
+        pieceType: "square",
+        rotation: 0,
+        row: 1,
+        col: 3,
+    });
+    assert.deepEqual(playerState.pendingPiece, playerState.activePiece);
+    assert.equal(playerState.currentTick, 1);
+    assert.equal(playerState.pieceIndex, 1);
+    assert.equal(Object.hasOwn(playerState, "inputLog"), false);
+});
+
+test("applyAuthoritativeGravityStep은 아래가 막히면 lock과 next spawn을 처리한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        pieceIndex: 1,
+    });
+
+    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.gravityResult.kind, "lock");
+    assert.equal(result.placementResult.lockedPiece.pieceType, "square");
+    assert.equal(result.placementResult.droppedRows, 0);
+    assert.equal(playerState.currentTick, 1);
+    assert.equal(playerState.board[18][3], "square");
+    assert.equal(playerState.board[18][4], "square");
+    assert.equal(playerState.board[19][3], "square");
+    assert.equal(playerState.board[19][4], "square");
+    assert.deepEqual(playerState.activePiece, {
+        pieceType: "tree",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    });
+    assert.equal(playerState.pieceIndex, 2);
+});
+
+test("applyAuthoritativeGravityStep은 gravity lock의 line clear와 score를 기존 lock 흐름으로 처리한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 3,
+    };
+    const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS);
+    board[19] = Array(gameCore.BOARD_COLS).fill("stack");
+    board[19][3] = null;
+    board[19][4] = null;
+    const playerState = createPlayerState(gameCore, {
+        board,
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        pieceIndex: 1,
+    });
+
+    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.gravityResult.kind, "lock");
+    assert.equal(result.placementResult.linesCleared, 1);
+    assert.equal(result.placementResult.rawAttackLines, 0);
+    assert.equal(result.placementResult.attackLines, 0);
+    assert.equal(result.placementResult.scoreBefore, 0);
+    assert.equal(result.placementResult.scoreAfter, 10);
+    assert.equal(result.placementResult.scoreDelta, 10);
+    assert.equal(playerState.lines, 1);
+    assert.equal(playerState.score, 10);
+    assert.equal(playerState.currentTick, 1);
+});
+
+test("applyAuthoritativeGravityStep은 phase가 playing이 아니면 state를 변경하지 않는다", async () => {
+    const gameCore = await loadGameCore();
+    const playerState = createPlayerState(gameCore, {
+        phase: "gameOver",
+    });
+    const beforeState = structuredClone(playerState);
+
+    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+
+    assert.deepEqual(result, {
+        ok: false,
+        reason: "GAME_NOT_PLAYING",
+        gravityResult: {
+            kind: "skipped",
+        },
+    });
+    assert.deepEqual(playerState, beforeState);
+});
+
+test("applyAuthoritativeGravityStep은 activePiece가 없으면 state를 변경하지 않는다", async () => {
+    const gameCore = await loadGameCore();
+    const playerState = createPlayerState(gameCore, {
+        activePiece: {
+            pieceType: "",
+            rotation: 0,
+            row: -1,
+            col: 3,
+        },
+        pendingPiece: null,
+    });
+    const beforeState = structuredClone(playerState);
+
+    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+
+    assert.deepEqual(result, {
+        ok: false,
+        reason: "INVALID_PLAYER_STATE",
+    });
+    assert.deepEqual(playerState, beforeState);
+});
 
 test("applyAuthoritativeInput은 hard_drop line clear 후 board, lines, score를 갱신한다", async () => {
     const gameCore = await loadGameCore();

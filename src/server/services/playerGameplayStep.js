@@ -35,6 +35,91 @@ function applyAuthoritativeInput(authoritativeState, input, gameCore) {
     return createFailure("UNSUPPORTED_ACTION");
 }
 
+function applyAuthoritativeGravityStep(authoritativeState, gameCore) {
+    if (!authoritativeState) {
+        return createFailure("INVALID_AUTHORITATIVE_STATE");
+    }
+
+    if (!gameCore) {
+        return createFailure("INVALID_GAME_CORE");
+    }
+
+    if (authoritativeState.phase !== "playing") {
+        return {
+            ok: false,
+            reason: "GAME_NOT_PLAYING",
+            gravityResult: {
+                kind: "skipped",
+            },
+        };
+    }
+
+    const activePiece = authoritativeState.activePiece;
+    if (!activePiece?.pieceType) {
+        return createFailure("INVALID_PLAYER_STATE");
+    }
+
+    const pendingPiece = {
+        ...activePiece,
+        row: activePiece.row + 1,
+    };
+    const outcome = gameCore.resolveMoveAttempt({
+        board: authoritativeState.board,
+        activePiece,
+        pendingPiece,
+        moveCause: "fall",
+        blocks: gameCore.BLOCKS,
+        wallKicks: gameCore.WALL_KICKS,
+    });
+    const moveIntent = gameCore.resolveMoveIntent({
+        outcome,
+        hasFallTimer: true,
+    });
+
+    if (moveIntent.kind === "ok") {
+        authoritativeState.activePiece = { ...moveIntent.active };
+        authoritativeState.pendingPiece = { ...moveIntent.active };
+        authoritativeState.lastActionWasRotation = false;
+        incrementCurrentTick(authoritativeState);
+
+        return {
+            ok: true,
+            reason: null,
+            gravityResult: {
+                kind: "move",
+                moveIntent,
+            },
+        };
+    }
+
+    if (moveIntent.kind === "lock") {
+        const lockResult = lockPieceAndSpawnNext(authoritativeState, gameCore, {
+            lockedPiece: { ...moveIntent.active },
+            droppedRows: 0,
+            useHardDropScore: false,
+        });
+        if (!lockResult.ok) return lockResult;
+
+        incrementCurrentTick(authoritativeState);
+
+        return {
+            ...lockResult,
+            gravityResult: {
+                kind: "lock",
+            },
+        };
+    }
+
+    return {
+        ok: false,
+        reason: "GRAVITY_NOT_APPLIED",
+        gravityResult: {
+            kind: moveIntent.kind,
+            moveIntent,
+        },
+    };
+}
+
 function applyHardDropInput(authoritativeState, input, gameCore) {
     if (!authoritativeState) {
         return createFailure("INVALID_PLAYER_STATE");
@@ -285,6 +370,11 @@ function normalizeNumber(value) {
         : 0;
 }
 
+function incrementCurrentTick(authoritativeState) {
+    authoritativeState.currentTick = normalizeInteger(authoritativeState.currentTick) + 1;
+}
+
 module.exports = {
     applyAuthoritativeInput,
+    applyAuthoritativeGravityStep,
 };
