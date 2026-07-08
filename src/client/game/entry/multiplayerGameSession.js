@@ -4,6 +4,7 @@ import { shouldCorrectSnapshot } from "../runtime/snapshotCorrection.js"
 import {
     sendGameSnapshot,
     receiveSnapshot,
+    receiveAuthoritativeSnapshot,
     onGameSnapshotResult,
     sendGameOver,
     sendGameInput,
@@ -170,6 +171,12 @@ export function startMultiplayerGame({
             }
         }
     })
+    const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({ playerId: remotePlayerId, snapshot }) => {
+        if (remotePlayerId !== opponentPlayerId) return
+        if (!snapshot || !Array.isArray(snapshot.board)) return
+
+        opponentGame.applySnapshot(snapshot)
+    })
     const detachGameOverResult = onGameOverResult((result) => {
         if (result.ok) return
         console.warn("game:over failed:", result.reason)
@@ -223,6 +230,7 @@ export function startMultiplayerGame({
         snapshotTimer,
         detachSnapshotResult,
         detachReceiveSnapshot,
+        detachAuthoritativeSnapshot,
         detachGameOverResult,
         detachGameInput,
         detachGameInputResult,
