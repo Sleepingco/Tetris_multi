@@ -10,6 +10,7 @@ const {
 } = require("../services/roomService.js")
 
 const {
+    appendPendingGarbageToOpponent,
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
     createMatch,
@@ -22,6 +23,12 @@ const {
     saveGameEventLog,
     savePlacementDecisionLog,
 } = require("../services/logService.js")
+const {
+    createAuthoritativeTickerService,
+} = require("../services/authoritativeTickerService.js")
+const {
+    finishAuthoritativeMatch,
+} = require("../services/authoritativeMatchFinish.js")
 
 const VALID_GAME_ACTIONS = new Set([
     "move_left",
@@ -30,16 +37,6 @@ const VALID_GAME_ACTIONS = new Set([
     "rotate",
     "hard_drop",
     "hold",
-])
-const VALID_GAME_OVER_REASONS = new Set([
-    "top_out",
-    "garbage_overflow",
-    "leave",
-])
-const VALID_SNAPSHOT_PHASES = new Set([
-    "playing",
-    "lineClearing",
-    "gameOver",
 ])
 const PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS = [
     "linesCleared",
@@ -62,6 +59,7 @@ const PLACEMENT_RESULT_BOOLEAN_FIELDS = [
     "backToBack",
     "gameOver",
 ]
+const defaultAuthoritativeTickerService = createAuthoritativeTickerService()
 
 /**
  * room 퇴장 결과를 Socket.IO room leave와 남은 참가자 broadcast로 연결한다.
@@ -107,8 +105,8 @@ function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
 
 /**
  * 멀티플레이 Socket.IO 이벤트를 등록한다.
- * - 서버는 room/match 상태, 입력 로그, bag chunk, 이벤트 relay를 담당한다.
- * - 현재 MVP에서는 서버가 보드 충돌이나 점수 판정을 직접 실행하지 않는다.
+ * - 서버는 room/match 상태, 입력 로그, bag chunk, authoritative snapshot 송신을 담당한다.
+ * - 클라이언트 입력 relay는 유지하되 garbage/game over는 서버 lock 결과를 기준으로 처리한다.
  *
  * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
  * @param {import("socket.io").Socket} clientSocket - 연결된 클라이언트 socket
@@ -119,6 +117,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     const saveLog = dependencies.savePlacementDecisionLog || savePlacementDecisionLog
     const saveEventLog = dependencies.saveGameEventLog || saveGameEventLog
     const createGarbageHoleCol = dependencies.createGarbageHoleCol || (() => Math.floor(Math.random() * 10))
+    const authoritativeTickerService = dependencies.authoritativeTickerService
+        || defaultAuthoritativeTickerService
 
     clientSocket.on("room:create", (player) => {
         const hostPlayer = player
@@ -142,6 +142,9 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     clientSocket.on("room:leave", ({ roomId, playerId }) => {
         const result = leaveRoom(roomId, playerId)
+        if (result.ok) {
+            authoritativeTickerService.stopRoomTicker(result.roomId)
+        }
         handlePlayerLeftRoom(
             socketServer,
             clientSocket,
@@ -155,6 +158,9 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     clientSocket.on("disconnect", () => {
         const result = removePlayerBySocketId(clientSocket.id)
+        if (result.ok && result.roomId) {
+            authoritativeTickerService.stopRoomTicker(result.roomId)
+        }
 
         handlePlayerLeftRoom(
             socketServer,
@@ -182,6 +188,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             })
             const matchResult = createMatch(result.room)
             if (matchResult.ok) {
+                authoritativeTickerService.startRoomTicker(result.room.roomId, socketServer)
                 await persistGameEventLog(saveEventLog, createGameStartLog(result.room, matchResult.match))
             }
         } else {
@@ -204,48 +211,6 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             ...result,
             match: matchResult.match,
         })
-    })
-
-    // 스냅샷은 모양만 검증한 뒤 상대에게 relay한다. 서버가 board 결과를 확정하지 않는다.
-    clientSocket.on("game:snapshot", (payload = {}) => {
-        const { roomId, playerId, snapshot } = payload
-        const result = syncRoom(roomId, playerId)
-
-        if (!result.ok) {
-            clientSocket.emit("game:snapshot:result", result)
-            return
-        }
-
-        if (result.room.status !== "playing") {
-            clientSocket.emit("game:snapshot:result", {
-                ok: false,
-                room: null,
-                reason: "GAME_NOT_PLAYING",
-            })
-            return
-        }
-
-        const hasValidSnapshotScalars = snapshot
-            && VALID_SNAPSHOT_PHASES.has(snapshot.phase)
-            && Number.isInteger(snapshot.pieceIndex)
-            && snapshot.pieceIndex >= 0
-            && Number.isInteger(snapshot.tick)
-            && snapshot.tick >= 0
-            && Number.isFinite(snapshot.score)
-            && snapshot.score >= 0
-            && Number.isInteger(snapshot.lines)
-            && snapshot.lines >= 0
-
-        if (!snapshot || !Array.isArray(snapshot.board) || !hasValidSnapshotScalars) {
-            clientSocket.emit("game:snapshot:result", {
-                ok: false,
-                room: null,
-                reason: "INVALID_SNAPSHOT",
-            })
-            return
-        }
-
-        clientSocket.to(roomId).emit("game:snapshot", { playerId, snapshot })
     })
 
     // 입력은 기존 relay를 유지하면서 match authoritativeState에도 best-effort로 반영한다.
@@ -308,6 +273,13 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             const gameCore = await loadGameCore()
             const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
             if (!authoritativeResult.ok) return
+            handleServerPlacementResult(
+                socketServer,
+                roomId,
+                playerId,
+                authoritativeResult.gameplayResult?.placementResult,
+                createGarbageHoleCol,
+            )
 
             const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId)
             if (!snapshotResult.ok) return
@@ -317,6 +289,14 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                 playerId,
                 snapshot: snapshotResult.snapshot,
             })
+            await handleServerGameOverResult(
+                socketServer,
+                roomId,
+                playerId,
+                authoritativeResult.gameplayResult?.placementResult,
+                authoritativeTickerService,
+                saveEventLog,
+            )
         } catch {
             // Authoritative side-effect failure must not block MVP input relay.
         }
@@ -377,56 +357,6 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.emit("game:log:result", logResult)
     })
 
-    // 공격 줄 수는 클라이언트 계산값을 검증하고, 서버는 대상과 hole column만 정해 양쪽에 알린다.
-    clientSocket.on("game:garbage:attack", (payload = {}) => {
-        const { roomId, playerId, lines } = payload
-        const result = syncRoom(roomId, playerId)
-
-        if (!result.ok) {
-            clientSocket.emit("game:garbage:result", result)
-            return
-        }
-
-        if (result.room.status !== "playing") {
-            clientSocket.emit("game:garbage:result", {
-                ok: false,
-                room: null,
-                reason: "GAME_NOT_PLAYING",
-            })
-            return
-        }
-
-        if (!Number.isInteger(lines) || lines <= 0 || lines > 12) {
-            clientSocket.emit("game:garbage:result", {
-                ok: false,
-                room: null,
-                reason: "INVALID_GARBAGE_LINES",
-            })
-            return
-        }
-
-        const targetPlayer = result.room.players.find(player => player.playerId !== playerId)
-        if (!targetPlayer) {
-            clientSocket.emit("game:garbage:result", {
-                ok: false,
-                room: null,
-                reason: "TARGET_PLAYER_NOT_FOUND",
-            })
-            return
-        }
-
-        const eventPayload = {
-            roomId,
-            fromPlayerId: playerId,
-            targetPlayerId: targetPlayer.playerId,
-            lines,
-            holeCol: createGarbageHoleCol(),
-        }
-
-        clientSocket.emit("game:garbage:append", eventPayload)
-        clientSocket.to(roomId).emit("game:garbage:append", eventPayload)
-    })
-
     // server bag chunk를 player별로 추가해 로컬/상대 런타임의 다음 조각 공급을 맞춘다.
     clientSocket.on("game:bag:request", (payload = {}) => {
         const { roomId, playerId } = payload
@@ -464,6 +394,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         const { roomId, playerId } = payload
         const result = leaveGame(roomId, playerId)
         if (result.ok) {
+            authoritativeTickerService.stopRoomTicker(roomId)
             clientSocket.leave(roomId)
             clientSocket.to(roomId).emit("game:opponent-left", {
                 room: result.room,
@@ -490,33 +421,48 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.emit("room:result", result)
     })
 
-    // 클라이언트의 패배 보고를 기준으로 match를 종료한다. top-out 판정은 아직 클라이언트 런타임이 맡는다.
-    clientSocket.on("game:over", async (payload = {}) => {
-        const { roomId, playerId, reason = "top_out" } = payload
-        if (!VALID_GAME_OVER_REASONS.has(reason)) {
-            clientSocket.emit("game:over:result", {
-                ok: false,
-                room: null,
-                reason: "INVALID_GAME_OVER_REASON",
-            })
-            return
-        }
+}
 
-        const result = finishGame(roomId, playerId, reason)
+function handleServerPlacementResult(socketServer, roomId, playerId, placementResult, createGarbageHoleCol) {
+    const attackLines = placementResult?.attackLines ?? 0
+    if (!Number.isInteger(attackLines) || attackLines <= 0) return
 
-        if (result.ok) {
-            const matchResult = getMatchState(roomId)
-            socketServer.to(roomId).emit("match:finish", {
-                room: result.room,
-                winnerPlayerId: result.winnerPlayerId,
-                loserPlayerId: result.loserPlayerId,
-                reason: result.finishReason,
-            })
-            await persistGameEventLog(saveEventLog, createGameOverLog(result, matchResult.match))
-            return
-        }
+    const garbage = {
+        lines: attackLines,
+        holeCol: createGarbageHoleCol(),
+    }
+    const appendResult = appendPendingGarbageToOpponent(roomId, playerId, garbage)
+    if (!appendResult.ok) return
 
-        clientSocket.emit("game:over:result", result)
+    socketServer.to(roomId).emit("game:garbage:append", {
+        roomId,
+        fromPlayerId: playerId,
+        targetPlayerId: appendResult.targetPlayerId,
+        lines: garbage.lines,
+        holeCol: garbage.holeCol,
+    })
+}
+
+async function handleServerGameOverResult(
+    socketServer,
+    roomId,
+    loserPlayerId,
+    placementResult,
+    authoritativeTickerService,
+    saveEventLog,
+) {
+    if (!placementResult?.gameOver) return
+
+    await finishAuthoritativeMatch({
+        roomId,
+        loserPlayerId,
+        finishGame,
+        stopRoomTicker: authoritativeTickerService.stopRoomTicker,
+        emitMatchFinish(payload) {
+            socketServer.to(roomId).emit("match:finish", payload)
+        },
+        saveGameEventLog: saveEventLog,
+        getMatchState,
     })
 }
 
@@ -547,21 +493,6 @@ function createGameStartLog(room, match) {
             nickname: player.nickname,
             role: player.playerId === room.hostPlayerId ? "host" : "guest",
         })),
-    }
-}
-
-function createGameOverLog(result, match) {
-    return {
-        eventType: "game_over",
-        schemaVersion: 1,
-        gameId: createGameId(result.room.roomId, match),
-        roomId: result.room.roomId,
-        mode: "multi",
-        endedAt: Date.now(),
-        winnerPlayerId: result.winnerPlayerId,
-        loserPlayerId: result.loserPlayerId,
-        reason: result.finishReason,
-        finishType: "normal",
     }
 }
 

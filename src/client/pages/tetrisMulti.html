@@ -327,15 +327,10 @@
             function cleanupGameSession() {
                 if (!gameSession) return
 
-                clearInterval(gameSession.snapshotTimer)
-                gameSession.detachSnapshotResult()
-                gameSession.detachReceiveSnapshot()
+                clearInterval(gameSession.heartbeatTimer)
                 gameSession.detachAuthoritativeSnapshot()
-                gameSession.detachGameOverResult()
-                gameSession.detachGameInput()
                 gameSession.detachGameInputResult()
                 gameSession.detachGarbageAppend()
-                gameSession.detachGarbageResult()
                 gameSession.detachGameBagAppend()
                 gameSession.detachGameBagResult()
                 gameSession.myGame.destroy()

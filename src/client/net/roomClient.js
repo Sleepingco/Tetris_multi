@@ -87,12 +87,8 @@ export function requestStartGame(roomId, playerId) {
 
 // =============================
 // Game Sync Channel
-// 현재 MVP에서는 서버 판정 요청이 아니라 prediction/correction용 relay 채널이다.
+// 서버 입력/상태 동기화 채널이다.
 // =============================
-
-export function sendGameSnapshot(roomId, playerId, snapshot) {
-    serverConnection.emit("game:snapshot", { roomId, playerId, snapshot })
-}
 
 export function sendGameInput(roomId, playerId, action, tick = null, pieceIndex = null) {
     serverConnection.emit("game:input", { roomId, playerId, action, tick, pieceIndex })
@@ -114,23 +110,11 @@ export function onGameInputResult(handler) {
     }
 }
 
-export function sendGarbageAttack(roomId, playerId, lines) {
-    serverConnection.emit("game:garbage:attack", { roomId, playerId, lines })
-}
-
 export function receiveGarbageAppend(handler) {
     serverConnection.on("game:garbage:append", handler)
 
     return () => {
         serverConnection.off("game:garbage:append", handler)
-    }
-}
-
-export function onGarbageResult(handler) {
-    serverConnection.on("game:garbage:result", handler)
-
-    return () => {
-        serverConnection.off("game:garbage:result", handler)
     }
 }
 
@@ -151,14 +135,6 @@ export function onGameBagResult(handler) {
 
     return () => {
         serverConnection.off("game:bag:result", handler)
-    }
-}
-
-export function receiveSnapshot(handler) {
-    serverConnection.on("game:snapshot", handler)
-
-    return () => {
-        serverConnection.off("game:snapshot", handler)
     }
 }
 
@@ -184,30 +160,10 @@ export function requestRoomSync(roomId, playerId) {
     serverConnection.emit("room:sync", { roomId, playerId })
 }
 
-export function onGameSnapshotResult(handler) {
-    serverConnection.on("game:snapshot:result", handler)
-
-    return () => {
-        serverConnection.off("game:snapshot:result", handler)
-    }
-}
-
-export function sendGameOver(roomId, playerId, reason) {
-    serverConnection.emit("game:over", { roomId, playerId, reason })
-}
-
 export function onMatchFinish(handler) {
     serverConnection.on("match:finish", handler)
 
     return () => {
         serverConnection.off("match:finish", handler)
-    }
-}
-
-export function onGameOverResult(handler) {
-    serverConnection.on("game:over:result", handler)
-
-    return () => {
-        serverConnection.off("game:over:result", handler)
     }
 }

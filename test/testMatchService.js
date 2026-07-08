@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const matchService = require("../src/server/services/matchService.js");
 const {
     appendPlayerBagChunk,
+    appendPendingGarbageToOpponent,
     applyAuthoritativeInputToMatchPlayerState,
     applyGravityStepToMatchPlayerState,
     createMatch,
@@ -206,6 +207,43 @@ test("appendPlayerBagChunk는 player의 bagChunks에 새 server bag chunk를 추
     assert.deepEqual([...result.bagChunk].sort(), expectedPieces);
     assert.deepEqual(hostPlayer.bagChunks[3], result.bagChunk);
     assert.deepEqual(hostPlayer.authoritativeState.pieceQueue.slice(-7), result.bagChunk);
+});
+
+test("appendPendingGarbageToOpponent는 server attackLines를 상대 pendingGarbageQueue에 추가한다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("GARBAGE_AUTH_001"));
+    const result = appendPendingGarbageToOpponent("GARBAGE_AUTH_001", "host-player", {
+        lines: 3,
+        holeCol: 4,
+    });
+    const guestPlayer = result.match.players.find(player => player.playerId === "guest-player");
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.targetPlayerId, "guest-player");
+    assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, [
+        { lines: 3, holeCol: 4 },
+    ]);
+});
+
+test("appendPendingGarbageToOpponent는 invalid garbage면 상대 state를 변경하지 않는다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("GARBAGE_AUTH_INVALID"));
+    const beforeMatch = getMatchState("GARBAGE_AUTH_INVALID").match;
+    const guestPlayer = beforeMatch.players.find(player => player.playerId === "guest-player");
+    const result = appendPendingGarbageToOpponent("GARBAGE_AUTH_INVALID", "host-player", {
+        lines: 0,
+        holeCol: 4,
+    });
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "INVALID_GARBAGE",
+    });
+    assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, []);
 });
 
 test("matchService public entry는 authoritative input과 gravity wrapper만 노출한다", () => {

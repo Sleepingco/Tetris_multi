@@ -1,62 +1,34 @@
 /**
- * 두 active piece가 같은 상태인지 비교한다.
+ * 서버 authoritative snapshot으로 내 로컬 prediction을 보정해야 하는지 판단한다.
+ * - 내 보드는 조작감 때문에 activePiece 차이만으로 즉시 덮어쓰지 않는다.
+ * - 추후 jitter/sequence/ack 기반 보정이 생기면 activePiece 차이는 이 함수 안에서 확장한다.
  *
- * @param {{pieceType: string, rotation: number, row: number, col: number}|null} left - 로컬 snapshot의 activePiece
- * @param {{pieceType: string, rotation: number, row: number, col: number}|null} right - 원격 snapshot의 activePiece
- * @returns {boolean} 같은 조각 상태면 true
+ * @param {{phase?: string, pieceIndex?: number, score?: number, lines?: number}|null} serverSnapshot - 서버 authoritative snapshot
+ * @param {{phase?: string, pieceIndex?: number, score?: number, lines?: number}|null} localSnapshot - 현재 내 로컬 prediction snapshot
+ * @returns {boolean} myGame.applySnapshot 후보면 true
  */
-export function isSamePiece(left, right) {
-    if (!left && !right) return true
-    if (!left || !right) return false
+export function shouldCorrectMyPrediction(serverSnapshot, localSnapshot) {
+    if (!serverSnapshot || !localSnapshot) return false
 
-    return (
-        left.pieceType === right.pieceType
-        && left.rotation === right.rotation
-        && left.row === right.row
-        && left.col === right.col
-    )
-}
-
-/**
- * 원격 snapshot을 로컬 표시용 runtime에 적용해야 하는지 판단한다.
- * - 과거 pieceIndex snapshot은 무시한다.
- * - 미래 pieceIndex snapshot은 뒤처진 보드를 따라잡기 위해 적용한다.
- * - 같은 pieceIndex에서는 phase, activePiece, score, lines 차이가 있을 때 보정한다.
- *
- * @param {{phase?: string, pieceIndex?: number, activePiece?: Object}|null} localSnapshot - 현재 표시 중인 snapshot
- * @param {{phase?: string, pieceIndex?: number, activePiece?: Object}|null} remoteSnapshot - 새로 받은 snapshot
- * @returns {boolean} applySnapshot이 필요하면 true
- */
-export function shouldCorrectSnapshot(localSnapshot, remoteSnapshot) {
-    if (!localSnapshot || !remoteSnapshot) return false
-
-    if (remoteSnapshot.phase === "gameOver") {
-        return true
-    }
-
-    if (remoteSnapshot.pieceIndex < localSnapshot.pieceIndex) {
+    if (serverSnapshot.pieceIndex < localSnapshot.pieceIndex) {
         return false
     }
 
-    if (remoteSnapshot.pieceIndex > localSnapshot.pieceIndex) {
+    if (serverSnapshot.pieceIndex > localSnapshot.pieceIndex) {
         return true
     }
 
-    if (localSnapshot.phase !== remoteSnapshot.phase) {
+    if (localSnapshot.phase !== serverSnapshot.phase) {
         return true
     }
 
-    if (Number.isFinite(localSnapshot.score) && Number.isFinite(remoteSnapshot.score)
-        && localSnapshot.score !== remoteSnapshot.score) {
+    if (Number.isFinite(localSnapshot.score) && Number.isFinite(serverSnapshot.score)
+        && localSnapshot.score !== serverSnapshot.score) {
         return true
     }
 
-    if (Number.isFinite(localSnapshot.lines) && Number.isFinite(remoteSnapshot.lines)
-        && localSnapshot.lines !== remoteSnapshot.lines) {
-        return true
-    }
-
-    if (!isSamePiece(localSnapshot.activePiece, remoteSnapshot.activePiece)) {
+    if (Number.isFinite(localSnapshot.lines) && Number.isFinite(serverSnapshot.lines)
+        && localSnapshot.lines !== serverSnapshot.lines) {
         return true
     }
 

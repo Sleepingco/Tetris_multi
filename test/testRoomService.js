@@ -578,6 +578,33 @@ test("finishGame은 loser를 기준으로 winner를 계산하고 room을 finishe
     assert.equal(result.finishReason, "top_out")
 })
 
+test("finishGame은 이미 finished인 room에서 중복 종료를 적용하지 않는다", () => {
+    const hostPlayer = {
+        playerId: "finish-duplicate-host",
+        nickname: "Host",
+        socketId: "finish-duplicate-host-socket",
+    }
+    const guestPlayer = {
+        playerId: "finish-duplicate-guest",
+        nickname: "Guest",
+        socketId: "finish-duplicate-guest-socket",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    startGame(createResult.room.roomId, hostPlayer.playerId)
+
+    const firstResult = finishGame(createResult.room.roomId, guestPlayer.playerId, "top_out")
+    const secondResult = finishGame(createResult.room.roomId, guestPlayer.playerId, "top_out")
+
+    assert.equal(firstResult.ok, true)
+    assert.equal(firstResult.room.status, "finished")
+    assert.equal(secondResult.ok, false)
+    assert.equal(secondResult.room, null)
+    assert.equal(secondResult.reason, "GAME_NOT_PLAYING")
+    assert.equal(getRoomState(createResult.room.roomId).status, "finished")
+})
+
 test("finishGame 이후 한 명만 로비에 돌아오면 다시 게임을 시작할 수 없다", () => {
     const hostPlayer = {
         playerId: "finish-lobby-host",

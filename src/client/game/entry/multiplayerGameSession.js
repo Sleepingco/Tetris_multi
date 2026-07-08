@@ -1,29 +1,18 @@
 import { createTetrisRuntime } from "../runtime/tetris.js"
 import { attachKeyboardInput } from "../runtime/input.js"
-import { shouldCorrectSnapshot } from "../runtime/snapshotCorrection.js"
 import {
-    sendGameSnapshot,
-    receiveSnapshot,
+    shouldCorrectMyPrediction,
+} from "../runtime/snapshotCorrection.js"
+import {
     receiveAuthoritativeSnapshot,
-    onGameSnapshotResult,
-    sendGameOver,
-    onGameOverResult,
     sendGameInput,
-    receiveGameInput,
     onGameInputResult,
     requestGameBagChunk,
     receiveGameBagAppend,
     onGameBagResult,
-    sendGarbageAttack,
     receiveGarbageAppend,
-    onGarbageResult,
 } from "../../net/roomClient.js"
 import { sendPlacementDecisionLog } from "../../net/logClient.js"
-
-// off      snapshot 무시
-// apply    항상 applySnapshot
-// correct 다를 때만 applySnapshot
-const SNAPSHOT_MODE = "correct"
 
 function getPlayerBagChunks(match, targetPlayerId) {
     const matchPlayer = match?.players?.find(player => player.playerId === targetPlayerId)
@@ -32,8 +21,8 @@ function getPlayerBagChunks(match, targetPlayerId) {
 
 /**
  * 멀티 게임 세션을 시작한다.
- * - 내 runtime, 상대 runtime, socket listener, snapshot timer, cleanup handle을 함께 구성한다.
- * - 현재 MVP에서는 내 보드는 로컬 입력으로 실행하고, 상대 보드는 input relay와 snapshot correction으로 보정한다.
+ * - 내 runtime, 상대 runtime, socket listener, heartbeat timer, cleanup handle을 함께 구성한다.
+ * - 내 보드는 로컬 입력으로 예측 실행하고, 상대 보드는 server authoritative snapshot만 적용한다.
  *
  * @param {Object} params - 멀티 게임 세션 구성 요소
  * @returns {Object} runtime과 정리 함수를 포함한 게임 세션
@@ -80,12 +69,8 @@ export function startMultiplayerGame({
         roomId,
         playerId,
         placementDecisionRecorder(log) {
-            // 클라이언트가 계산한 배치 로그와 공격 줄을 서버에 보고하는 MVP 경계다.
+            // 배치 로그는 분석/디버깅용으로 남기고, garbage 판정은 서버 lock 결과를 따른다.
             sendPlacementDecisionLog(roomId, playerId, log)
-            const attackLines = log?.placementResult?.attackLines ?? 0
-            if (attackLines > 0) {
-                sendGarbageAttack(roomId, playerId, attackLines)
-            }
         },
     })
     myGame.init({ autoStart: true, serverBagChunks: myBagChunks })
@@ -111,14 +96,10 @@ export function startMultiplayerGame({
         roomId,
         playerId: opponentPlayerId,
     })
-    // 상대 보드는 현재 input relay + snapshot correction 기반으로 예측 실행한다.
-    // autoStart를 false로 두면 snapshot 도착 시점에만 갱신되어 움직임이 크게 끊긴다.
-    // 서버 authoritative runtime으로 전환하기 전까지는 true를 유지한다.
-    opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
+    // 상대 보드는 서버 authoritative snapshot만 반영한다.
+    opponentGame.init({ autoStart: false, serverBagChunks: opponentBagChunks })
 
-    let hasReportedGameOver = false
     let hasPendingBagRequest = false
-    let hasReceivedOpponentAuthoritativeSnapshot = false
     const bagLowWatermark = 7
 
     /**
@@ -134,63 +115,25 @@ export function startMultiplayerGame({
         }
     }
 
-    function reportGameOverIfNeeded(snapshot) {
-        if (!hasReportedGameOver && snapshot.phase === "gameOver") {
-            hasReportedGameOver = true
-            sendGameOver(roomId, playerId, "top_out")
-        }
-    }
-
-    // 주기적으로 내 snapshot을 보내고, bag 보충과 game over 보고도 같은 heartbeat에서 처리한다.
-    const snapshotTimer = setInterval(() => {
-        const snapshot = myGame.getSnapshot()
-        sendGameSnapshot(roomId, playerId, snapshot)
+    // 주기적으로 server bag 보충을 처리한다. game over 확정은 server authoritative 결과가 맡는다.
+    const heartbeatTimer = setInterval(() => {
         requestBagIfNeeded()
-        reportGameOverIfNeeded(snapshot)
     }, 500)
 
-    const detachSnapshotResult = onGameSnapshotResult((result) => {
-        if (result.ok) return
-        console.warn("game:snapshot failed:", result.reason)
-    })
-    const detachReceiveSnapshot = receiveSnapshot(({ playerId: remotePlayerId, snapshot }) => {
-        if (remotePlayerId === playerId) return
-        if (remotePlayerId !== opponentPlayerId) return
-        if (!snapshot || !Array.isArray(snapshot.board)) {
-            console.error("Invalid snapshot from", remotePlayerId)
-            return
-        }
-        if (hasReceivedOpponentAuthoritativeSnapshot) return
+    const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({ playerId: remotePlayerId, snapshot }) => {
+        if (!snapshot || !Array.isArray(snapshot.board)) return
 
-        // snapshot은 상대 runtime 보정용이다. 입력 relay보다 늦게 도착할 수 있어 모드별로 적용 범위를 제한한다.
-        if (SNAPSHOT_MODE === "apply") {
+        if (remotePlayerId === opponentPlayerId) {
             opponentGame.applySnapshot(snapshot)
             return
         }
 
-        if (SNAPSHOT_MODE === "correct") {
-            const localSnapshot = opponentGame.getSnapshot()
-
-            if (shouldCorrectSnapshot(localSnapshot, snapshot)) {
-                opponentGame.applySnapshot(snapshot)
+        if (remotePlayerId === playerId) {
+            const localSnapshot = myGame.getSnapshot()
+            if (shouldCorrectMyPrediction(snapshot, localSnapshot)) {
+                myGame.applySnapshot(snapshot)
             }
         }
-    })
-    const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({ playerId: remotePlayerId, snapshot }) => {
-        if (remotePlayerId !== opponentPlayerId) return
-        if (!snapshot || !Array.isArray(snapshot.board)) return
-
-        opponentGame.applySnapshot(snapshot)
-        hasReceivedOpponentAuthoritativeSnapshot = true
-    })
-    const detachGameOverResult = onGameOverResult((result) => {
-        if (result.ok) return
-        console.warn("game:over failed:", result.reason)
-    })
-    const detachGameInput = receiveGameInput(({ playerId: remotePlayerId, action, tick, pieceIndex }) => {
-        if (remotePlayerId === playerId) return
-        // 상대 입력은 상대 보드 runtime에 enqueue해서 먼저 예측 실행하고, 이후 snapshot으로 오차를 보정한다.
-        opponentGame.enqueueInput(action, tick, pieceIndex)
     })
     const detachGameInputResult = onGameInputResult((result) => {
         if (result.ok) return
@@ -206,10 +149,6 @@ export function startMultiplayerGame({
         if (targetPlayerId === opponentPlayerId) {
             opponentGame.queueGarbageLines({ lines, holeCol })
         }
-    })
-    const detachGarbageResult = onGarbageResult((result) => {
-        if (result.ok) return
-        console.warn("game:garbage failed:", result.reason)
     })
     const detachGameBagAppend = receiveGameBagAppend(({ playerId: bagPlayerId, bagChunk }) => {
         if (!Array.isArray(bagChunk)) return
@@ -233,15 +172,10 @@ export function startMultiplayerGame({
     return {
         myGame,
         opponentGame,
-        snapshotTimer,
-        detachSnapshotResult,
-        detachReceiveSnapshot,
+        heartbeatTimer,
         detachAuthoritativeSnapshot,
-        detachGameOverResult,
-        detachGameInput,
         detachGameInputResult,
         detachGarbageAppend,
-        detachGarbageResult,
         detachGameBagAppend,
         detachGameBagResult,
     }

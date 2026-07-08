@@ -154,6 +154,56 @@ function appendPlayerBagChunk(roomId, playerId) {
     return createSuccess(match, { bagChunk });
 }
 
+function appendPendingGarbageToOpponent(roomId, fromPlayerId, garbage) {
+    if (!Number.isInteger(garbage?.lines) || garbage.lines <= 0
+        || !Number.isInteger(garbage?.holeCol) || garbage.holeCol < 0 || garbage.holeCol >= BOARD_COLS) {
+        return createFailure("INVALID_GARBAGE");
+    }
+
+    const match = matches.get(roomId);
+
+    if (!match) {
+        return createFailure("MATCH_NOT_FOUND");
+    }
+
+    const fromPlayer = match.players.find((matchPlayer) => {
+        return matchPlayer.playerId === fromPlayerId;
+    });
+
+    if (!fromPlayer) {
+        return createFailure("PLAYER_NOT_FOUND");
+    }
+
+    const targetPlayer = match.players.find((matchPlayer) => {
+        return matchPlayer.playerId !== fromPlayerId;
+    });
+
+    if (!targetPlayer) {
+        return createFailure("TARGET_PLAYER_NOT_FOUND");
+    }
+
+    if (!targetPlayer.authoritativeState) {
+        return {
+            ok: false,
+            match,
+            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
+        };
+    }
+
+    targetPlayer.authoritativeState.pendingGarbageQueue.push({
+        lines: garbage.lines,
+        holeCol: garbage.holeCol,
+    });
+
+    return createSuccess(match, {
+        targetPlayerId: targetPlayer.playerId,
+        garbage: {
+            lines: garbage.lines,
+            holeCol: garbage.holeCol,
+        },
+    });
+}
+
 function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore) {
     const match = matches.get(roomId);
 
@@ -392,6 +442,7 @@ function resetMatches() {
 
 module.exports = {
     appendPlayerBagChunk,
+    appendPendingGarbageToOpponent,
     applyAuthoritativeInputToMatchPlayerState,
     applyGravityStepToMatchPlayerState,
     createMatch,

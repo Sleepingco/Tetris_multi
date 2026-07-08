@@ -19,68 +19,72 @@ function createSnapshot(overrides = {}) {
     };
 }
 
-test("shouldCorrectSnapshot은 과거 pieceIndex snapshot을 보정하지 않는다", async () => {
-    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
+test("shouldCorrectMyPrediction은 과거 server pieceIndex면 내 보드를 보정하지 않는다", async () => {
+    const { shouldCorrectMyPrediction } = await loadSnapshotCorrection();
+    const serverSnapshot = createSnapshot({ pieceIndex: 3 });
     const localSnapshot = createSnapshot({ pieceIndex: 4 });
-    const remoteSnapshot = createSnapshot({ pieceIndex: 3 });
 
-    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), false);
+    assert.equal(shouldCorrectMyPrediction(serverSnapshot, localSnapshot), false);
 });
 
-test("shouldCorrectSnapshot은 미래 pieceIndex snapshot으로 뒤처진 보드를 따라잡는다", async () => {
-    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
-    const localSnapshot = createSnapshot({ pieceIndex: 3 });
-    const remoteSnapshot = createSnapshot({ pieceIndex: 4 });
+test("shouldCorrectMyPrediction은 미래 server pieceIndex면 내 보드 보정 후보로 본다", async () => {
+    const { shouldCorrectMyPrediction } = await loadSnapshotCorrection();
+    const serverSnapshot = createSnapshot({ pieceIndex: 5 });
+    const localSnapshot = createSnapshot({ pieceIndex: 4 });
 
-    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), true);
+    assert.equal(shouldCorrectMyPrediction(serverSnapshot, localSnapshot), true);
 });
 
-test("shouldCorrectSnapshot은 같은 pieceIndex와 같은 activePiece면 보정하지 않는다", async () => {
-    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
-    const localSnapshot = createSnapshot();
-    const remoteSnapshot = createSnapshot();
+test("shouldCorrectMyPrediction은 같은 pieceIndex에서 score가 다르면 보정 후보로 본다", async () => {
+    const { shouldCorrectMyPrediction } = await loadSnapshotCorrection();
+    const serverSnapshot = createSnapshot({ pieceIndex: 4, score: 30 });
+    const localSnapshot = createSnapshot({ pieceIndex: 4, score: 10 });
 
-    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), false);
+    assert.equal(shouldCorrectMyPrediction(serverSnapshot, localSnapshot), true);
 });
 
-test("shouldCorrectSnapshot은 score가 다르면 보정한다", async () => {
-    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
-    const localSnapshot = createSnapshot({ score: 20 });
-    const remoteSnapshot = createSnapshot({ score: 18 });
+test("shouldCorrectMyPrediction은 같은 pieceIndex에서 lines가 다르면 보정 후보로 본다", async () => {
+    const { shouldCorrectMyPrediction } = await loadSnapshotCorrection();
+    const serverSnapshot = createSnapshot({ pieceIndex: 4, lines: 2 });
+    const localSnapshot = createSnapshot({ pieceIndex: 4, lines: 1 });
 
-    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), true);
+    assert.equal(shouldCorrectMyPrediction(serverSnapshot, localSnapshot), true);
 });
 
-test("shouldCorrectSnapshot은 lines가 다르면 보정한다", async () => {
-    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
-    const localSnapshot = createSnapshot({ lines: 2 });
-    const remoteSnapshot = createSnapshot({ lines: 1 });
+test("shouldCorrectMyPrediction은 같은 pieceIndex에서 phase가 다르면 보정 후보로 본다", async () => {
+    const { shouldCorrectMyPrediction } = await loadSnapshotCorrection();
+    const serverSnapshot = createSnapshot({ pieceIndex: 4, phase: "gameOver" });
+    const localSnapshot = createSnapshot({ pieceIndex: 4, phase: "playing" });
 
-    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), true);
+    assert.equal(shouldCorrectMyPrediction(serverSnapshot, localSnapshot), true);
 });
 
-test("shouldCorrectSnapshot은 같은 pieceIndex에서 activePiece 위치가 다르면 보정한다", async () => {
-    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
-    const localSnapshot = createSnapshot();
-    const remoteSnapshot = createSnapshot({
+test("shouldCorrectMyPrediction은 activePiece만 다르면 즉시 보정하지 않는다", async () => {
+    const { shouldCorrectMyPrediction } = await loadSnapshotCorrection();
+    const serverSnapshot = createSnapshot({
+        pieceIndex: 4,
+        score: 10,
+        lines: 1,
+        phase: "playing",
         activePiece: {
             pieceType: "tree",
             rotation: 0,
             row: 4,
-            col: 4,
+            col: 5,
+        },
+    });
+    const localSnapshot = createSnapshot({
+        pieceIndex: 4,
+        score: 10,
+        lines: 1,
+        phase: "playing",
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 4,
+            col: 3,
         },
     });
 
-    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), true);
-});
-
-test("shouldCorrectSnapshot은 gameOver snapshot을 예외적으로 보정한다", async () => {
-    const { shouldCorrectSnapshot } = await loadSnapshotCorrection();
-    const localSnapshot = createSnapshot({ pieceIndex: 4 });
-    const remoteSnapshot = createSnapshot({
-        phase: "gameOver",
-        pieceIndex: 3,
-    });
-
-    assert.equal(shouldCorrectSnapshot(localSnapshot, remoteSnapshot), true);
+    assert.equal(shouldCorrectMyPrediction(serverSnapshot, localSnapshot), false);
 });
