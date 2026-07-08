@@ -6,7 +6,7 @@ const {
     applyServerInputToPlayerState,
 } = require("./playerStateInput.js");
 const {
-    applyServerGameplayInput,
+    applyAuthoritativeInput,
 } = require("./playerGameplayStep.js");
 
 const matches = new Map();
@@ -192,7 +192,7 @@ function applyInputToMatchPlayerState(roomId, playerId, input, gameCore) {
     return createSuccess(match, { inputResult });
 }
 
-function applyGameplayInputToMatchPlayerState(roomId, playerId, input, gameCore) {
+function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore) {
     const match = matches.get(roomId);
 
     if (!match) {
@@ -215,7 +215,7 @@ function applyGameplayInputToMatchPlayerState(roomId, playerId, input, gameCore)
         };
     }
 
-    const gameplayResult = applyServerGameplayInput(player.authoritativeState, input, gameCore);
+    const gameplayResult = applyAuthoritativeInput(player.authoritativeState, input, gameCore);
     if (!gameplayResult.ok) {
         return {
             ok: false,
@@ -284,7 +284,7 @@ function resetMatches() {
 
 module.exports = {
     appendPlayerBagChunk,
-    applyGameplayInputToMatchPlayerState,
+    applyAuthoritativeInputToMatchPlayerState,
     applyInputToMatchPlayerState,
     createMatch,
     getMatchState,
