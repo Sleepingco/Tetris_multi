@@ -2,7 +2,10 @@ const test = require("node:test")
 const assert = require("node:assert/strict")
 
 const { registerSocketHandlers } = require("../src/server/sockets/index.js")
-const { getMatchState } = require("../src/server/services/matchService.js")
+const {
+    getAuthoritativePlayerSnapshot,
+    getMatchState,
+} = require("../src/server/services/matchService.js")
 
 class FakeSocketServer {
     constructor() {
@@ -776,6 +779,7 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
     })
     const initialPieceIndex = hostPlayer.authoritativeState.pieceIndex
     const initialCol = hostPlayer.authoritativeState.activePiece.col
+    const initialPieceType = hostPlayer.authoritativeState.activePiece.pieceType
 
     await hostSocket.triggerAsync("game:input", {
         roomId,
@@ -796,6 +800,18 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
     assert.equal(hostPlayer.authoritativeState.activePiece.col, initialCol - 1)
     assert.equal(hostPlayer.authoritativeState.pieceIndex, initialPieceIndex)
 
+    const moveSnapshotEvents = socketServer.roomEvents.filter((event) => {
+        return event.eventName === "game:authoritative:snapshot"
+    })
+
+    assert.equal(moveSnapshotEvents.length, 1)
+    assert.equal(moveSnapshotEvents[0].roomId, roomId)
+    assert.equal(moveSnapshotEvents[0].payload.roomId, roomId)
+    assert.equal(moveSnapshotEvents[0].payload.playerId, "authoritative-sequence-host-player")
+    assert.equal(moveSnapshotEvents[0].payload.snapshot.tick, 0)
+    assert.equal(moveSnapshotEvents[0].payload.snapshot.pieceIndex, initialPieceIndex)
+    assert.equal(moveSnapshotEvents[0].payload.snapshot.activePiece.col, initialCol - 1)
+
     await hostSocket.triggerAsync("game:input", {
         roomId,
         playerId: "authoritative-sequence-host-player",
@@ -814,7 +830,37 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
     assert.equal(hostPlayer.inputLog[1].pieceIndex, initialPieceIndex)
     assert.equal(hostPlayer.authoritativeState.pieceIndex, initialPieceIndex + 1)
 
+    const hardDropSnapshotEvents = socketServer.roomEvents.filter((event) => {
+        return event.eventName === "game:authoritative:snapshot"
+    })
+
+    assert.equal(hardDropSnapshotEvents.length, 2)
+    assert.equal(hardDropSnapshotEvents[1].payload.roomId, roomId)
+    assert.equal(hardDropSnapshotEvents[1].payload.playerId, "authoritative-sequence-host-player")
+    assert.equal(hardDropSnapshotEvents[1].payload.snapshot.tick, 0)
+    assert.equal(hardDropSnapshotEvents[1].payload.snapshot.pieceIndex, initialPieceIndex + 1)
+    assert.notEqual(hardDropSnapshotEvents[1].payload.snapshot.activePiece.pieceType, "")
+
+    const snapshotResult = getAuthoritativePlayerSnapshot(roomId, "authoritative-sequence-host-player")
+    const snapshot = snapshotResult.snapshot
+    const hasLockedPieceCell = snapshot.board.some((row) => {
+        return row.some((cell) => cell === initialPieceType)
+    })
+
+    assert.equal(snapshotResult.ok, true)
+    assert.equal(snapshot.pieceIndex, initialPieceIndex + 1)
+    assert.notEqual(snapshot.activePiece.pieceType, "")
+    assert.equal(hasLockedPieceCell, true)
+
+    snapshot.activePiece.pieceType = "mutated"
+    snapshot.board[19][0] = "mutated"
+    assert.notEqual(hostPlayer.authoritativeState.activePiece.pieceType, "mutated")
+    assert.notEqual(hostPlayer.authoritativeState.board[19][0], "mutated")
+
     const stateBeforeStaleInput = structuredClone(hostPlayer.authoritativeState)
+    const snapshotEventCountBeforeStaleInput = socketServer.roomEvents.filter((event) => {
+        return event.eventName === "game:authoritative:snapshot"
+    }).length
 
     await hostSocket.triggerAsync("game:input", {
         roomId,
@@ -833,6 +879,9 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
     assert.equal(hostPlayer.inputLog[2].action, "move_left")
     assert.equal(hostPlayer.inputLog[2].pieceIndex, initialPieceIndex)
     assert.deepEqual(hostPlayer.authoritativeState, stateBeforeStaleInput)
+    assert.equal(socketServer.roomEvents.filter((event) => {
+        return event.eventName === "game:authoritative:snapshot"
+    }).length, snapshotEventCountBeforeStaleInput)
 })
 
 test("game:input은 stale pieceIndex여도 relay와 input log를 유지하고 authoritativeState는 변경하지 않는다", async () => {

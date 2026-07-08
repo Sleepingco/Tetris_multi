@@ -13,6 +13,7 @@ const {
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
     createMatch,
+    getAuthoritativePlayerSnapshotDto,
     getMatchState,
     recordInput,
 } = require("../services/matchService.js")
@@ -305,7 +306,17 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         try {
             const gameCore = await loadGameCore()
-            applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
+            const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
+            if (!authoritativeResult.ok) return
+
+            const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId)
+            if (!snapshotResult.ok) return
+
+            socketServer.to(roomId).emit("game:authoritative:snapshot", {
+                roomId,
+                playerId,
+                snapshot: snapshotResult.snapshot,
+            })
         } catch {
             // Authoritative side-effect failure must not block MVP input relay.
         }

@@ -197,6 +197,46 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
     return createSuccess(match, { gameplayResult });
 }
 
+function getAuthoritativePlayerSnapshot(roomId, playerId) {
+    const match = matches.get(roomId);
+
+    if (!match) {
+        return createFailure("MATCH_NOT_FOUND");
+    }
+
+    const player = match.players.find((matchPlayer) => {
+        return matchPlayer.playerId === playerId;
+    });
+
+    if (!player) {
+        return createFailure("PLAYER_NOT_FOUND");
+    }
+
+    if (!player.authoritativeState) {
+        return {
+            ok: false,
+            match,
+            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
+        };
+    }
+
+    return createSuccess(match, {
+        snapshot: cloneAuthoritativeState(player.authoritativeState),
+    });
+}
+
+function getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+    const result = getAuthoritativePlayerSnapshot(roomId, playerId);
+
+    if (!result.ok) {
+        return result;
+    }
+
+    return createSuccess(result.match, {
+        snapshot: createClientSnapshotDto(result.snapshot),
+    });
+}
+
 function createBagChunk() {
     const chunk = [...BAG_PIECES];
 
@@ -259,6 +299,51 @@ function createEmptyBoard() {
     return Array.from({ length: BOARD_ROWS }, () => Array(BOARD_COLS).fill(null));
 }
 
+function cloneAuthoritativeState(authoritativeState) {
+    return {
+        board: authoritativeState.board.map((row) => [...row]),
+        activePiece: authoritativeState.activePiece
+            ? { ...authoritativeState.activePiece }
+            : null,
+        pendingPiece: authoritativeState.pendingPiece
+            ? { ...authoritativeState.pendingPiece }
+            : null,
+        pieceQueue: [...authoritativeState.pieceQueue],
+        holdPieceType: authoritativeState.holdPieceType,
+        holdUsedThisDrop: authoritativeState.holdUsedThisDrop,
+        score: authoritativeState.score,
+        lines: authoritativeState.lines,
+        phase: authoritativeState.phase,
+        combo: authoritativeState.combo,
+        backToBack: authoritativeState.backToBack,
+        currentTick: authoritativeState.currentTick,
+        pieceIndex: authoritativeState.pieceIndex,
+        pendingGarbageQueue: authoritativeState.pendingGarbageQueue.map((garbage) => {
+            return { ...garbage };
+        }),
+        lastActionWasRotation: authoritativeState.lastActionWasRotation,
+    };
+}
+
+function createClientSnapshotDto(authoritativeSnapshot) {
+    return {
+        board: authoritativeSnapshot.board.map((row) => [...row]),
+        activePiece: authoritativeSnapshot.activePiece
+            ? { ...authoritativeSnapshot.activePiece }
+            : null,
+        pieceQueue: [...authoritativeSnapshot.pieceQueue],
+        holdPieceType: authoritativeSnapshot.holdPieceType,
+        holdUsedThisDrop: authoritativeSnapshot.holdUsedThisDrop,
+        score: authoritativeSnapshot.score,
+        lines: authoritativeSnapshot.lines,
+        phase: authoritativeSnapshot.phase,
+        combo: authoritativeSnapshot.combo,
+        backToBack: authoritativeSnapshot.backToBack,
+        tick: authoritativeSnapshot.currentTick,
+        pieceIndex: authoritativeSnapshot.pieceIndex,
+    };
+}
+
 function resetMatches() {
     matches.clear();
 }
@@ -267,6 +352,8 @@ module.exports = {
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
     createMatch,
+    getAuthoritativePlayerSnapshot,
+    getAuthoritativePlayerSnapshotDto,
     getMatchState,
     recordInput,
     resetMatches,

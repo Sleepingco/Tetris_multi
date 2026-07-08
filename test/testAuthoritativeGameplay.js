@@ -4,6 +4,8 @@ const assert = require("node:assert/strict");
 const {
     applyAuthoritativeInputToMatchPlayerState,
     createMatch,
+    getAuthoritativePlayerSnapshot,
+    getAuthoritativePlayerSnapshotDto,
     getMatchState,
     resetMatches,
 } = require("../src/server/services/matchService.js");
@@ -84,4 +86,161 @@ test("authoritative gameplay은 연속 input으로 state를 갱신하고 stale p
     const matchResult = getMatchState(roomId);
     assert.equal(matchResult.ok, true);
     assert.deepEqual(matchResult.match.players[0].inputLog, []);
+});
+
+test("getAuthoritativePlayerSnapshot은 authoritativeState 복사본을 반환한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    const roomId = "AUTH_SNAPSHOT_COPY";
+    const createResult = createMatch(createPlayingRoom(roomId));
+    const hostPlayer = createResult.match.players.find((player) => {
+        return player.playerId === "host-player";
+    });
+    const initialPieceType = hostPlayer.authoritativeState.activePiece.pieceType;
+    const initialPieceIndex = hostPlayer.authoritativeState.pieceIndex;
+
+    const applyResult = applyAuthoritativeInputToMatchPlayerState(roomId, "host-player", {
+        action: "hard_drop",
+        pieceIndex: initialPieceIndex,
+    }, gameCore);
+    assert.equal(applyResult.ok, true);
+
+    const snapshotResult = getAuthoritativePlayerSnapshot(roomId, "host-player");
+    const snapshot = snapshotResult.snapshot;
+
+    assert.equal(snapshotResult.ok, true);
+    assert.equal(snapshotResult.reason, null);
+    assert.equal(snapshot.pieceIndex, hostPlayer.authoritativeState.pieceIndex);
+    assert.equal(snapshot.score, hostPlayer.authoritativeState.score);
+    assert.deepEqual(snapshot.activePiece, hostPlayer.authoritativeState.activePiece);
+    assert.deepEqual(snapshot.board, hostPlayer.authoritativeState.board);
+
+    snapshot.board[19][3] = "mutated";
+    snapshot.activePiece.pieceType = "mutated";
+    snapshot.pendingPiece.pieceType = "mutated";
+    snapshot.pieceQueue.push("mutated");
+    snapshot.pendingGarbageQueue.push({ lines: 9, holeCol: 9 });
+
+    assert.notEqual(hostPlayer.authoritativeState.board[19][3], "mutated");
+    assert.notEqual(hostPlayer.authoritativeState.activePiece.pieceType, "mutated");
+    assert.notEqual(hostPlayer.authoritativeState.pendingPiece.pieceType, "mutated");
+    assert.equal(hostPlayer.authoritativeState.pieceQueue.includes("mutated"), false);
+    assert.equal(hostPlayer.authoritativeState.pendingGarbageQueue.length, 0);
+    assert.equal(hostPlayer.authoritativeState.pieceIndex, initialPieceIndex + 1);
+    assert.equal(applyResult.gameplayResult.placementResult.lockedPiece.pieceType, initialPieceType);
+});
+
+test("getAuthoritativePlayerSnapshot은 match/player/state 실패 경로를 반환한다", () => {
+    resetMatches();
+
+    const missingMatchResult = getAuthoritativePlayerSnapshot("MISSING", "host-player");
+    assert.deepEqual(missingMatchResult, {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    });
+
+    const roomId = "AUTH_SNAPSHOT_FAILURE";
+    const createResult = createMatch(createPlayingRoom(roomId));
+    const missingPlayerResult = getAuthoritativePlayerSnapshot(roomId, "missing-player");
+    assert.deepEqual(missingPlayerResult, {
+        ok: false,
+        match: null,
+        reason: "PLAYER_NOT_FOUND",
+    });
+
+    const hostPlayer = createResult.match.players.find((player) => {
+        return player.playerId === "host-player";
+    });
+    hostPlayer.authoritativeState = null;
+
+    const missingStateResult = getAuthoritativePlayerSnapshot(roomId, "host-player");
+    assert.equal(missingStateResult.ok, false);
+    assert.equal(missingStateResult.match.roomId, roomId);
+    assert.equal(missingStateResult.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
+});
+
+test("getAuthoritativePlayerSnapshotDto는 client snapshot 후보 필드와 tick을 반환한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    const roomId = "AUTH_SNAPSHOT_DTO";
+    const createResult = createMatch(createPlayingRoom(roomId));
+    const hostPlayer = createResult.match.players.find((player) => {
+        return player.playerId === "host-player";
+    });
+    const initialPieceIndex = hostPlayer.authoritativeState.pieceIndex;
+
+    const applyResult = applyAuthoritativeInputToMatchPlayerState(roomId, "host-player", {
+        action: "hard_drop",
+        pieceIndex: initialPieceIndex,
+    }, gameCore);
+    assert.equal(applyResult.ok, true);
+
+    const internalSnapshotResult = getAuthoritativePlayerSnapshot(roomId, "host-player");
+    const dtoResult = getAuthoritativePlayerSnapshotDto(roomId, "host-player");
+    const dto = dtoResult.snapshot;
+
+    assert.equal(dtoResult.ok, true);
+    assert.equal(dtoResult.reason, null);
+    assert.equal(dto.tick, hostPlayer.authoritativeState.currentTick);
+    assert.equal(Object.hasOwn(dto, "currentTick"), false);
+    assert.equal(Object.hasOwn(dto, "pendingPiece"), false);
+    assert.equal(Object.hasOwn(dto, "pendingGarbageQueue"), false);
+    assert.equal(Object.hasOwn(dto, "lastActionWasRotation"), false);
+    assert.deepEqual(Object.keys(dto), [
+        "board",
+        "activePiece",
+        "pieceQueue",
+        "holdPieceType",
+        "holdUsedThisDrop",
+        "score",
+        "lines",
+        "phase",
+        "combo",
+        "backToBack",
+        "tick",
+        "pieceIndex",
+    ]);
+    assert.equal(dto.pieceIndex, hostPlayer.authoritativeState.pieceIndex);
+    assert.equal(dto.score, hostPlayer.authoritativeState.score);
+    assert.deepEqual(dto.activePiece, hostPlayer.authoritativeState.activePiece);
+    assert.equal(internalSnapshotResult.snapshot.currentTick, hostPlayer.authoritativeState.currentTick);
+
+    dto.board[19][3] = "mutated";
+    dto.activePiece.pieceType = "mutated";
+    dto.pieceQueue.push("mutated");
+
+    assert.notEqual(hostPlayer.authoritativeState.board[19][3], "mutated");
+    assert.notEqual(hostPlayer.authoritativeState.activePiece.pieceType, "mutated");
+    assert.equal(hostPlayer.authoritativeState.pieceQueue.includes("mutated"), false);
+});
+
+test("getAuthoritativePlayerSnapshotDto는 snapshot 조회와 같은 실패 경로를 반환한다", () => {
+    resetMatches();
+
+    assert.deepEqual(getAuthoritativePlayerSnapshotDto("MISSING", "host-player"), {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    });
+
+    const roomId = "AUTH_SNAPSHOT_DTO_FAILURE";
+    const createResult = createMatch(createPlayingRoom(roomId));
+    assert.deepEqual(getAuthoritativePlayerSnapshotDto(roomId, "missing-player"), {
+        ok: false,
+        match: null,
+        reason: "PLAYER_NOT_FOUND",
+    });
+
+    const hostPlayer = createResult.match.players.find((player) => {
+        return player.playerId === "host-player";
+    });
+    hostPlayer.authoritativeState = null;
+
+    const missingStateResult = getAuthoritativePlayerSnapshotDto(roomId, "host-player");
+    assert.equal(missingStateResult.ok, false);
+    assert.equal(missingStateResult.match.roomId, roomId);
+    assert.equal(missingStateResult.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
 });

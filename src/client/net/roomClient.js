@@ -162,6 +162,14 @@ export function receiveSnapshot(handler) {
     }
 }
 
+export function receiveAuthoritativeSnapshot(handler) {
+    serverConnection.on("game:authoritative:snapshot", handler)
+
+    return () => {
+        serverConnection.off("game:authoritative:snapshot", handler)
+    }
+}
+
 export function leaveGame(roomId, playerId) {
     serverConnection.emit("game:leave", { roomId, playerId })
 
