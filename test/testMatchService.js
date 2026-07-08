@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
     appendPlayerBagChunk,
+    applyGameplayInputToMatchPlayerState,
     applyInputToMatchPlayerState,
     createMatch,
     recordInput,
@@ -271,6 +272,85 @@ test("applyInputToMatchPlayerState는 player authoritativeState가 없으면 실
 
     assert.equal(result.ok, false);
     assert.equal(result.match.roomId, "INPUT003");
+    assert.equal(result.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
+});
+
+test("applyGameplayInputToMatchPlayerState는 hard_drop을 player authoritativeState에 적용한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("GAMEPLAY001"));
+    const matchBefore = getMatchState("GAMEPLAY001").match;
+    const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
+    hostPlayer.authoritativeState.activePiece = {
+        pieceType: "",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+    hostPlayer.authoritativeState.pendingPiece = null;
+    hostPlayer.authoritativeState.pieceQueue = ["square", "tree"];
+
+    const result = applyGameplayInputToMatchPlayerState("GAMEPLAY001", "host-player", {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.gameplayResult.ok, true);
+    assert.equal(result.gameplayResult.placementResult.lockedPiece.pieceType, "square");
+    assert.deepEqual(hostPlayer.authoritativeState.activePiece, {
+        pieceType: "tree",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    });
+    assert.deepEqual(hostPlayer.inputLog, []);
+});
+
+test("applyGameplayInputToMatchPlayerState는 없는 match면 실패 결과를 반환한다", () => {
+    resetMatches();
+
+    const result = applyGameplayInputToMatchPlayerState("MISSING", "host-player", {
+        action: "hard_drop",
+    }, null);
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    });
+});
+
+test("applyGameplayInputToMatchPlayerState는 match에 없는 player면 실패 결과를 반환한다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("GAMEPLAY002"));
+    const result = applyGameplayInputToMatchPlayerState("GAMEPLAY002", "unknown-player", {
+        action: "hard_drop",
+    }, null);
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "PLAYER_NOT_FOUND",
+    });
+});
+
+test("applyGameplayInputToMatchPlayerState는 player authoritativeState가 없으면 실패 결과를 반환한다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("GAMEPLAY003"));
+    const matchBefore = getMatchState("GAMEPLAY003").match;
+    const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
+    hostPlayer.authoritativeState = null;
+
+    const result = applyGameplayInputToMatchPlayerState("GAMEPLAY003", "host-player", {
+        action: "hard_drop",
+    }, null);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.match.roomId, "GAMEPLAY003");
     assert.equal(result.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
 });
 

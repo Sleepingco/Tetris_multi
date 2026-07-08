@@ -5,6 +5,9 @@
 const {
     applyServerInputToPlayerState,
 } = require("./playerStateInput.js");
+const {
+    applyServerGameplayInput,
+} = require("./playerGameplayStep.js");
 
 const matches = new Map();
 const BAG_PIECES = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
@@ -189,6 +192,42 @@ function applyInputToMatchPlayerState(roomId, playerId, input, gameCore) {
     return createSuccess(match, { inputResult });
 }
 
+function applyGameplayInputToMatchPlayerState(roomId, playerId, input, gameCore) {
+    const match = matches.get(roomId);
+
+    if (!match) {
+        return createFailure("MATCH_NOT_FOUND");
+    }
+
+    const player = match.players.find((matchPlayer) => {
+        return matchPlayer.playerId === playerId;
+    });
+
+    if (!player) {
+        return createFailure("PLAYER_NOT_FOUND");
+    }
+
+    if (!player.authoritativeState) {
+        return {
+            ok: false,
+            match,
+            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
+        };
+    }
+
+    const gameplayResult = applyServerGameplayInput(player.authoritativeState, input, gameCore);
+    if (!gameplayResult.ok) {
+        return {
+            ok: false,
+            match,
+            reason: gameplayResult.reason,
+            gameplayResult,
+        };
+    }
+
+    return createSuccess(match, { gameplayResult });
+}
+
 function createBagChunk() {
     const chunk = [...BAG_PIECES];
 
@@ -245,6 +284,7 @@ function resetMatches() {
 
 module.exports = {
     appendPlayerBagChunk,
+    applyGameplayInputToMatchPlayerState,
     applyInputToMatchPlayerState,
     createMatch,
     getMatchState,
