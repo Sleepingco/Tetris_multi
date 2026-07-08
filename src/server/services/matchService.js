@@ -4,6 +4,7 @@
 // =============================
 const {
     applyAuthoritativeInput,
+    applyAuthoritativeGravityStep,
 } = require("./playerGameplayStep.js");
 
 const matches = new Map();
@@ -197,6 +198,47 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
     return createSuccess(match, { gameplayResult });
 }
 
+function applyGravityStepToMatchPlayerState(roomId, playerId, gameCore) {
+    const match = matches.get(roomId);
+
+    if (!match) {
+        return createFailure("MATCH_NOT_FOUND");
+    }
+
+    const player = match.players.find((matchPlayer) => {
+        return matchPlayer.playerId === playerId;
+    });
+
+    if (!player) {
+        return createFailure("PLAYER_NOT_FOUND");
+    }
+
+    if (!player.authoritativeState) {
+        return {
+            ok: false,
+            match,
+            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
+        };
+    }
+
+    const gravityStepResult = applyAuthoritativeGravityStep(player.authoritativeState, gameCore);
+    if (!gravityStepResult.ok) {
+        return {
+            ok: false,
+            match,
+            reason: gravityStepResult.reason,
+            gravityResult: gravityStepResult.gravityResult,
+            gravityStepResult,
+        };
+    }
+
+    return createSuccess(match, {
+        gravityResult: gravityStepResult.gravityResult,
+        gravityStepResult,
+        placementResult: gravityStepResult.placementResult,
+    });
+}
+
 function getAuthoritativePlayerSnapshot(roomId, playerId) {
     const match = matches.get(roomId);
 
@@ -351,6 +393,7 @@ function resetMatches() {
 module.exports = {
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
+    applyGravityStepToMatchPlayerState,
     createMatch,
     getAuthoritativePlayerSnapshot,
     getAuthoritativePlayerSnapshotDto,

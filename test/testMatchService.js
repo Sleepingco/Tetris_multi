@@ -5,7 +5,9 @@ const matchService = require("../src/server/services/matchService.js");
 const {
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
+    applyGravityStepToMatchPlayerState,
     createMatch,
+    getAuthoritativePlayerSnapshotDto,
     recordInput,
     getMatchState,
     resetMatches,
@@ -206,9 +208,10 @@ test("appendPlayerBagChunk는 player의 bagChunks에 새 server bag chunk를 추
     assert.deepEqual(hostPlayer.authoritativeState.pieceQueue.slice(-7), result.bagChunk);
 });
 
-test("matchService public entry는 applyAuthoritativeInputToMatchPlayerState만 노출한다", () => {
+test("matchService public entry는 authoritative input과 gravity wrapper만 노출한다", () => {
     assert.equal(matchService.applyInputToMatchPlayerState, undefined);
     assert.equal(typeof matchService.applyAuthoritativeInputToMatchPlayerState, "function");
+    assert.equal(typeof matchService.applyGravityStepToMatchPlayerState, "function");
 });
 
 test("applyAuthoritativeInputToMatchPlayerState는 move_left를 player authoritativeState에 적용한다", async () => {
@@ -344,6 +347,83 @@ test("applyAuthoritativeInputToMatchPlayerState는 player authoritativeState가 
 
     assert.equal(result.ok, false);
     assert.equal(result.match.roomId, "GAMEPLAY003");
+    assert.equal(result.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
+});
+
+test("applyGravityStepToMatchPlayerState는 player authoritativeState에 gravity 1회를 적용한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("GRAVITY001"));
+    const matchBefore = getMatchState("GRAVITY001").match;
+    const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
+    hostPlayer.authoritativeState.activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 3,
+    };
+    hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
+
+    const result = applyGravityStepToMatchPlayerState("GRAVITY001", "host-player", gameCore);
+    const snapshotResult = getAuthoritativePlayerSnapshotDto("GRAVITY001", "host-player");
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.gravityResult.kind, "move");
+    assert.deepEqual(hostPlayer.authoritativeState.activePiece, {
+        pieceType: "square",
+        rotation: 0,
+        row: 1,
+        col: 3,
+    });
+    assert.equal(hostPlayer.authoritativeState.currentTick, 1);
+    assert.deepEqual(hostPlayer.inputLog, []);
+    assert.equal(snapshotResult.ok, true);
+    assert.equal(snapshotResult.snapshot.tick, 1);
+    assert.deepEqual(snapshotResult.snapshot.activePiece, hostPlayer.authoritativeState.activePiece);
+});
+
+test("applyGravityStepToMatchPlayerState는 없는 match면 실패 결과를 반환한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    const result = applyGravityStepToMatchPlayerState("MISSING", "host-player", gameCore);
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    });
+});
+
+test("applyGravityStepToMatchPlayerState는 match에 없는 player면 실패 결과를 반환한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("GRAVITY002"));
+    const result = applyGravityStepToMatchPlayerState("GRAVITY002", "unknown-player", gameCore);
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "PLAYER_NOT_FOUND",
+    });
+});
+
+test("applyGravityStepToMatchPlayerState는 player authoritativeState가 없으면 실패 결과를 반환한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("GRAVITY003"));
+    const matchBefore = getMatchState("GRAVITY003").match;
+    const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
+    hostPlayer.authoritativeState = null;
+
+    const result = applyGravityStepToMatchPlayerState("GRAVITY003", "host-player", gameCore);
+
+    assert.equal(result.ok, false);
+    assert.equal(result.match.roomId, "GRAVITY003");
     assert.equal(result.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
 });
 
