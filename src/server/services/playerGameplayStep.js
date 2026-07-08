@@ -44,13 +44,6 @@ function applyHardDropInput(authoritativeState, input, gameCore) {
         return createFailure("INVALID_GAME_CORE");
     }
 
-    if (!authoritativeState.activePiece?.pieceType) {
-        const spawnedPiece = spawnNextPiece(authoritativeState, gameCore);
-        if (!spawnedPiece) {
-            return createFailure("NO_PIECE_AVAILABLE");
-        }
-    }
-
     if (input?.action !== "hard_drop") {
         return createFailure("UNSUPPORTED_ACTION");
     }
@@ -89,7 +82,6 @@ function applySoftDrop(authoritativeState, input, gameCore) {
         return moveResult;
     }
 
-    authoritativeState.lastActionWasRotation = false;
     return lockPieceAndSpawnNext(authoritativeState, gameCore, {
         lockedPiece: { ...moveResult.moveIntent.active },
         droppedRows: 0,
@@ -116,6 +108,7 @@ function applyHold(authoritativeState, gameCore) {
     authoritativeState.activePiece = { ...spawnedPiece };
     authoritativeState.pendingPiece = { ...spawnedPiece };
     authoritativeState.holdUsedThisDrop = true;
+    authoritativeState.lastActionWasRotation = false;
     authoritativeState.phase = "playing";
 
     return {
@@ -143,18 +136,49 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
     authoritativeState.lines = linesBefore;
 
     const lockedPieceIndex = normalizeInteger(authoritativeState.pieceIndex);
+    const isTSpin = gameCore.isTSpinLock({
+        board: authoritativeState.board,
+        piece: lockedPiece,
+        lastActionWasRotation: authoritativeState.lastActionWasRotation,
+    });
+    const topOut = gameCore.isPieceAboveTop(lockedPiece, gameCore.BLOCKS);
     if (useHardDropScore) {
         authoritativeState.score += droppedRows * 2;
     }
     gameCore.lockPieceOnBoard(authoritativeState.board, lockedPiece, gameCore.BLOCKS);
 
-    const linesCleared = gameCore.clearFilledLines(authoritativeState.board);
-    if (linesCleared > 0) {
-        authoritativeState.score += linesCleared * 10;
+    const linesCleared = topOut
+        ? 0
+        : gameCore.clearFilledLines(authoritativeState.board);
+    if (!topOut && linesCleared > 0) {
+        const lineClearScore = isTSpin
+            ? linesCleared * 10 * 5
+            : linesCleared * 10;
+        authoritativeState.score += lineClearScore;
         authoritativeState.lines += linesCleared;
+    } else if (!topOut && isTSpin) {
+        authoritativeState.score += 15;
     }
 
     const scoreAfter = authoritativeState.score;
+    const attackState = gameCore.resolveAttackState({
+        combo: authoritativeState.combo,
+        backToBack: authoritativeState.backToBack,
+        linesCleared,
+        isTSpin,
+    });
+    authoritativeState.combo = attackState.nextCombo;
+    authoritativeState.backToBack = attackState.nextBackToBack;
+
+    const rawAttackLines = gameCore.calculateGarbageAttack(attackState);
+    const garbageResolution = gameCore.resolveGarbageCancel({
+        pendingGarbageQueue: authoritativeState.pendingGarbageQueue,
+        rawAttackLines,
+    });
+    authoritativeState.pendingGarbageQueue = garbageResolution.pendingGarbageQueue;
+    const appliedGarbage = applyPendingGarbageQueue(authoritativeState, gameCore);
+    const gameOver = topOut || appliedGarbage.overflow;
+
     authoritativeState.activePiece = {
         pieceType: "",
         rotation: lockedPiece.rotation,
@@ -163,7 +187,12 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
     };
     authoritativeState.pendingPiece = null;
 
-    const nextPiece = spawnNextPiece(authoritativeState, gameCore);
+    if (gameOver) {
+        authoritativeState.phase = "gameOver";
+    }
+    const nextPiece = gameOver
+        ? null
+        : spawnNextPiece(authoritativeState, gameCore);
 
     return {
         ok: true,
@@ -173,11 +202,37 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
             lockedPiece,
             droppedRows,
             linesCleared,
+            isTSpin: attackState.isTSpin,
+            combo: attackState.combo,
+            backToBack: attackState.backToBack,
+            rawAttackLines,
+            attackLines: garbageResolution.attackLines,
+            canceledGarbageLines: garbageResolution.canceledGarbageLines,
+            incomingGarbageLines: garbageResolution.incomingGarbageLines,
+            appliedGarbageLines: appliedGarbage.appliedLines,
             scoreBefore,
             scoreAfter,
             scoreDelta: scoreAfter - scoreBefore,
+            gameOver,
             nextPiece,
         },
+    };
+}
+
+function applyPendingGarbageQueue(authoritativeState, gameCore) {
+    let appliedLines = 0;
+    let overflow = false;
+
+    while (authoritativeState.pendingGarbageQueue.length > 0) {
+        const garbage = authoritativeState.pendingGarbageQueue.shift();
+        const result = gameCore.applyGarbageLines(authoritativeState.board, garbage);
+        appliedLines += result.appliedLines;
+        overflow = overflow || result.overflow;
+    }
+
+    return {
+        appliedLines,
+        overflow,
     };
 }
 
@@ -193,6 +248,7 @@ function spawnNextPiece(authoritativeState, gameCore) {
     authoritativeState.activePiece = { ...spawnedPiece };
     authoritativeState.pendingPiece = { ...spawnedPiece };
     authoritativeState.holdUsedThisDrop = false;
+    authoritativeState.lastActionWasRotation = false;
     authoritativeState.phase = "playing";
 
     return spawnedPiece;

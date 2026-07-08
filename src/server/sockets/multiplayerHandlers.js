@@ -11,10 +11,12 @@ const {
 
 const {
     appendPlayerBagChunk,
+    applyAuthoritativeInputToMatchPlayerState,
     createMatch,
     getMatchState,
     recordInput,
 } = require("../services/matchService.js")
+const { loadGameCore } = require("../services/gameCoreLoader.js")
 const {
     saveGameEventLog,
     savePlacementDecisionLog,
@@ -245,8 +247,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.to(roomId).emit("game:snapshot", { playerId, snapshot })
     })
 
-    // 입력은 match input log에 남기고 상대 예측 runtime으로 전달한다. 서버 step 실행은 아직 하지 않는다.
-    clientSocket.on("game:input", (payload = {}) => {
+    // 입력은 기존 relay를 유지하면서 match authoritativeState에도 best-effort로 반영한다.
+    clientSocket.on("game:input", async (payload = {}) => {
         const { roomId, playerId, action, tick, pieceIndex } = payload
         const result = syncRoom(roomId, playerId)
 
@@ -283,11 +285,12 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        const inputResult = recordInput(roomId, playerId, {
+        const input = {
             action,
             tick,
             pieceIndex,
-        })
+        }
+        const inputResult = recordInput(roomId, playerId, input)
 
         if (!inputResult.ok) {
             clientSocket.emit("game:input:result", inputResult)
@@ -297,10 +300,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.to(roomId).emit("game:input", {
             roomId,
             playerId,
-            action,
-            tick,
-            pieceIndex,
+            ...input,
         })
+
+        try {
+            const gameCore = await loadGameCore()
+            applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
+        } catch {
+            // Authoritative side-effect failure must not block MVP input relay.
+        }
     })
 
     clientSocket.on("game:log:placement_decision", async (payload = {}) => {

@@ -1,15 +1,15 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+const matchService = require("../src/server/services/matchService.js");
 const {
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
-    applyInputToMatchPlayerState,
     createMatch,
     recordInput,
     getMatchState,
     resetMatches,
-} = require("../src/server/services/matchService.js");
+} = matchService;
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
 
 function createPlayingRoom(roomId = "ROOM001") {
@@ -56,13 +56,17 @@ test("createMatch는 player별 server bag chunks를 만든다", () => {
     assert.equal(result.match.players.length, 2);
 
     result.match.players.forEach((player) => {
+        const flattenedBag = player.bagChunks.flat();
+
         assert.equal(player.bagChunks.length, 3);
 
         player.bagChunks.forEach((chunk) => {
             assert.equal(chunk.length, 7);
             assert.deepEqual([...chunk].sort(), expectedPieces);
         });
-        assert.deepEqual(player.authoritativeState.pieceQueue, player.bagChunks.flat());
+        assert.equal(player.authoritativeState.activePiece.pieceType, flattenedBag[0]);
+        assert.deepEqual(player.authoritativeState.pieceQueue, flattenedBag.slice(1));
+        assert.equal(player.authoritativeState.pieceIndex, 1);
     });
 });
 
@@ -71,19 +75,21 @@ test("createMatch는 player별 최소 authoritative state를 만든다", () => {
 
     const result = createMatch(createPlayingRoom("STATE001"));
     const [hostPlayer, guestPlayer] = result.match.players;
-    const expectedPieceQueue = hostPlayer.bagChunks.flat();
+    const flattenedBag = hostPlayer.bagChunks.flat();
+    const firstPieceType = flattenedBag[0];
+    const expectedSpawnedPiece = {
+        pieceType: firstPieceType,
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
 
     assert.equal(result.ok, true);
     assert.deepEqual(hostPlayer.authoritativeState, {
         board: Array.from({ length: 20 }, () => Array(10).fill(null)),
-        activePiece: {
-            pieceType: "",
-            rotation: 0,
-            row: -1,
-            col: 3,
-        },
-        pendingPiece: null,
-        pieceQueue: expectedPieceQueue,
+        activePiece: expectedSpawnedPiece,
+        pendingPiece: expectedSpawnedPiece,
+        pieceQueue: flattenedBag.slice(1),
         holdPieceType: null,
         holdUsedThisDrop: false,
         score: 0,
@@ -92,8 +98,9 @@ test("createMatch는 player별 최소 authoritative state를 만든다", () => {
         combo: -1,
         backToBack: false,
         currentTick: 0,
-        pieceIndex: 0,
+        pieceIndex: 1,
         pendingGarbageQueue: [],
+        lastActionWasRotation: false,
     });
     assert.notEqual(hostPlayer.authoritativeState, guestPlayer.authoritativeState);
     assert.notEqual(hostPlayer.authoritativeState.board, guestPlayer.authoritativeState.board);
@@ -192,14 +199,19 @@ test("appendPlayerBagChunk는 player의 bagChunks에 새 server bag chunk를 추
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
     assert.equal(hostPlayer.bagChunks.length, 4);
-    assert.equal(hostPlayer.authoritativeState.pieceQueue.length, 28);
+    assert.equal(hostPlayer.authoritativeState.pieceQueue.length, 27);
     assert.equal(result.bagChunk.length, 7);
     assert.deepEqual([...result.bagChunk].sort(), expectedPieces);
     assert.deepEqual(hostPlayer.bagChunks[3], result.bagChunk);
     assert.deepEqual(hostPlayer.authoritativeState.pieceQueue.slice(-7), result.bagChunk);
 });
 
-test("applyInputToMatchPlayerState는 특정 player authoritativeState에 input 1개를 적용한다", async () => {
+test("matchService public entry는 applyAuthoritativeInputToMatchPlayerState만 노출한다", () => {
+    assert.equal(matchService.applyInputToMatchPlayerState, undefined);
+    assert.equal(typeof matchService.applyAuthoritativeInputToMatchPlayerState, "function");
+});
+
+test("applyAuthoritativeInputToMatchPlayerState는 move_left를 player authoritativeState에 적용한다", async () => {
     resetMatches();
 
     const gameCore = await loadGameCore();
@@ -212,15 +224,17 @@ test("applyInputToMatchPlayerState는 특정 player authoritativeState에 input 
         row: 0,
         col: 4,
     };
+    hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
 
-    const result = applyInputToMatchPlayerState("INPUT001", "host-player", {
+    const result = applyAuthoritativeInputToMatchPlayerState("INPUT001", "host-player", {
         action: "move_left",
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex,
     }, gameCore);
 
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
-    assert.equal(result.inputResult.ok, true);
-    assert.equal(result.inputResult.moveIntent.kind, "ok");
+    assert.equal(result.gameplayResult.ok, true);
+    assert.equal(result.gameplayResult.moveIntent.kind, "ok");
     assert.deepEqual(hostPlayer.authoritativeState.activePiece, {
         pieceType: "tree",
         rotation: 0,
@@ -229,50 +243,26 @@ test("applyInputToMatchPlayerState는 특정 player authoritativeState에 input 
     });
 });
 
-test("applyInputToMatchPlayerState는 없는 match면 실패 결과를 반환한다", () => {
+test("applyAuthoritativeInputToMatchPlayerState는 pieceIndex가 다르면 state를 변경하지 않는다", async () => {
     resetMatches();
 
-    const result = applyInputToMatchPlayerState("MISSING", "host-player", {
-        action: "move_left",
-    }, null);
-
-    assert.deepEqual(result, {
-        ok: false,
-        match: null,
-        reason: "MATCH_NOT_FOUND",
-    });
-});
-
-test("applyInputToMatchPlayerState는 match에 없는 player면 실패 결과를 반환한다", () => {
-    resetMatches();
-
-    createMatch(createPlayingRoom("INPUT002"));
-    const result = applyInputToMatchPlayerState("INPUT002", "unknown-player", {
-        action: "move_left",
-    }, null);
-
-    assert.deepEqual(result, {
-        ok: false,
-        match: null,
-        reason: "PLAYER_NOT_FOUND",
-    });
-});
-
-test("applyInputToMatchPlayerState는 player authoritativeState가 없으면 실패 결과를 반환한다", () => {
-    resetMatches();
-
-    createMatch(createPlayingRoom("INPUT003"));
-    const matchBefore = getMatchState("INPUT003").match;
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("INPUT_MISMATCH"));
+    const matchBefore = getMatchState("INPUT_MISMATCH").match;
     const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
-    hostPlayer.authoritativeState = null;
+    const beforeState = structuredClone(hostPlayer.authoritativeState);
 
-    const result = applyInputToMatchPlayerState("INPUT003", "host-player", {
+    const result = applyAuthoritativeInputToMatchPlayerState("INPUT_MISMATCH", "host-player", {
         action: "move_left",
-    }, null);
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex + 1,
+    }, gameCore);
 
     assert.equal(result.ok, false);
-    assert.equal(result.match.roomId, "INPUT003");
-    assert.equal(result.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
+    assert.equal(result.match.roomId, "INPUT_MISMATCH");
+    assert.equal(result.reason, "PIECE_INDEX_MISMATCH");
+    assert.deepEqual(hostPlayer.authoritativeState.activePiece, beforeState.activePiece);
+    assert.deepEqual(hostPlayer.authoritativeState.pendingPiece, beforeState.pendingPiece);
+    assert.deepEqual(hostPlayer.authoritativeState.pieceQueue, beforeState.pieceQueue);
 });
 
 test("applyAuthoritativeInputToMatchPlayerState는 hard_drop을 player authoritativeState에 적용한다", async () => {
@@ -283,22 +273,25 @@ test("applyAuthoritativeInputToMatchPlayerState는 hard_drop을 player authorita
     const matchBefore = getMatchState("GAMEPLAY001").match;
     const hostPlayer = matchBefore.players.find(player => player.playerId === "host-player");
     hostPlayer.authoritativeState.activePiece = {
-        pieceType: "",
+        pieceType: "square",
         rotation: 0,
         row: -1,
         col: 3,
     };
-    hostPlayer.authoritativeState.pendingPiece = null;
-    hostPlayer.authoritativeState.pieceQueue = ["square", "tree"];
+    hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
+    hostPlayer.authoritativeState.pieceQueue = ["tree"];
+    hostPlayer.authoritativeState.pieceIndex = 1;
 
     const result = applyAuthoritativeInputToMatchPlayerState("GAMEPLAY001", "host-player", {
         action: "hard_drop",
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex,
     }, gameCore);
 
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
     assert.equal(result.gameplayResult.ok, true);
     assert.equal(result.gameplayResult.placementResult.lockedPiece.pieceType, "square");
+    assert.equal(hostPlayer.authoritativeState.pieceIndex, 2);
     assert.deepEqual(hostPlayer.authoritativeState.activePiece, {
         pieceType: "tree",
         rotation: 0,

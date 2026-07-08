@@ -7,30 +7,59 @@ const {
 } = require("../src/server/services/playerGameplayStep.js");
 
 function createPlayerState(gameCore, overrides = {}) {
+    const activePiece = overrides.activePiece ?? {
+        pieceType: "square",
+        rotation: 0,
+        row: gameCore.SPAWN_POSITION.row,
+        col: gameCore.SPAWN_POSITION.col,
+    };
+    const hasPendingPieceOverride = Object.hasOwn(overrides, "pendingPiece");
+    const pendingPiece = hasPendingPieceOverride
+        ? overrides.pendingPiece
+        : { ...activePiece };
+
     return {
         board: overrides.board ?? gameCore.createEmptyBoard(
             gameCore.BOARD_ROWS,
             gameCore.BOARD_COLS,
         ),
-        activePiece: overrides.activePiece ?? {
-            pieceType: "",
-            rotation: 0,
-            row: gameCore.SPAWN_POSITION.row,
-            col: gameCore.SPAWN_POSITION.col,
-        },
-        pendingPiece: overrides.pendingPiece ?? null,
-        pieceQueue: [...(overrides.pieceQueue ?? ["square", "tree"])],
+        activePiece,
+        pendingPiece,
+        pieceQueue: [...(overrides.pieceQueue ?? ["tree"])],
         holdPieceType: overrides.holdPieceType ?? null,
         holdUsedThisDrop: overrides.holdUsedThisDrop ?? false,
         score: overrides.score ?? 0,
         lines: overrides.lines ?? 0,
         phase: "playing",
-        combo: -1,
-        backToBack: false,
+        combo: overrides.combo ?? -1,
+        backToBack: overrides.backToBack ?? false,
         currentTick: 0,
-        pieceIndex: overrides.pieceIndex ?? 0,
-        pendingGarbageQueue: [],
+        pieceIndex: overrides.pieceIndex ?? 1,
+        pendingGarbageQueue: [...(overrides.pendingGarbageQueue ?? [])],
+        lastActionWasRotation: overrides.lastActionWasRotation ?? false,
     };
+}
+
+function createLineClearBoard(gameCore, piece, rowsToClear, extraFilledCells = []) {
+    const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS);
+    const pieceCells = new Set(gameCore.BLOCKS[piece.pieceType][piece.rotation].map(([offsetX, offsetY]) => {
+        return `${piece.row + offsetY}:${piece.col + offsetX}`;
+    }));
+
+    rowsToClear.forEach((row) => {
+        board[row] = Array(gameCore.BOARD_COLS).fill("stack");
+    });
+    pieceCells.forEach((cellKey) => {
+        const [row, col] = cellKey.split(":").map(Number);
+        if (rowsToClear.includes(row)) {
+            board[row][col] = null;
+        }
+    });
+    extraFilledCells.forEach(([row, col]) => {
+        board[row][col] = "stack";
+    });
+
+    return board;
 }
 
 test("applyAuthoritativeInput은 hard_drop line clear 후 board, lines, score를 갱신한다", async () => {
@@ -47,6 +76,9 @@ test("applyAuthoritativeInput은 hard_drop line clear 후 board, lines, score를
 
     assert.equal(result.ok, true);
     assert.equal(result.placementResult.linesCleared, 1);
+    assert.equal(result.placementResult.rawAttackLines, 0);
+    assert.equal(result.placementResult.attackLines, 0);
+    assert.equal(result.placementResult.gameOver, false);
     assert.equal(playerState.lines, 1);
     assert.equal(playerState.score, 48);
     assert.deepEqual(playerState.board[19], [
@@ -61,6 +93,280 @@ test("applyAuthoritativeInput은 hard_drop line clear 후 board, lines, score를
         null,
         null,
     ]);
+});
+
+test("applyAuthoritativeInput은 hard_drop Tetris의 attack scalar와 backToBack 상태를 갱신한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "bar",
+        rotation: 1,
+        row: 0,
+        col: 3,
+    };
+    const lockedPiece = {
+        ...activePiece,
+        row: 16,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, lockedPiece, [16, 17, 18, 19]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["square"],
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.linesCleared, 4);
+    assert.equal(result.placementResult.combo, 0);
+    assert.equal(result.placementResult.backToBack, false);
+    assert.equal(result.placementResult.rawAttackLines, 4);
+    assert.equal(result.placementResult.attackLines, 4);
+    assert.equal(result.placementResult.canceledGarbageLines, 0);
+    assert.equal(result.placementResult.incomingGarbageLines, 0);
+    assert.equal(result.placementResult.appliedGarbageLines, 0);
+    assert.equal(result.placementResult.gameOver, false);
+    assert.equal(playerState.combo, 0);
+    assert.equal(playerState.backToBack, true);
+});
+
+test("applyAuthoritativeInput은 back-to-back Tetris bonus를 rawAttackLines에 반영한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "bar",
+        rotation: 1,
+        row: 0,
+        col: 3,
+    };
+    const lockedPiece = {
+        ...activePiece,
+        row: 16,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, lockedPiece, [16, 17, 18, 19]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["square"],
+        backToBack: true,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.backToBack, true);
+    assert.equal(result.placementResult.rawAttackLines, 5);
+    assert.equal(result.placementResult.attackLines, 5);
+    assert.equal(playerState.backToBack, true);
+});
+
+test("applyAuthoritativeInput은 일반 line clear 후 backToBack을 reset한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+    const lockedPiece = {
+        ...activePiece,
+        row: 18,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, lockedPiece, [18, 19]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        backToBack: true,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.linesCleared, 2);
+    assert.equal(result.placementResult.backToBack, true);
+    assert.equal(result.placementResult.rawAttackLines, 1);
+    assert.equal(playerState.backToBack, false);
+});
+
+test("applyAuthoritativeInput은 combo 2번째 clear bonus를 rawAttackLines에 반영한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+    const lockedPiece = {
+        ...activePiece,
+        row: 18,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, lockedPiece, [18, 19]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        combo: 0,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.combo, 1);
+    assert.equal(result.placementResult.rawAttackLines, 2);
+    assert.equal(result.placementResult.attackLines, 2);
+    assert.equal(playerState.combo, 1);
+});
+
+test("applyAuthoritativeInput은 pendingGarbageQueue를 attackLines로 먼저 cancel한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "bar",
+        rotation: 1,
+        row: 0,
+        col: 3,
+    };
+    const lockedPiece = {
+        ...activePiece,
+        row: 16,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, lockedPiece, [16, 17, 18, 19]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["square"],
+        pendingGarbageQueue: [{ lines: 2, holeCol: 0 }],
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.rawAttackLines, 4);
+    assert.equal(result.placementResult.canceledGarbageLines, 2);
+    assert.equal(result.placementResult.attackLines, 2);
+    assert.equal(result.placementResult.incomingGarbageLines, 2);
+    assert.equal(result.placementResult.appliedGarbageLines, 0);
+    assert.deepEqual(playerState.pendingGarbageQueue, []);
+});
+
+test("applyAuthoritativeInput은 attack이 없으면 pendingGarbageQueue를 board에 적용한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+    const lockedPiece = {
+        ...activePiece,
+        row: 18,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, lockedPiece, [19]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        pendingGarbageQueue: [{ lines: 2, holeCol: 0 }],
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.linesCleared, 1);
+    assert.equal(result.placementResult.rawAttackLines, 0);
+    assert.equal(result.placementResult.attackLines, 0);
+    assert.equal(result.placementResult.canceledGarbageLines, 0);
+    assert.equal(result.placementResult.incomingGarbageLines, 2);
+    assert.equal(result.placementResult.appliedGarbageLines, 2);
+    assert.deepEqual(playerState.pendingGarbageQueue, []);
+    assert.equal(playerState.board[18][0], null);
+    assert.equal(playerState.board[18][1], "garbage");
+    assert.equal(playerState.board[19][0], null);
+    assert.equal(playerState.board[19][1], "garbage");
+});
+
+test("applyAuthoritativeInput은 T-Spin Single placementResult scalar를 반영한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "tree",
+        rotation: 0,
+        row: 17,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, activePiece, [18], [
+            [17, 3],
+            [17, 5],
+            [19, 3],
+        ]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["square"],
+        lastActionWasRotation: true,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "soft_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.linesCleared, 1);
+    assert.equal(result.placementResult.isTSpin, true);
+    assert.equal(result.placementResult.rawAttackLines, 2);
+    assert.equal(result.placementResult.attackLines, 2);
+    assert.equal(result.placementResult.scoreDelta, 50);
+    assert.equal(playerState.backToBack, true);
+});
+
+test("applyAuthoritativeInput은 top-out lock에서 line clear와 attack을 만들지 않는다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: -2,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board: createLineClearBoard(gameCore, activePiece, [0]),
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        score: 100,
+        combo: 2,
+        backToBack: true,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "soft_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.linesCleared, 0);
+    assert.equal(result.placementResult.rawAttackLines, 0);
+    assert.equal(result.placementResult.attackLines, 0);
+    assert.equal(result.placementResult.scoreBefore, 100);
+    assert.equal(result.placementResult.scoreAfter, 100);
+    assert.equal(result.placementResult.scoreDelta, 0);
+    assert.equal(result.placementResult.combo, 0);
+    assert.equal(result.placementResult.backToBack, true);
+    assert.equal(result.placementResult.gameOver, true);
+    assert.equal(result.placementResult.nextPiece, null);
+    assert.equal(playerState.lines, 0);
+    assert.equal(playerState.score, 100);
+    assert.equal(playerState.combo, -1);
+    assert.equal(playerState.backToBack, true);
+    assert.equal(playerState.phase, "gameOver");
 });
 
 test("applyAuthoritativeInput은 move_left를 처리한다", async () => {
@@ -171,6 +477,48 @@ test("applyAuthoritativeInput은 hard_drop으로 lock, score, next spawn을 처�
     assert.equal(playerState.pieceIndex, 2);
 });
 
+test("applyAuthoritativeInput은 hard_drop 후 next spawn에서 lastActionWasRotation을 reset한다", async () => {
+    const gameCore = await loadGameCore();
+    const playerState = createPlayerState(gameCore, {
+        pieceQueue: ["tree"],
+        lastActionWasRotation: true,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.nextPiece.pieceType, "tree");
+    assert.equal(playerState.lastActionWasRotation, false);
+});
+
+test("applyAuthoritativeInput은 activePiece가 비어 있는 hard_drop에서 pieceQueue를 소비하지 않는다", async () => {
+    const gameCore = await loadGameCore();
+    const playerState = createPlayerState(gameCore, {
+        activePiece: {
+            pieceType: "",
+            rotation: 0,
+            row: -1,
+            col: 3,
+        },
+        pendingPiece: null,
+        pieceQueue: ["square", "tree"],
+        pieceIndex: 0,
+    });
+    const beforeState = structuredClone(playerState);
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.deepEqual(result, {
+        ok: false,
+        reason: "INVALID_PLAYER_STATE",
+    });
+    assert.deepEqual(playerState, beforeState);
+});
+
 test("applyAuthoritativeInput은 soft_drop 이동 성공을 처리한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
@@ -271,6 +619,30 @@ test("applyAuthoritativeInput은 첫 hold에서 현재 piece를 hold하고 다�
     assert.equal(playerState.pieceIndex, 1);
 });
 
+test("applyAuthoritativeInput은 hold 후 lastActionWasRotation을 reset한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        pieceIndex: 1,
+        lastActionWasRotation: true,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hold",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(playerState.lastActionWasRotation, false);
+});
+
 test("applyAuthoritativeInput은 hold piece가 있을 때 swap한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
@@ -330,6 +702,42 @@ test("applyAuthoritativeInput은 같은 drop에서 두 번째 hold를 실패시�
         reason: "HOLD_NOT_AVAILABLE",
     });
     assert.deepEqual(playerState, beforeState);
+});
+
+test("applyAuthoritativeInput은 다음 T 조각이 회전하지 않았으면 막힌 코너에서도 T-Spin으로 보지 않는다", async () => {
+    const gameCore = await loadGameCore();
+    const playerState = createPlayerState(gameCore, {
+        pieceQueue: ["tree"],
+        lastActionWasRotation: true,
+    });
+
+    const spawnResult = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+    assert.equal(spawnResult.ok, true);
+
+    const activePiece = {
+        pieceType: "tree",
+        rotation: 0,
+        row: 17,
+        col: 3,
+    };
+    playerState.board = createLineClearBoard(gameCore, activePiece, [18], [
+        [17, 3],
+        [17, 5],
+        [19, 3],
+    ]);
+    playerState.activePiece = { ...activePiece };
+    playerState.pendingPiece = { ...activePiece };
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "soft_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.linesCleared, 1);
+    assert.equal(result.placementResult.isTSpin, false);
+    assert.equal(result.placementResult.rawAttackLines, 0);
 });
 
 test("applyAuthoritativeInput은 unsupported action을 실패시킨다", async () => {

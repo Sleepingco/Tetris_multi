@@ -3,9 +3,6 @@
 // match는 player별 input log, server bag chunk, authoritativeState 초안을 저장한다.
 // =============================
 const {
-    applyServerInputToPlayerState,
-} = require("./playerStateInput.js");
-const {
     applyAuthoritativeInput,
 } = require("./playerGameplayStep.js");
 
@@ -156,42 +153,6 @@ function appendPlayerBagChunk(roomId, playerId) {
     return createSuccess(match, { bagChunk });
 }
 
-function applyInputToMatchPlayerState(roomId, playerId, input, gameCore) {
-    const match = matches.get(roomId);
-
-    if (!match) {
-        return createFailure("MATCH_NOT_FOUND");
-    }
-
-    const player = match.players.find((matchPlayer) => {
-        return matchPlayer.playerId === playerId;
-    });
-
-    if (!player) {
-        return createFailure("PLAYER_NOT_FOUND");
-    }
-
-    if (!player.authoritativeState) {
-        return {
-            ok: false,
-            match,
-            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
-        };
-    }
-
-    const inputResult = applyServerInputToPlayerState(player.authoritativeState, input, gameCore);
-    if (!inputResult.ok) {
-        return {
-            ok: false,
-            match,
-            reason: inputResult.reason,
-            inputResult,
-        };
-    }
-
-    return createSuccess(match, { inputResult });
-}
-
 function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore) {
     const match = matches.get(roomId);
 
@@ -212,6 +173,14 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
             ok: false,
             match,
             reason: "AUTHORITATIVE_STATE_NOT_FOUND",
+        };
+    }
+
+    if (input?.pieceIndex !== player.authoritativeState.pieceIndex) {
+        return {
+            ok: false,
+            match,
+            reason: "PIECE_INDEX_MISMATCH",
         };
     }
 
@@ -246,16 +215,27 @@ function createInitialBagChunks(count = INITIAL_BAG_CHUNK_COUNT) {
 }
 
 function createInitialPlayerState(bagChunks = []) {
-    return {
-        board: createEmptyBoard(),
-        activePiece: {
+    const pieceQueue = flattenBagChunks(bagChunks);
+    const firstPieceType = pieceQueue.shift();
+    const activePiece = firstPieceType
+        ? {
+            pieceType: firstPieceType,
+            rotation: 0,
+            row: SPAWN_ROW,
+            col: SPAWN_COL,
+        }
+        : {
             pieceType: "",
             rotation: 0,
             row: SPAWN_ROW,
             col: SPAWN_COL,
-        },
-        pendingPiece: null,
-        pieceQueue: flattenBagChunks(bagChunks),
+        };
+
+    return {
+        board: createEmptyBoard(),
+        activePiece,
+        pendingPiece: firstPieceType ? { ...activePiece } : null,
+        pieceQueue,
         holdPieceType: null,
         holdUsedThisDrop: false,
         score: 0,
@@ -264,8 +244,9 @@ function createInitialPlayerState(bagChunks = []) {
         combo: -1,
         backToBack: false,
         currentTick: 0,
-        pieceIndex: 0,
+        pieceIndex: firstPieceType ? 1 : 0,
         pendingGarbageQueue: [],
+        lastActionWasRotation: false,
     };
 }
 
@@ -285,7 +266,6 @@ function resetMatches() {
 module.exports = {
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
-    applyInputToMatchPlayerState,
     createMatch,
     getMatchState,
     recordInput,

@@ -593,6 +593,279 @@ test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게
     assert.equal(matchResult.match.players[0].inputLog[0].pieceIndex, 4)
 })
 
+test("game:input은 relay를 유지하면서 authoritativeState에도 input을 적용한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-input-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-input-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-input-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-input-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "authoritative-input-host-player",
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-input-host-player",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-input-guest-player",
+    })
+
+    const matchResult = getMatchState(roomId)
+    const hostPlayer = matchResult.match.players.find((player) => {
+        return player.playerId === "authoritative-input-host-player"
+    })
+    hostPlayer.authoritativeState.activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    }
+    hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece }
+    hostPlayer.authoritativeState.pieceQueue = ["tree"]
+    hostPlayer.authoritativeState.score = 0
+    hostPlayer.authoritativeState.pieceIndex = 1
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-input-host-player",
+        action: "hard_drop",
+        tick: 12,
+        pieceIndex: 1,
+    })
+
+    const guestInputEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(guestInputEvent.eventName, "game:input")
+    assert.equal(guestInputEvent.payload.roomId, roomId)
+    assert.equal(guestInputEvent.payload.playerId, "authoritative-input-host-player")
+    assert.equal(guestInputEvent.payload.action, "hard_drop")
+    assert.equal(guestInputEvent.payload.tick, 12)
+    assert.equal(guestInputEvent.payload.pieceIndex, 1)
+
+    assert.equal(hostPlayer.authoritativeState.score, 38)
+    assert.equal(hostPlayer.authoritativeState.pieceIndex, 2)
+    assert.equal(hostPlayer.authoritativeState.board[18][3], "square")
+    assert.equal(hostPlayer.authoritativeState.board[18][4], "square")
+    assert.equal(hostPlayer.authoritativeState.board[19][3], "square")
+    assert.equal(hostPlayer.authoritativeState.board[19][4], "square")
+})
+
+test("game:input 첫 move_left는 match 시작 직후 authoritativeState에 반영된다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-first-input-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-first-input-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-first-input-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-first-input-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "authoritative-first-input-host-player",
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-first-input-host-player",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-first-input-guest-player",
+    })
+
+    const matchResult = getMatchState(roomId)
+    const hostPlayer = matchResult.match.players.find((player) => {
+        return player.playerId === "authoritative-first-input-host-player"
+    })
+    const activePieceBefore = { ...hostPlayer.authoritativeState.activePiece }
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-first-input-host-player",
+        action: "move_left",
+        tick: 12,
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex,
+    })
+
+    const guestInputEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(guestInputEvent.eventName, "game:input")
+    assert.equal(guestInputEvent.payload.action, "move_left")
+    assert.equal(hostPlayer.authoritativeState.activePiece.pieceType, activePieceBefore.pieceType)
+    assert.equal(hostPlayer.authoritativeState.activePiece.col, activePieceBefore.col - 1)
+    assert.equal(hostPlayer.authoritativeState.pieceIndex, 1)
+})
+
+test("game:input은 stale pieceIndex여도 relay와 input log를 유지하고 authoritativeState는 변경하지 않는다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("stale-index-host-socket")
+    const guestSocket = new FakeClientSocket("stale-index-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "stale-index-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "stale-index-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "stale-index-host-player",
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "stale-index-host-player",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "stale-index-guest-player",
+    })
+
+    const matchResult = getMatchState(roomId)
+    const hostPlayer = matchResult.match.players.find((player) => {
+        return player.playerId === "stale-index-host-player"
+    })
+    const beforeState = structuredClone(hostPlayer.authoritativeState)
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "stale-index-host-player",
+        action: "move_left",
+        tick: 12,
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex + 1,
+    })
+
+    const guestInputEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(guestInputEvent.eventName, "game:input")
+    assert.equal(guestInputEvent.payload.playerId, "stale-index-host-player")
+    assert.equal(guestInputEvent.payload.action, "move_left")
+    assert.equal(hostPlayer.inputLog[0].action, "move_left")
+    assert.equal(hostPlayer.inputLog[0].pieceIndex, beforeState.pieceIndex + 1)
+    assert.deepEqual(hostPlayer.authoritativeState.activePiece, beforeState.activePiece)
+    assert.deepEqual(hostPlayer.authoritativeState.pendingPiece, beforeState.pendingPiece)
+    assert.deepEqual(hostPlayer.authoritativeState.pieceQueue, beforeState.pieceQueue)
+})
+
+test("game:input은 authoritative apply가 실패해도 relay와 input log를 유지한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-failure-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-failure-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-failure-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-failure-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "authoritative-failure-host-player",
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-failure-host-player",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-failure-guest-player",
+    })
+
+    const matchResult = getMatchState(roomId)
+    const hostPlayer = matchResult.match.players.find((player) => {
+        return player.playerId === "authoritative-failure-host-player"
+    })
+    hostPlayer.authoritativeState.activePiece = {
+        pieceType: "",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    }
+    hostPlayer.authoritativeState.pendingPiece = null
+    hostPlayer.authoritativeState.pieceQueue = []
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-failure-host-player",
+        action: "hard_drop",
+        tick: 12,
+        pieceIndex: 0,
+    })
+
+    const guestInputEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(guestInputEvent.eventName, "game:input")
+    assert.equal(guestInputEvent.payload.playerId, "authoritative-failure-host-player")
+    assert.equal(guestInputEvent.payload.action, "hard_drop")
+    assert.equal(hostSocket.lastClientEvent("game:input:result"), undefined)
+    assert.equal(hostPlayer.inputLog[0].action, "hard_drop")
+    assert.equal(hostPlayer.inputLog[0].tick, 12)
+    assert.equal(hostPlayer.inputLog[0].pieceIndex, 0)
+})
+
 test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 반환한다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("log-host-socket")
