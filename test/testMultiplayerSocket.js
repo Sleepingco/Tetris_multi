@@ -732,6 +732,109 @@ test("game:input 첫 move_left는 match 시작 직후 authoritativeState에 반�
     assert.equal(hostPlayer.authoritativeState.pieceIndex, 1)
 })
 
+test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritativeState를 갱신한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-sequence-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-sequence-guest-socket")
+
+    registerSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-sequence-host-player",
+        nickname: "Host",
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-sequence-guest-player",
+            nickname: "Guest",
+        },
+    })
+
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "authoritative-sequence-host-player",
+    })
+
+    hostSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-sequence-host-player",
+    })
+    guestSocket.trigger("game:join", {
+        roomId,
+        playerId: "authoritative-sequence-guest-player",
+    })
+
+    const matchResult = getMatchState(roomId)
+    const hostPlayer = matchResult.match.players.find((player) => {
+        return player.playerId === "authoritative-sequence-host-player"
+    })
+    const initialPieceIndex = hostPlayer.authoritativeState.pieceIndex
+    const initialCol = hostPlayer.authoritativeState.activePiece.col
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-sequence-host-player",
+        action: "move_left",
+        tick: 12,
+        pieceIndex: initialPieceIndex,
+    })
+
+    const moveRelayEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(moveRelayEvent.eventName, "game:input")
+    assert.equal(moveRelayEvent.payload.action, "move_left")
+    assert.equal(moveRelayEvent.payload.pieceIndex, initialPieceIndex)
+    assert.equal(hostPlayer.inputLog.length, 1)
+    assert.equal(hostPlayer.inputLog[0].action, "move_left")
+    assert.equal(hostPlayer.inputLog[0].pieceIndex, initialPieceIndex)
+    assert.equal(hostPlayer.authoritativeState.activePiece.col, initialCol - 1)
+    assert.equal(hostPlayer.authoritativeState.pieceIndex, initialPieceIndex)
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-sequence-host-player",
+        action: "hard_drop",
+        tick: 13,
+        pieceIndex: initialPieceIndex,
+    })
+
+    const hardDropRelayEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(hardDropRelayEvent.eventName, "game:input")
+    assert.equal(hardDropRelayEvent.payload.action, "hard_drop")
+    assert.equal(hardDropRelayEvent.payload.pieceIndex, initialPieceIndex)
+    assert.equal(hostPlayer.inputLog.length, 2)
+    assert.equal(hostPlayer.inputLog[1].action, "hard_drop")
+    assert.equal(hostPlayer.inputLog[1].pieceIndex, initialPieceIndex)
+    assert.equal(hostPlayer.authoritativeState.pieceIndex, initialPieceIndex + 1)
+
+    const stateBeforeStaleInput = structuredClone(hostPlayer.authoritativeState)
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-sequence-host-player",
+        action: "move_left",
+        tick: 14,
+        pieceIndex: initialPieceIndex,
+    })
+
+    const staleRelayEvent = guestSocket.lastClientEvent("game:input")
+
+    assert.equal(staleRelayEvent.eventName, "game:input")
+    assert.equal(staleRelayEvent.payload.action, "move_left")
+    assert.equal(staleRelayEvent.payload.pieceIndex, initialPieceIndex)
+    assert.equal(hostPlayer.inputLog.length, 3)
+    assert.equal(hostPlayer.inputLog[2].action, "move_left")
+    assert.equal(hostPlayer.inputLog[2].pieceIndex, initialPieceIndex)
+    assert.deepEqual(hostPlayer.authoritativeState, stateBeforeStaleInput)
+})
+
 test("game:input은 stale pieceIndex여도 relay와 input log를 유지하고 authoritativeState는 변경하지 않는다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("stale-index-host-socket")
