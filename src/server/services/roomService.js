@@ -5,6 +5,7 @@ const { randomUUID } = require("crypto")
 // 현재 MVP에서는 단일 Node 프로세스 메모리에 room lifecycle을 저장한다.
 // =============================
 const rooms = new Map()
+const MAX_ROOM_ID_GENERATION_ATTEMPTS = 5
 
 function success(room, meta = {}) {
     return {
@@ -26,6 +27,22 @@ function failure(reason, meta = {}) {
 
 function getRoomState(roomId) {
     return rooms.get(roomId) || null
+}
+
+function generateRoomId() {
+    return randomUUID().slice(0, 8).toUpperCase()
+}
+
+function createUniqueRoomId(roomIdGenerator = generateRoomId) {
+    for (let attempt = 0; attempt < MAX_ROOM_ID_GENERATION_ATTEMPTS; attempt += 1) {
+        const roomId = roomIdGenerator()
+
+        if (!rooms.has(roomId)) {
+            return roomId
+        }
+    }
+
+    return null
 }
 
 function getRoomPlayerContext(roomId, playerId) {
@@ -66,12 +83,15 @@ function getRoomPlayerContext(roomId, playerId) {
     }
 }
 
-function createRoom(hostPlayer) {
+function createRoom(hostPlayer, options = {}) {
     if (!hostPlayer) {
         return failure("HOST_PLAYER_REQUIRED")
     }
 
-    const roomId = randomUUID().slice(0, 8).toUpperCase()
+    const roomId = createUniqueRoomId(options.generateRoomId)
+    if (!roomId) {
+        return failure("ROOM_ID_GENERATION_FAILED")
+    }
 
     const room = {
         roomId,

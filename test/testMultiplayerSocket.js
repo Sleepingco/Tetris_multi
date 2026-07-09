@@ -387,12 +387,19 @@ test("game:leave로 player가 게임에서 나가면 authoritative ticker를 정
         roomId,
         playerId: "ticker-leave-game-host-player",
     })
+    assert.equal(getMatchState(roomId).ok, true)
+
     guestSocket.trigger("game:leave", {
         roomId,
         playerId: "ticker-leave-game-guest-player",
     })
 
     assert.deepEqual(stoppedRoomIds, [roomId])
+    assert.deepEqual(getMatchState(roomId), {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    })
 })
 
 test("playing room socket disconnect는 authoritative ticker를 유지하고 game 재입장을 허용한다", () => {

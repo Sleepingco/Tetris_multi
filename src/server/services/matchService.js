@@ -10,6 +10,7 @@ const {
 const matches = new Map();
 const BAG_PIECES = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
 const INITIAL_BAG_CHUNK_COUNT = 3;
+const MAX_INPUT_LOG_ENTRIES_PER_PLAYER = 1000;
 const BOARD_ROWS = 20;
 const BOARD_COLS = 10;
 const SPAWN_ROW = -1;
@@ -60,6 +61,7 @@ function createMatch(room) {
             return {
                 playerId: player.playerId,
                 inputLog: [],
+                nextInputSequence: 1,
                 bagChunks,
                 authoritativeState: createInitialPlayerState(bagChunks),
             };
@@ -78,6 +80,18 @@ function getMatchState(roomId) {
     if (!match) {
         return createFailure("MATCH_NOT_FOUND");
     }
+
+    return createSuccess(match);
+}
+
+function deleteMatch(roomId) {
+    const match = matches.get(roomId);
+
+    if (!match) {
+        return createFailure("MATCH_NOT_FOUND");
+    }
+
+    matches.delete(roomId);
 
     return createSuccess(match);
 }
@@ -110,14 +124,23 @@ function recordInput(roomId, playerId, input) {
         return createFailure("INVALID_INPUT");
     }
 
+    if (!Number.isInteger(player.nextInputSequence)) {
+        player.nextInputSequence = player.inputLog.length + 1;
+    }
+
     player.inputLog.push({
         playerId,
         action: input.action,
         tick: input.tick ?? null,
         pieceIndex: input.pieceIndex ?? null,
-        sequence: player.inputLog.length + 1,
+        sequence: player.nextInputSequence,
         receivedAt: Date.now(),
     });
+    player.nextInputSequence += 1;
+
+    if (player.inputLog.length > MAX_INPUT_LOG_ENTRIES_PER_PLAYER) {
+        player.inputLog.splice(0, player.inputLog.length - MAX_INPUT_LOG_ENTRIES_PER_PLAYER);
+    }
 
     return createSuccess(match);
 }
@@ -451,9 +474,11 @@ module.exports = {
     applyAuthoritativeInputToMatchPlayerState,
     applyGravityStepToMatchPlayerState,
     createMatch,
+    deleteMatch,
     getAuthoritativePlayerSnapshot,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
+    MAX_INPUT_LOG_ENTRIES_PER_PLAYER,
     recordInput,
     resetMatches,
 };

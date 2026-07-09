@@ -14,6 +14,7 @@ const {
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
     createMatch,
+    deleteMatch,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
     recordInput,
@@ -390,6 +391,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         const result = leaveGame(roomId, playerId)
         if (result.ok) {
             authoritativeTickerService.stopRoomTicker(roomId)
+            deleteMatch(roomId)
             clientSocket.leave(roomId)
             clientSocket.to(roomId).emit("game:opponent-left", {
                 room: result.room,

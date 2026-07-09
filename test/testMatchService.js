@@ -8,9 +8,11 @@ const {
     applyAuthoritativeInputToMatchPlayerState,
     applyGravityStepToMatchPlayerState,
     createMatch,
+    deleteMatch,
     getAuthoritativePlayerSnapshotDto,
     recordInput,
     getMatchState,
+    MAX_INPUT_LOG_ENTRIES_PER_PLAYER,
     resetMatches,
 } = matchService;
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
@@ -46,6 +48,7 @@ test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를
     assert.equal(result.match.players.length, 2);
     assert.equal(result.match.players[0].playerId, "host-player");
     assert.deepEqual(result.match.players[0].inputLog, []);
+    assert.equal(result.match.players[0].nextInputSequence, 1);
     assert.equal(typeof result.match.createdAt, "number");
 });
 
@@ -123,6 +126,35 @@ test("getMatchState는 roomId로 생성된 match를 다시 조회한다", () => 
     assert.equal(result.match.roomId, "ROOM002");
 });
 
+test("deleteMatch는 roomId에 해당하는 match를 개별 삭제한다", () => {
+    resetMatches();
+
+    createMatch(createPlayingRoom("DELETE001"));
+    const result = deleteMatch("DELETE001");
+    const lookupResult = getMatchState("DELETE001");
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.match.roomId, "DELETE001");
+    assert.deepEqual(lookupResult, {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    });
+});
+
+test("deleteMatch는 없는 match면 MATCH_NOT_FOUND를 반환한다", () => {
+    resetMatches();
+
+    const result = deleteMatch("MISSING_DELETE");
+
+    assert.deepEqual(result, {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    });
+});
+
 test("recordInput은 player의 inputLog에 action과 tick을 저장한다", () => {
     resetMatches();
 
@@ -189,6 +221,43 @@ test("recordInput은 player별 inputLog sequence를 독립적으로 증가시킨
     assert.deepEqual(hostPlayer.inputLog.map(input => input.playerId), ["host-player", "host-player"]);
     assert.deepEqual(guestPlayer.inputLog.map(input => input.sequence), [1]);
     assert.deepEqual(guestPlayer.inputLog.map(input => input.playerId), ["guest-player"]);
+});
+
+test("recordInput은 player별 inputLog를 상한 안에서 유지하고 sequence는 전체 순서를 유지한다", () => {
+    resetMatches();
+
+    assert.equal(MAX_INPUT_LOG_ENTRIES_PER_PLAYER, 1000);
+
+    createMatch(createPlayingRoom("REPLAY_BOUNDED"));
+    for (let index = 1; index <= MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 2; index += 1) {
+        recordInput("REPLAY_BOUNDED", "host-player", {
+            action: "move_left",
+            tick: index,
+            pieceIndex: 1,
+        });
+    }
+    recordInput("REPLAY_BOUNDED", "guest-player", {
+        action: "move_right",
+        tick: 1,
+        pieceIndex: 1,
+    });
+    const result = recordInput("REPLAY_BOUNDED", "host-player", {
+        action: "soft_drop",
+        tick: MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 3,
+        pieceIndex: 1,
+    });
+
+    const hostPlayer = result.match.players.find(player => player.playerId === "host-player");
+    const guestPlayer = result.match.players.find(player => player.playerId === "guest-player");
+
+    assert.equal(hostPlayer.inputLog.length, MAX_INPUT_LOG_ENTRIES_PER_PLAYER);
+    assert.equal(hostPlayer.inputLog[0].sequence, 4);
+    assert.equal(hostPlayer.inputLog[0].tick, 4);
+    assert.equal(hostPlayer.inputLog.at(-1).sequence, MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 3);
+    assert.equal(hostPlayer.inputLog.at(-1).action, "soft_drop");
+    assert.equal(hostPlayer.nextInputSequence, MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 4);
+    assert.deepEqual(guestPlayer.inputLog.map(input => input.sequence), [1]);
+    assert.equal(guestPlayer.nextInputSequence, 2);
 });
 
 test("appendPlayerBagChunk는 player의 bagChunks에 새 server bag chunk를 추가한다", () => {

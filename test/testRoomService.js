@@ -30,6 +30,62 @@ test("createRoom은 host player가 들어간 waiting room을 만든다", () => {
     assert.equal(result.room.hostPlayerId, "p1")
     assert.equal(result.room.status, "waiting")
     assert.equal(typeof result.room.roomId, "string")
+    assert.equal(result.room.roomId.length, 8)
+    assert.equal(result.room.roomId, result.room.roomId.toUpperCase())
+})
+
+test("createRoom은 roomId 충돌이 나면 새 roomId로 재시도한다", () => {
+    const firstHost = {
+        playerId: "collision-host-1",
+        nickname: "Host 1",
+        socketId: "collision-socket-1",
+    }
+    const secondHost = {
+        playerId: "collision-host-2",
+        nickname: "Host 2",
+        socketId: "collision-socket-2",
+    }
+    const generatedIds = ["DUPLICAT", "DUPLICAT", "UNIQUE01"]
+
+    const firstResult = createRoom(firstHost, {
+        generateRoomId: () => generatedIds.shift(),
+    })
+    const secondResult = createRoom(secondHost, {
+        generateRoomId: () => generatedIds.shift(),
+    })
+
+    assert.equal(firstResult.ok, true)
+    assert.equal(firstResult.room.roomId, "DUPLICAT")
+    assert.equal(secondResult.ok, true)
+    assert.equal(secondResult.reason, null)
+    assert.equal(secondResult.room.roomId, "UNIQUE01")
+    assert.equal(getRoomState("DUPLICAT").hostPlayerId, "collision-host-1")
+    assert.equal(getRoomState("UNIQUE01").hostPlayerId, "collision-host-2")
+})
+
+test("createRoom은 roomId 재시도 한도를 넘으면 실패한다", () => {
+    const existingHost = {
+        playerId: "generation-existing-host",
+        nickname: "Existing Host",
+        socketId: "generation-existing-socket",
+    }
+    const blockedHost = {
+        playerId: "generation-blocked-host",
+        nickname: "Blocked Host",
+        socketId: "generation-blocked-socket",
+    }
+
+    createRoom(existingHost, {
+        generateRoomId: () => "FULLROOM",
+    })
+    const result = createRoom(blockedHost, {
+        generateRoomId: () => "FULLROOM",
+    })
+
+    assert.equal(result.ok, false)
+    assert.equal(result.room, null)
+    assert.equal(result.reason, "ROOM_ID_GENERATION_FAILED")
+    assert.equal(getRoomState("FULLROOM").hostPlayerId, "generation-existing-host")
 })
 
 test("getRoomState는 roomId로 생성된 room을 다시 조회한다", () => {
