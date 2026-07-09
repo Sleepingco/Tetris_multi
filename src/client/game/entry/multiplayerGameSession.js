@@ -10,7 +10,6 @@ import {
     requestGameBagChunk,
     receiveGameBagAppend,
     onGameBagResult,
-    receiveGarbageAppend,
 } from "../../net/roomClient.js"
 import { sendPlacementDecisionLog } from "../../net/logClient.js"
 
@@ -129,6 +128,9 @@ export function startMultiplayerGame({
         }
 
         if (remotePlayerId === playerId) {
+            if (Number.isInteger(snapshot.pendingGarbageLines)) {
+                myGame.setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
+            }
             const localSnapshot = myGame.getSnapshot()
             if (shouldCorrectMyPrediction(snapshot, localSnapshot)) {
                 myGame.applySnapshot(snapshot)
@@ -138,9 +140,6 @@ export function startMultiplayerGame({
     const detachGameInputResult = onGameInputResult((result) => {
         if (result.ok) return
         console.warn("game:input failed:", result.reason)
-    })
-    const detachGarbageAppend = receiveGarbageAppend(() => {
-        // garbage rules are applied from authoritative snapshots.
     })
     const detachGameBagAppend = receiveGameBagAppend(({ playerId: bagPlayerId, bagChunk }) => {
         if (!Array.isArray(bagChunk)) return
@@ -167,7 +166,6 @@ export function startMultiplayerGame({
         heartbeatTimer,
         detachAuthoritativeSnapshot,
         detachGameInputResult,
-        detachGarbageAppend,
         detachGameBagAppend,
         detachGameBagResult,
     }

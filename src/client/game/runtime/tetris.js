@@ -120,6 +120,7 @@ export function createTetrisRuntime({
         placementDecisionLog: [],
         pendingLockScoreBefore: null,
         pendingGarbageQueue: [],
+        authoritativePendingGarbageLines: 0,
         mode,
         gameId,
         roomId,
@@ -202,6 +203,7 @@ export function createTetrisRuntime({
         runtime.placementDecisionLog = []
         runtime.pendingLockScoreBefore = null
         runtime.pendingGarbageQueue = []
+        runtime.authoritativePendingGarbageLines = 0
         ui.renderPendingGarbage(0)
     }
 
@@ -1091,7 +1093,7 @@ export function createTetrisRuntime({
             holeCol: garbage.holeCol,
         })
 
-        ui.renderPendingGarbage(getPendingGarbageLines(), { pulse: true })
+        setAuthoritativePendingGarbageLines(getPendingGarbageLines(), { pulse: true })
 
         return getPendingGarbageLines()
     }
@@ -1107,20 +1109,14 @@ export function createTetrisRuntime({
         }, 0)
     }
 
-    function clonePendingGarbageQueue(pendingGarbageQueue) {
-        if (!Array.isArray(pendingGarbageQueue)) return []
+    function normalizePendingGarbageLines(lines) {
+        return Number.isInteger(lines) && lines > 0 ? lines : 0
+    }
 
-        return pendingGarbageQueue
-            .filter((garbage) => {
-                return Number.isInteger(garbage?.lines) && garbage.lines > 0
-                    && Number.isInteger(garbage?.holeCol)
-            })
-            .map((garbage) => {
-                return {
-                    lines: garbage.lines,
-                    holeCol: garbage.holeCol,
-                }
-            })
+    function setAuthoritativePendingGarbageLines(lines, options = {}) {
+        runtime.authoritativePendingGarbageLines = normalizePendingGarbageLines(lines)
+        ui.renderPendingGarbage(runtime.authoritativePendingGarbageLines, options)
+        return runtime.authoritativePendingGarbageLines
     }
 
     /**
@@ -1160,7 +1156,7 @@ export function createTetrisRuntime({
             overflow = overflow || result.overflow
         }
 
-        ui.renderPendingGarbage(getPendingGarbageLines())
+        setAuthoritativePendingGarbageLines(getPendingGarbageLines())
 
         return {
             appliedLines,
@@ -1322,7 +1318,7 @@ export function createTetrisRuntime({
             backToBack: gameState.backToBack,
             tick: runtime.currentTick,
             pieceIndex: runtime.pieceIndex,
-            pendingGarbageQueue: clonePendingGarbageQueue(runtime.pendingGarbageQueue),
+            pendingGarbageLines: runtime.authoritativePendingGarbageLines,
         }
     }
 
@@ -1365,11 +1361,10 @@ export function createTetrisRuntime({
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
         runtime.pieceIndex = snapshot.pieceIndex ?? runtime.pieceIndex
-        runtime.pendingGarbageQueue = clonePendingGarbageQueue(snapshot.pendingGarbageQueue)
 
         ui.renderScore(gameState.score)
         ui.renderLines(gameState.lines)
-        ui.renderPendingGarbage(getPendingGarbageLines())
+        setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
         if (gameState.phase === GAME_PHASE.GAME_OVER) {
@@ -1458,6 +1453,7 @@ export function createTetrisRuntime({
         applyGarbageLines,
         queueGarbageLines,
         getPendingGarbageLines,
+        setAuthoritativePendingGarbageLines,
         applyServerBag,
         appendServerBag,
         getServerBagRemainingCount,

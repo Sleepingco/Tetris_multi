@@ -110,14 +110,6 @@ export function onGameInputResult(handler) {
     }
 }
 
-export function receiveGarbageAppend(handler) {
-    serverConnection.on("game:garbage:append", handler)
-
-    return () => {
-        serverConnection.off("game:garbage:append", handler)
-    }
-}
-
 export function requestGameBagChunk(roomId, playerId) {
     serverConnection.emit("game:bag:request", { roomId, playerId })
 }

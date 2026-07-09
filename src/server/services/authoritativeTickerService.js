@@ -121,7 +121,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
             const stepResult = applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
             if (!stepResult.ok) continue;
 
-            handlePlacementResult(roomId, playerId, stepResult.placementResult, socketServer);
+            handlePlacementResult(roomId, playerId, stepResult.placementResult);
             const snapshot = emitAuthoritativeSnapshot(roomId, playerId, socketServer);
 
             if (stepResult.placementResult?.gameOver || snapshot?.phase === "gameOver") {
@@ -154,7 +154,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
         return snapshotResult.snapshot;
     }
 
-    function handlePlacementResult(roomId, playerId, placementResult, socketServer) {
+    function handlePlacementResult(roomId, playerId, placementResult) {
         const attackLines = placementResult?.attackLines ?? 0;
         if (!Number.isInteger(attackLines) || attackLines <= 0) return;
 
@@ -164,14 +164,6 @@ function createAuthoritativeTickerService(dependencies = {}) {
         };
         const appendResult = appendPendingGarbageToOpponent(roomId, playerId, garbage);
         if (!appendResult.ok) return;
-
-        socketServer.to(roomId).emit("game:garbage:append", {
-            roomId,
-            fromPlayerId: playerId,
-            targetPlayerId: appendResult.targetPlayerId,
-            lines: garbage.lines,
-            holeCol: garbage.holeCol,
-        });
     }
 
     return {

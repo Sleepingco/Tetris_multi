@@ -206,7 +206,6 @@ function cleanupSession(session) {
     clearInterval(session.heartbeatTimer ?? session.snapshotTimer);
     session.detachAuthoritativeSnapshot?.();
     session.detachGameInputResult?.();
-    session.detachGarbageAppend?.();
     session.detachGameBagAppend?.();
     session.detachGameBagResult?.();
     session.myGame.destroy();
@@ -356,42 +355,16 @@ test("상대 game:input relay 수신은 opponentGame 상태를 바꾸지 않는�
     assert.equal(opponentSnapshot.score, opponentBaseSnapshot.score);
 });
 
-test("game:garbage:append 수신은 client runtime에 garbage를 queue하지 않는다", async (t) => {
+test("game:garbage:append listener를 session에 연결하지 않는다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
     t.after(() => cleanupSession(session));
 
-    let myQueueCallCount = 0;
-    let opponentQueueCallCount = 0;
-    session.myGame.queueGarbageLines = () => {
-        myQueueCallCount += 1;
-        return 0;
-    };
-    session.opponentGame.queueGarbageLines = () => {
-        opponentQueueCallCount += 1;
-        return 0;
-    };
-
-    sharedFakeSocket.emitServer("game:garbage:append", {
-        roomId: "room-1",
-        fromPlayerId: "player-opponent",
-        targetPlayerId: "player-me",
-        lines: 2,
-        holeCol: 3,
-    });
-    sharedFakeSocket.emitServer("game:garbage:append", {
-        roomId: "room-1",
-        fromPlayerId: "player-me",
-        targetPlayerId: "player-opponent",
-        lines: 4,
-        holeCol: 5,
-    });
-
-    assert.equal(myQueueCallCount, 0);
-    assert.equal(opponentQueueCallCount, 0);
+    assert.equal(sharedFakeSocket.handlers.get("game:garbage:append")?.size ?? 0, 0);
+    assert.equal(Object.hasOwn(session, "detachGarbageAppend"), false);
 });
 
-test("authoritative snapshot의 pendingGarbageQueue가 상대 pending garbage 표시 원천이 된다", async (t) => {
+test("authoritative snapshot의 pendingGarbageLines가 상대 pending garbage 표시 원천이 된다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const params = createSessionParams();
     const session = startMultiplayerGame(params);
@@ -403,18 +376,41 @@ test("authoritative snapshot의 pendingGarbageQueue가 상대 pending garbage �
         playerId: "player-opponent",
         snapshot: {
             ...snapshotWithScore(opponentBaseSnapshot, 20),
-            pendingGarbageQueue: [
-                { lines: 2, holeCol: 3 },
-                { lines: 1, holeCol: 5 },
-            ],
+            pendingGarbageLines: 3,
         },
     });
 
-    assert.deepEqual(session.opponentGame.getSnapshot().pendingGarbageQueue, [
-        { lines: 2, holeCol: 3 },
-        { lines: 1, holeCol: 5 },
-    ]);
+    assert.equal(session.opponentGame.getSnapshot().pendingGarbageLines, 3);
+    assert.equal(Object.hasOwn(session.opponentGame.getSnapshot(), "pendingGarbageQueue"), false);
     assert.equal(params.opponentPendingGarbageEl.innerText, 3);
+});
+
+test("내 authoritative snapshot의 pendingGarbageLines는 표시만 갱신하고 activePiece만으로 full correction하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const params = createSessionParams();
+    const session = startMultiplayerGame(params);
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    const displayOnlySnapshot = {
+        ...myBaseSnapshot,
+        board: myBaseSnapshot.board.map(row => [...row]),
+        activePiece: {
+            ...myBaseSnapshot.activePiece,
+            col: myBaseSnapshot.activePiece.col + 1,
+        },
+        pieceQueue: [...myBaseSnapshot.pieceQueue],
+        pendingGarbageLines: 4,
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: displayOnlySnapshot,
+    });
+
+    assert.deepEqual(session.myGame.getSnapshot().activePiece, myBaseSnapshot.activePiece);
+    assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 4);
+    assert.equal(params.myPendingGarbageEl.innerText, 4);
 });
 
 test("내 playerId의 authoritative snapshot은 보수적 조건을 통과하면 myGame에 적용한다", async (t) => {

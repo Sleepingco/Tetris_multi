@@ -177,7 +177,67 @@ test("ticker callback은 500ms 누적 후 player별 gravity step과 authoritativ
     assert.equal(socketServer.roomEvents.length, 4);
 });
 
-test("ticker callback은 server lock attackLines를 상대 pending garbage로 추가하고 append 이벤트를 emit한다", async () => {
+test("ticker catch-up은 elapsedMs가 커도 callback당 gravity step을 최대 1회만 처리한다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const calls = [];
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-1",
+                players: [
+                    { playerId: "p1" },
+                    { playerId: "p2" },
+                ],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId) {
+            calls.push({ roomId, playerId });
+            return {
+                ok: true,
+                gravityResult: { kind: "move" },
+                placementResult: null,
+            };
+        },
+        getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+            return {
+                ok: true,
+                snapshot: {
+                    board: [[playerId]],
+                    activePiece: null,
+                    pieceQueue: [],
+                    holdPieceType: null,
+                    holdUsedThisDrop: false,
+                    score: 0,
+                    lines: 0,
+                    phase: "playing",
+                    combo: -1,
+                    backToBack: false,
+                    tick: 1,
+                    pieceIndex: 1,
+                    pendingGarbageLines: 0,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-1", socketServer);
+    await tickerService.tickRoom("room-1", socketServer, 1500);
+
+    assert.deepEqual(calls.map(call => call.playerId), ["p1", "p2"]);
+    assert.equal(socketServer.roomEvents.length, 2);
+
+    await tickerService.tickRoom("room-1", socketServer, 0);
+
+    assert.deepEqual(calls.map(call => call.playerId), ["p1", "p2", "p1", "p2"]);
+    assert.equal(socketServer.roomEvents.length, 4);
+});
+
+test("ticker callback은 server lock attackLines를 상대 pending garbage로 추가하고 snapshot scalar를 emit한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();
     const appendedGarbage = [];
@@ -230,6 +290,7 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
                     backToBack: false,
                     tick: 1,
                     pieceIndex: 1,
+                    pendingGarbageLines: playerId === "p2" ? 2 : 0,
                 },
             };
         },
@@ -248,18 +309,14 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
     const garbageEvent = socketServer.roomEvents.find(event => {
         return event.eventName === "game:garbage:append";
     });
-
-    assert.deepEqual(garbageEvent, {
-        roomId: "room-1",
-        eventName: "game:garbage:append",
-        payload: {
-            roomId: "room-1",
-            fromPlayerId: "p1",
-            targetPlayerId: "p2",
-            lines: 2,
-            holeCol: 6,
-        },
+    const p2SnapshotEvent = socketServer.roomEvents.find(event => {
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === "p2";
     });
+
+    assert.equal(garbageEvent, undefined);
+    assert.equal(p2SnapshotEvent.payload.snapshot.pendingGarbageLines, 2);
+    assert.equal(Object.hasOwn(p2SnapshotEvent.payload.snapshot, "pendingGarbageQueue"), false);
 });
 
 test("ticker callback은 server authoritative gameOver가 되면 match finish를 emit하고 ticker를 정리한다", async () => {

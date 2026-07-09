@@ -274,7 +274,6 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
             if (!authoritativeResult.ok) return
             handleServerPlacementResult(
-                socketServer,
                 roomId,
                 playerId,
                 authoritativeResult.gameplayResult?.placementResult,
@@ -423,7 +422,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
 }
 
-function handleServerPlacementResult(socketServer, roomId, playerId, placementResult, createGarbageHoleCol) {
+function handleServerPlacementResult(roomId, playerId, placementResult, createGarbageHoleCol) {
     const attackLines = placementResult?.attackLines ?? 0
     if (!Number.isInteger(attackLines) || attackLines <= 0) return
 
@@ -433,14 +432,6 @@ function handleServerPlacementResult(socketServer, roomId, playerId, placementRe
     }
     const appendResult = appendPendingGarbageToOpponent(roomId, playerId, garbage)
     if (!appendResult.ok) return
-
-    socketServer.to(roomId).emit("game:garbage:append", {
-        roomId,
-        fromPlayerId: playerId,
-        targetPlayerId: appendResult.targetPlayerId,
-        lines: garbage.lines,
-        holeCol: garbage.holeCol,
-    })
 }
 
 async function handleServerGameOverResult(

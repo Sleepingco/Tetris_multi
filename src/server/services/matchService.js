@@ -418,6 +418,10 @@ function cloneAuthoritativeState(authoritativeState) {
 }
 
 function createClientSnapshotDto(authoritativeSnapshot) {
+    const pendingGarbageLines = authoritativeSnapshot.pendingGarbageQueue.reduce((total, garbage) => {
+        return total + garbage.lines;
+    }, 0);
+
     return {
         board: authoritativeSnapshot.board.map((row) => [...row]),
         activePiece: authoritativeSnapshot.activePiece
@@ -433,9 +437,7 @@ function createClientSnapshotDto(authoritativeSnapshot) {
         backToBack: authoritativeSnapshot.backToBack,
         tick: authoritativeSnapshot.currentTick,
         pieceIndex: authoritativeSnapshot.pieceIndex,
-        pendingGarbageQueue: authoritativeSnapshot.pendingGarbageQueue.map((garbage) => {
-            return { ...garbage };
-        }),
+        pendingGarbageLines,
     };
 }
 

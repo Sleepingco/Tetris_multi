@@ -4,6 +4,7 @@ const assert = require("node:assert/strict")
 const { registerSocketHandlers } = require("../src/server/sockets/index.js")
 const {
     getAuthoritativePlayerSnapshot,
+    getAuthoritativePlayerSnapshotDto,
     getMatchState,
 } = require("../src/server/services/matchService.js")
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js")
@@ -944,13 +945,12 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
     const garbageEvent = socketServer.roomEvents.findLast(event => {
         return event.eventName === "game:garbage:append"
     })
-    assert.deepEqual(garbageEvent.payload, {
-        roomId,
-        fromPlayerId: "server-garbage-host-player",
-        targetPlayerId: "server-garbage-guest-player",
-        lines: 4,
-        holeCol: 2,
-    })
+    const guestSnapshotResult = getAuthoritativePlayerSnapshotDto(roomId, "server-garbage-guest-player")
+
+    assert.equal(garbageEvent, undefined)
+    assert.equal(guestSnapshotResult.ok, true)
+    assert.equal(guestSnapshotResult.snapshot.pendingGarbageLines, 4)
+    assert.equal(Object.hasOwn(guestSnapshotResult.snapshot, "pendingGarbageQueue"), false)
 })
 
 test("game:input server lock gameOver는 match finish와 ticker 정리를 처리한다", async () => {
