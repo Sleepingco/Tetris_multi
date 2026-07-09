@@ -224,6 +224,12 @@ function snapshotWithScore(baseSnapshot, score) {
     };
 }
 
+function cloneBoardWithGarbageCell(baseSnapshot) {
+    const board = baseSnapshot.board.map(row => [...row]);
+    board[board.length - 1][0] = "garbage";
+    return board;
+}
+
 test("heartbeatTimer는 game:snapshot과 game:over 없이 bag 요청만 유지한다", async (t) => {
     const originalSetInterval = globalThis.setInterval;
     const originalClearInterval = globalThis.clearInterval;
@@ -413,20 +419,190 @@ test("내 authoritative snapshot의 pendingGarbageLines는 표시만 갱신하�
     assert.equal(params.myPendingGarbageEl.innerText, 4);
 });
 
-test("내 playerId의 authoritative snapshot은 보수적 조건을 통과하면 myGame에 적용한다", async (t) => {
+test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 증가하면 표시만 갱신한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
     t.after(() => cleanupSession(session));
 
     const myBaseSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot);
+    };
+    const serverSnapshot = {
+        ...myBaseSnapshot,
+        board: myBaseSnapshot.board.map(row => [...row]),
+        activePiece: { ...myBaseSnapshot.activePiece },
+        pieceQueue: [...myBaseSnapshot.pieceQueue],
+        pendingGarbageLines: 5,
+    };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
         playerId: "player-me",
-        snapshot: snapshotWithScore(myBaseSnapshot, 40),
+        snapshot: serverSnapshot,
     });
 
-    assert.equal(session.myGame.getSnapshot().score, 40);
-    assert.notEqual(session.opponentGame.getSnapshot().score, 40);
+    assert.equal(applySnapshotCallCount, 0);
+    assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 5);
+});
+
+test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하고 board가 다르면 full apply한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    session.myGame.setAuthoritativePendingGarbageLines(4);
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    const serverBoard = cloneBoardWithGarbageCell(myBaseSnapshot);
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...myBaseSnapshot,
+            board: serverBoard,
+            activePiece: { ...myBaseSnapshot.activePiece },
+            pieceQueue: [...myBaseSnapshot.pieceQueue],
+            phase: "playing",
+            pendingGarbageLines: 0,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 1);
+    assert.deepEqual(session.myGame.getSnapshot().board, serverBoard);
+    assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 0);
+});
+
+test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소해도 board가 같으면 full apply하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    session.myGame.setAuthoritativePendingGarbageLines(4);
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...myBaseSnapshot,
+            board: myBaseSnapshot.board.map(row => [...row]),
+            activePiece: { ...myBaseSnapshot.activePiece },
+            pieceQueue: [...myBaseSnapshot.pieceQueue],
+            phase: "playing",
+            pendingGarbageLines: 0,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 0);
+});
+
+test("내 playerId의 gameOver authoritative snapshot은 myGame에 full apply한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot);
+    };
+    const serverSnapshot = {
+        ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
+        phase: "gameOver",
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: serverSnapshot,
+    });
+
+    assert.equal(applySnapshotCallCount, 1);
+    assert.equal(session.myGame.getSnapshot().phase, "gameOver");
+    assert.equal(session.myGame.getSnapshot().score, serverSnapshot.score);
+});
+
+test("내 playerId snapshot이 local보다 앞서도 gameOver가 아니면 full apply하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
+            pieceIndex: myBaseSnapshot.pieceIndex + 1,
+            phase: "playing",
+            pendingGarbageLines: 6,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.equal(session.myGame.getSnapshot().score, myBaseSnapshot.score);
+    assert.equal(session.myGame.getSnapshot().pieceIndex, myBaseSnapshot.pieceIndex);
+    assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 6);
+});
+
+test("내 local phase가 lineClearing이면 앞선 snapshot도 full apply하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    session.myGame.applySnapshot({
+        ...myBaseSnapshot,
+        board: myBaseSnapshot.board.map(row => [...row]),
+        activePiece: { ...myBaseSnapshot.activePiece },
+        pieceQueue: [...myBaseSnapshot.pieceQueue],
+        phase: "lineClearing",
+    });
+    session.myGame.setAuthoritativePendingGarbageLines(4);
+
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
+            board: cloneBoardWithGarbageCell(myBaseSnapshot),
+            pieceIndex: myBaseSnapshot.pieceIndex + 1,
+            phase: "playing",
+            pendingGarbageLines: 0,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.equal(session.myGame.getSnapshot().phase, "lineClearing");
+    assert.notEqual(session.myGame.getSnapshot().score, myBaseSnapshot.score + 40);
+    assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 0);
 });
 
 test("내 playerId의 authoritative snapshot은 activePiece만 다르면 myGame에 적용하지 않는다", async (t) => {

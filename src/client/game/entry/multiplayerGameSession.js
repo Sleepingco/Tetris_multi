@@ -1,9 +1,6 @@
 import { createTetrisRuntime } from "../runtime/tetris.js"
 import { attachKeyboardInput } from "../runtime/input.js"
 import {
-    shouldCorrectMyPrediction,
-} from "../runtime/snapshotCorrection.js"
-import {
     receiveAuthoritativeSnapshot,
     sendGameInput,
     onGameInputResult,
@@ -16,6 +13,39 @@ import { sendPlacementDecisionLog } from "../../net/logClient.js"
 function getPlayerBagChunks(match, targetPlayerId) {
     const matchPlayer = match?.players?.find(player => player.playerId === targetPlayerId)
     return Array.isArray(matchPlayer?.bagChunks) ? matchPlayer.bagChunks : null
+}
+
+function areBoardsEqual(leftBoard, rightBoard) {
+    if (!Array.isArray(leftBoard) || !Array.isArray(rightBoard)) return false
+    if (leftBoard.length !== rightBoard.length) return false
+
+    for (let row = 0; row < leftBoard.length; row += 1) {
+        const leftRow = leftBoard[row]
+        const rightRow = rightBoard[row]
+        if (!Array.isArray(leftRow) || !Array.isArray(rightRow)) return false
+        if (leftRow.length !== rightRow.length) return false
+
+        for (let col = 0; col < leftRow.length; col += 1) {
+            if (leftRow[col] !== rightRow[col]) return false
+        }
+    }
+
+    return true
+}
+
+function shouldApplyOwnAuthoritativeSnapshot(snapshot, localSnapshot) {
+    if (!snapshot || !localSnapshot) return false
+    if (snapshot.phase === "gameOver") return true
+    if (localSnapshot.phase === "lineClearing") return false
+
+    const snapshotPendingGarbageLines = snapshot.pendingGarbageLines
+    const localPendingGarbageLines = localSnapshot.pendingGarbageLines
+    const didPendingGarbageDecrease = Number.isInteger(snapshotPendingGarbageLines)
+        && Number.isInteger(localPendingGarbageLines)
+        && snapshotPendingGarbageLines < localPendingGarbageLines
+
+    return didPendingGarbageDecrease
+        && !areBoardsEqual(snapshot.board, localSnapshot.board)
 }
 
 /**
@@ -128,12 +158,15 @@ export function startMultiplayerGame({
         }
 
         if (remotePlayerId === playerId) {
+            const localSnapshot = myGame.getSnapshot()
+
+            if (shouldApplyOwnAuthoritativeSnapshot(snapshot, localSnapshot)) {
+                myGame.applySnapshot(snapshot)
+                return
+            }
+
             if (Number.isInteger(snapshot.pendingGarbageLines)) {
                 myGame.setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
-            }
-            const localSnapshot = myGame.getSnapshot()
-            if (shouldCorrectMyPrediction(snapshot, localSnapshot)) {
-                myGame.applySnapshot(snapshot)
             }
         }
     })
