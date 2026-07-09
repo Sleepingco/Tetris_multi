@@ -37,6 +37,7 @@ async function finishAuthoritativeMatch({
     emitMatchFinish,
     saveGameEventLog,
     getMatchState = null,
+    deleteMatch = null,
 }) {
     if (!roomId || !loserPlayerId || typeof finishGame !== "function") {
         return {
@@ -63,6 +64,9 @@ async function finishAuthoritativeMatch({
         };
     }
 
+    const matchForLog = match || getMatchState?.(roomId)?.match || null;
+    const gameOverLog = createGameOverLog(finishResult, matchForLog);
+
     stopRoomTicker?.(roomId);
     emitMatchFinish?.({
         room: finishResult.room,
@@ -70,10 +74,10 @@ async function finishAuthoritativeMatch({
         loserPlayerId: finishResult.loserPlayerId,
         reason: finishResult.finishReason,
     });
+    deleteMatch?.(roomId);
 
-    const matchForLog = match || getMatchState?.(roomId)?.match || null;
     if (typeof saveGameEventLog === "function") {
-        await persistGameEventLog(saveGameEventLog, createGameOverLog(finishResult, matchForLog));
+        await persistGameEventLog(saveGameEventLog, gameOverLog);
     }
 
     return {

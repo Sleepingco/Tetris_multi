@@ -467,6 +467,7 @@ async function handleServerGameOverResult(
         },
         saveGameEventLog: saveEventLog,
         getMatchState,
+        deleteMatch,
     })
 }
 

@@ -401,6 +401,7 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
     const socketServer = createFakeSocketServer();
     const finishedGames = [];
     const savedLogs = [];
+    const deletedRoomIds = [];
     const tickerService = createAuthoritativeTickerService({
         setIntervalFn: scheduler.setInterval,
         clearIntervalFn: scheduler.clearInterval,
@@ -463,6 +464,14 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
                 reason: null,
             });
         },
+        deleteMatch(roomId) {
+            deletedRoomIds.push(roomId);
+            return {
+                ok: true,
+                match: null,
+                reason: null,
+            };
+        },
     });
 
     tickerService.startRoomTicker("room-1", socketServer);
@@ -472,6 +481,7 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
     assert.deepEqual(finishedGames, [
         { roomId: "room-1", loserPlayerId: "p1", reason: "top_out" },
     ]);
+    assert.deepEqual(deletedRoomIds, ["room-1"]);
     assert.deepEqual(scheduler.clearedIds, [intervalId]);
     assert.equal(tickerService.hasRoomTicker("room-1"), false);
     const finishEvent = socketServer.roomEvents.findLast(event => {
@@ -512,6 +522,11 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
     const stoppedRoomIds = [];
     const finishEvents = [];
     const savedLogs = [];
+    const deletedRoomIds = [];
+    let matchState = {
+        roomId: "room-1",
+        createdAt: 1000,
+    };
 
     const finishGame = (roomId, loserPlayerId, reason) => {
         finishCallCount += 1;
@@ -538,10 +553,6 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
     const firstResult = await finishAuthoritativeMatch({
         roomId: "room-1",
         loserPlayerId: "p1",
-        match: {
-            roomId: "room-1",
-            createdAt: 1000,
-        },
         finishGame,
         stopRoomTicker(roomId) {
             stoppedRoomIds.push(roomId);
@@ -552,15 +563,21 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
         saveGameEventLog(log) {
             savedLogs.push(log);
             return Promise.resolve({ ok: true, log, reason: null });
+        },
+        getMatchState(roomId) {
+            return matchState
+                ? { ok: true, match: matchState, reason: null }
+                : { ok: false, match: null, reason: "MATCH_NOT_FOUND" };
+        },
+        deleteMatch(roomId) {
+            deletedRoomIds.push(roomId);
+            matchState = null;
+            return { ok: true, match: null, reason: null };
         },
     });
     const secondResult = await finishAuthoritativeMatch({
         roomId: "room-1",
         loserPlayerId: "p1",
-        match: {
-            roomId: "room-1",
-            createdAt: 1000,
-        },
         finishGame,
         stopRoomTicker(roomId) {
             stoppedRoomIds.push(roomId);
@@ -571,6 +588,16 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
         saveGameEventLog(log) {
             savedLogs.push(log);
             return Promise.resolve({ ok: true, log, reason: null });
+        },
+        getMatchState(roomId) {
+            return matchState
+                ? { ok: true, match: matchState, reason: null }
+                : { ok: false, match: null, reason: "MATCH_NOT_FOUND" };
+        },
+        deleteMatch(roomId) {
+            deletedRoomIds.push(roomId);
+            matchState = null;
+            return { ok: true, match: null, reason: null };
         },
     });
 
@@ -584,7 +611,9 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
     assert.deepEqual(stoppedRoomIds, ["room-1"]);
     assert.equal(finishEvents.length, 1);
     assert.equal(savedLogs.length, 1);
+    assert.deepEqual(deletedRoomIds, ["room-1"]);
     assert.equal(savedLogs[0].eventType, "game_over");
+    assert.equal(savedLogs[0].gameId, "room-1-1000");
 });
 
 test("stopRoomTicker 후 다시 start하면 gravity accumulator가 초기화된다", async () => {

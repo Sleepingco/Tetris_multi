@@ -1047,6 +1047,11 @@ test("game:input server lock gameOver는 match finish와 ticker 정리를 처리
     assert.equal(overLog.loserPlayerId, "server-gameover-host-player")
     assert.equal(overLog.reason, "top_out")
     assert.equal(overLog.finishType, "normal")
+    assert.deepEqual(getMatchState(roomId), {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    })
 })
 
 test("game:input 첫 move_left는 match 시작 직후 authoritativeState에 반영된다", async () => {
@@ -1904,12 +1909,18 @@ test("server authoritative gameOver는 game_over 로그를 저장한다", async 
     const overLog = savedLogs.find(log => log.eventType === "game_over")
 
     assert.equal(overLog.roomId, roomId)
+    assert.equal(overLog.gameId, `${roomId}-${matchResult.match.createdAt}`)
     assert.equal(overLog.mode, "multi")
     assert.equal(overLog.winnerPlayerId, "over-log-host")
     assert.equal(overLog.loserPlayerId, "over-log-guest")
     assert.equal(overLog.reason, "top_out")
     assert.equal(overLog.finishType, "normal")
     assert.equal(typeof overLog.endedAt, "number")
+    assert.deepEqual(getMatchState(roomId), {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    })
 })
 
 test("legacy game:garbage:attack은 더 이상 garbage append를 broadcast하지 않는다", () => {

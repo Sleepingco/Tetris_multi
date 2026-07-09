@@ -1,6 +1,7 @@
 const {
     appendPendingGarbageToOpponent: defaultAppendPendingGarbageToOpponent,
     applyGravityStepToMatchPlayerState: defaultApplyGravityStepToMatchPlayerState,
+    deleteMatch: defaultDeleteMatch,
     getAuthoritativePlayerSnapshotDto: defaultGetAuthoritativePlayerSnapshotDto,
     getMatchState: defaultGetMatchState,
 } = require("./matchService.js");
@@ -33,6 +34,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
         || defaultGetAuthoritativePlayerSnapshotDto;
     const appendPendingGarbageToOpponent = dependencies.appendPendingGarbageToOpponent
         || defaultAppendPendingGarbageToOpponent;
+    const deleteMatch = dependencies.deleteMatch || defaultDeleteMatch;
     const finishGame = dependencies.finishGame || defaultFinishGame;
     const saveGameEventLog = dependencies.saveGameEventLog || defaultSaveGameEventLog;
     const createGarbageHoleCol = dependencies.createGarbageHoleCol
@@ -138,6 +140,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
                         socketServer.to(roomId).emit("match:finish", payload);
                     },
                     saveGameEventLog,
+                    deleteMatch,
                 });
                 break;
             }
