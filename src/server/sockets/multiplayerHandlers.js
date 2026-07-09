@@ -273,21 +273,17 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             const gameCore = await loadGameCore()
             const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
             if (!authoritativeResult.ok) return
-            handleServerPlacementResult(
+            const placementSideEffect = handleServerPlacementResult(
                 roomId,
                 playerId,
                 authoritativeResult.gameplayResult?.placementResult,
                 createGarbageHoleCol,
             )
 
-            const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId)
-            if (!snapshotResult.ok) return
-
-            socketServer.to(roomId).emit("game:authoritative:snapshot", {
-                roomId,
-                playerId,
-                snapshot: snapshotResult.snapshot,
-            })
+            emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+            if (placementSideEffect?.targetPlayerId) {
+                emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
+            }
             await handleServerGameOverResult(
                 socketServer,
                 roomId,
@@ -424,14 +420,29 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
 function handleServerPlacementResult(roomId, playerId, placementResult, createGarbageHoleCol) {
     const attackLines = placementResult?.attackLines ?? 0
-    if (!Number.isInteger(attackLines) || attackLines <= 0) return
+    if (!Number.isInteger(attackLines) || attackLines <= 0) return null
 
     const garbage = {
         lines: attackLines,
         holeCol: createGarbageHoleCol(),
     }
     const appendResult = appendPendingGarbageToOpponent(roomId, playerId, garbage)
-    if (!appendResult.ok) return
+    if (!appendResult.ok) return null
+
+    return appendResult
+}
+
+function emitAuthoritativeSnapshot(socketServer, roomId, playerId) {
+    const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId)
+    if (!snapshotResult.ok) return null
+
+    socketServer.to(roomId).emit("game:authoritative:snapshot", {
+        roomId,
+        playerId,
+        snapshot: snapshotResult.snapshot,
+    })
+
+    return snapshotResult.snapshot
 }
 
 async function handleServerGameOverResult(

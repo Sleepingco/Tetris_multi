@@ -319,6 +319,83 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
     assert.equal(Object.hasOwn(p2SnapshotEvent.payload.snapshot, "pendingGarbageQueue"), false);
 });
 
+test("ticker callback은 마지막 player attack도 target snapshot을 즉시 emit한다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    let p1PendingGarbageLines = 0;
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        createGarbageHoleCol: () => 4,
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-1",
+                players: [
+                    { playerId: "p1" },
+                    { playerId: "p2" },
+                ],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId) {
+            return {
+                ok: true,
+                gravityResult: { kind: "lock" },
+                placementResult: {
+                    attackLines: playerId === "p2" ? 3 : 0,
+                    gameOver: false,
+                },
+            };
+        },
+        appendPendingGarbageToOpponent(roomId, fromPlayerId, garbage) {
+            p1PendingGarbageLines += garbage.lines;
+            return {
+                ok: true,
+                targetPlayerId: "p1",
+                garbage,
+            };
+        },
+        getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+            return {
+                ok: true,
+                snapshot: {
+                    board: [[playerId]],
+                    activePiece: null,
+                    pieceQueue: [],
+                    holdPieceType: null,
+                    holdUsedThisDrop: false,
+                    score: 0,
+                    lines: 0,
+                    phase: "playing",
+                    combo: -1,
+                    backToBack: false,
+                    tick: 1,
+                    pieceIndex: 1,
+                    pendingGarbageLines: playerId === "p1" ? p1PendingGarbageLines : 0,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-1", socketServer);
+    await runTickerCallbacks(scheduler, 5);
+
+    const p1SnapshotEvents = socketServer.roomEvents.filter(event => {
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === "p1";
+    });
+    const garbageEvent = socketServer.roomEvents.find(event => {
+        return event.eventName === "game:garbage:append";
+    });
+
+    assert.equal(garbageEvent, undefined);
+    assert.equal(p1SnapshotEvents.length, 2);
+    assert.equal(p1SnapshotEvents[0].payload.snapshot.pendingGarbageLines, 0);
+    assert.equal(p1SnapshotEvents[1].payload.snapshot.pendingGarbageLines, 3);
+    assert.equal(Object.hasOwn(p1SnapshotEvents[1].payload.snapshot, "pendingGarbageQueue"), false);
+});
+
 test("ticker callback은 server authoritative gameOver가 되면 match finish를 emit하고 ticker를 정리한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();

@@ -121,8 +121,11 @@ function createAuthoritativeTickerService(dependencies = {}) {
             const stepResult = applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
             if (!stepResult.ok) continue;
 
-            handlePlacementResult(roomId, playerId, stepResult.placementResult);
+            const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
             const snapshot = emitAuthoritativeSnapshot(roomId, playerId, socketServer);
+            if (placementSideEffect?.targetPlayerId) {
+                emitAuthoritativeSnapshot(roomId, placementSideEffect.targetPlayerId, socketServer);
+            }
 
             if (stepResult.placementResult?.gameOver || snapshot?.phase === "gameOver") {
                 await finishAuthoritativeMatch({
@@ -156,14 +159,16 @@ function createAuthoritativeTickerService(dependencies = {}) {
 
     function handlePlacementResult(roomId, playerId, placementResult) {
         const attackLines = placementResult?.attackLines ?? 0;
-        if (!Number.isInteger(attackLines) || attackLines <= 0) return;
+        if (!Number.isInteger(attackLines) || attackLines <= 0) return null;
 
         const garbage = {
             lines: attackLines,
             holeCol: createGarbageHoleCol(),
         };
         const appendResult = appendPendingGarbageToOpponent(roomId, playerId, garbage);
-        if (!appendResult.ok) return;
+        if (!appendResult.ok) return null;
+
+        return appendResult;
     }
 
     return {
