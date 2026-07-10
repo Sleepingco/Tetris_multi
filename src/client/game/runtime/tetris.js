@@ -1347,6 +1347,9 @@ export function createTetrisRuntime({
         gameState.fallIntervalMs = restored.fallIntervalMs
         gameState.board = restored.board
         gameState.pieceQueue = restored.pieceQueue
+        if (runtime.bagMode === "server") {
+            runtime.serverBagQueue = []
+        }
         gameState.holdPieceType = restored.holdPieceType
         gameState.holdUsedThisDrop = restored.holdUsedThisDrop
         gameState.pendingPiece = restored.pendingPiece ?? clonePendingPiece(restored.activePiece)

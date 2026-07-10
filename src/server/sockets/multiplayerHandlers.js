@@ -210,7 +210,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         clientSocket.emit("game:join:result", {
             ...result,
-            match: matchResult.match,
+            match: createGameJoinMatchDto(matchResult.match),
         })
     })
 
@@ -273,7 +273,17 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         try {
             const gameCore = await loadGameCore()
             const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
-            if (!authoritativeResult.ok) return
+            if (!authoritativeResult.ok) {
+                if (authoritativeResult.reason === "PIECE_INDEX_MISMATCH") {
+                    emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+                    clientSocket.emit("game:input:result", {
+                        ok: false,
+                        room: null,
+                        reason: authoritativeResult.reason,
+                    })
+                }
+                return
+            }
             const placementSideEffect = handleServerPlacementResult(
                 roomId,
                 playerId,
@@ -445,6 +455,27 @@ function emitAuthoritativeSnapshot(socketServer, roomId, playerId) {
     })
 
     return snapshotResult.snapshot
+}
+
+function createGameJoinMatchDto(match) {
+    if (!match) return null
+
+    return {
+        roomId: match.roomId,
+        status: match.status,
+        createdAt: match.createdAt,
+        players: match.players.map(player => {
+            const snapshotResult = getAuthoritativePlayerSnapshotDto(match.roomId, player.playerId)
+
+            return {
+                playerId: player.playerId,
+                bagChunks: Array.isArray(player.bagChunks)
+                    ? player.bagChunks.map(chunk => [...chunk])
+                    : [],
+                snapshot: snapshotResult.ok ? snapshotResult.snapshot : null,
+            }
+        }),
+    }
 }
 
 async function handleServerGameOverResult(

@@ -1261,10 +1261,11 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
     assert.deepEqual(hostPlayer.authoritativeState, stateBeforeStaleInput)
     assert.equal(socketServer.roomEvents.filter((event) => {
         return event.eventName === "game:authoritative:snapshot"
-    }).length, snapshotEventCountBeforeStaleInput)
+    }).length, snapshotEventCountBeforeStaleInput + 1)
+    assert.equal(hostSocket.lastClientEvent("game:input:result")?.payload.reason, "PIECE_INDEX_MISMATCH")
 })
 
-test("game:input은 stale pieceIndex여도 relay와 input log를 유지하고 authoritativeState는 변경하지 않는다", async () => {
+test("game:input PIECE_INDEX_MISMATCH는 state를 변경하지 않고 즉시 authoritative snapshot을 emit한다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("stale-index-host-socket")
     const guestSocket = new FakeClientSocket("stale-index-guest-socket")
@@ -1323,9 +1324,20 @@ test("game:input은 stale pieceIndex여도 relay와 input log를 유지하고 au
     assert.equal(guestInputEvent.payload.action, "move_left")
     assert.equal(hostPlayer.inputLog[0].action, "move_left")
     assert.equal(hostPlayer.inputLog[0].pieceIndex, beforeState.pieceIndex + 1)
-    assert.deepEqual(hostPlayer.authoritativeState.activePiece, beforeState.activePiece)
-    assert.deepEqual(hostPlayer.authoritativeState.pendingPiece, beforeState.pendingPiece)
-    assert.deepEqual(hostPlayer.authoritativeState.pieceQueue, beforeState.pieceQueue)
+    assert.deepEqual(hostPlayer.authoritativeState, beforeState)
+
+    const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
+    const snapshotEvents = socketServer.roomEvents.filter((event) => {
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === "stale-index-host-player"
+    })
+
+    assert.equal(inputResult?.ok, false)
+    assert.equal(inputResult?.reason, "PIECE_INDEX_MISMATCH")
+    assert.equal(snapshotEvents.length, 1)
+    assert.equal(snapshotEvents[0].payload.snapshot.pieceIndex, beforeState.pieceIndex)
+    assert.deepEqual(snapshotEvents[0].payload.snapshot.board, beforeState.board)
+    assert.equal(Object.hasOwn(snapshotEvents[0].payload.snapshot, "pendingGarbageQueue"), false)
 })
 
 test("game:input은 authoritative apply가 실패해도 relay와 input log를 유지한다", async () => {
@@ -1378,13 +1390,14 @@ test("game:input은 authoritative apply가 실패해도 relay와 input log를 �
     }
     hostPlayer.authoritativeState.pendingPiece = null
     hostPlayer.authoritativeState.pieceQueue = []
+    const currentPieceIndex = hostPlayer.authoritativeState.pieceIndex
 
     await hostSocket.triggerAsync("game:input", {
         roomId,
         playerId: "authoritative-failure-host-player",
         action: "hard_drop",
         tick: 12,
-        pieceIndex: 0,
+        pieceIndex: currentPieceIndex,
     })
 
     const guestInputEvent = guestSocket.lastClientEvent("game:input")
@@ -1395,7 +1408,7 @@ test("game:input은 authoritative apply가 실패해도 relay와 input log를 �
     assert.equal(hostSocket.lastClientEvent("game:input:result"), undefined)
     assert.equal(hostPlayer.inputLog[0].action, "hard_drop")
     assert.equal(hostPlayer.inputLog[0].tick, 12)
-    assert.equal(hostPlayer.inputLog[0].pieceIndex, 0)
+    assert.equal(hostPlayer.inputLog[0].pieceIndex, currentPieceIndex)
 })
 
 test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 반환한다", async () => {
@@ -2299,7 +2312,7 @@ test("game:join은 roomService DTO 결과를 반환하고 성공 시 socket을 r
     assert.deepEqual(gameSocket.joinedRooms, [roomId])
 })
 
-test("game:join은 시작된 match의 player별 server bag chunks를 반환한다", () => {
+test("game:join은 진행된 server state의 player별 client snapshot과 bag chunks를 반환한다", () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("game-join-bag-host-socket")
     const guestSocket = new FakeClientSocket("game-join-bag-guest-socket")
@@ -2331,6 +2344,14 @@ test("game:join은 시작된 match의 player별 server bag chunks를 반환한�
         playerId: "game-join-bag-host",
     })
 
+    const matchResult = getMatchState(roomId)
+    const hostMatchPlayer = matchResult.match.players.find((player) => {
+        return player.playerId === "game-join-bag-host"
+    })
+    hostMatchPlayer.authoritativeState.currentTick = 5
+    hostMatchPlayer.authoritativeState.activePiece.row = 4
+    hostMatchPlayer.authoritativeState.board[19][0] = "square"
+
     gameSocket.trigger("game:join", {
         roomId,
         playerId: "game-join-bag-host",
@@ -2344,11 +2365,23 @@ test("game:join은 시작된 match의 player별 server bag chunks를 반환한�
 
     joinResult.match.players.forEach((player) => {
         assert.equal(player.bagChunks.length, 3)
+        assert.equal(Array.isArray(player.snapshot.board), true)
+        assert.equal(Object.hasOwn(player, "authoritativeState"), false)
+        assert.equal(Object.hasOwn(player, "inputLog"), false)
+        assert.equal(Object.hasOwn(player, "nextInputSequence"), false)
+        assert.equal(Object.hasOwn(player.snapshot, "pendingGarbageQueue"), false)
         player.bagChunks.forEach((chunk) => {
             assert.equal(chunk.length, 7)
             assert.deepEqual([...chunk].sort(), expectedPieces)
         })
     })
+
+    const hostJoinPlayer = joinResult.match.players.find((player) => {
+        return player.playerId === "game-join-bag-host"
+    })
+    assert.equal(hostJoinPlayer.snapshot.tick, 5)
+    assert.equal(hostJoinPlayer.snapshot.activePiece.row, 4)
+    assert.equal(hostJoinPlayer.snapshot.board[19][0], "square")
 })
 
 test("game:bag:request는 새 server bag chunk를 room에 broadcast한다", () => {

@@ -303,6 +303,24 @@ test("applySnapshot은 gameOver snapshot에서 resumeGravity 요청을 무시한
     assert.equal(game.runtime.gravityRunning, false);
 });
 
+test("server bag runtime은 authoritative pieceQueue 적용 시 숨은 대기 queue를 중복 보존하지 않는다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({
+        autoStart: true,
+        serverBagChunks: [["tree", "bar", "square", "zee", "eleft", "eright", "ess"]],
+    });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        pieceQueue: ["square", "zee"],
+    }, { resumeGravity: true });
+
+    assert.equal(game.getServerBagRemainingCount(), 2);
+    assert.equal(game.runtime.gravityRunning, true);
+});
+
 test("runtime은 next와 hold preview DOM을 렌더링한다", async (t) => {
     installDocumentStub();
     const { createTetrisRuntime } = await loadRuntime();

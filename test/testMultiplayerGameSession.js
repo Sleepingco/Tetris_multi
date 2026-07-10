@@ -173,7 +173,7 @@ async function loadSession() {
     return import("../src/client/game/entry/multiplayerGameSession.js");
 }
 
-function createSessionParams() {
+function createSessionParams(overrides = {}) {
     return {
         roomId: "room-1",
         playerId: "player-me",
@@ -199,6 +199,7 @@ function createSessionParams() {
         opponentLinesEl: createFakeElement(),
         opponentPendingGarbageEl: createFakeElement(),
         opponentGarbageLogEl: createFakeElement(),
+        ...overrides,
     };
 }
 
@@ -229,6 +230,82 @@ function cloneBoardWithGarbageCell(baseSnapshot) {
     board[board.length - 1][0] = "garbage";
     return board;
 }
+
+function installMonotonicClock(t, initialNowMs = 0) {
+    const originalPerformance = globalThis.performance;
+    let nowMs = initialNowMs;
+
+    globalThis.performance = {
+        now() {
+            return nowMs;
+        },
+    };
+    t.after(() => {
+        globalThis.performance = originalPerformance;
+    });
+
+    return {
+        set(value) {
+            nowMs = value;
+        },
+    };
+}
+
+function createAuthoritativeSnapshot(overrides = {}) {
+    return {
+        board: Array.from({ length: 20 }, () => Array(10).fill(null)),
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: -1,
+            col: 3,
+        },
+        pieceQueue: ["bar", "square", "zee"],
+        holdPieceType: null,
+        holdUsedThisDrop: false,
+        score: 0,
+        lines: 0,
+        phase: "playing",
+        combo: -1,
+        backToBack: false,
+        tick: 0,
+        pieceIndex: 1,
+        pendingGarbageLines: 0,
+        ...overrides,
+    };
+}
+
+test("game join 초기 authoritative snapshot으로 내 보드와 상대 보드를 정렬한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const params = createSessionParams();
+    const myBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
+    myBoard[19][0] = "square";
+    const opponentBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
+    opponentBoard[19][9] = "bar";
+    params.match.players[0].snapshot = createAuthoritativeSnapshot({
+        board: myBoard,
+        score: 40,
+        tick: 5,
+        pieceIndex: 3,
+    });
+    params.match.players[1].snapshot = createAuthoritativeSnapshot({
+        board: opponentBoard,
+        score: 20,
+        tick: 5,
+        pieceIndex: 2,
+    });
+
+    const session = startMultiplayerGame(params);
+    t.after(() => cleanupSession(session));
+
+    assert.deepEqual(session.myGame.getSnapshot().board, myBoard);
+    assert.equal(session.myGame.getSnapshot().pieceIndex, 3);
+    assert.equal(session.myGame.runtime.gravityRunning, true);
+    assert.deepEqual(session.opponentGame.getSnapshot().board, opponentBoard);
+    assert.equal(session.opponentGame.getSnapshot().pieceIndex, 2);
+    assert.equal(session.opponentGame.runtime.gravityRunning, false);
+    assert.equal(session.myGame.getServerBagRemainingCount(), 3);
+});
 
 test("heartbeatTimer는 game:snapshot과 game:over 없이 bag 요청만 유지한다", async (t) => {
     const originalSetInterval = globalThis.setInterval;
@@ -319,12 +396,23 @@ test("legacy game:snapshot은 상대 보드를 덮지 않고 authoritative snaps
 
     assert.equal(session.opponentGame.getSnapshot().score, opponentBaseSnapshot.score);
 
+    const opponentAuthoritativeSnapshot = {
+        ...snapshotWithScore(opponentBaseSnapshot, 20),
+        activePiece: {
+            ...opponentBaseSnapshot.activePiece,
+            col: opponentBaseSnapshot.activePiece.col + 1,
+        },
+    };
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
         playerId: "player-opponent",
-        snapshot: snapshotWithScore(opponentBaseSnapshot, 20),
+        snapshot: opponentAuthoritativeSnapshot,
     });
 
     assert.equal(session.opponentGame.getSnapshot().score, 20);
+    assert.equal(
+        session.opponentGame.getSnapshot().activePiece.col,
+        opponentAuthoritativeSnapshot.activePiece.col,
+    );
     assert.equal(session.opponentGame.runtime.gravityRunning, false);
 
     sharedFakeSocket.emitServer("game:snapshot", {
@@ -333,6 +421,41 @@ test("legacy game:snapshot은 상대 보드를 덮지 않고 authoritative snaps
     });
 
     assert.equal(session.opponentGame.getSnapshot().score, 20);
+});
+
+test("같은 pieceIndex의 board drift는 A local과 B의 A 보드를 같은 snapshot으로 수렴시킨다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const sessionA = startMultiplayerGame(createSessionParams());
+    const sessionB = startMultiplayerGame(createSessionParams({
+        playerId: "player-opponent",
+        opponentPlayerId: "player-me",
+    }));
+    t.after(() => {
+        cleanupSession(sessionA);
+        cleanupSession(sessionB);
+    });
+
+    const localSnapshot = sessionA.myGame.getSnapshot();
+    const authoritativeBoard = localSnapshot.board.map(row => [...row]);
+    authoritativeBoard[authoritativeBoard.length - 1][4] = "square";
+    const authoritativeSnapshot = {
+        ...snapshotWithScore(localSnapshot, localSnapshot.score),
+        board: authoritativeBoard,
+        pendingGarbageLines: localSnapshot.pendingGarbageLines,
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: authoritativeSnapshot,
+    });
+
+    assert.deepEqual(sessionA.myGame.getSnapshot().board, authoritativeBoard);
+    assert.deepEqual(
+        sessionA.myGame.getSnapshot().board,
+        sessionB.opponentGame.getSnapshot().board,
+    );
+    assert.equal(sessionA.myGame.runtime.gravityRunning, true);
+    assert.equal(sessionB.opponentGame.runtime.gravityRunning, false);
 });
 
 test("상대 game:input relay 수신은 opponentGame 상태를 바꾸지 않는다", async (t) => {
@@ -540,8 +663,9 @@ test("내 playerId의 gameOver authoritative snapshot은 myGame에 full apply한
     assert.equal(session.myGame.runtime.gravityRunning, false);
 });
 
-test("내 playerId snapshot이 local보다 앞서도 gameOver가 아니면 full apply하지 않는다", async (t) => {
+test("내 playerId snapshot의 pieceIndex 1 차이는 750ms 유지될 때만 full apply한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
+    const clock = installMonotonicClock(t, 100);
     const session = startMultiplayerGame(createSessionParams());
     t.after(() => cleanupSession(session));
 
@@ -553,20 +677,39 @@ test("내 playerId snapshot이 local보다 앞서도 gameOver가 아니면 full 
         originalApplySnapshot(snapshot, options);
     };
 
+    const serverSnapshot = {
+        ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
+        pieceIndex: myBaseSnapshot.pieceIndex + 1,
+        phase: "playing",
+        pendingGarbageLines: 6,
+    };
+
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
         playerId: "player-me",
-        snapshot: {
-            ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
-            pieceIndex: myBaseSnapshot.pieceIndex + 1,
-            phase: "playing",
-            pendingGarbageLines: 6,
-        },
+        snapshot: serverSnapshot,
+    });
+
+    clock.set(849);
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: serverSnapshot,
     });
 
     assert.equal(applySnapshotCallCount, 0);
     assert.equal(session.myGame.getSnapshot().score, myBaseSnapshot.score);
     assert.equal(session.myGame.getSnapshot().pieceIndex, myBaseSnapshot.pieceIndex);
     assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 6);
+
+    clock.set(850);
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: serverSnapshot,
+    });
+
+    assert.equal(applySnapshotCallCount, 1);
+    assert.equal(session.myGame.getSnapshot().score, serverSnapshot.score);
+    assert.equal(session.myGame.getSnapshot().pieceIndex, serverSnapshot.pieceIndex);
+    assert.equal(session.myGame.runtime.gravityRunning, true);
 });
 
 test("내 local phase가 lineClearing이면 앞선 snapshot도 full apply하지 않는다", async (t) => {
@@ -601,6 +744,16 @@ test("내 local phase가 lineClearing이면 앞선 snapshot도 full apply하지 
             pendingGarbageLines: 0,
         },
     });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
+            board: cloneBoardWithGarbageCell(myBaseSnapshot),
+            pieceIndex: myBaseSnapshot.pieceIndex + 1,
+            phase: "playing",
+            pendingGarbageLines: 0,
+        },
+    });
 
     assert.equal(applySnapshotCallCount, 0);
     assert.equal(session.myGame.getSnapshot().phase, "lineClearing");
@@ -608,13 +761,13 @@ test("내 local phase가 lineClearing이면 앞선 snapshot도 full apply하지 
     assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 0);
 });
 
-test("내 playerId의 authoritative snapshot은 activePiece만 다르면 myGame에 적용하지 않는다", async (t) => {
+test("빠른 col 차이 snapshot은 반복되어도 local prediction과 gravity를 유지한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
     t.after(() => cleanupSession(session));
 
     const myBaseSnapshot = session.myGame.getSnapshot();
-    const activePieceOnlySnapshot = {
+    session.myGame.applySnapshot({
         ...myBaseSnapshot,
         board: myBaseSnapshot.board.map(row => [...row]),
         activePiece: {
@@ -622,12 +775,112 @@ test("내 playerId의 authoritative snapshot은 activePiece만 다르면 myGame�
             col: myBaseSnapshot.activePiece.col + 1,
         },
         pieceQueue: [...myBaseSnapshot.pieceQueue],
+    }, { resumeGravity: true });
+    const predictedSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+    const serverSnapshot = snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score);
+
+    for (let index = 0; index < 4; index += 1) {
+        sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+            playerId: "player-me",
+            snapshot: serverSnapshot,
+        });
+    }
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.deepEqual(session.myGame.getSnapshot().activePiece, predictedSnapshot.activePiece);
+    assert.equal(session.myGame.runtime.gravityRunning, true);
+});
+
+test("빠른 rotation 차이 snapshot은 반복되어도 local prediction을 덮지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    session.myGame.applySnapshot({
+        ...myBaseSnapshot,
+        activePiece: {
+            ...myBaseSnapshot.activePiece,
+            rotation: myBaseSnapshot.activePiece.rotation + 1,
+        },
+    }, { resumeGravity: true });
+    const predictedSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+    const serverSnapshot = snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score);
+
+    for (let index = 0; index < 4; index += 1) {
+        sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+            playerId: "player-me",
+            snapshot: serverSnapshot,
+        });
+    }
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.deepEqual(session.myGame.getSnapshot().activePiece, predictedSnapshot.activePiece);
+});
+
+test("내 playerId의 activePiece row와 tick만 다른 snapshot은 반복되어도 full apply하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+    const rowOnlySnapshot = {
+        ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score),
+        tick: myBaseSnapshot.tick + 100,
+        activePiece: {
+            ...myBaseSnapshot.activePiece,
+            row: myBaseSnapshot.activePiece.row + 2,
+        },
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
         playerId: "player-me",
-        snapshot: activePieceOnlySnapshot,
+        snapshot: rowOnlySnapshot,
+    });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: rowOnlySnapshot,
     });
 
-    assert.deepEqual(session.myGame.getSnapshot().activePiece, myBaseSnapshot.activePiece);
+    assert.equal(applySnapshotCallCount, 0);
+    assert.equal(session.myGame.getSnapshot().activePiece.row, myBaseSnapshot.activePiece.row);
+});
+
+test("내 playerId와 일치하는 authoritative snapshot은 full apply하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score),
+    });
+
+    assert.equal(applySnapshotCallCount, 0);
 });
