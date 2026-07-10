@@ -2604,7 +2604,7 @@ snapshot의 pieceIndex 검사:
 
 ## Q. 상대 보드 `autoStart`를 `false`로 두면 더 정확하지 않아? 왜 다시 `true`를 유지해? (2026-06-28)
 
-현재 멀티 화면의 상대 보드는 완전한 서버 authoritative 보드가 아니다. 지금은 다음 두 방식을 섞어서 상대 보드를 보여준다.
+이 답변은 2026-06-28의 input relay + client snapshot correction 단계 기준이다. 당시 멀티 화면의 상대 보드는 완전한 서버 authoritative 보드가 아니었고, 다음 두 방식을 섞어서 상대 보드를 보여줬다.
 
 ```txt
 1. 상대의 game:input을 받아서 opponentGame을 예측 실행
@@ -2625,36 +2625,38 @@ autoStart: true
   -> 오차가 생기면 snapshotCorrection으로 보정
 ```
 
-실험 결과 `autoStart: false`는 상대 블록 움직임이 너무 끊겨 보였다. 따라서 현재 MVP 단계에서는 `autoStart: true`를 유지한다.
+당시 실험 결과 `autoStart: false`는 상대 블록 움직임이 너무 끊겨 보였다. 따라서 그 시점의 MVP 단계에서는 `autoStart: true`를 유지했다.
 
-현재 기준은 다음과 같다.
+당시 기준은 다음과 같았다.
 
 ```txt
 상대 보드 = 예측 실행 + snapshot 보정
 ```
 
-즉 상대 보드가 완전히 독립적인 진실 원천이 되는 것이 아니라, 부드러운 표시를 위해 로컬에서 예측하고 snapshot으로 따라잡는 구조다.
+즉 상대 보드가 완전히 독립적인 진실 원천이 되는 것이 아니라, 부드러운 표시를 위해 로컬에서 예측하고 snapshot으로 따라잡는 구조였다.
 
 코드 주석도 이 의미를 남긴다.
 
 ```js
-// 상대 보드는 현재 input relay + snapshot correction 기반으로 예측 실행한다.
+// 당시 상대 보드는 input relay + snapshot correction 기반으로 예측 실행했다.
 // autoStart를 false로 두면 snapshot 도착 시점에만 갱신되어 움직임이 크게 끊긴다.
 // 서버 authoritative runtime으로 전환하기 전까지는 true를 유지한다.
 opponentGame.init({ autoStart: true, serverBagChunks: opponentBagChunks })
 ```
 
-나중에 서버가 직접 게임 상태를 계산하는 구조가 되면 방향이 달라진다.
+2026-07-10 기준으로는 이 방향이 실제로 바뀌었다.
 
 ```txt
-현재:
+과거:
 상대 보드 = 클라이언트 예측 실행 + snapshot 보정
 
-목표:
-상대 보드 = 서버 authoritative snapshot 또는 delta 반영
+현재:
+상대 보드 = server authoritative snapshot full apply
+상대 runtime = autoStart: false
+상대 game:input relay = 수신해도 opponentGame에 적용하지 않음
 ```
 
-따라서 `autoStart: true`는 최종 구조가 아니라, 현재 input relay 단계에서 부드러운 상대 보드 표시를 위한 임시 선택이다.
+따라서 `autoStart: true`는 최종 구조가 아니라, input relay 단계에서 부드러운 상대 보드 표시를 위한 임시 선택이었다.
 
 ---
 
@@ -3140,3 +3142,356 @@ lobby/rejoin
 ```
 
 이 흐름이 자연스럽게 이어지는지 확인해야 한다.
+
+---
+
+## Q. 이제 멀티 MVP는 완료로 봐도 돼? (2026-07-10)
+
+자동 테스트 기준으로는 server authoritative 멀티 MVP의 핵심 구현은 완료에 가깝다.
+
+현재 포함된 흐름은 다음과 같다.
+
+```txt
+room create/join/start
+server bag
+server authoritative player state
+input apply
+server gravity ticker
+authoritative snapshot
+garbage attack/cancel/apply
+combo / back-to-back / T-Spin attack
+top-out / gameOver / match finish
+match cleanup
+```
+
+다만 포트폴리오 시연 기준으로는 **조건부 완료**다.
+
+최종 완료 판정은 2탭 수동 회귀를 통과한 뒤로 본다.
+
+```txt
+자동 테스트 기준: 완료에 가까움
+시연 MVP 기준: 2탭 회귀 통과 후 완료
+AI 전환 기준: 2탭 회귀 통과 후 가능
+```
+
+---
+
+## Q. 왜 내 보드는 server snapshot을 항상 적용하지 않아? (2026-07-10)
+
+내 보드는 사용자가 직접 조작하는 화면이다.
+
+server snapshot을 매번 full apply하면 서버 기준으로는 더 정확해 보일 수 있지만, 사용자는 다음 문제를 느낄 수 있다.
+
+```txt
+입력이 느려짐
+조각이 되감기는 느낌
+line clear effect가 끊김
+gravity가 멈춘 것처럼 보임
+```
+
+그래서 현재 정책은 다음과 같다.
+
+```txt
+내 보드:
+client prediction 우선
+
+상대 보드:
+server authoritative snapshot full apply
+```
+
+내 보드에 server snapshot을 full apply하는 경우는 제한한다.
+
+```txt
+1. server snapshot이 gameOver인 경우
+2. pendingGarbageLines가 감소했고 board가 달라진 경우
+   즉, 서버가 실제 garbage를 board에 적용한 것으로 볼 수 있는 경우
+```
+
+단순히 `pieceIndex`가 서버에서 앞섰다는 이유만으로 내 보드를 덮지 않는다.
+
+---
+
+## Q. 왜 garbage line이 gameOver 때만 갑자기 보였어? (2026-07-10)
+
+원인은 `pendingGarbageLines`와 실제 `pendingGarbageQueue`의 차이였다.
+
+서버는 실제 상태로 다음 값을 가진다.
+
+```txt
+authoritativeState.pendingGarbageQueue
+```
+
+하지만 client snapshot DTO에는 queue 전체를 보내지 않고 표시용 숫자만 보낸다.
+
+```txt
+pendingGarbageLines
+```
+
+처음 정책은 내 snapshot에서 `pendingGarbageLines` 숫자만 표시하고, board full apply는 `gameOver`일 때만 허용했다.
+
+그래서 서버가 lock 시점에 garbage를 board에 적용해도 내 화면에는 board 변화가 보이지 않고, `gameOver` snapshot에서만 갑자기 반영됐다.
+
+수정 후 정책은 다음과 같다.
+
+```txt
+pendingGarbageLines 증가:
+  표시만 갱신
+
+pendingGarbageLines 감소 + board 변경:
+  서버가 garbage를 실제 board에 적용한 것으로 보고 full apply
+
+lineClearing 중:
+  gameOver가 아니면 full apply 차단
+```
+
+이렇게 해서 line clear effect는 보호하면서, garbage 적용 board는 gameOver 전에도 볼 수 있게 했다.
+
+---
+
+## Q. 왜 `game:garbage:append`를 다시 살리지 않았어? (2026-07-10)
+
+server authoritative 구조에서는 garbage의 원천이 서버 상태여야 한다.
+
+`game:garbage:append`를 다시 살리면 client runtime queue와 server `pendingGarbageQueue`가 동시에 같은 의미를 수정할 수 있다.
+
+```txt
+server pendingGarbageQueue
+client queueGarbageLines()
+```
+
+이 둘이 동시에 살아 있으면 중복 적용이나 표시 drift가 생길 수 있다.
+
+그래서 현재 정책은 다음과 같다.
+
+```txt
+garbage 원천:
+server authoritativeState.pendingGarbageQueue
+
+client 표시:
+snapshot.pendingGarbageLines
+
+client board 반영:
+server snapshot correction 조건을 통과할 때만
+```
+
+즉, `game:garbage:append`는 gameplay state 변경 경로로 쓰지 않는다.
+
+---
+
+## Q. local prediction과 server authoritative snapshot 충돌은 무슨 뜻이야? (2026-07-10)
+
+현재 내 보드에는 두 개의 상태 원천이 동시에 영향을 준다.
+
+```txt
+1. local prediction
+   - 내 키 입력을 즉시 반영하는 브라우저 내부 상태
+   - 조작감과 line clear effect를 담당
+
+2. server authoritative snapshot
+   - 서버가 계산한 정답 상태
+   - garbage, top-out, score, attack 결과의 기준
+```
+
+상대 보드는 내가 직접 조작하지 않으므로 server snapshot을 바로 적용해도 된다.
+
+```txt
+상대 보드:
+server snapshot -> opponentGame.applySnapshot()
+```
+
+하지만 내 보드는 내가 직접 조작하고 있기 때문에 server snapshot을 매번 full apply하면 다음 문제가 생긴다.
+
+```txt
+입력 반응이 되감기는 느낌
+line clear effect 생략
+local이 아직 처리 중인 상태를 server snapshot이 덮어씀
+```
+
+그래서 현재 정책은 다음과 같다.
+
+```txt
+상대 보드:
+server authoritative snapshot을 full apply
+
+내 보드:
+local prediction을 우선
+필요한 경우에만 server snapshot을 제한적으로 full apply
+```
+
+full apply를 허용하는 대표 상황은 다음과 같다.
+
+```txt
+1. server snapshot phase가 gameOver인 경우
+2. 서버가 garbage를 실제 board에 적용한 것으로 볼 수 있는 경우
+   예: pendingGarbageLines 감소 + board 변경
+3. 명백한 desync로 local 상태를 계속 유지하면 더 어색한 경우
+```
+
+반대로 다음 상황에서는 full apply를 피한다.
+
+```txt
+local phase가 lineClearing인 경우
+단순히 server pieceIndex가 조금 앞선 경우
+activePiece 위치 차이만 있는 경우
+```
+
+핵심은 다음과 같다.
+
+```txt
+상대 보드 = 서버 상태를 바로 믿어도 됨
+내 보드 = 조작감/연출을 보호하면서 서버 상태를 필요한 순간에만 반영
+```
+
+---
+
+## Q. 여기서 DTO라는 표현을 써도 맞아? (2026-07-10)
+
+써도 된다. DTO는 Spring 전용 용어가 아니다.
+
+```txt
+DTO = Data Transfer Object
+```
+
+뜻은 계층 사이에서 데이터를 전달하기 위해 만든 객체다.
+
+현재 프로젝트에서는 서버 내부 상태와 클라이언트 전송 객체가 다르다.
+
+```txt
+authoritativeState
+  - 서버 내부 원본 상태
+  - board, activePiece, pendingPiece, pieceQueue, combo, backToBack 등 포함
+
+snapshot DTO
+  - 클라이언트에 보내기 위해 정리한 전송용 객체
+  - tick, board, activePiece, score, pendingGarbageLines 등 포함
+```
+
+즉 다음 표현은 자연스럽다.
+
+```txt
+authoritativeState -> snapshot DTO
+```
+
+의미는 다음과 같다.
+
+```txt
+서버 내부 상태를 클라이언트 전송용 snapshot 객체로 변환한다.
+```
+
+다만 JavaScript/Node 문맥에서는 다음 표현도 자주 쓴다.
+
+```txt
+snapshot payload
+snapshot response
+transport payload
+serialized snapshot
+client snapshot
+```
+
+포트폴리오나 문서에서는 `authoritative snapshot DTO`라고 써도 괜찮다. 더 직관적으로 쓰고 싶다면 `snapshot payload`도 좋다.
+
+---
+
+## Q. 왜 match cleanup을 따로 보강했어? (2026-07-10)
+
+server authoritative 전환 후 `matchService`는 player별 board, queue, inputLog, authoritativeState를 메모리에 들고 있다.
+
+게임이 끝났는데 `matches Map`에서 제거하지 않으면 장시간 실행 시 메모리에 계속 남는다.
+
+처리한 cleanup은 두 가지다.
+
+```txt
+game:leave 성공:
+  ticker stop
+  deleteMatch(roomId)
+
+authoritative gameOver 정상 종료:
+  finishGame()
+  game_over log 생성
+  ticker stop
+  match:finish emit
+  deleteMatch(roomId)
+  game_over log 저장
+```
+
+중요한 점은 log 생성 순서다.
+
+`deleteMatch()`를 먼저 하면 `gameId`에 필요한 `match.createdAt`을 잃을 수 있다.
+
+그래서 `game_over` log 객체를 먼저 만들고, 그 다음 match를 삭제한다.
+
+---
+
+## Q. inputLog 상한은 왜 필요해? (2026-07-10)
+
+`recordInput()`은 player 입력을 계속 저장한다.
+
+상한이 없으면 긴 게임이나 반복 테스트에서 `inputLog`가 계속 커질 수 있다.
+
+현재 정책은 다음과 같다.
+
+```txt
+player별 inputLog 최대 1000개 유지
+오래된 로그는 앞에서 제거
+sequence는 nextInputSequence로 계속 증가
+```
+
+`inputLog.length + 1`로 sequence를 만들면 오래된 로그를 자른 뒤 sequence가 중복될 수 있다.
+
+그래서 별도 필드가 필요하다.
+
+```js
+nextInputSequence
+```
+
+이 값은 로그가 잘려도 전체 입력 순서를 유지한다.
+
+---
+
+## Q. 상대 보드에도 line clear effect를 줄 수 있어? (2026-07-10)
+
+가능하다. 다만 정확한 local line clear animation과 표시용 effect는 다르다.
+
+현재 상대 보드는 server snapshot만 적용한다.
+
+```txt
+server already cleared board
+-> sends authoritative snapshot
+-> opponentGame.applySnapshot(snapshot)
+```
+
+이 상태에서는 상대 client가 “어떤 줄이 방금 지워졌는지”를 알기 어렵다.
+
+최소 구현은 서버 snapshot DTO에 표시용 정보를 추가하는 것이다.
+
+```js
+lineClearEffect: {
+    rows: [18, 19],
+    pieceIndex: 12
+}
+```
+
+client는 상대 snapshot 적용 후 해당 row만 flash하면 된다.
+
+```txt
+opponentGame.applySnapshot(snapshot)
+opponentGame.playLineClearEffect(rows)
+```
+
+소리는 빼는 것이 맞다.
+
+동일한 snapshot에서 effect가 반복 재생되지 않도록 `pieceIndex` 또는 effect key로 중복 방지를 해야 한다.
+
+## GPT 모델별 추천 수준 (2026-07-11)
+| 작업 | 추천 모델 | 추론 |
+|------|-----------|------|
+| 문법 질문 | Luna | Low |
+| 간단한 코드 | Terra | Medium |
+| 기능 구현 | Terra | High |
+| 버그 분석 | Sol | High |
+| 테스트 전략 | Sol | High |
+| 서버 아키텍처 | Sol | Extra High |
+| AI 설계 | Sol | Max |
+| 프로젝트 전체 리뷰 | Sol | Ultra |
+| Codex 프롬프트 작성 | Terra 또는 Sol | High |
+| 포트폴리오 기술 근거 작성 | Sol | Extra High |

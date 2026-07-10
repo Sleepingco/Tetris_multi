@@ -7,10 +7,11 @@ It keeps inference planning separate from the current server authoritative trans
 
 ## Current Position
 
-No official PVE AI inference should run in the current multiplayer game loop.
-The current multiplayer state is still based on client runtime, input relay, server bag, and snapshot correction.
+No official PVE AI inference should run in the current multiplayer game loop yet.
+The project now has a first server authoritative input, ticker, state, and snapshot flow, while client prediction and correction remain part of the multiplayer experience.
+The final two-browser regression for this flow is still pending.
 
-Any official PVE opponent should wait until server authoritative state ownership is stable.
+Pure analysis modules may be implemented now, but an official PVE opponent should wait until server authoritative state ownership is verified through that regression.
 
 ## Heuristic Inference
 
@@ -113,6 +114,5 @@ The fallback behavior should be deterministic and testable.
 - ML model serving.
 - LLM coaching.
 - Browser-controlled official PVE opponent.
-- AI connected to server tick before server tick exists.
+- AI connected to the authoritative game loop before the final multiplayer regression passes.
 - Server authoritative loop and AI implementation in the same change.
-

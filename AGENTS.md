@@ -19,6 +19,29 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 - 이후에 AI 상대 구현 예정  
 - LLM은 게임 판단의 원천이 아니라, AI/분석 결과를 자연어로 풀어주는 후순위 기능  
 
+## 🧰 AI Harness 사용 규칙
+
+이 프로젝트는 작업별 보조 지침으로 `ai-harness/`를 사용한다.
+
+- 기본 규칙은 항상 이 `AGENTS.md`를 따른다.
+- 구조적인 작업을 시작할 때는 `ai-harness/README.md`를 확인한다.
+- 모든 하네스 파일을 한 번에 읽지 않고, 현재 요청에 맞는 작업 모드만 선택한다.
+- 학습 중심 요청에는 `ai-harness/guides/teaching-style.md`를 함께 적용한다.
+
+작업별 하네스:
+- 코드 설명과 문서화: `ai-harness/tasks/documentation.md`
+- 기능 구현: `ai-harness/tasks/implementation.md`
+- 점진적 리팩토링: `ai-harness/tasks/refactor.md`
+- 버그 원인 분석: `ai-harness/tasks/bug-analysis.md`
+- 변경 후 코드 리뷰: `ai-harness/tasks/review.md`
+- 규칙 기반 AI, feature, 데이터셋, ML 평가: `ai-harness/tasks/ai-analysis.md`
+
+실행 검증:
+- 런타임 코드, 테스트, 빌드/실행 동작을 변경한 뒤에는 완료 전에 `bash scripts/verify.sh`를 실행한다.
+- 문서만 변경한 경우에는 전체 테스트를 생략할 수 있다.
+- 검증이 실패하면 완료로 보고하지 않고 실패 원인과 미검증 범위를 설명한다.
+- 사용자가 직접 구현하겠다고 하면 코드를 대신 작성하지 않고 설계 순서, 힌트, 검증 기준을 제공한다.
+
 이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
 현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
 싱글플레이 진입점은 `src/client/pages/tetrisSingle.html`의 module script이며,  

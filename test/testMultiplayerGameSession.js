@@ -325,6 +325,7 @@ test("legacy game:snapshot은 상대 보드를 덮지 않고 authoritative snaps
     });
 
     assert.equal(session.opponentGame.getSnapshot().score, 20);
+    assert.equal(session.opponentGame.runtime.gravityRunning, false);
 
     sharedFakeSocket.emitServer("game:snapshot", {
         playerId: "player-opponent",
@@ -427,9 +428,9 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 증가하
     const myBaseSnapshot = session.myGame.getSnapshot();
     let applySnapshotCallCount = 0;
     const originalApplySnapshot = session.myGame.applySnapshot;
-    session.myGame.applySnapshot = (snapshot) => {
+    session.myGame.applySnapshot = (snapshot, options) => {
         applySnapshotCallCount += 1;
-        originalApplySnapshot(snapshot);
+        originalApplySnapshot(snapshot, options);
     };
     const serverSnapshot = {
         ...myBaseSnapshot,
@@ -458,9 +459,9 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하
     const serverBoard = cloneBoardWithGarbageCell(myBaseSnapshot);
     let applySnapshotCallCount = 0;
     const originalApplySnapshot = session.myGame.applySnapshot;
-    session.myGame.applySnapshot = (snapshot) => {
+    session.myGame.applySnapshot = (snapshot, options) => {
         applySnapshotCallCount += 1;
-        originalApplySnapshot(snapshot);
+        originalApplySnapshot(snapshot, options);
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
@@ -478,6 +479,7 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하
     assert.equal(applySnapshotCallCount, 1);
     assert.deepEqual(session.myGame.getSnapshot().board, serverBoard);
     assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 0);
+    assert.equal(session.myGame.runtime.gravityRunning, true);
 });
 
 test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소해도 board가 같으면 full apply하지 않는다", async (t) => {
@@ -489,9 +491,9 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소해
     const myBaseSnapshot = session.myGame.getSnapshot();
     let applySnapshotCallCount = 0;
     const originalApplySnapshot = session.myGame.applySnapshot;
-    session.myGame.applySnapshot = (snapshot) => {
+    session.myGame.applySnapshot = (snapshot, options) => {
         applySnapshotCallCount += 1;
-        originalApplySnapshot(snapshot);
+        originalApplySnapshot(snapshot, options);
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
@@ -518,9 +520,9 @@ test("내 playerId의 gameOver authoritative snapshot은 myGame에 full apply한
     const myBaseSnapshot = session.myGame.getSnapshot();
     let applySnapshotCallCount = 0;
     const originalApplySnapshot = session.myGame.applySnapshot;
-    session.myGame.applySnapshot = (snapshot) => {
+    session.myGame.applySnapshot = (snapshot, options) => {
         applySnapshotCallCount += 1;
-        originalApplySnapshot(snapshot);
+        originalApplySnapshot(snapshot, options);
     };
     const serverSnapshot = {
         ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
@@ -535,6 +537,7 @@ test("내 playerId의 gameOver authoritative snapshot은 myGame에 full apply한
     assert.equal(applySnapshotCallCount, 1);
     assert.equal(session.myGame.getSnapshot().phase, "gameOver");
     assert.equal(session.myGame.getSnapshot().score, serverSnapshot.score);
+    assert.equal(session.myGame.runtime.gravityRunning, false);
 });
 
 test("내 playerId snapshot이 local보다 앞서도 gameOver가 아니면 full apply하지 않는다", async (t) => {
@@ -545,9 +548,9 @@ test("내 playerId snapshot이 local보다 앞서도 gameOver가 아니면 full 
     const myBaseSnapshot = session.myGame.getSnapshot();
     let applySnapshotCallCount = 0;
     const originalApplySnapshot = session.myGame.applySnapshot;
-    session.myGame.applySnapshot = (snapshot) => {
+    session.myGame.applySnapshot = (snapshot, options) => {
         applySnapshotCallCount += 1;
-        originalApplySnapshot(snapshot);
+        originalApplySnapshot(snapshot, options);
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
@@ -583,9 +586,9 @@ test("내 local phase가 lineClearing이면 앞선 snapshot도 full apply하지 
 
     let applySnapshotCallCount = 0;
     const originalApplySnapshot = session.myGame.applySnapshot;
-    session.myGame.applySnapshot = (snapshot) => {
+    session.myGame.applySnapshot = (snapshot, options) => {
         applySnapshotCallCount += 1;
-        originalApplySnapshot(snapshot);
+        originalApplySnapshot(snapshot, options);
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {

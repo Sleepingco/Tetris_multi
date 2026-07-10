@@ -161,7 +161,7 @@ export function startMultiplayerGame({
             const localSnapshot = myGame.getSnapshot()
 
             if (shouldApplyOwnAuthoritativeSnapshot(snapshot, localSnapshot)) {
-                myGame.applySnapshot(snapshot)
+                myGame.applySnapshot(snapshot, { resumeGravity: true })
                 return
             }
 

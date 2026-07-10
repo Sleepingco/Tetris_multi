@@ -15,6 +15,7 @@
 - 버그를 재현 절차부터 원인 가설까지 정리하고 싶을 때
 - 큰 파일을 작은 책임 단위로 나누는 제안을 받고 싶을 때
 - 멀티플레이 구조를 단계적으로 설계하고 싶을 때
+- 규칙 기반 AI, feature, 데이터셋, ML 평가 기준을 정리하고 싶을 때
 - 코드 변경 후 회귀 위험을 검토하고 싶을 때
 
 ## 기본 원칙
@@ -23,6 +24,21 @@
 - 필요할 때만 `tasks/*.md`를 추가로 호출한다.
 - 학습 목적이 강하면 `guides/teaching-style.md`를 함께 적용한다.
 - 한 번에 큰 구조 변경보다 작은 diff와 검증 가능한 단계를 우선한다.
+
+## 실행 하네스
+
+코드 변경 후에는 아래 명령으로 공백 오류와 전체 테스트를 한 번에 확인한다.
+
+```bash
+bash scripts/verify.sh
+```
+
+이 스크립트는 다음 순서로 실행된다.
+
+1. `git diff --check`
+2. `npm test`
+
+문서만 변경한 경우에는 전체 테스트를 생략할 수 있다. 검증이 실패하면 실패 원인을 확인한 뒤 작업을 완료한다.
 
 ## 추천 작업 모드
 
@@ -36,6 +52,8 @@
   - 재현, 기대/실제 비교, 원인 추적, 수정 방향
 - `tasks/review.md`
   - 회귀 위험, 설계 위반, 테스트 누락 검토
+- `tasks/ai-analysis.md`
+  - AI 목표, state/data 계약, baseline, 평가 지표, 재현성 검토
 
 ## 공통 가이드
 
@@ -51,9 +69,12 @@
 ai-harness/tasks/bug-analysis.md 방식으로 이 버그를 봐줘
 
 ai-harness/tasks/refactor.md + ai-harness/guides/teaching-style.md 기준으로
-src/game/runtime/tetris.js 분리 방향을 제안해줘
+src/client/game/runtime/tetris.js 분리 방향을 제안해줘
 
 ai-harness/tasks/review.md 방식으로 이번 변경의 회귀 위험을 확인해줘
+
+ai-harness/tasks/ai-analysis.md + ai-harness/guides/teaching-style.md 기준으로
+placementGenerator를 내가 직접 구현할 수 있게 입력/출력 계약과 테스트 기준을 알려줘
 ```
 
 ## 현재 프로젝트에 맞는 추천 조합
@@ -66,5 +87,9 @@ ai-harness/tasks/review.md 방식으로 이번 변경의 회귀 위험을 확인
   - `refactor.md + teaching-style.md`
 - 멀티플레이 설계 검토
   - `documentation.md + refactor.md + teaching-style.md`
+- AI 분석과 heuristic 구현
+  - `documentation.md + ai-analysis.md + implementation.md + teaching-style.md`
+- AI 변경 후 확인
+  - `ai-analysis.md + review.md`
 - 코드 변경 후 확인
   - `review.md`

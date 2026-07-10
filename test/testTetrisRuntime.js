@@ -275,6 +275,34 @@ test("applySnapshot은 snapshot의 pieceIndex를 runtime에 반영한다", async
     assert.equal(game.runtime.pieceIndex, before.pieceIndex + 3);
 });
 
+test("applySnapshot은 resumeGravity 옵션과 playing phase가 함께 있을 때만 중력을 재개한다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        phase: "playing",
+    }, { resumeGravity: true });
+
+    assert.equal(game.runtime.gravityRunning, true);
+});
+
+test("applySnapshot은 gameOver snapshot에서 resumeGravity 요청을 무시한다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        phase: "gameOver",
+    }, { resumeGravity: true });
+
+    assert.equal(game.runtime.gravityRunning, false);
+});
+
 test("runtime은 next와 hold preview DOM을 렌더링한다", async (t) => {
     installDocumentStub();
     const { createTetrisRuntime } = await loadRuntime();

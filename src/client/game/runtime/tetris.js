@@ -1328,9 +1328,10 @@ export function createTetrisRuntime({
       * - 복원 직후 중력 누적값은 초기화해 이전 루프 상태가 이어지지 않게 한다.
       *
       * @param {Object|null} snapshot - 복원할 스냅샷
+      * @param {{resumeGravity?: boolean}} options - 복원 뒤 local gravity 재개 여부
       * @returns {void}
       */
-    function applySnapshot(snapshot) {
+    function applySnapshot(snapshot, { resumeGravity = false } = {}) {
         if (!snapshot) return
 
         const restored = deserializeGameState(snapshot, {
@@ -1373,6 +1374,10 @@ export function createTetrisRuntime({
             ui.hideGameOver()
         }
         renderBoard()
+
+        if (resumeGravity && gameState.phase === GAME_PHASE.PLAYING) {
+            startGravity()
+        }
     }
 
     /**

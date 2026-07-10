@@ -3,7 +3,8 @@
 ## Purpose
 
 This document defines the future PVE AI direction for the Tetris multiplayer project.
-The current codebase is still moving toward a server authoritative multiplayer model, so AI must not be connected to the active game loop yet.
+The codebase now has a first server authoritative input, ticker, state, and snapshot flow, but the final two-browser regression is still pending.
+Pure AI analysis utilities can move forward, while AI must not be connected to the active game loop until that regression is complete.
 
 The goal is to make AI a real opponent player later, not only a coaching recommendation layer.
 The first playable AI should be a heuristic AI that chooses a best placement from the current game state.
@@ -14,16 +15,17 @@ After stable logs are collected, the project can compare human choices and AI ch
 Implemented today:
 
 - Multiplayer room and match lifecycle exist on the server.
-- Client input is sent to the server and relayed after validation.
+- Client input is validated and applied to server-owned player game state.
 - Server bag chunks are created per player.
-- Client snapshots are sent through the server to the opponent.
+- A server authoritative ticker and snapshot flow exist.
+- Server-side garbage, game over, and match finish handling exist.
 - `placement_decision` logs and JSONL persistence exist.
+- `boardMetrics` and its pure-function tests exist.
 
 Not implemented yet:
 
-- Server authoritative tick loop.
-- Server-owned board, active piece, hold piece, score, phase, and lock timing.
-- Server-generated authoritative snapshots.
+- Final two-browser multiplayer regression for the authoritative flow.
+- `placementGenerator`, `simulatePlacement`, and `heuristicEvaluator`.
 - AI player connected to multiplayer or PVE game flow.
 - ML model training or inference.
 
@@ -97,8 +99,8 @@ This keeps the system explainable and easier to debug.
 
 ## Boundaries
 
-AI must not be attached to the current multiplayer game loop while server authoritative work is in progress.
-The safe work before that point is limited to pure functions, tests, and design documents.
+AI must not be attached to the multiplayer game loop until the current authoritative flow passes the final two-browser regression.
+The safe work before that point is limited to pure functions, tests, data contracts, and design documents.
 
 The PVE AI should not depend on browser DOM state.
 It should depend on serialized game state or server game state.
@@ -114,4 +116,3 @@ If added later, they should explain metrics, mistakes, and AI comparisons in nat
 - React or NestJS migration.
 - AI connected to the current multiplayer loop.
 - Server authoritative loop and AI implementation in the same change.
-

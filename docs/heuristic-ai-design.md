@@ -14,13 +14,15 @@ Current implementation:
 
 - Core board functions exist for collision, locking, and line clearing.
 - Runtime currently handles lock flow and placement logging on the client.
-- No board metrics module exists yet.
+- `boardMetrics` exists as a pure module with Node tests.
+- A first server authoritative input, ticker, state, and snapshot flow exists.
 - No placement generator, simulator, evaluator, or AI controller exists yet.
+- Final two-browser regression for the authoritative flow is still pending.
 
 Future implementation:
 
-- Pure AI utility modules calculate metrics and candidate placements.
-- The AI controller runs only after the authoritative game state boundary is stable.
+- Additional pure AI utility modules generate, simulate, and evaluate candidate placements.
+- The AI controller runs only after the authoritative game state boundary passes the final browser regression.
 - PVE mode uses the same game rules as human play.
 
 ## Components
@@ -158,4 +160,3 @@ The AI controller should wait until these server-side boundaries are stable:
 - placement logs can be generated from server-confirmed state
 
 Until then, implement only pure functions and documentation.
-

@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-03 기준. main은 `input relay + server bag + snapshot correction + garbage` 기반 멀티 MVP 상태로 본다. 과하게 커졌던 shadow/debug 실험은 별도 브랜치로 분리했고, main 계획에서는 서버 authoritative 재진입 전 client 책임 정리를 우선한다.
+- Last update: 2026-07-10 기준. main은 `server authoritative state + authoritative snapshot + server garbage/gameOver` 기반 멀티 MVP 상태로 본다. 과하게 커졌던 shadow/debug 실험은 별도 브랜치로 분리했고, main 계획에서는 debug/shadow 확장이 아니라 2탭 최종 회귀와 AI 분석 준비를 우선한다.
 
 ## Document Role
 
@@ -32,6 +32,20 @@
 
 ## Current Status
 
+### 2026-07-10 요약
+
+- 멀티 MVP는 기존 `client snapshot relay` 중심 구조에서 `server authoritative snapshot` 중심 구조로 전환됐다.
+- 서버는 player별 `authoritativeState`를 들고 `game:input`과 room ticker gravity step으로 상태를 갱신한다.
+- 상대 보드는 `game:authoritative:snapshot`만 full apply한다.
+- 내 보드는 client prediction을 우선하고, server snapshot은 제한적으로 적용한다.
+- client-driven `game:snapshot`, `game:garbage:attack`, `game:over` gameplay 경로는 제거됐다.
+- garbage 원천은 server `authoritativeState.pendingGarbageQueue`다.
+- client DTO에는 표시용 `pendingGarbageLines` scalar를 내려준다.
+- server gameOver가 match finish의 원천이다.
+- match cleanup, inputLog 상한, roomId collision retry가 보강됐다.
+- 자동 테스트 기준으로 멀티 MVP 핵심 구현은 완료에 가깝다.
+- 포트폴리오 시연 완료 판정은 2탭 수동 회귀 통과 후로 둔다.
+
 ### 구현된 것
 
 - [x] `createTetrisRuntime(...)` 도입
@@ -45,16 +59,16 @@
 - [x] `src/client/game/runtime/snapshotCorrection.js`에 원격 snapshot 보정 판단 유틸리티 존재
 - [x] `src/server/services/roomService.js`에 room 생성/참가/퇴장/시작/종료/동기화 로직 존재
 - [x] `src/server/services/matchService.js`에 match 생성, input log, player별 server bag chunk 로직 존재
-- [x] `src/server/sockets/multiplayerHandlers.js`에 `room:create`, `room:join`, `room:leave`, `room:start`, `game:join`, `game:input`, `game:snapshot`, `game:bag:request`, `game:over`, `disconnect` 흐름 존재
+- [x] `src/server/sockets/multiplayerHandlers.js`에 `room:create`, `room:join`, `room:leave`, `room:start`, `game:join`, `game:input`, legacy `game:snapshot`, `game:bag:request`, legacy `game:over`, `disconnect` 흐름 존재
 - [x] `src/server/sockets/chatHandlers.js`에 `global:chat`, `room:chat`, legacy `chatting` 흐름 분리
 - [x] `src/client/net/roomClient.js`에 room/chat/game 이벤트 adapter 함수 존재
 - [x] `src/client/pages/multiLobby.html`에서 방 코드, 상태, player 수 표시와 방 입장/나가기 UI 연결
 - [x] 로비 채팅을 `global:chat` / `room:chat`으로 분리
 - [x] 채팅 입력은 1초 1회 서버 rate limit과 plain text 렌더링 기준 적용
 - [x] `game:input` 1차 배관 추가: 클라이언트 입력을 서버 검증 후 같은 room 상대에게 전달
-- [x] `game:snapshot` 1차 배관 추가: 클라이언트 snapshot을 서버 검증 후 상대에게 전달
+- [x] `game:snapshot` 1차 배관 추가: 클라이언트 snapshot을 서버 검증 후 상대에게 전달했던 초기 단계 완료. 현재 gameplay 경로에서는 제거된 legacy 흐름이다.
 - [x] `game:bag:request` / `game:bag:append` 1차 배관 추가: 서버가 player별 bag chunk를 생성해 room에 전달
-- [x] `game:over` / `match:finish` 1차 배관 추가: top out 기준 승패 결과 broadcast
+- [x] `game:over` / `match:finish` 1차 배관 추가: top out 기준 승패 결과 broadcast. 현재 승패 확정은 server authoritative top-out 경로가 담당하고, client `game:over`는 legacy 입력으로 남아 있다.
 - [x] 멀티플레이 garbage cancel / combo / back-to-back / T-Spin attack 규칙 1차 추가
 - [x] `src/client/game/core/tSpin.js`에 T-Spin lock 판정 pure function 추가
 - [x] `src/client/game/core/attackState.js`에 combo/back-to-back 상태 전이 pure function 추가
@@ -63,6 +77,18 @@
 - [x] runtime 통합 테스트로 T-Spin, back-to-back, combo, 일반 line clear의 B2B reset이 `placementResult`에 반영되는지 검증
 - [x] `npm test`로 roomService, matchService, multiplayerSocket, runtime, move step, snapshot correction 주요 흐름 검증 가능
 - [x] `.gitignore`에 `node_modules/`, `.DS_Store`, `coverage/`, `dist/` 제외
+- [x] server authoritative player state 초기화
+- [x] `applyAuthoritativeInput()` 단일 public entry로 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold` 처리
+- [x] server lock 경로에서 line clear, score, combo, B2B, T-Spin, garbage cancel/apply, top-out 처리
+- [x] `authoritativeTickerService`로 room별 gravity tick과 authoritative snapshot emit 처리
+- [x] `game:authoritative:snapshot` 추가
+- [x] 상대 보드는 authoritative snapshot만 적용하도록 변경
+- [x] 내 보드는 prediction 우선, `gameOver` 또는 garbage 적용 snapshot만 제한적으로 full apply
+- [x] client-driven `game:snapshot`, `game:garbage:attack`, `game:over` gameplay 경로 제거
+- [x] `pendingGarbageLines` DTO로 incoming garbage 표시와 적용 correction 분리
+- [x] server authoritative match finish 공통 helper 추가
+- [x] 정상 gameOver와 `game:leave`에서 match cleanup 수행
+- [x] roomId 충돌 재시도와 `inputLog` 상한 추가
 
 ### 부분 완료
 
@@ -70,8 +96,8 @@
 - [~] `src/client/game/runtime/tetris.js`는 여전히 크고 orchestration 외 책임이 남아 있음
 - [~] RNG 주입 구조는 있음
 - [~] 기본 RNG는 아직 `Math.random`
-- [~] 로비와 멀티 게임 흐름은 연결됐지만 브라우저 2탭 기준 반복 회귀 검증이 필요함
-- [~] 멀티 게임은 input relay + server bag + snapshot correction 기반으로 동작하지만 서버 authoritative loop는 아님
+- [~] 로비와 멀티 게임 흐름은 연결됐고, 포트폴리오 시연 완료 전 브라우저 2탭 기준 반복 회귀 검증이 필요함
+- [~] 멀티 게임은 server authoritative snapshot 기반으로 전환됐지만, 내 보드 조작감과 correction 정책은 2탭 체감 검증이 필요함
 - [x] `src/client/pages/tetrisMulti.html`의 `snapshotTimer`에서 bag request와 game over 보고 조건을 함수 단위로 분리했다.
 - [x] `src/client/game/runtime/tetris.js`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
 - [~] `placementResult.backToBack`은 현재 “이번 lock 이후 상태”가 아니라 “이번 공격 계산에 사용된 이전 B2B 상태”에 가깝다. 추후 필요하면 `backToBackBefore` / `backToBackAfter`처럼 의미를 명확히 나누는 정리를 검토한다.
@@ -79,17 +105,17 @@
 ### 아직 미구현
 
 - [ ] 완전한 deterministic multiplayer
-- [ ] authoritative server match loop
-- [ ] 서버에서 input으로 game state를 계산하는 구조
-- [ ] 서버가 생성한 authoritative `game:snapshot` 전송
+- [ ] 서버/클라이언트 완전 동일 deterministic replay
+- [ ] 상대 보드 line clear 표시용 effect
 - [ ] `match:ready` 같은 명시적 준비 상태
 - [ ] 방 목록, quick match, match 결과 화면
 
 ### 현재 판단
 
-- 현재 구조는 "싱글 런타임 정리 + 멀티 로비 + 멀티 게임 MVP 동기화 + 게임성 규칙 1차 구현" 단계다.
-- 실제 멀티 게임은 동작 흐름이 생겼지만, 최종 진실 원천은 아직 서버가 아니라 클라이언트 예측 + snapshot 보정에 가깝다.
-- shadow/server authoritative 방향은 유지하지만, main에서는 바로 debug 실험을 키우지 않는다. 먼저 현재 client loop 책임 정리, pure logic 후보 분리, runtime 통합 테스트 보강을 진행한 뒤 shadow로 재진입한다.
+- 현재 구조는 "싱글 런타임 정리 + 멀티 로비 + server authoritative 멀티 MVP" 단계다.
+- 실제 멀티 게임의 최종 진실 원천은 server authoritative state로 이동했다.
+- 내 보드는 조작감을 위해 client prediction을 유지하고, 서버 snapshot은 gameOver/garbage 적용 등 제한된 상황에서만 full apply한다.
+- shadow/debug 방향은 현재 main 우선순위가 아니다. debug 시스템을 다시 키우지 않고, 2탭 회귀 통과 후 AI 분석 로그와 평가 지표로 넘어간다.
 
 ## Current Architecture
 
@@ -103,12 +129,14 @@
 - `src/client/pages/tetrisMulti.html`
   - 세션의 room/player 정보를 검증하고 실패 시 로비로 되돌린다.
   - host/guest 역할에 따라 local canvas와 remote canvas를 배정한다.
-  - local runtime과 opponent runtime을 각각 생성한다.
-  - local 입력은 `game:input`으로 서버에 보내고, 상대 입력은 opponent runtime에 enqueue한다.
-  - local snapshot은 500ms마다 서버에 보내고, 상대 snapshot은 `snapshotCorrection` 기준으로 opponent runtime에 보정 적용한다.
+  - `startMultiplayerGame(...)`을 호출해 local runtime과 opponent runtime, socket listener, heartbeat cleanup을 구성한다.
+  - local 입력은 `game:input`으로 서버에 보내고, local runtime prediction에도 enqueue한다.
+  - 상대 runtime은 `autoStart: false`이며, 상대 입력 relay를 예측 실행하지 않는다.
+  - 상대 보드는 `game:authoritative:snapshot`을 full apply한다.
+  - 내 보드는 client prediction을 우선하고, own authoritative snapshot은 pending garbage 표시와 제한된 correction에만 사용한다.
   - server bag chunk를 받아 local/opponent runtime에 append한다.
   - `match:finish`를 받아 승패 표시와 로비 복귀 버튼을 처리한다.
-  - 현재 `snapshotTimer`는 snapshot 전송 후 server bag 부족 확인/request와 game over 보고를 함수 단위로 호출한다.
+  - 현재 heartbeat는 server bag 부족 확인/request만 유지한다.
 - `src/client/pages/multiLobby.html`
   - room create/join/leave UI와 Socket.IO room 상태 표시 연결
   - `room:result`, `room:updated`, `room:message`를 받아 방 코드, 상태, 인원 수, 시스템 메시지 반영
@@ -173,9 +201,12 @@
 - `src/client/game/runtime/snapshotCorrection.js`
   - `isSamePiece`
   - `shouldCorrectSnapshot`
-- `shouldCorrectSnapshot`은 `pieceIndex`, `phase`, `activePiece` 차이뿐 아니라 상대 표시용 `score` / `lines` drift도 보정 대상으로 본다.
-- 현재 snapshot은 멀티 화면에서 500ms 주기로 전송되고, 상대 runtime 보정에 사용된다.
-- 단, snapshot을 만드는 주체는 아직 클라이언트다. 서버 authoritative snapshot은 아니다.
+- `shouldCorrectSnapshot`은 legacy client snapshot correction 테스트 기준으로 남아 있다.
+- 현재 멀티 gameplay의 주 snapshot은 서버가 만든 `game:authoritative:snapshot`이다.
+- 상대 보드는 authoritative snapshot을 full apply한다.
+- 내 보드는 prediction 우선 정책을 유지하며, 다음 경우에만 full apply한다.
+  - `snapshot.phase === "gameOver"`
+  - local phase가 `lineClearing`이 아니고, `pendingGarbageLines`가 감소했으며, server board가 local board와 다른 경우
 
 ### Server and room layer
 
@@ -190,8 +221,15 @@
   - `createRoom`, `joinRoom`, `removePlayer`, `removePlayerBySocketId`, `leaveRoom`, `startGame`, `leaveGame`, `syncRoom`, `finishGame`, `getRoomState`를 제공한다.
 - `src/server/services/matchService.js`
   - `Map` 기반 메모리 match 상태를 관리한다.
-  - `createMatch`, `getMatchState`, `recordInput`, `appendPlayerBagChunk`, `resetMatches`를 제공한다.
-  - player별 `inputLog`와 `bagChunks`를 갖지만, 아직 게임 상태를 직접 계산하지는 않는다.
+  - `createMatch`, `getMatchState`, `deleteMatch`, `recordInput`, `appendPlayerBagChunk`, `getAuthoritativePlayerSnapshotDto`, `resetMatches`를 제공한다.
+  - player별 `inputLog`, `bagChunks`, `authoritativeState`를 갖는다.
+  - `inputLog`는 player별 1000개 상한을 갖고, `nextInputSequence`로 전체 입력 순서를 유지한다.
+- `src/server/services/authoritativeTickerService.js`
+  - room별 authoritative gravity ticker lifecycle을 관리한다.
+  - 100ms interval에서 500ms 누적 기준으로 gravity step과 snapshot emit을 처리한다.
+- `src/server/services/authoritativeMatchFinish.js`
+  - input 경로와 ticker 경로의 authoritative gameOver side effect를 공통 처리한다.
+  - ticker stop, `match:finish`, `deleteMatch`, `game_over` log 저장을 한 곳에서 관리한다.
 - `src/server/sockets/multiplayerHandlers.js`
   - room/game Socket.IO 이벤트 입구다.
   - `room:create`, `room:join`, `room:leave`, `room:sync`, `room:start`, `game:*`, `disconnect`를 등록한다.
@@ -205,7 +243,8 @@
 
 - `src/client/net/roomClient.js`
   - 브라우저 Socket.IO room adapter다.
-  - create/join/leave/start 요청, room result/update/message 구독, global/room chat 송수신, game join/input/snapshot/bag/finish 함수를 제공한다.
+  - create/join/leave/start 요청, room result/update/message 구독, global/room chat 송수신, game join/input/bag/authoritative snapshot/finish 함수를 제공한다.
+  - legacy gameplay source였던 `game:snapshot`, `game:garbage:attack`, `game:over` 송신 경로는 사용하지 않는다.
 - `src/client/net/chat.js`
   - 기존 채팅 adapter다. 현재 멀티 로비의 주 채팅 경로는 `roomClient.js`다.
 
@@ -312,17 +351,18 @@
 ### snapshot 방향
 
 - `snapshot`은 멀티 sync와 remote render를 위한 상태 복사본이다.
-- 현재는 클라이언트가 만든 snapshot을 서버가 검증 후 상대에게 전달하고, 상대 runtime에 보정용으로 적용한다.
-- snapshot 전송 주기는 500ms로 낮췄다. 현재 snapshot은 주 표시 수단이 아니라, input 예측 실행이 어긋났을 때 따라잡는 보정 장치다.
-- snapshot 보정은 `pieceIndex` 기준으로 제한한다.
-  - 과거 `pieceIndex` snapshot은 무시한다.
-  - 미래 `pieceIndex` snapshot은 뒤처진 상대 보드를 따라잡기 위해 적용한다.
-  - 같은 `pieceIndex`에서는 `phase` 또는 `activePiece` 차이가 있을 때만 적용한다.
-- 상대 runtime이 hard drop을 예측 실행하면서 drop distance가 1칸 다르면 score가 2점 어긋날 수 있으므로, 현재는 `score` / `lines` 차이도 snapshot correction 조건에 포함한다.
-- 이후 input 중심 구조에서는 서버가 계산한 authoritative snapshot을 클라이언트에게 내려주는 방향으로 전환한다.
-- 아직 없는 것:
-  - 서버에서 snapshot 생성
-  - remote runtime에 authoritative state 반영
+- 현재 멀티 gameplay의 기준 snapshot은 서버가 만든 `game:authoritative:snapshot`이다.
+- 클라이언트가 만든 `game:snapshot` relay는 gameplay 경로에서 제거됐다.
+- 상대 보드는 authoritative snapshot을 full apply한다.
+- 내 보드는 client prediction을 우선한다.
+- 내 playerId snapshot 처리 정책:
+  - `pendingGarbageLines`는 표시용으로 갱신한다.
+  - `phase: "gameOver"` snapshot은 full apply한다.
+  - `pendingGarbageLines`가 감소했고 board가 달라진 snapshot은 server garbage가 실제 board에 적용된 결과로 보고 full apply한다.
+  - local phase가 `lineClearing`이면 gameOver가 아닌 full apply는 막는다.
+  - 단순 `pieceIndex` ahead만으로는 full apply하지 않는다.
+- snapshot DTO에는 `pendingGarbageQueue`를 직접 노출하지 않는다.
+- 표시용 scalar인 `pendingGarbageLines`만 포함한다.
 
 ### placementResult 의미
 
@@ -401,12 +441,12 @@
 - [x] Socket.IO room 단위 `room:updated`, `room:message` broadcast 가능
 - [x] 멀티 게임 페이지에서 local/remote runtime 연결
 - [x] local 입력을 `game:input`으로 서버에 전송하고, 서버가 room/player/action 검증 후 상대에게 전달
-- [x] snapshot 수신 후 remote runtime 보정 반영
+- [x] server authoritative snapshot 수신 후 상대 runtime full apply
 - [x] `server bag`을 match/player별로 생성하고 클라이언트 runtime에 공급
 - [x] `pieceIndex`를 snapshot/input에 포함하고, 오래된 입력이 현재 조각에 적용되지 않도록 제한
 - [x] 같은 tick/pieceIndex에 과도한 입력이 쌓이지 않도록 runtime input queue에서 제한
-- [x] 상대 보드는 현재 `autoStart: true`로 예측 실행하고 snapshot으로 보정
-- [x] 상대 보드 score/lines drift도 snapshot correction으로 보정
+- [x] 상대 보드는 `autoStart: false`로 두고 server authoritative snapshot으로만 갱신
+- [x] 내 보드는 prediction 우선, pending garbage/gameOver/garbage apply snapshot만 제한적으로 correction
 - [ ] 두 브라우저 탭 기준 create/join/start/play/finish/lobby 복귀 수동 회귀 검증
 - [ ] 명시적 ready 흐름 도입 여부 결정
 - [x] 서버 match 상태 초안
@@ -417,7 +457,7 @@
 
 ### 현재 단계
 
-- 이름: Multiplayer MVP gameplay and sync stabilization before shadow/server authoritative re-entry
+- 이름: Server authoritative multiplayer MVP final verification
 
 ### 진행 현황
 
@@ -431,24 +471,25 @@
 - [x] 클라이언트 로비 room create/join/leave UI 연결
 - [x] roomService와 multiplayerSocket Node 테스트 추가
 - [~] `src/client/game/runtime/tetris.js` 축소 진행 중
-- [~] snapshot correction 기반 멀티 보정 중
-- [~] `game:input` 기반 authoritative 전환 준비 중
-- [~] room/start/game sync MVP는 연결됐고 안정화 검증이 필요함
-- [~] 현재 멀티 게임은 input relay + server bag + snapshot correction 기반으로 동작
-- [~] garbage cancel / combo / back-to-back / T-Spin attack은 구현됐고, 2탭 기준 안정성 확인이 필요함
+- [x] server authoritative snapshot 기반 멀티 보정으로 전환
+- [x] `game:input` 기반 server authoritative input apply 연결
+- [x] room/start/game sync MVP는 연결됨
+- [x] 현재 멀티 게임은 server bag + server authoritative state + authoritative snapshot 기반으로 동작
+- [x] garbage cancel / combo / back-to-back / T-Spin attack은 서버 lock 결과 기준으로 처리
 - [x] T-Spin, back-to-back, combo, 일반 line clear의 B2B reset은 runtime 통합 테스트로 `placementResult` 반영을 검증함
 - [~] shadow/debug 실험은 별도 브랜치로 분리했고, main에서는 바로 확장하지 않음
-- [ ] 실제 authoritative match/game loop 시작 전
+- [x] authoritative input/ticker loop 시작
+- [ ] 2탭 수동 회귀로 MVP 완료 판정
 
 ### 현재 단계의 핵심 문제
 
 - `src/client/game/runtime/tetris.js`가 아직 크다.
-- 현재 snapshot은 보정용으로 적용되지만, 서버 authoritative snapshot은 아직 아니다.
-- `game:input`은 서버 검증/전달/inputLog 저장까지 연결됐지만 서버가 입력으로 게임 상태를 계산하지는 않는다.
-- 상대 보드는 `autoStart: true`로 로컬 예측 실행 중이므로, 최종 진실 원천은 아직 서버가 아니다.
+- 현재 snapshot의 주 원천은 server authoritative state다.
+- `game:input`은 서버 검증/전달/inputLog 저장뿐 아니라 server authoritative state에도 반영된다.
+- 상대 보드는 로컬 예측 실행이 아니라 authoritative snapshot으로만 갱신된다.
 - deterministic 설계는 방향만 있고, 현재 MVP 구현 기준은 아니다.
-- `src/client/pages/tetrisMulti.html`의 `snapshotTimer` 책임은 함수 단위로 1차 분리됐다.
-- 다만 network orchestration 책임은 여전히 페이지 진입점에 모여 있어, 2탭 회귀 검증으로 snapshot, bag request, game over 흐름을 확인해야 한다.
+- `src/client/pages/tetrisMulti.html`의 멀티 세션 책임은 `src/client/game/entry/multiplayerGameSession.js`로 분리됐다.
+- 2탭 회귀 검증으로 authoritative snapshot, bag request, garbage, game over 흐름을 확인해야 한다.
 - `placementResult.backToBack`은 현재 계산에 사용된 이전 B2B 상태를 나타내므로, 테스트와 문서에서 “이번 lock 이후 상태”로 오해하지 않도록 주의해야 한다.
 
 ### Phase 1 완료 조건
@@ -471,27 +512,25 @@
 
 ### 바로 해야 할 일
 1. 브라우저 2탭 멀티 플레이 회귀 검증
-   - garbage cancel, combo, back-to-back, T-Spin attack이 실제 플레이에서 안정적인지 확인
-   - 빠른 이동/회전 연타
-   - 블록 안착 직후 다음 블록 조작
-   - 상대 보드가 과거 블록으로 되돌아가지 않고 snapshot으로 보정되는지 확인
-   - score/lines drift가 snapshot correction으로 보정되는지 확인
-   - game over, lobby 복귀, 재입장 흐름 확인
-2. runtime 통합 테스트 보강 상태 정리
-   - T-Spin Single, back-to-back Tetris, combo bonus, 일반 line clear의 B2B reset은 검증됨
-   - 남은 테스트 후보는 socket/client 경계의 `placementDecisionRecorder -> sendGarbageAttack`과 `receiveGarbageAppend -> queueGarbageLines` 연결이다.
-3. pure logic으로 뺄 후보 정리
-   - 당장 전체 runtime을 옮기지 않는다.
-   - 서버에서도 쓸 수 있는 후보와 DOM/canvas에 묶인 후보를 구분한다.
-   - 이미 분리된 후보: T-Spin 판정, attack state 전이, garbage cancel/attack 계산
-   - 다음 후보: gravity tick, input 적용, lock/spawn, line clear, game over 판정
-4. shadow 재진입
-   - debug 시스템을 다시 키우는 것이 아니라, 최소 비교 기준으로 서버 계산 실험을 재개한다.
-   - 비교 대상은 `tick`, `pieceIndex`, `phase`, `board`, `activePiece`, `pendingGarbage`, score/lines 정도로 제한한다.
-5. 서버 authoritative 전환 설계 시작
-   - 서버에서 player별 game state를 어디에 둘지 결정
-   - 서버에서 `step(state, input)`을 호출할 수 있게 runtime/core 경계 정리
-   - 서버가 내려줄 authoritative snapshot 형식 정의
+   - room create / join / start
+   - 양쪽 입력 반응
+   - 상대 보드가 authoritative snapshot으로 자연스럽게 갱신되는지 확인
+   - 내 보드 line clear effect가 끊기지 않는지 확인
+   - incoming garbage 숫자와 실제 garbage board 적용이 맞는지 확인
+   - Tetris, combo, B2B, T-Spin attack이 실제 플레이에서 체감되는지 확인
+   - top-out / gameOver / match finish / lobby 복귀 확인
+   - leave / disconnect / 재입장 흐름 확인
+2. 상대 보드 line clear 표시용 effect 검토
+   - 서버 snapshot DTO에 표시용 `lineClearEffect`를 넣을지 결정한다.
+   - 소리는 재생하지 않는다.
+   - 같은 effect가 반복 재생되지 않도록 `pieceIndex` 또는 effect key를 둔다.
+3. AI 분석 단계 진입 준비
+   - placement decision log에서 AI 분석에 필요한 최소 feature를 정리한다.
+   - board metric, placement quality, attack/cancel/garbage 결과를 비교 대상으로 잡는다.
+   - LLM은 아직 붙이지 않고, rule-based 분석/추천 기준부터 만든다.
+4. 문서/커밋 정리
+   - server authoritative 전환 커밋과 안정화 커밋을 구분해 유지한다.
+   - `.DS_Store` 같은 로컬 파일은 커밋하지 않는다.
 
 ### 권장 구현 순서
 
@@ -508,16 +547,19 @@
 - [x] Step 8-1. 상대 보드 score/lines drift를 snapshot correction 조건에 포함
 - [x] Step 8-2. T-Spin / attack state / garbage cancel 계산 일부를 core pure logic으로 분리
 - [x] Step 8-3. T-Spin / B2B / combo / B2B reset runtime 통합 테스트 추가
-- [ ] Step 9. 서버가 input으로 game state를 계산할 수 있는 순수 step 후보 정리
-- [ ] Step 10. shadow 서버 계산 실험으로 재진입
-- [ ] Step 11. 서버 authoritative snapshot 방향으로 전환
+- [x] Step 9. 서버가 input으로 game state를 계산할 수 있는 core 함수/서버 wrapper 연결
+- [x] Step 10. server authoritative input/ticker loop 추가
+- [x] Step 11. 서버 authoritative snapshot 방향으로 전환
+- [ ] Step 12. 2탭 수동 회귀 통과
+- [ ] Step 13. AI 분석 feature와 rule-based baseline 설계
 
 ### 이후 단계
 
 - [ ] deterministic RNG를 실제로 주입 가능한 구조로 마무리
 - [ ] seed 기반 replay 실험
-- [ ] authoritative tick과 snapshot 주기 정리
-- [ ] multiplayer MVP 완료 후 AI 단계로 이동
+- [x] authoritative tick과 snapshot 주기 1차 정리
+- [ ] 2탭 회귀 통과 후 multiplayer MVP 완료 선언
+- [ ] multiplayer MVP 완료 후 AI 분석 단계로 이동
 - [ ] 플레이 로그 수집과 사용자 행동 feature 추출
 - [ ] rule-based AI와 사용자 수 비교 지표 추가
 - [ ] LLM 코칭 리포트는 분석 지표와 AI 비교 결과가 준비된 뒤 검토
@@ -696,9 +738,20 @@
 - 허용 action은 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold`다.
 - `matchService.recordInput()`으로 action, tick, pieceIndex를 저장한다.
 - 정상 input은 같은 Socket.IO room의 상대에게 `game:input`으로 전달한다.
+- 이후 server authoritative state에 input을 best-effort로 적용한다.
+- authoritative apply 성공 시 `game:authoritative:snapshot`을 emit한다.
+- lock 결과로 garbage attack이 생기면 target player의 authoritative snapshot도 즉시 emit한다.
 - 실패 시 요청자에게 `game:input:result`를 보낸다.
 
 ### `game:snapshot`
+
+현재 상태:
+- legacy client-driven snapshot event다.
+- server authoritative 전환 후 gameplay source로 사용하지 않는다.
+- client session은 더 이상 `game:snapshot`을 송신하지 않는다.
+- 상대 보드도 `game:snapshot`이 아니라 `game:authoritative:snapshot`을 따른다.
+
+과거 payload 형태:
 
 ```json
 {
@@ -722,14 +775,47 @@
 }
 ```
 
-현재 서버 처리:
+legacy 서버 처리:
 - room 참가자인지 확인한다.
 - `snapshot.board`가 배열인지 최소 검증한다.
-- 정상 snapshot은 같은 Socket.IO room의 상대에게 `game:snapshot`으로 전달한다.
+- 정상 snapshot relay 경로는 남아 있을 수 있으나, 현재 client gameplay는 이를 사용하지 않는다.
 - 실패 시 요청자에게 `game:snapshot:result`를 보낸다.
+
+### `game:authoritative:snapshot`
+
+현재 구현 기준:
+
+```json
+{
+  "roomId": "ABCD1234",
+  "playerId": "player_a",
+  "snapshot": {
+    "board": [],
+    "activePiece": {
+      "pieceType": "tree",
+      "rotation": 1,
+      "row": 5,
+      "col": 4
+    },
+    "pieceQueue": ["square", "zee"],
+    "holdPieceType": "bar",
+    "holdUsedThisDrop": false,
+    "score": 1200,
+    "lines": 4,
+    "phase": "playing",
+    "combo": 1,
+    "backToBack": true,
+    "tick": 42,
+    "pieceIndex": 10,
+    "pendingGarbageLines": 3
+  }
+}
+```
+
 현재 클라이언트 처리:
-- 상대 snapshot은 `shouldCorrectSnapshot()` 기준으로 opponent runtime에 보정 적용한다.
-- 현재 correction 기준에는 `pieceIndex`, `phase`, `activePiece`, `score`, `lines` 차이가 포함된다.
+- `playerId === opponentPlayerId`이면 opponent runtime에 full apply한다.
+- `playerId === my playerId`이면 `pendingGarbageLines`를 표시한다.
+- 내 snapshot full apply는 `gameOver` 또는 garbage 적용 correction 조건을 통과한 경우로 제한한다.
 
 ### `game:bag:request`
 
@@ -771,11 +857,17 @@
 현재 서버 처리:
 - playing room에서만 처리한다.
 - 정상 처리 시 요청 socket을 room에서 leave하고 상대에게 `game:opponent-left`를 보낸다.
+- room ticker를 멈추고 `deleteMatch(roomId)`로 match를 정리한다.
 - 요청자에게 `game:leave:result`를 보낸다.
 
 ### `game:over`
 
-현재 구현 기준:
+현재 상태:
+- legacy client report event다.
+- server authoritative 전환 후 match finish의 원천으로 사용하지 않는다.
+- client session은 더 이상 `game:over`를 송신하지 않는다.
+
+과거 payload 형태:
 
 ```json
 {
@@ -786,10 +878,9 @@
 ```
 
 현재 서버 처리:
-- `finishGame(roomId, loserPlayerId, reason)`으로 room status를 `finished`로 바꾼다.
-- 상대 player를 winner로 계산한다.
-- 성공 시 room 전체에 `match:finish`를 보낸다.
-- 실패 시 요청자에게 `game:over:result`를 보낸다.
+- legacy `game:over`는 match finish를 처리하지 않는다.
+- 실제 game over는 server authoritative input/ticker lock 결과에서 발생한다.
+- authoritative game over는 `finishAuthoritativeMatch()`가 처리한다.
 
 ### `match:finish`
 
@@ -811,8 +902,7 @@
 
 - `match:ready`
 - `match:start`
-- 서버가 직접 생성한 authoritative `game:snapshot`
-- 서버 tick loop 기반 `game:state`
+- 상대 line clear 표시용 effect event 또는 snapshot field
 
 ## Later Roadmap
 

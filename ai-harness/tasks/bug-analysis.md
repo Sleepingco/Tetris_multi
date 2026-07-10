@@ -32,10 +32,18 @@
 - 상태 변화가 있는 경계마다 로그 포인트를 제안한다.
 - 원인을 설명할 수 없는 수정은 지양한다.
 
-## 로그 추천 예시
+## 게임 실행 흐름 버그일 때 로그 예시
 
 - 입력 큐 push 시점
 - `renderBlocks()` 진입/종료
 - `resolveMoveAttempt()` 결과
 - `seizeBlock()` 이후 board 변화
 - `checkMatch()`의 full row 판정
+
+## AI 분석 로직 버그일 때 확인할 것
+
+- 입력 state와 생성된 후보 수
+- 후보가 제외된 이유
+- 후보별 metric, weight, 최종 score
+- 동점 처리와 최종 선택 결과
+- simulation 전후 원본 board 변경 여부
