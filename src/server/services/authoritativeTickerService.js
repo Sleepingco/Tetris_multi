@@ -124,7 +124,12 @@ function createAuthoritativeTickerService(dependencies = {}) {
             if (!stepResult.ok) continue;
 
             const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
-            const snapshot = emitAuthoritativeSnapshot(roomId, playerId, socketServer);
+            const snapshot = emitAuthoritativeSnapshot(
+                roomId,
+                playerId,
+                socketServer,
+                stepResult.presentationEffect,
+            );
             if (placementSideEffect?.targetPlayerId) {
                 emitAuthoritativeSnapshot(roomId, placementSideEffect.targetPlayerId, socketServer);
             }
@@ -147,15 +152,25 @@ function createAuthoritativeTickerService(dependencies = {}) {
         }
     }
 
-    function emitAuthoritativeSnapshot(roomId, playerId, socketServer) {
+    function emitAuthoritativeSnapshot(
+        roomId,
+        playerId,
+        socketServer,
+        presentationEffect = null,
+    ) {
         const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId);
         if (!snapshotResult.ok) return null;
 
-        socketServer.to(roomId).emit("game:authoritative:snapshot", {
+        const payload = {
             roomId,
             playerId,
             snapshot: snapshotResult.snapshot,
-        });
+        };
+        if (presentationEffect) {
+            payload.presentationEffect = presentationEffect;
+        }
+
+        socketServer.to(roomId).emit("game:authoritative:snapshot", payload);
 
         return snapshotResult.snapshot;
     }

@@ -232,6 +232,17 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
     }
     gameCore.lockPieceOnBoard(authoritativeState.board, lockedPiece, gameCore.BLOCKS);
 
+    const clearedRows = topOut
+        ? []
+        : findFilledRows(authoritativeState.board);
+    const presentationEffect = clearedRows.length > 0
+        ? {
+            type: "line_clear",
+            pieceIndex: lockedPieceIndex,
+            rows: clearedRows,
+            boardBeforeClear: cloneBoard(authoritativeState.board),
+        }
+        : null;
     const linesCleared = topOut
         ? 0
         : gameCore.clearFilledLines(authoritativeState.board);
@@ -282,6 +293,7 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
     return {
         ok: true,
         reason: null,
+        ...(presentationEffect ? { presentationEffect } : {}),
         placementResult: {
             pieceIndex: lockedPieceIndex,
             lockedPiece,
@@ -302,6 +314,21 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
             nextPiece,
         },
     };
+}
+
+function findFilledRows(board) {
+    if (!Array.isArray(board)) return [];
+
+    return board.reduce((filledRows, row, rowIndex) => {
+        if (Array.isArray(row) && row.length > 0 && row.every(cell => cell !== null)) {
+            filledRows.push(rowIndex);
+        }
+        return filledRows;
+    }, []);
+}
+
+function cloneBoard(board) {
+    return board.map(row => [...row]);
 }
 
 function applyPendingGarbageQueue(authoritativeState, gameCore) {

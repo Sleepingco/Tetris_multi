@@ -423,6 +423,138 @@ test("legacy game:snapshot은 상대 보드를 덮지 않고 authoritative snaps
     assert.equal(session.opponentGame.getSnapshot().score, 20);
 });
 
+test("상대 authoritative snapshot은 full apply 후 line clear presentation을 정확히 1회 재생한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const callOrder = [];
+    const presentations = [];
+    const originalApplySnapshot = session.opponentGame.applySnapshot;
+    session.opponentGame.applySnapshot = (snapshot, options) => {
+        callOrder.push("applySnapshot");
+        originalApplySnapshot(snapshot, options);
+    };
+    session.opponentGame.playLineClearPresentation = (effect) => {
+        callOrder.push("playLineClearPresentation");
+        presentations.push(effect);
+        return true;
+    };
+    const snapshot = createAuthoritativeSnapshot({
+        pieceIndex: 8,
+        tick: 20,
+    });
+    const boardBeforeClear = snapshot.board.map(row => [...row]);
+    boardBeforeClear[19] = Array(10).fill("bar");
+    const presentationEffect = {
+        id: "player-opponent:7:line_clear",
+        type: "line_clear",
+        pieceIndex: 7,
+        rows: [19],
+        boardBeforeClear,
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-opponent",
+        snapshot,
+        presentationEffect,
+    });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-opponent",
+        snapshot,
+        presentationEffect,
+    });
+
+    assert.deepEqual(callOrder, [
+        "applySnapshot",
+        "playLineClearPresentation",
+        "applySnapshot",
+    ]);
+    assert.deepEqual(presentations, [{ rows: [19], board: boardBeforeClear }]);
+    assert.deepEqual(session.opponentGame.getSnapshot().board, snapshot.board);
+    assert.equal(session.opponentGame.runtime.gravityRunning, false);
+});
+
+test("상대 presentation은 오래된 pieceIndex를 거부하고 own player effect를 무시한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    let opponentPresentationCount = 0;
+    let ownPresentationCount = 0;
+    session.opponentGame.playLineClearPresentation = () => {
+        opponentPresentationCount += 1;
+        return true;
+    };
+    session.myGame.playLineClearPresentation = () => {
+        ownPresentationCount += 1;
+        return true;
+    };
+    const opponentSnapshot = createAuthoritativeSnapshot({ pieceIndex: 10, tick: 30 });
+    const boardBeforeClear = opponentSnapshot.board.map(row => [...row]);
+    boardBeforeClear[18] = Array(10).fill("square");
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-opponent",
+        snapshot: opponentSnapshot,
+        presentationEffect: {
+            id: "player-opponent:9:line_clear",
+            type: "line_clear",
+            pieceIndex: 9,
+            rows: [18],
+            boardBeforeClear,
+        },
+    });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-opponent",
+        snapshot: opponentSnapshot,
+        presentationEffect: {
+            id: "player-opponent:8:line_clear",
+            type: "line_clear",
+            pieceIndex: 8,
+            rows: [18],
+            boardBeforeClear,
+        },
+    });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: createAuthoritativeSnapshot({ pieceIndex: 9, tick: 30 }),
+        presentationEffect: {
+            id: "player-me:8:line_clear",
+            type: "line_clear",
+            pieceIndex: 8,
+            rows: [18],
+            boardBeforeClear,
+        },
+    });
+
+    assert.equal(opponentPresentationCount, 1);
+    assert.equal(ownPresentationCount, 0);
+    assert.equal(session.opponentGame.runtime.gravityRunning, false);
+});
+
+test("effect 없는 authoritative snapshot은 presentation 호출 없이 기존처럼 적용한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    let presentationCount = 0;
+    session.opponentGame.playLineClearPresentation = () => {
+        presentationCount += 1;
+        return true;
+    };
+    const snapshot = createAuthoritativeSnapshot({ score: 30, tick: 4 });
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-opponent",
+        snapshot,
+    });
+
+    assert.equal(presentationCount, 0);
+    assert.equal(session.opponentGame.getSnapshot().score, 30);
+    assert.equal(session.opponentGame.runtime.gravityRunning, false);
+});
+
 test("같은 pieceIndex의 board drift는 A local과 B의 A 보드를 같은 snapshot으로 수렴시킨다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const sessionA = startMultiplayerGame(createSessionParams());

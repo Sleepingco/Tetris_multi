@@ -264,6 +264,15 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
                     attackLines: playerId === "p1" ? 2 : 0,
                     gameOver: false,
                 },
+                presentationEffect: playerId === "p1"
+                    ? {
+                        id: "p1:3:line_clear",
+                        type: "line_clear",
+                        pieceIndex: 3,
+                        rows: [19],
+                        boardBeforeClear: [["bar"]],
+                    }
+                    : undefined,
             };
         },
         appendPendingGarbageToOpponent(roomId, fromPlayerId, garbage) {
@@ -313,10 +322,17 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
         return event.eventName === "game:authoritative:snapshot"
             && event.payload.playerId === "p2";
     });
+    const p1SnapshotEvent = socketServer.roomEvents.find(event => {
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === "p1";
+    });
 
     assert.equal(garbageEvent, undefined);
+    assert.equal(p1SnapshotEvent.payload.presentationEffect.id, "p1:3:line_clear");
+    assert.deepEqual(p1SnapshotEvent.payload.presentationEffect.rows, [19]);
     assert.equal(p2SnapshotEvent.payload.snapshot.pendingGarbageLines, 2);
     assert.equal(Object.hasOwn(p2SnapshotEvent.payload.snapshot, "pendingGarbageQueue"), false);
+    assert.equal(Object.hasOwn(p2SnapshotEvent.payload, "presentationEffect"), false);
 });
 
 test("ticker callback은 마지막 player attack도 target snapshot을 즉시 emit한다", async () => {

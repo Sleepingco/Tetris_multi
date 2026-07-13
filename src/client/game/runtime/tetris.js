@@ -342,6 +342,10 @@ export function createTetrisRuntime({
         }).length
     }
 
+    function getPendingInputCount() {
+        return gameState.inputQueue.length
+    }
+
     /**
       * 한 번의 입력 틱에서 제한된 개수만큼 입력 큐를 소비한다.
       *
@@ -902,7 +906,7 @@ export function createTetrisRuntime({
       * @param {Function} onComplete - 애니메이션 종료 후 실행할 콜백
       * @returns {void}
       */
-    function addLineClearEffect(rows, onComplete) {
+    function addLineClearEffect(rows, onComplete, board = gameState.board) {
         if (!runtime.boardCtx) {
             if (onComplete) onComplete()
             return
@@ -921,7 +925,7 @@ export function createTetrisRuntime({
 
             renderBoardCanvas({
                 ctx: runtime.boardCtx,
-                board: gameState.board,
+                board,
                 activePiece: null,
                 rows: ROWS,
                 cols: COLS,
@@ -938,6 +942,29 @@ export function createTetrisRuntime({
         }
 
         runtime.animationFrameId = requestAnimationFrame(animate)
+    }
+
+    /**
+      * authoritative gameplay state와 분리된 상대 라인 클리어 표시만 재생한다.
+      * - 전달받은 clear 전 보드 복사본만 애니메이션에 사용한다.
+      * - 완료 후 현재 runtime의 최신 authoritative 보드를 다시 렌더링한다.
+      *
+      * @param {{rows: number[], board: Array<Array<string|null>>}} effect - 표시할 줄과 clear 전 보드
+      * @returns {boolean} 유효한 presentation을 시작했으면 true
+      */
+    function playLineClearPresentation({ rows, board } = {}) {
+        if (!Array.isArray(rows)) return false
+        if (!Array.isArray(board) || board.length !== ROWS) return false
+        if (!board.every(row => Array.isArray(row) && row.length === COLS)) return false
+
+        const normalizedRows = [...new Set(rows)].filter(row => {
+            return Number.isInteger(row) && row >= 0 && row < ROWS
+        })
+        if (normalizedRows.length === 0) return false
+
+        const presentationBoard = board.map(row => [...row])
+        addLineClearEffect(normalizedRows, renderBoard, presentationBoard)
+        return true
     }
 
     // =============================
@@ -1458,9 +1485,11 @@ export function createTetrisRuntime({
         destroy,
         getSnapshot,
         applySnapshot,
+        playLineClearPresentation,
         applyGarbageLines,
         queueGarbageLines,
         getPendingGarbageLines,
+        getPendingInputCount,
         setAuthoritativePendingGarbageLines,
         applyServerBag,
         appendServerBag,

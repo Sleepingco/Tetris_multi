@@ -291,7 +291,12 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                 createGarbageHoleCol,
             )
 
-            emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+            emitAuthoritativeSnapshot(
+                socketServer,
+                roomId,
+                playerId,
+                authoritativeResult.gameplayResult?.presentationEffect,
+            )
             if (placementSideEffect?.targetPlayerId) {
                 emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
             }
@@ -444,15 +449,20 @@ function handleServerPlacementResult(roomId, playerId, placementResult, createGa
     return appendResult
 }
 
-function emitAuthoritativeSnapshot(socketServer, roomId, playerId) {
+function emitAuthoritativeSnapshot(socketServer, roomId, playerId, presentationEffect = null) {
     const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId)
     if (!snapshotResult.ok) return null
 
-    socketServer.to(roomId).emit("game:authoritative:snapshot", {
+    const payload = {
         roomId,
         playerId,
         snapshot: snapshotResult.snapshot,
-    })
+    }
+    if (presentationEffect) {
+        payload.presentationEffect = presentationEffect
+    }
+
+    socketServer.to(roomId).emit("game:authoritative:snapshot", payload)
 
     return snapshotResult.snapshot
 }

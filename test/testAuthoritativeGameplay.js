@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
     applyAuthoritativeInputToMatchPlayerState,
+    applyGravityStepToMatchPlayerState,
     createMatch,
     getAuthoritativePlayerSnapshot,
     getAuthoritativePlayerSnapshotDto,
@@ -71,6 +72,7 @@ test("authoritative gameplay은 연속 input으로 state를 갱신하고 stale p
     assert.equal(Number.isInteger(placementResult.canceledGarbageLines), true);
     assert.equal(Number.isInteger(placementResult.incomingGarbageLines), true);
     assert.equal(Number.isInteger(placementResult.appliedGarbageLines), true);
+    assert.equal(Object.hasOwn(hardDropResult.gameplayResult, "presentationEffect"), false);
 
     const beforeStaleInputState = structuredClone(hostPlayer.authoritativeState);
     const staleResult = applyAuthoritativeInputToMatchPlayerState(roomId, "host-player", {
@@ -86,6 +88,84 @@ test("authoritative gameplay은 연속 input으로 state를 갱신하고 stale p
     const matchResult = getMatchState(roomId);
     assert.equal(matchResult.ok, true);
     assert.deepEqual(matchResult.match.players[0].inputLog, []);
+});
+
+test("authoritative line clear는 정확한 row와 player별 presentation effect id를 만든다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    const roomId = "AUTH_LINE_CLEAR_PRESENTATION";
+    const createResult = createMatch(createPlayingRoom(roomId));
+    const hostPlayer = createResult.match.players.find((player) => {
+        return player.playerId === "host-player";
+    });
+    hostPlayer.authoritativeState.activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 3,
+    };
+    hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
+    hostPlayer.authoritativeState.board[19] = Array(gameCore.BOARD_COLS).fill("stack");
+    hostPlayer.authoritativeState.board[19][3] = null;
+    hostPlayer.authoritativeState.board[19][4] = null;
+    hostPlayer.authoritativeState.pieceQueue = ["tree"];
+    hostPlayer.authoritativeState.pieceIndex = 7;
+
+    const result = applyAuthoritativeInputToMatchPlayerState(roomId, "host-player", {
+        action: "hard_drop",
+        pieceIndex: 7,
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.gameplayResult.presentationEffect, {
+        id: "host-player:7:line_clear",
+        type: "line_clear",
+        pieceIndex: 7,
+        rows: [19],
+        boardBeforeClear: result.gameplayResult.presentationEffect.boardBeforeClear,
+    });
+    assert.equal(
+        result.gameplayResult.presentationEffect.boardBeforeClear[19].every(Boolean),
+        true,
+    );
+    assert.equal(result.gameplayResult.placementResult.linesCleared, 1);
+    assert.equal(
+        Object.hasOwn(result.gameplayResult.placementResult, "boardBeforeClear"),
+        false,
+    );
+    assert.equal(Object.hasOwn(hostPlayer.authoritativeState, "presentationEffect"), false);
+});
+
+test("gravity lock line clear도 match 경계에서 presentation effect id를 붙인다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    const roomId = "AUTH_GRAVITY_LINE_CLEAR_PRESENTATION";
+    const createResult = createMatch(createPlayingRoom(roomId));
+    const hostPlayer = createResult.match.players.find((player) => {
+        return player.playerId === "host-player";
+    });
+    hostPlayer.authoritativeState.activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 3,
+    };
+    hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
+    hostPlayer.authoritativeState.board[19] = Array(gameCore.BOARD_COLS).fill("stack");
+    hostPlayer.authoritativeState.board[19][3] = null;
+    hostPlayer.authoritativeState.board[19][4] = null;
+    hostPlayer.authoritativeState.pieceQueue = ["tree"];
+    hostPlayer.authoritativeState.pieceIndex = 11;
+
+    const result = applyGravityStepToMatchPlayerState(roomId, "host-player", gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.gravityResult.kind, "lock");
+    assert.equal(result.presentationEffect.id, "host-player:11:line_clear");
+    assert.deepEqual(result.presentationEffect.rows, [19]);
+    assert.equal(result.gravityStepResult.presentationEffect, result.presentationEffect);
 });
 
 test("getAuthoritativePlayerSnapshot은 authoritativeState 복사본을 반환한다", async () => {

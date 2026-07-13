@@ -268,6 +268,7 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
         };
     }
 
+    attachPresentationEffectId(gameplayResult, playerId);
     return createSuccess(match, { gameplayResult });
 }
 
@@ -305,11 +306,23 @@ function applyGravityStepToMatchPlayerState(roomId, playerId, gameCore) {
         };
     }
 
+    attachPresentationEffectId(gravityStepResult, playerId);
     return createSuccess(match, {
         gravityResult: gravityStepResult.gravityResult,
         gravityStepResult,
         placementResult: gravityStepResult.placementResult,
+        presentationEffect: gravityStepResult.presentationEffect,
     });
+}
+
+function attachPresentationEffectId(gameplayResult, playerId) {
+    const effect = gameplayResult?.presentationEffect;
+    if (!effect || !Number.isInteger(effect.pieceIndex)) return;
+
+    gameplayResult.presentationEffect = {
+        ...effect,
+        id: `${playerId}:${effect.pieceIndex}:line_clear`,
+    };
 }
 
 function getAuthoritativePlayerSnapshot(roomId, playerId) {

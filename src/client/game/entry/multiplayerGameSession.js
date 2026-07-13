@@ -111,6 +111,8 @@ export function startMultiplayerGame({
 
     let hasPendingBagRequest = false
     let pendingOwnDriftState = null
+    let lastOpponentPresentationPieceIndex = -1
+    let lastOpponentPresentationEffectId = null
     const bagLowWatermark = 7
 
     /**
@@ -131,11 +133,25 @@ export function startMultiplayerGame({
         requestBagIfNeeded()
     }, 500)
 
-    const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({ playerId: remotePlayerId, snapshot }) => {
+    const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({
+        playerId: remotePlayerId,
+        snapshot,
+        presentationEffect,
+    }) => {
         if (!snapshot || !Array.isArray(snapshot.board)) return
 
         if (remotePlayerId === opponentPlayerId) {
             opponentGame.applySnapshot(snapshot)
+            if (shouldPlayOpponentPresentation(presentationEffect)) {
+                const didPlay = opponentGame.playLineClearPresentation({
+                    rows: presentationEffect.rows,
+                    board: presentationEffect.boardBeforeClear,
+                })
+                if (didPlay) {
+                    lastOpponentPresentationPieceIndex = presentationEffect.pieceIndex
+                    lastOpponentPresentationEffectId = presentationEffect.id
+                }
+            }
             return
         }
 
@@ -160,6 +176,17 @@ export function startMultiplayerGame({
             }
         }
     })
+
+    function shouldPlayOpponentPresentation(effect) {
+        if (!effect || effect.type !== "line_clear") return false
+        if (typeof effect.id !== "string" || effect.id.length === 0) return false
+        if (!Number.isInteger(effect.pieceIndex) || effect.pieceIndex < 0) return false
+        if (effect.id !== `${opponentPlayerId}:${effect.pieceIndex}:line_clear`) return false
+        if (effect.id === lastOpponentPresentationEffectId) return false
+        if (effect.pieceIndex <= lastOpponentPresentationPieceIndex) return false
+        if (!Array.isArray(effect.rows) || !Array.isArray(effect.boardBeforeClear)) return false
+        return true
+    }
     const detachGameInputResult = onGameInputResult((result) => {
         if (result.ok) return
         console.warn("game:input failed:", result.reason)

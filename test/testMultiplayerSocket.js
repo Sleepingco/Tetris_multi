@@ -957,13 +957,24 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
         return event.eventName === "game:authoritative:snapshot"
             && event.payload.playerId === "server-garbage-guest-player"
     })
+    const hostSnapshotEvent = socketServer.roomEvents.findLast(event => {
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === "server-garbage-host-player"
+    })
 
     assert.equal(garbageEvent, undefined)
+    assert.equal(hostSnapshotEvent.payload.presentationEffect.type, "line_clear")
+    assert.equal(
+        hostSnapshotEvent.payload.presentationEffect.id,
+        "server-garbage-host-player:1:line_clear",
+    )
+    assert.deepEqual(hostSnapshotEvent.payload.presentationEffect.rows, [16, 17, 18, 19])
     assert.equal(guestSnapshotResult.ok, true)
     assert.equal(guestSnapshotResult.snapshot.pendingGarbageLines, 4)
     assert.equal(Object.hasOwn(guestSnapshotResult.snapshot, "pendingGarbageQueue"), false)
     assert.equal(guestSnapshotEvent.payload.snapshot.pendingGarbageLines, 4)
     assert.equal(Object.hasOwn(guestSnapshotEvent.payload.snapshot, "pendingGarbageQueue"), false)
+    assert.equal(Object.hasOwn(guestSnapshotEvent.payload, "presentationEffect"), false)
 })
 
 test("game:input server lock gameOver는 match finish와 ticker 정리를 처리한다", async () => {

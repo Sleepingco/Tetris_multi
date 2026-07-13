@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 function installBrowserStubs() {
+    globalThis.__audioPlayCalls = [];
     globalThis.Audio = class {
         constructor(src) {
             this.src = src;
@@ -11,6 +12,7 @@ function installBrowserStubs() {
         }
 
         play() {
+            globalThis.__audioPlayCalls.push(this.src);
             return Promise.resolve();
         }
 
@@ -132,6 +134,27 @@ function countPreviewCells(element) {
 
 function createEmptyBoard() {
     return Array.from({ length: 20 }, () => Array(10).fill(null));
+}
+
+function createFakeCanvas() {
+    const canvas = {};
+    const context = {
+        canvas,
+        beginPath() {},
+        clearRect() {},
+        fill() {},
+        fillRect() {},
+        lineTo() {},
+        moveTo() {},
+        restore() {},
+        roundRect() {},
+        save() {},
+        scale() {},
+        stroke() {},
+        translate() {},
+    };
+    canvas.getContext = () => context;
+    return canvas;
 }
 
 test("enqueueInput은 현재 조각과 다른 pieceIndex 입력을 적용하지 않는다", async (t) => {
@@ -287,6 +310,61 @@ test("applySnapshot은 resumeGravity 옵션과 playing phase가 함께 있을 �
     }, { resumeGravity: true });
 
     assert.equal(game.runtime.gravityRunning, true);
+});
+
+test("line clear presentation은 gameplay state와 중력을 바꾸지 않고 효과음 없이 끝난다", async (t) => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const originalGetComputedStyle = globalThis.getComputedStyle;
+    let animationCallback = null;
+    globalThis.requestAnimationFrame = (callback) => {
+        animationCallback = callback;
+        return 1;
+    };
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.getComputedStyle = () => ({
+        getPropertyValue() {
+            return "";
+        },
+    });
+    t.after(() => {
+        globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+        globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+        globalThis.getComputedStyle = originalGetComputedStyle;
+    });
+
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        boardCanvasEl: createFakeCanvas(),
+        rng: () => 0,
+    });
+    t.after(() => game.destroy());
+    game.init({ autoStart: false });
+    const pieceIndex = game.getSnapshot().pieceIndex;
+    game.enqueueInput(INPUT_ACTION.MOVE_LEFT, 10, pieceIndex);
+    const stateBefore = game.getSnapshot();
+    const pendingInputCountBefore = game.getPendingInputCount();
+    const boardBeforeClear = createEmptyBoard();
+    boardBeforeClear[19] = Array(10).fill("bar");
+    const audioCallCountBefore = globalThis.__audioPlayCalls.length;
+
+    const didPlay = game.playLineClearPresentation({
+        rows: [19],
+        board: boardBeforeClear,
+    });
+
+    assert.equal(didPlay, true);
+    assert.deepEqual(game.getSnapshot(), stateBefore);
+    assert.equal(game.getPendingInputCount(), pendingInputCountBefore);
+    assert.equal(game.runtime.gravityRunning, false);
+    assert.equal(globalThis.__audioPlayCalls.length, audioCallCountBefore);
+
+    animationCallback(performance.now() + 400);
+
+    assert.deepEqual(game.getSnapshot(), stateBefore);
+    assert.equal(game.getPendingInputCount(), pendingInputCountBefore);
+    assert.equal(game.runtime.gravityRunning, false);
+    assert.equal(globalThis.__audioPlayCalls.length, audioCallCountBefore);
 });
 
 test("applySnapshot은 gameOver snapshot에서 resumeGravity 요청을 무시한다", async (t) => {
