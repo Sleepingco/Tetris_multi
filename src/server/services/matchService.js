@@ -67,7 +67,7 @@ function createMatch(room) {
                 nextInputSequence: 1,
                 bagChunks,
                 authoritativeState: createInitialPlayerState(bagChunks),
-                lastDecisionPieceIndex: null,
+                aiPlan: null,
             };
         }),
         createdAt: Date.now(),

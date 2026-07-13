@@ -237,6 +237,263 @@ test("ticker catch-up은 elapsedMs가 커도 callback당 gravity step을 최대 
     assert.equal(socketServer.roomEvents.length, 4);
 });
 
+test("AI action cadence는 human gravity와 분리되고 성공 action마다 snapshot을 보낸다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const gravityCalls = [];
+    const aiCalls = [];
+    let lastAiAction = null;
+    const aiResults = [
+        { ok: true, skipped: true, reason: "AI_PLAN_CREATED" },
+        { ok: true, skipped: false, stateChanged: true, action: "move_left" },
+        { ok: true, skipped: false, stateChanged: true, action: "rotate" },
+        {
+            ok: true,
+            skipped: false,
+            stateChanged: true,
+            action: "hard_drop",
+            placementResult: { attackLines: 0, gameOver: false },
+        },
+        { ok: true, skipped: true, reason: "AI_PLAN_CREATED" },
+    ];
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-ai-cadence",
+                players: [
+                    { playerId: "human", playerType: "human" },
+                    { playerId: "ai", playerType: "heuristic_ai" },
+                ],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId) {
+            gravityCalls.push({ roomId, playerId });
+            return { ok: true, gravityResult: { kind: "move" } };
+        },
+        pveAiPlayerService: {
+            async processAiStep(roomId, playerId) {
+                const result = aiResults[aiCalls.length];
+                aiCalls.push({ roomId, playerId });
+                lastAiAction = result.action ?? lastAiAction;
+                return result;
+            },
+        },
+        getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+            return {
+                ok: true,
+                snapshot: {
+                    board: [[playerId]],
+                    activePiece: playerId === "ai" ? { action: lastAiAction } : null,
+                    pieceQueue: [],
+                    holdPieceType: null,
+                    holdUsedThisDrop: false,
+                    score: 0,
+                    lines: 0,
+                    phase: "playing",
+                    combo: -1,
+                    backToBack: false,
+                    tick: aiCalls.length,
+                    pieceIndex: 1,
+                    pendingGarbageLines: 0,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-ai-cadence", socketServer);
+    await runTickerCallbacks(scheduler, 4);
+
+    assert.equal(aiCalls.length, 4);
+    assert.equal(gravityCalls.length, 0);
+    const aiSnapshots = socketServer.roomEvents.filter(event => {
+        return event.payload.playerId === "ai";
+    });
+    assert.deepEqual(
+        aiSnapshots.map(event => event.payload.snapshot.activePiece.action),
+        ["move_left", "rotate", "hard_drop"],
+    );
+
+    await runTickerCallbacks(scheduler, 1);
+
+    assert.equal(aiCalls.length, 5);
+    assert.deepEqual(gravityCalls, [
+        { roomId: "room-ai-cadence", playerId: "human" },
+    ]);
+});
+
+test("AI catch-up은 elapsedMs가 커도 callback당 action을 최대 1개만 실행한다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    let aiCallCount = 0;
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-ai-catch-up",
+                players: [{ playerId: "ai", playerType: "heuristic_ai" }],
+            },
+        }),
+        pveAiPlayerService: {
+            async processAiStep() {
+                aiCallCount += 1;
+                return {
+                    ok: true,
+                    skipped: false,
+                    stateChanged: true,
+                    action: "move_left",
+                };
+            },
+        },
+        getAuthoritativePlayerSnapshotDto: () => ({
+            ok: true,
+            snapshot: { phase: "playing", pieceIndex: 1 },
+        }),
+    });
+
+    tickerService.startRoomTicker("room-ai-catch-up", socketServer);
+    await tickerService.tickRoom("room-ai-catch-up", socketServer, 1500);
+
+    assert.equal(aiCallCount, 1);
+    assert.equal(socketServer.roomEvents.length, 1);
+
+    await tickerService.tickRoom("room-ai-catch-up", socketServer, 0);
+
+    assert.equal(aiCallCount, 2);
+    assert.equal(socketServer.roomEvents.length, 2);
+});
+
+test("isProcessing 중복 callback은 같은 AI action을 두 번 실행하지 않는다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    let aiCallCount = 0;
+    let resolveStep;
+    const stepPromise = new Promise(resolve => {
+        resolveStep = resolve;
+    });
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-ai-processing",
+                players: [{ playerId: "ai", playerType: "heuristic_ai" }],
+            },
+        }),
+        pveAiPlayerService: {
+            processAiStep() {
+                aiCallCount += 1;
+                return stepPromise;
+            },
+        },
+        getAuthoritativePlayerSnapshotDto: () => ({
+            ok: true,
+            snapshot: { phase: "playing", pieceIndex: 1 },
+        }),
+    });
+
+    tickerService.startRoomTicker("room-ai-processing", socketServer);
+    const firstTick = tickerService.tickRoom("room-ai-processing", socketServer, 100);
+    const duplicateTick = tickerService.tickRoom("room-ai-processing", socketServer, 100);
+    await duplicateTick;
+
+    assert.equal(aiCallCount, 1);
+
+    resolveStep({
+        ok: true,
+        skipped: false,
+        stateChanged: true,
+        action: "move_left",
+    });
+    await firstTick;
+
+    assert.equal(aiCallCount, 1);
+    assert.equal(socketServer.roomEvents.length, 1);
+});
+
+test("AI hard_drop은 기존 attack과 line clear presentation 경로를 유지한다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const appendedGarbage = [];
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        createGarbageHoleCol: () => 5,
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-ai-lock",
+                players: [
+                    { playerId: "human", playerType: "human" },
+                    { playerId: "ai", playerType: "heuristic_ai" },
+                ],
+            },
+        }),
+        pveAiPlayerService: {
+            async processAiStep() {
+                return {
+                    ok: true,
+                    skipped: false,
+                    stateChanged: true,
+                    action: "hard_drop",
+                    placementResult: { attackLines: 2, gameOver: false },
+                    presentationEffect: {
+                        id: "ai:4:line_clear",
+                        type: "line_clear",
+                        pieceIndex: 4,
+                        rows: [19],
+                        boardBeforeClear: [["square"]],
+                    },
+                };
+            },
+        },
+        appendPendingGarbageToOpponent(roomId, fromPlayerId, garbage) {
+            appendedGarbage.push({ roomId, fromPlayerId, garbage });
+            return { ok: true, targetPlayerId: "human", garbage };
+        },
+        getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+            return {
+                ok: true,
+                snapshot: {
+                    phase: "playing",
+                    pieceIndex: playerId === "ai" ? 5 : 1,
+                    pendingGarbageLines: playerId === "human" ? 2 : 0,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-ai-lock", socketServer);
+    await tickerService.tickRoom("room-ai-lock", socketServer, 100);
+
+    assert.deepEqual(appendedGarbage, [
+        {
+            roomId: "room-ai-lock",
+            fromPlayerId: "ai",
+            garbage: { lines: 2, holeCol: 5 },
+        },
+    ]);
+    const aiSnapshot = socketServer.roomEvents.find(event => {
+        return event.payload.playerId === "ai";
+    });
+    const humanSnapshot = socketServer.roomEvents.find(event => {
+        return event.payload.playerId === "human";
+    });
+    assert.equal(aiSnapshot.payload.presentationEffect.id, "ai:4:line_clear");
+    assert.deepEqual(aiSnapshot.payload.presentationEffect.rows, [19]);
+    assert.equal(humanSnapshot.payload.snapshot.pendingGarbageLines, 2);
+    assert.equal(Object.hasOwn(humanSnapshot.payload, "presentationEffect"), false);
+});
+
 test("ticker callback은 server lock attackLines를 상대 pending garbage로 추가하고 snapshot scalar를 emit한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();

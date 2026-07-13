@@ -13,11 +13,12 @@ const { createPveAiPlayerService } = require("./pveAiPlayerService.js");
 
 const AUTHORITATIVE_TICK_MS = 100;
 const AUTHORITATIVE_GRAVITY_INTERVAL_MS = 500;
+const AI_ACTION_INTERVAL_MS = 100;
 
 /**
  * room 단위 authoritative ticker를 만든다.
  * - 실제 timer는 roomId별로 하나만 유지한다.
- * - ticker는 100ms마다 실행하되 gravity/snapshot은 500ms 누적 기준으로 처리한다.
+ * - ticker는 100ms마다 실행하며 AI action과 human gravity 누적 주기를 분리한다.
  *
  * @param {Object} dependencies - 테스트/런타임 의존성
  * @returns {Object} ticker 시작/정리 API
@@ -27,6 +28,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
     const clearIntervalFn = dependencies.clearIntervalFn || clearInterval;
     const tickMs = dependencies.tickMs || AUTHORITATIVE_TICK_MS;
     const gravityIntervalMs = dependencies.gravityIntervalMs || AUTHORITATIVE_GRAVITY_INTERVAL_MS;
+    const aiActionIntervalMs = dependencies.aiActionIntervalMs || AI_ACTION_INTERVAL_MS;
     const loadGameCore = dependencies.loadGameCore || defaultLoadGameCore;
     const getMatchState = dependencies.getMatchState || defaultGetMatchState;
     const applyGravityStepToMatchPlayerState = dependencies.applyGravityStepToMatchPlayerState
@@ -70,6 +72,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
             intervalId,
             socketServer,
             accumulatorMs: 0,
+            aiAccumulatorMs: 0,
             isProcessing: false,
         });
 
@@ -111,9 +114,13 @@ function createAuthoritativeTickerService(dependencies = {}) {
 
         try {
             ticker.accumulatorMs += elapsedMs;
-            if (ticker.accumulatorMs < gravityIntervalMs) return;
+            ticker.aiAccumulatorMs += elapsedMs;
+            const shouldApplyGravity = ticker.accumulatorMs >= gravityIntervalMs;
+            const shouldProcessAi = ticker.aiAccumulatorMs >= aiActionIntervalMs;
+            if (!shouldApplyGravity && !shouldProcessAi) return;
 
-            ticker.accumulatorMs -= gravityIntervalMs;
+            if (shouldApplyGravity) ticker.accumulatorMs -= gravityIntervalMs;
+            if (shouldProcessAi) ticker.aiAccumulatorMs -= aiActionIntervalMs;
 
             const matchResult = getMatchState(roomId);
             if (!matchResult.ok || !matchResult.match) {
@@ -121,18 +128,29 @@ function createAuthoritativeTickerService(dependencies = {}) {
                 return;
             }
 
-            const gameCore = await loadGameCore();
             const players = Array.isArray(matchResult.match.players)
                 ? matchResult.match.players
                 : [];
+            const hasDuePlayer = players.some(player => {
+                return player.playerType === "heuristic_ai"
+                    ? shouldProcessAi
+                    : shouldApplyGravity;
+            });
+            if (!hasDuePlayer) return;
+
+            const gameCore = await loadGameCore();
 
             for (const player of players) {
                 const playerId = player.playerId;
-                const stepResult = player.playerType === "heuristic_ai"
-                    ? await pveAiPlayerService.processAiTurn(roomId, playerId, gameCore)
+                const isAiPlayer = player.playerType === "heuristic_ai";
+                if (isAiPlayer && !shouldProcessAi) continue;
+                if (!isAiPlayer && !shouldApplyGravity) continue;
+
+                const stepResult = isAiPlayer
+                    ? await pveAiPlayerService.processAiStep(roomId, playerId, gameCore)
                     : applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
 
-                if (!stepResult.ok) {
+                if (!stepResult.ok && !stepResult.stateChanged) {
                     if (stepResult.gameOver) {
                         emitAuthoritativeSnapshot(roomId, playerId, socketServer);
                         await finishAuthoritativeMatch({
@@ -238,6 +256,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
 }
 
 module.exports = {
+    AI_ACTION_INTERVAL_MS,
     AUTHORITATIVE_GRAVITY_INTERVAL_MS,
     AUTHORITATIVE_TICK_MS,
     createAuthoritativeTickerService,

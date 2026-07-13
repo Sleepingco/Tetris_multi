@@ -49,6 +49,7 @@ test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를
     assert.equal(result.match.players[0].playerId, "host-player");
     assert.deepEqual(result.match.players[0].inputLog, []);
     assert.equal(result.match.players[0].nextInputSequence, 1);
+    assert.equal(result.match.players[0].aiPlan, null);
     assert.equal(typeof result.match.createdAt, "number");
 });
 
@@ -505,6 +506,7 @@ test("getAuthoritativePlayerSnapshotDto는 pendingGarbageLines만 client snapsho
     assert.equal(snapshotResult.ok, true);
     assert.equal(snapshotResult.snapshot.pendingGarbageLines, 3);
     assert.equal(Object.hasOwn(snapshotResult.snapshot, "pendingGarbageQueue"), false);
+    assert.equal(Object.hasOwn(snapshotResult.snapshot, "aiPlan"), false);
     assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, [
         { lines: 2, holeCol: 3 },
         { lines: 1, holeCol: 5 },

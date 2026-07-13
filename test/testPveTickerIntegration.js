@@ -8,17 +8,19 @@ const { createPveAiPlayerService } = require(
     "../src/server/services/pveAiPlayerService.js"
 );
 const {
+    applyAuthoritativePlacementToMatchPlayerState,
     createMatch,
     getMatchState,
     resetMatches,
 } = require("../src/server/services/matchService.js");
+const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
 const {
     createRoom,
     getRoomState,
     startGame,
 } = require("../src/server/services/roomService.js");
 
-test("PVE ticker는 human gravity와 AI placement를 분리하고 AI snapshot을 전송한다", async () => {
+test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로 snapshot을 전송한다", async () => {
     resetMatches();
     createMatch({
         roomId: "PVE-TICKER-1",
@@ -29,6 +31,17 @@ test("PVE ticker는 human gravity와 AI placement를 분리하고 AI snapshot을
             { playerId: "ai", playerType: "heuristic_ai" },
         ],
     });
+    const createdMatch = getMatchState("PVE-TICKER-1").match;
+    const initialAi = createdMatch.players.find(player => player.playerId === "ai");
+    initialAi.authoritativeState.activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+    initialAi.authoritativeState.pendingPiece = {
+        ...initialAi.authoritativeState.activePiece,
+    };
     const savedLogs = [];
     const aiService = createPveAiPlayerService({
         savePlacementDecisionLog(log) {
@@ -55,12 +68,26 @@ test("PVE ticker는 human gravity와 AI placement를 분리하고 AI snapshot을
     });
     ticker.startRoomTicker("PVE-TICKER-1", socketServer);
 
-    await ticker.tickRoom("PVE-TICKER-1", socketServer, 500);
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+
+    assert.equal(initialAi.aiPlan.remainingActions.length, 4);
+    assert.equal(initialAi.authoritativeState.pieceIndex, 1);
+    assert.equal(emitted.length, 0);
+
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+
+    assert.equal(initialAi.authoritativeState.pieceIndex, 1);
+    assert.equal(initialAi.authoritativeState.activePiece.col, 0);
+    assert.equal(initialAi.authoritativeState.board.flat().every(cell => cell === null), true);
+
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
 
     const match = getMatchState("PVE-TICKER-1").match;
     const human = match.players.find(player => player.playerId === "human");
     const ai = match.players.find(player => player.playerId === "ai");
-    const aiSnapshotEvent = emitted.find(event => {
+    const aiSnapshotEvents = emitted.filter(event => {
         return event.eventName === "game:authoritative:snapshot" &&
             event.payload.playerId === "ai";
     });
@@ -68,10 +95,19 @@ test("PVE ticker는 human gravity와 AI placement를 분리하고 AI snapshot을
     assert.equal(human.authoritativeState.activePiece.row, 0);
     assert.equal(ai.authoritativeState.pieceIndex, 2);
     assert.ok(ai.authoritativeState.board.flat().some(cell => cell !== null));
-    assert.ok(aiSnapshotEvent);
-    assert.equal(aiSnapshotEvent.payload.snapshot.gameOver, false);
-    assert.equal(Object.hasOwn(aiSnapshotEvent.payload.snapshot, "evaluation"), false);
+    assert.equal(aiSnapshotEvents.length, 4);
+    assert.deepEqual(
+        aiSnapshotEvents.slice(0, 3).map(event => event.payload.snapshot.activePiece.col),
+        [2, 1, 0],
+    );
+    assert.equal(aiSnapshotEvents.at(-1).payload.snapshot.pieceIndex, 2);
+    assert.equal(aiSnapshotEvents.at(-1).payload.snapshot.gameOver, false);
+    assert.equal(Object.hasOwn(aiSnapshotEvents.at(-1).payload.snapshot, "evaluation"), false);
     assert.equal(savedLogs.length, 1);
+    assert.deepEqual(
+        savedLogs[0].inputSequence.map(input => input.action),
+        ["move_left", "move_left", "move_left", "hard_drop"],
+    );
 
     ticker.stopRoomTicker("PVE-TICKER-1");
 });
@@ -129,4 +165,65 @@ test("PVE ticker는 AI 후보가 없으면 human 승리로 match를 종료한다
     assert.equal(finishEvent.payload.reason, "ai_no_legal_placement");
     assert.equal(getRoomState(roomId).status, "finished");
     assert.equal(getMatchState(roomId).ok, false);
+});
+
+test("AI executor 최종 board는 같은 selectedPlacement의 direct placement 결과와 같다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    const createFixtureMatch = (roomId) => createMatch({
+        roomId,
+        mode: "pve",
+        status: "playing",
+        players: [
+            { playerId: "human", playerType: "human" },
+            { playerId: "ai", playerType: "heuristic_ai" },
+        ],
+    }).match;
+    const executorMatch = createFixtureMatch("PVE-EXECUTOR");
+    const directMatch = createFixtureMatch("PVE-DIRECT");
+    const executorPlayer = executorMatch.players.find(player => player.playerId === "ai");
+    const directPlayer = directMatch.players.find(player => player.playerId === "ai");
+    const fixtureState = {
+        ...structuredClone(executorPlayer.authoritativeState),
+        board: Array.from({ length: 20 }, () => Array(10).fill(null)),
+        activePiece: { pieceType: "square", rotation: 0, row: -1, col: 3 },
+        pendingPiece: { pieceType: "square", rotation: 0, row: -1, col: 3 },
+        pieceQueue: ["tree", "bar", "zee", "ess", "eleft", "eright", "square", "tree"],
+        pieceIndex: 1,
+    };
+    executorPlayer.authoritativeState = structuredClone(fixtureState);
+    directPlayer.authoritativeState = structuredClone(fixtureState);
+    const service = createPveAiPlayerService({
+        savePlacementDecisionLog(log) {
+            return { ok: true, log, reason: null };
+        },
+    });
+
+    const planResult = await service.processAiStep("PVE-EXECUTOR", "ai", gameCore);
+    const directResult = applyAuthoritativePlacementToMatchPlayerState(
+        "PVE-DIRECT",
+        "ai",
+        {
+            pieceIndex: 1,
+            placement: planResult.decision.selectedPlacement,
+        },
+        gameCore,
+    );
+    let executorResult;
+    for (let step = 0; step < 20; step += 1) {
+        executorResult = await service.processAiStep("PVE-EXECUTOR", "ai", gameCore);
+        if (executorResult.placementResult) break;
+    }
+
+    assert.equal(directResult.ok, true);
+    assert.equal(executorResult.ok, true);
+    assert.deepEqual(
+        executorResult.placementResult.lockedPiece,
+        directResult.gameplayResult.placementResult.lockedPiece,
+    );
+    assert.deepEqual(executorPlayer.authoritativeState.board, directPlayer.authoritativeState.board);
+    assert.equal(executorPlayer.authoritativeState.score, directPlayer.authoritativeState.score);
+    assert.equal(executorPlayer.authoritativeState.lines, directPlayer.authoritativeState.lines);
+    assert.equal(executorPlayer.authoritativeState.pieceIndex, directPlayer.authoritativeState.pieceIndex);
+    assert.deepEqual(executorPlayer.authoritativeState.activePiece, directPlayer.authoritativeState.activePiece);
 });
