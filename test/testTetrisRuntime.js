@@ -367,6 +367,68 @@ test("line clear presentation은 gameplay state와 중력을 바꾸지 않고 �
     assert.equal(globalThis.__audioPlayCalls.length, audioCallCountBefore);
 });
 
+test("authoritative correction은 local tick을 되감거나 이전 입력으로 새 hard drop을 막지 않는다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const correctionBase = {
+        ...game.getSnapshot(),
+        board: createEmptyBoard(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 0,
+            col: 4,
+        },
+        pieceQueue: ["bar", "tree"],
+        phase: "playing",
+        tick: 100,
+        pieceIndex: 5,
+    };
+    game.applySnapshot(correctionBase, { resumeGravity: true });
+    game.enqueueInput(INPUT_ACTION.MOVE_LEFT, null, 5);
+
+    game.applySnapshot({
+        ...correctionBase,
+        tick: 1,
+    }, { resumeGravity: true });
+    const hardDropInput = game.enqueueInput(INPUT_ACTION.HARD_DROP, null, 5);
+
+    assert.ok(hardDropInput.tick > 100);
+    await waitForTick(game, hardDropInput.tick);
+    assert.equal(game.getSnapshot().board[18][3], "square");
+});
+
+test("playing authoritative correction은 중단된 local input loop를 복구한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    game.stop();
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: createEmptyBoard(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 0,
+            col: 4,
+        },
+        pieceQueue: ["bar", "tree"],
+        phase: "playing",
+        tick: 20,
+        pieceIndex: 3,
+    }, { resumeGravity: true });
+    const hardDropInput = game.enqueueInput(INPUT_ACTION.HARD_DROP, null, 3);
+
+    assert.ok(game.runtime.inputTimer);
+    await waitForTick(game, hardDropInput.tick);
+    assert.equal(game.getSnapshot().board.flat().some(cell => cell === "square"), true);
+});
+
 test("applySnapshot은 gameOver snapshot에서 resumeGravity 요청을 무시한다", async (t) => {
     const { createTetrisRuntime } = await loadRuntime();
     const game = createTetrisRuntime({ rng: () => 0 });

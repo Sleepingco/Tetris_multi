@@ -737,6 +737,33 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하
     assert.equal(session.myGame.runtime.gravityRunning, true);
 });
 
+test("대기 중인 local input이 있으면 own full correction을 다음 snapshot까지 미룬다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const myBaseSnapshot = session.myGame.getSnapshot();
+    session.myGame.enqueueInput("move_left", null, myBaseSnapshot.pieceIndex);
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...myBaseSnapshot,
+            board: cloneBoardWithGarbageCell(myBaseSnapshot),
+            pendingGarbageLines: 0,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.equal(session.myGame.getPendingInputCount(), 1);
+});
+
 test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소해도 board가 같으면 full apply하지 않는다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());

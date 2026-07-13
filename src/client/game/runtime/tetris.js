@@ -1388,10 +1388,14 @@ export function createTetrisRuntime({
 
         setActivePiece(restored.activePiece)
 
-        runtime.currentTick = snapshot.tick ?? runtime.currentTick
+        const snapshotTick = Number.isInteger(snapshot.tick) && snapshot.tick >= 0
+            ? snapshot.tick
+            : runtime.currentTick
+        runtime.currentTick = Math.max(runtime.currentTick, snapshotTick)
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
         runtime.pieceIndex = snapshot.pieceIndex ?? runtime.pieceIndex
+        runtime.pendingLockScoreBefore = null
 
         ui.renderScore(gameState.score)
         ui.renderLines(gameState.lines)
@@ -1406,6 +1410,7 @@ export function createTetrisRuntime({
         renderBoard()
 
         if (resumeGravity && gameState.phase === GAME_PHASE.PLAYING) {
+            if (runtime.inputTimer === undefined) startInputLoop()
             startGravity()
         }
     }

@@ -157,6 +157,16 @@ export function startMultiplayerGame({
 
         if (remotePlayerId === playerId) {
             const localSnapshot = myGame.getSnapshot()
+            if (
+                snapshot.phase !== "gameOver" &&
+                myGame.getPendingInputCount() > 0
+            ) {
+                pendingOwnDriftState = null
+                if (Number.isInteger(snapshot.pendingGarbageLines)) {
+                    myGame.setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
+                }
+                return
+            }
             const correctionDecision = evaluateOwnSnapshotCorrection(
                 snapshot,
                 localSnapshot,
