@@ -2650,6 +2650,7 @@ test("PVE room:create는 heuristic AI player를 만들고 human host가 바로 �
 
     assert.equal(createResult.ok, true)
     assert.equal(createResult.room.mode, "pve")
+    assert.equal(createResult.room.aiDifficulty, "normal")
     assert.ok(aiPlayer)
 
     hostSocket.trigger("room:start", {
@@ -2662,7 +2663,59 @@ test("PVE room:create는 heuristic AI player를 만들고 human host가 바로 �
     assert.equal(startResult.ok, true)
     assert.equal(startResult.room.status, "playing")
     assert.equal(match.mode, "pve")
+    assert.equal(match.aiDifficulty, "normal")
     assert.equal(match.players[1].playerType, "heuristic_ai")
+})
+
+test("PVE room:create hard 난이도는 match까지 전달한다", () => {
+    const socketServer = new FakeSocketServer()
+    const hardSocket = new FakeClientSocket("pve-hard-host-socket")
+
+    registerTestSocketHandlers(socketServer)
+    socketServer.connect(hardSocket)
+
+    hardSocket.trigger("room:create", {
+        mode: "pve",
+        aiDifficulty: "hard",
+        player: {
+            playerId: "pve-hard-host",
+            nickname: "Hard Host",
+        },
+    })
+    const hardCreateResult = hardSocket.lastClientEvent("room:result").payload
+
+    assert.equal(hardCreateResult.ok, true)
+    assert.equal(hardCreateResult.room.aiDifficulty, "hard")
+
+    hardSocket.trigger("room:start", {
+        roomId: hardCreateResult.room.roomId,
+        playerId: "pve-hard-host",
+    })
+
+    assert.equal(getMatchState(hardCreateResult.room.roomId).match.aiDifficulty, "hard")
+})
+
+test("PVE room:create는 invalid 난이도를 거부하고 room을 만들지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const invalidSocket = new FakeClientSocket("pve-invalid-host-socket")
+
+    registerTestSocketHandlers(socketServer)
+    socketServer.connect(invalidSocket)
+
+    invalidSocket.trigger("room:create", {
+        mode: "pve",
+        aiDifficulty: "expert",
+        player: {
+            playerId: "pve-invalid-host",
+            nickname: "Invalid Host",
+        },
+    })
+    const invalidResult = invalidSocket.lastClientEvent("room:result").payload
+
+    assert.equal(invalidResult.ok, false)
+    assert.equal(invalidResult.reason, "INVALID_AI_DIFFICULTY")
+    assert.equal(invalidResult.room, null)
+    assert.deepEqual(invalidSocket.joinedRooms, [])
 })
 
 test("human socket은 heuristic AI playerId로 game input을 보낼 수 없다", async () => {

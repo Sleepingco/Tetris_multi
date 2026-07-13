@@ -140,6 +140,78 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
     ticker.stopRoomTicker("PVE-TICKER-1");
 });
 
+test("hard PVE ticker는 terminal soft_drop 없이 action별 snapshot 후 hard_drop한다", async () => {
+    resetMatches();
+    const match = createMatch({
+        roomId: "PVE-TICKER-HARD",
+        mode: "pve",
+        aiDifficulty: "hard",
+        status: "playing",
+        players: [
+            { playerId: "human", playerType: "human" },
+            { playerId: "ai", playerType: "heuristic_ai" },
+        ],
+    }).match;
+    const aiPlayer = match.players.find(player => player.playerId === "ai");
+    aiPlayer.authoritativeState.activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+    aiPlayer.authoritativeState.pendingPiece = {
+        ...aiPlayer.authoritativeState.activePiece,
+    };
+    const savedLogs = [];
+    const emitted = [];
+    const ticker = createAuthoritativeTickerService({
+        pveAiPlayerService: createPveAiPlayerService({
+            savePlacementDecisionLog(log) {
+                savedLogs.push(log);
+                return { ok: true, log, reason: null };
+            },
+        }),
+        setIntervalFn() {
+            return { unref() {} };
+        },
+        clearIntervalFn() {},
+    });
+    const socketServer = {
+        to(roomId) {
+            return {
+                emit(eventName, payload) {
+                    emitted.push({ roomId, eventName, payload });
+                },
+            };
+        },
+    };
+    ticker.startRoomTicker("PVE-TICKER-HARD", socketServer);
+
+    for (let callback = 0; callback < 5; callback += 1) {
+        await ticker.tickRoom("PVE-TICKER-HARD", socketServer, 100);
+    }
+
+    const aiSnapshots = emitted.filter(event => {
+        return event.eventName === "game:authoritative:snapshot" &&
+            event.payload.playerId === "ai";
+    });
+    assert.equal(aiSnapshots.length, 4);
+    assert.deepEqual(
+        aiSnapshots.slice(0, 3).map(event => event.payload.snapshot.activePiece.col),
+        [2, 1, 0],
+    );
+    assert.equal(aiSnapshots.at(-1).payload.snapshot.pieceIndex, 2);
+    assert.equal(aiPlayer.authoritativeState.score, 38);
+    assert.equal(savedLogs.length, 1);
+    assert.equal(savedLogs[0].aiDifficulty, "hard");
+    assert.deepEqual(
+        savedLogs[0].inputSequence.map(input => input.action),
+        ["move_left", "move_left", "move_left", "hard_drop"],
+    );
+
+    ticker.stopRoomTicker("PVE-TICKER-HARD");
+});
+
 test("PVE ticker는 AI 후보가 없으면 human 승리로 match를 종료한다", async () => {
     resetMatches();
     const human = {

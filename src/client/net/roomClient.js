@@ -14,9 +14,13 @@ export function getServerConnection() {
     return serverConnection
 }
 
-export function requestCreateRoom(player, mode = "pvp") {
+export function requestCreateRoom(player, mode = "pvp", aiDifficulty = null) {
     lastRoomRequestType = "create"
-    serverConnection.emit("room:create", { player, mode })
+    const payload = { player, mode }
+    if (mode === "pve" && aiDifficulty !== null) {
+        payload.aiDifficulty = aiDifficulty
+    }
+    serverConnection.emit("room:create", payload)
 }
 
 export function onRoomResult(handler) {

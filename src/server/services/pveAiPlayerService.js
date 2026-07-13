@@ -8,6 +8,10 @@ const {
 const {
     savePlacementDecisionLog: defaultSavePlacementDecisionLog,
 } = require("./logService.js");
+const {
+    AI_EXECUTION_PROFILES,
+    DEFAULT_AI_DIFFICULTY,
+} = require("./aiDifficulty.js");
 
 const AI_ACTIONS = new Set([
     "move_left",
@@ -16,8 +20,6 @@ const AI_ACTIONS = new Set([
     "soft_drop",
     "hard_drop",
 ]);
-const MAX_TERMINAL_SOFT_DROPS = 5;
-
 let heuristicAiPromise = null;
 
 function loadHeuristicAi() {
@@ -122,6 +124,8 @@ function createPveAiPlayerService(dependencies = {}) {
             }
             const currentState = snapshotResult.snapshot;
             const plan = player.aiPlan;
+            const executionProfile = AI_EXECUTION_PROFILES[matchResult.match.aiDifficulty]
+                || AI_EXECUTION_PROFILES[DEFAULT_AI_DIFFICULTY];
             if (plan.pieceIndex !== currentState.pieceIndex) {
                 player.aiPlan = null;
                 return {
@@ -136,7 +140,7 @@ function createPveAiPlayerService(dependencies = {}) {
             const plannedAction = plan.remainingActions[0];
             const shouldSoftDropBeforeLock = plannedAction === "hard_drop" &&
                 currentState.activePiece?.row < plan.selectedPlacement.row &&
-                plan.terminalSoftDropsExecuted < MAX_TERMINAL_SOFT_DROPS;
+                plan.terminalSoftDropsExecuted < executionProfile.terminalSoftDropSteps;
             const action = shouldSoftDropBeforeLock
                 ? "soft_drop"
                 : plannedAction;
@@ -367,6 +371,7 @@ function createPlacementDecisionLog({
         playerId,
         source: "heuristic_ai",
         modelType: "heuristic",
+        aiDifficulty: match.aiDifficulty || DEFAULT_AI_DIFFICULTY,
         tick: stateBefore.currentTick,
         pieceIndex: stateBefore.pieceIndex,
         createdAt,

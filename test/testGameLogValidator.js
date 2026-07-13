@@ -127,11 +127,24 @@ test("validatePlacementDecisionLog는 heuristic_ai schemaVersion 2 로그를 허
     const result = validatePlacementDecisionLog(createPlacementDecisionLog({
         source: "heuristic_ai",
         modelType: "heuristic",
+        aiDifficulty: "hard",
         aiComparison: undefined,
     }));
 
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
+});
+
+test("validatePlacementDecisionLog는 optional AI 난이도 enum을 검증한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        source: "heuristic_ai",
+        modelType: "heuristic",
+        aiDifficulty: "expert",
+        aiComparison: undefined,
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "INVALID_AI_DIFFICULTY");
 });
 
 test("validatePlacementDecisionLog는 selectedPlacement가 없으면 실패한다", () => {

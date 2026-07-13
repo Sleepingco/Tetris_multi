@@ -1,4 +1,9 @@
 const { randomUUID } = require("crypto")
+const {
+    AI_DIFFICULTY,
+    DEFAULT_AI_DIFFICULTY,
+    isValidAiDifficulty,
+} = require("./aiDifficulty.js")
 
 // =============================
 // In-memory Room Store
@@ -118,12 +123,19 @@ function createRoom(hostPlayer, options = {}) {
         return failure("HOST_PLAYER_ID_REQUIRED")
     }
 
+    const mode = normalizeRoomMode(options.mode)
+    const aiDifficulty = mode === ROOM_MODE.PVE
+        ? options.aiDifficulty ?? DEFAULT_AI_DIFFICULTY
+        : null
+    if (mode === ROOM_MODE.PVE && !isValidAiDifficulty(aiDifficulty)) {
+        return failure("INVALID_AI_DIFFICULTY")
+    }
+
     const roomId = createUniqueRoomId(options.generateRoomId)
     if (!roomId) {
         return failure("ROOM_ID_GENERATION_FAILED")
     }
 
-    const mode = normalizeRoomMode(options.mode)
     const humanHost = createHumanPlayer(hostPlayer)
     const players = mode === ROOM_MODE.PVE
         ? [humanHost, createHeuristicAiPlayer(roomId)]
@@ -131,6 +143,7 @@ function createRoom(hostPlayer, options = {}) {
     const room = {
         roomId,
         mode,
+        aiDifficulty,
         hostPlayerId: humanHost.playerId,
         players,
         status: "waiting",
@@ -445,6 +458,7 @@ function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
 }
 
 module.exports = {
+    AI_DIFFICULTY,
     PLAYER_TYPE,
     ROOM_MODE,
     createRoom,

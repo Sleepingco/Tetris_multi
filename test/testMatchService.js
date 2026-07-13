@@ -44,6 +44,7 @@ test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
     assert.equal(result.match.roomId, "ROOM001");
+    assert.equal(result.match.aiDifficulty, null);
     assert.equal(result.match.status, "playing");
     assert.equal(result.match.players.length, 2);
     assert.equal(result.match.players[0].playerId, "host-player");
@@ -51,6 +52,42 @@ test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를
     assert.equal(result.match.players[0].nextInputSequence, 1);
     assert.equal(result.match.players[0].aiPlan, null);
     assert.equal(typeof result.match.createdAt, "number");
+});
+
+test("createMatch는 PVE room 난이도를 match 단일 실행 설정으로 복사한다", () => {
+    resetMatches();
+
+    const hardResult = createMatch({
+        ...createPlayingRoom("PVE_MATCH_HARD"),
+        mode: "pve",
+        aiDifficulty: "hard",
+    });
+    const defaultResult = createMatch({
+        ...createPlayingRoom("PVE_MATCH_DEFAULT"),
+        mode: "pve",
+    });
+
+    assert.equal(hardResult.match.aiDifficulty, "hard");
+    assert.equal(defaultResult.match.aiDifficulty, "normal");
+    hardResult.match.players.forEach((player) => {
+        assert.equal(Object.hasOwn(player, "aiDifficulty"), false);
+        assert.equal(Object.hasOwn(player.authoritativeState, "aiDifficulty"), false);
+        assert.equal(Object.hasOwn(player.aiPlan || {}, "aiDifficulty"), false);
+    });
+});
+
+test("createMatch는 invalid PVE 난이도를 거부하고 match를 저장하지 않는다", () => {
+    resetMatches();
+
+    const result = createMatch({
+        ...createPlayingRoom("PVE_MATCH_INVALID"),
+        mode: "pve",
+        aiDifficulty: "expert",
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "INVALID_AI_DIFFICULTY");
+    assert.equal(getMatchState("PVE_MATCH_INVALID").reason, "MATCH_NOT_FOUND");
 });
 
 test("createMatch는 player별 server bag chunks를 만든다", () => {
@@ -510,6 +547,7 @@ test("getAuthoritativePlayerSnapshotDto는 pendingGarbageLines만 client snapsho
     assert.equal(snapshotResult.snapshot.pendingGarbageLines, 3);
     assert.equal(Object.hasOwn(snapshotResult.snapshot, "pendingGarbageQueue"), false);
     assert.equal(Object.hasOwn(snapshotResult.snapshot, "aiPlan"), false);
+    assert.equal(Object.hasOwn(snapshotResult.snapshot, "aiDifficulty"), false);
     assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, [
         { lines: 2, holeCol: 3 },
         { lines: 1, holeCol: 5 },

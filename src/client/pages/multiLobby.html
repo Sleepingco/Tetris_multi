@@ -93,19 +93,33 @@
                     <div class="action-box">
                         <h3>Join by Code</h3>
                         <p>상대가 만든 방 코드로 참가할 수 있습니다.</p>
-                        <div class="join-group">
+                        <div id="joinByCodeControls" class="join-group">
                             <input type="text" id="roomCodeInput" class="input-box input-code" placeholder="ENTER CODE"
                                 maxlength="8">
                             <button id="btnJoinCode" class="btn" type="button">방 입장</button>
-                            <button id="btnLeaveRoom" class="btn" type="button">방 나가기</button>
+                            <button id="btnOpenCreateRoom" class="btn ghost" type="button">방 생성</button>
                         </div>
-                    </div>
-
-                    <div class="action-box" style="padding: 16px;">
-                        <p style="text-align:center; font-size:0.85rem;">방을 만들고 상대에게 코드를 공유하세요.</p>
-                        <div class="join-group">
+                        <div id="createRoomControls" class="join-group" hidden>
+                            <button id="btnBackToJoin" class="room-mode-back" type="button"
+                                aria-label="방 입장으로 돌아가기" title="방 입장으로 돌아가기">&larr;</button>
                             <button id="btnCreateRoom" class="btn ghost" type="button">PVP 방 생성</button>
-                            <button id="btnCreatePveRoom" class="btn" type="button">AI 대전</button>
+                            <button id="btnOpenPveCreate" class="btn" type="button">AI PVE</button>
+                            <div id="pveCreateControls" class="join-group" hidden>
+                                <fieldset id="aiDifficultySelector" class="difficulty-selector">
+                                    <legend>AI 난이도</legend>
+                                    <div class="difficulty-options">
+                                        <label class="difficulty-option">
+                                            <input type="radio" name="aiDifficulty" value="normal" checked>
+                                            <span>보통</span>
+                                        </label>
+                                        <label class="difficulty-option">
+                                            <input type="radio" name="aiDifficulty" value="hard">
+                                            <span>어려움</span>
+                                        </label>
+                                    </div>
+                                </fieldset>
+                                <button id="btnCreatePveRoom" class="btn" type="button">PVE 방 생성</button>
+                            </div>
                         </div>
                         <div id="roomStatus" class="room-status" hidden>
                             <div class="room-status-row">
@@ -123,6 +137,7 @@
                                 <span>플레이어</span>
                                 <strong><span id="roomPlayerCountText">0</span> / 2</strong>
                             </div>
+                            <button id="btnLeaveRoom" class="btn ghost" type="button">방 나가기</button>
                         </div>
                     </div>
                 </section>
@@ -164,6 +179,10 @@
         const roomCodeText = requireElement(document, "#roomCodeText", "lobby")
         const roomStateText = requireElement(document, "#roomStateText", "lobby")
         const roomPlayerCountText = requireElement(document, "#roomPlayerCountText", "lobby")
+        const joinByCodeControls = requireElement(document, "#joinByCodeControls", "lobby")
+        const createRoomControls = requireElement(document, "#createRoomControls", "lobby")
+        const pveCreateControls = requireElement(document, "#pveCreateControls", "lobby")
+        const aiDifficultySelector = requireElement(document, "#aiDifficultySelector", "lobby")
         const copyRoomCodeBtn = requireElement(document, "#btnCopyRoomCode", "lobby")
         const playerNicknameText = requireElement(document, "#playerNicknameText", "lobby")
         const playerAvatarChar = requireElement(document, "#playerAvatarChar", "lobby")
@@ -275,7 +294,10 @@
         // Room Actions
         // 방 생성, 참가 요청, 방 나가기 처럼 사용자가 roomClient에 명령을 보내는 진입점이다.
         // =============================
+        const openCreateRoomBtn = queryElement(document, "#btnOpenCreateRoom")
+        const backToJoinBtn = queryElement(document, "#btnBackToJoin")
         const btnCreateRoom = queryElement(document, "#btnCreateRoom")
+        const openPveCreateBtn = queryElement(document, "#btnOpenPveCreate")
         const btnCreatePveRoom = queryElement(document, "#btnCreatePveRoom")
         const btnLeaveRoom = queryElement(document, "#btnLeaveRoom")
 
@@ -324,6 +346,34 @@
             sessionStorage.removeItem("room")
         }
 
+        function showJoinByCodeControls() {
+            joinByCodeControls.hidden = false
+            createRoomControls.hidden = true
+            pveCreateControls.hidden = true
+            roomStatus.hidden = true
+        }
+
+        function showCreateRoomControls() {
+            joinByCodeControls.hidden = true
+            createRoomControls.hidden = false
+            pveCreateControls.hidden = true
+            roomStatus.hidden = true
+        }
+
+        function showPveCreateControls() {
+            joinByCodeControls.hidden = true
+            createRoomControls.hidden = false
+            pveCreateControls.hidden = false
+            roomStatus.hidden = true
+        }
+
+        function showRoomStatus() {
+            joinByCodeControls.hidden = true
+            createRoomControls.hidden = true
+            pveCreateControls.hidden = true
+            roomStatus.hidden = false
+        }
+
         // 현재 플레이어 정보를 UI에 반영한다.
         playerNicknameText.textContent = currentPlayer.nickname
         playerAvatarChar.textContent = currentPlayer.nickname.charAt(0).toUpperCase()
@@ -335,13 +385,20 @@
             requestRoomSync(savedRoomId, currentPlayer.playerId)
         } else {
             updateRoomBadge(null)
+            showJoinByCodeControls()
         }
 
+        openCreateRoomBtn?.addEventListener("click", showCreateRoomControls)
+        backToJoinBtn?.addEventListener("click", showJoinByCodeControls)
         btnCreateRoom?.addEventListener("click", () => {
             requestCreateRoom(currentPlayer, "pvp")
         })
+        openPveCreateBtn?.addEventListener("click", showPveCreateControls)
         btnCreatePveRoom?.addEventListener("click", () => {
-            requestCreateRoom(currentPlayer, "pve")
+            const aiDifficulty = aiDifficultySelector.querySelector(
+                'input[name="aiDifficulty"]:checked'
+            )?.value || "normal"
+            requestCreateRoom(currentPlayer, "pve", aiDifficulty)
         })
         btnLeaveRoom?.addEventListener("click", () => {
             if (!currentRoomId) {
@@ -409,7 +466,7 @@
             currentRoomId = room.roomId;
             saveRoomSession(room)
             updateRoomBadge(room.roomId)
-            roomStatus.hidden = false
+            showRoomStatus()
             roomCodeText.textContent = room.roomId
             roomStateText.textContent = room.status
             roomPlayerCountText.textContent = String(room.players.length)
@@ -421,7 +478,7 @@
             currentRoomId = null
             clearRoomSession()
             updateRoomBadge(null)
-            roomStatus.hidden = true
+            showJoinByCodeControls()
             roomCodeText.textContent = "-"
             roomStateText.textContent = "-"
             roomPlayerCountText.textContent = "0"

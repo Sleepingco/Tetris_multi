@@ -121,14 +121,17 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     const authoritativeTickerService = dependencies.authoritativeTickerService
         || defaultAuthoritativeTickerService
 
-    clientSocket.on("room:create", (player) => {
-        const createPayload = player?.player
-            ? player
-            : { player, mode: "pvp" }
+    clientSocket.on("room:create", (payload) => {
+        const createPayload = payload?.player
+            ? payload
+            : { player: payload, mode: "pvp" }
         const hostPlayer = createPayload.player
             ? { ...createPayload.player, socketId: clientSocket.id }
             : null
-        const result = createRoom(hostPlayer, { mode: createPayload.mode })
+        const result = createRoom(hostPlayer, {
+            mode: createPayload.mode,
+            aiDifficulty: createPayload.aiDifficulty,
+        })
 
         if (result.ok) {
             clientSocket.join(result.room.roomId);

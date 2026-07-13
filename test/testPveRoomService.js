@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
+    AI_DIFFICULTY,
     createRoom,
     finishGame,
     getRoomState,
@@ -26,6 +27,7 @@ test("PVP room은 기본 mode와 human player만 생성한다", () => {
 
     assert.equal(result.ok, true);
     assert.equal(result.room.mode, "pvp");
+    assert.equal(result.room.aiDifficulty, null);
     assert.equal(result.room.players.length, 1);
     assert.equal(result.room.players[0].playerType, "human");
 });
@@ -38,12 +40,54 @@ test("PVE room은 서버가 heuristic AI player를 두 번째 player로 생성�
 
     assert.equal(result.ok, true);
     assert.equal(result.room.mode, "pve");
+    assert.equal(result.room.aiDifficulty, AI_DIFFICULTY.NORMAL);
     assert.equal(result.room.players.length, 2);
     assert.deepEqual(result.room.players.map(player => player.playerType), [
         "human",
         "heuristic_ai",
     ]);
     assert.equal(result.room.players[1].socketId, undefined);
+});
+
+test("PVE room은 normal과 hard 난이도를 허용한다", () => {
+    const normalResult = createRoom(createHuman("pve-normal", "pve-normal-socket"), {
+        mode: "pve",
+        aiDifficulty: "normal",
+        generateRoomId: () => "PVENORM1",
+    });
+    const hardResult = createRoom(createHuman("pve-hard", "pve-hard-socket"), {
+        mode: "pve",
+        aiDifficulty: "hard",
+        generateRoomId: () => "PVEHARD1",
+    });
+
+    assert.equal(normalResult.ok, true);
+    assert.equal(normalResult.room.aiDifficulty, AI_DIFFICULTY.NORMAL);
+    assert.equal(hardResult.ok, true);
+    assert.equal(hardResult.room.aiDifficulty, AI_DIFFICULTY.HARD);
+});
+
+test("PVE room은 잘못된 난이도를 거부하고 room을 만들지 않는다", () => {
+    const result = createRoom(createHuman("pve-invalid", "pve-invalid-socket"), {
+        mode: "pve",
+        aiDifficulty: "expert",
+        generateRoomId: () => "PVEINV01",
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "INVALID_AI_DIFFICULTY");
+    assert.equal(getRoomState("PVEINV01"), null);
+});
+
+test("PVP room은 전달된 AI 난이도를 사용하지 않는다", () => {
+    const result = createRoom(createHuman("pvp-ignore", "pvp-ignore-socket"), {
+        mode: "pvp",
+        aiDifficulty: "hard",
+        generateRoomId: () => "PVPIGN01",
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.room.aiDifficulty, null);
 });
 
 test("PVE room은 외부 guest join을 허용하지 않는다", () => {

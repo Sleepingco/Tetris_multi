@@ -16,10 +16,11 @@ const { validatePlacementDecisionLog } = require(
     "../src/server/validators/gameLogValidator.js"
 );
 
-function createPveMatch(roomId) {
+function createPveMatch(roomId, aiDifficulty = "normal") {
     return createMatch({
         roomId,
         mode: "pve",
+        aiDifficulty,
         status: "playing",
         players: [
             { playerId: "human", playerType: "human" },
@@ -150,6 +151,7 @@ test("AI step은 plan을 먼저 만들고 action을 하나씩 적용한 뒤 log�
     assert.equal(savedLogs[0].schemaVersion, 2);
     assert.equal(savedLogs[0].source, "heuristic_ai");
     assert.equal(savedLogs[0].modelType, "heuristic");
+    assert.equal(savedLogs[0].aiDifficulty, "normal");
     assert.equal(savedLogs[0].pieceIndex, pieceIndexBefore);
     assert.equal(savedLogs[0].evaluation.candidateCount > 0, true);
     assert.equal(result.decision.plannedActions.at(-1), "hard_drop");
@@ -177,6 +179,58 @@ test("AI step은 plan을 먼저 만들고 action을 하나씩 적용한 뒤 log�
     assert.deepEqual(savedLogs[0].metricsBefore, getBoardMetrics(aiStateBefore.board));
     assert.deepEqual(savedLogs[0].metricsAfter, getBoardMetrics(savedLogs[0].boardAfter));
     assert.equal(validatePlacementDecisionLog(savedLogs[0]).ok, true);
+});
+
+test("hard 난이도는 move와 rotate 후 terminal soft_drop 없이 hard_drop한다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    const match = createPveMatch("PVE-AI-HARD", "hard");
+    const aiPlayer = setActivePiece(match, {
+        pieceType: "tree",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    });
+    const decision = createDecision({
+        selectedPlacement: { pieceType: "tree", rotation: 1, row: 17, col: 2 },
+        plannedActions: ["move_left", "rotate", "hard_drop"],
+    });
+    const savedLogs = [];
+    const service = createPveAiPlayerService({
+        loadHeuristicAi: createStubAi(decision),
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log);
+            return { ok: true, log, reason: null };
+        },
+    });
+
+    const planResult = await service.processAiStep("PVE-AI-HARD", "ai", gameCore);
+    const { result, results } = await processUntilPlacement(
+        service,
+        "PVE-AI-HARD",
+        gameCore,
+    );
+
+    assert.equal(planResult.reason, "AI_PLAN_CREATED");
+    assert.deepEqual(results.map(step => step.action), [
+        "move_left",
+        "rotate",
+        "hard_drop",
+    ]);
+    assert.deepEqual(result.placementResult.lockedPiece, {
+        pieceType: "tree",
+        rotation: 1,
+        row: 17,
+        col: 2,
+    });
+    assert.equal(result.placementResult.droppedRows, 18);
+    assert.equal(aiPlayer.authoritativeState.score, 36);
+    assert.equal(savedLogs.length, 1);
+    assert.equal(savedLogs[0].aiDifficulty, "hard");
+    assert.deepEqual(
+        savedLogs[0].inputSequence.map(input => input.action),
+        ["move_left", "rotate", "hard_drop"],
+    );
 });
 
 test("AI 후보가 없으면 AI state만 gameOver로 처리한다", async () => {

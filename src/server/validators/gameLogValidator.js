@@ -1,4 +1,5 @@
 const DEFAULT_MAX_LOG_BYTES = 256 * 1024;
+const { isValidAiDifficulty } = require("../services/aiDifficulty.js");
 
 function createSuccess(log) {
     return {
@@ -128,6 +129,9 @@ function validatePlacementDecisionLogV2(log) {
     }
     if (!isValidSourceModelPair(log.source, log.modelType)) {
         return createFailure("INVALID_SOURCE_MODEL");
+    }
+    if (log.aiDifficulty !== undefined && !isValidAiDifficulty(log.aiDifficulty)) {
+        return createFailure("INVALID_AI_DIFFICULTY");
     }
     if (log.source === "human" && !isValidAiComparison(log.aiComparison)) {
         return createFailure("INVALID_AI_COMPARISON");
