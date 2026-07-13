@@ -82,6 +82,25 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
     assert.equal(initialAi.authoritativeState.board.flat().every(cell => cell === null), true);
 
     await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
+
+    const softDropSnapshots = emitted.filter(event => {
+        return event.eventName === "game:authoritative:snapshot" &&
+            event.payload.playerId === "ai" &&
+            event.payload.snapshot.pieceIndex === 1 &&
+            event.payload.snapshot.activePiece.row >= 0;
+    });
+    assert.deepEqual(
+        softDropSnapshots.map(event => event.payload.snapshot.activePiece.row),
+        [0, 1, 2, 3, 4],
+    );
+    assert.equal(initialAi.authoritativeState.board.flat().every(cell => cell === null), true);
+    assert.equal(initialAi.authoritativeState.pieceIndex, 1);
+
+    await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
 
     const match = getMatchState("PVE-TICKER-1").match;
     const human = match.players.find(player => player.playerId === "human");
@@ -91,10 +110,10 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
             event.payload.playerId === "ai";
     });
 
-    assert.equal(human.authoritativeState.activePiece.row, 0);
+    assert.equal(human.authoritativeState.activePiece.row, 1);
     assert.equal(ai.authoritativeState.pieceIndex, 2);
     assert.ok(ai.authoritativeState.board.flat().some(cell => cell !== null));
-    assert.equal(aiSnapshotEvents.length, 4);
+    assert.equal(aiSnapshotEvents.length, 9);
     assert.deepEqual(
         aiSnapshotEvents.slice(0, 3).map(event => event.payload.snapshot.activePiece.col),
         [2, 1, 0],
@@ -105,7 +124,17 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
     assert.equal(savedLogs.length, 1);
     assert.deepEqual(
         savedLogs[0].inputSequence.map(input => input.action),
-        ["move_left", "move_left", "move_left", "hard_drop"],
+        [
+            "move_left",
+            "move_left",
+            "move_left",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "hard_drop",
+        ],
     );
 
     ticker.stopRoomTicker("PVE-TICKER-1");
@@ -207,7 +236,17 @@ test("AI executor는 고정 fixture의 authoritative input 결과를 유지한�
 
     assert.equal(planResult.reason, "AI_PLAN_CREATED");
     assert.equal(executorResult.ok, true);
-    assert.deepEqual(actions, ["move_left", "move_left", "move_left", "hard_drop"]);
+    assert.deepEqual(actions, [
+        "move_left",
+        "move_left",
+        "move_left",
+        "soft_drop",
+        "soft_drop",
+        "soft_drop",
+        "soft_drop",
+        "soft_drop",
+        "hard_drop",
+    ]);
     assert.deepEqual(executorResult.placementResult.lockedPiece, {
         pieceType: "square",
         rotation: 0,
@@ -218,7 +257,7 @@ test("AI executor는 고정 fixture의 authoritative input 결과를 유지한�
     assert.equal(executorPlayer.authoritativeState.board[18][1], "square");
     assert.equal(executorPlayer.authoritativeState.board[19][0], "square");
     assert.equal(executorPlayer.authoritativeState.board[19][1], "square");
-    assert.equal(executorPlayer.authoritativeState.score, 38);
+    assert.equal(executorPlayer.authoritativeState.score, 28);
     assert.equal(executorPlayer.authoritativeState.lines, 0);
     assert.equal(executorPlayer.authoritativeState.pieceIndex, 2);
     assert.deepEqual(executorPlayer.authoritativeState.activePiece, {
@@ -231,6 +270,16 @@ test("AI executor는 고정 fixture의 authoritative input 결과를 유지한�
     assert.equal(savedLogs.length, 1);
     assert.deepEqual(
         savedLogs[0].inputSequence.map(input => input.action),
-        ["move_left", "move_left", "move_left", "hard_drop"],
+        [
+            "move_left",
+            "move_left",
+            "move_left",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "hard_drop",
+        ],
     );
 });

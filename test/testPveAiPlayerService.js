@@ -123,9 +123,11 @@ test("AI step은 plan을 먼저 만들고 action을 하나씩 적용한 뒤 log�
         "remainingActions",
         "selectedPlacement",
         "stateBefore",
+        "terminalSoftDropsExecuted",
     ]);
     assert.equal(aiPlayer.aiPlan.pieceIndex, pieceIndexBefore);
     assert.deepEqual(aiPlayer.aiPlan.executedInputs, []);
+    assert.equal(aiPlayer.aiPlan.terminalSoftDropsExecuted, 0);
     assert.deepEqual(aiPlayer.aiPlan.stateBefore, aiStateBefore);
     const plannedActions = [...aiPlayer.aiPlan.remainingActions];
 
@@ -151,13 +153,18 @@ test("AI step은 plan을 먼저 만들고 action을 하나씩 적용한 뒤 log�
     assert.equal(savedLogs[0].pieceIndex, pieceIndexBefore);
     assert.equal(savedLogs[0].evaluation.candidateCount > 0, true);
     assert.equal(result.decision.plannedActions.at(-1), "hard_drop");
+    const expectedInputActions = [
+        ...plannedActions.slice(0, -1),
+        ...Array(5).fill("soft_drop"),
+        "hard_drop",
+    ];
     assert.deepEqual(
         savedLogs[0].inputSequence.map(input => input.action),
-        plannedActions,
+        expectedInputActions,
     );
     assert.deepEqual(
         savedLogs[0].inputSequence.map(input => input.sequence),
-        plannedActions.map((_, index) => index + 1),
+        expectedInputActions.map((_, index) => index + 1),
     );
     assert.equal(savedLogs[0].inputSequence.every(input => input.pieceIndex === pieceIndexBefore), true);
     assert.equal(aiPlayer.aiPlan, null);
@@ -278,8 +285,8 @@ test("AI action executor는 기존 authoritative line clear와 score 규칙을 �
     assert.equal(result.ok, true);
     assert.equal(result.placementResult.linesCleared, 1);
     assert.equal(aiPlayer.authoritativeState.lines, 1);
-    assert.equal(aiPlayer.authoritativeState.score, 48);
-    assert.equal(result.log.placementResult.scoreAfter, 48);
+    assert.equal(aiPlayer.authoritativeState.score, 38);
+    assert.equal(result.log.placementResult.scoreAfter, 38);
 });
 
 test("AI queue가 부족하면 서버가 bag을 보충하고 다음 piece를 spawn한다", async () => {
@@ -434,7 +441,7 @@ test("stale AI plan은 state를 적용하지 않고 폐기한다", async () => {
     assert.equal(aiPlayer.aiPlan.pieceIndex, 2);
 });
 
-test("hard_drop은 검증된 lockedPiece와 실제 성공 inputSequence로 log를 만든다", async () => {
+test("terminal hard_drop 전 soft_drop 5회와 남은 거리 점수를 실제 inputSequence로 기록한다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();
     const match = createPveMatch("PVE-AI-LOCK");
@@ -475,11 +482,28 @@ test("hard_drop은 검증된 lockedPiece와 실제 성공 inputSequence로 log�
     await service.processAiStep("PVE-AI-LOCK", "ai", gameCore);
     const stateBefore = structuredClone(aiPlayer.aiPlan.stateBefore);
     const moveResult = await service.processAiStep("PVE-AI-LOCK", "ai", gameCore);
-    const lockResult = await service.processAiStep("PVE-AI-LOCK", "ai", gameCore);
+    const softDropResults = [];
+    const softDropRows = [];
+    for (let index = 0; index < 5; index += 1) {
+        softDropResults.push(
+            await service.processAiStep("PVE-AI-LOCK", "ai", gameCore),
+        );
+        softDropRows.push(aiPlayer.authoritativeState.activePiece.row);
+    }
 
     assert.equal(moveResult.action, "move_left");
     assert.equal(moveResult.placementResult, null);
+    assert.deepEqual(softDropResults.map(result => result.action), Array(5).fill("soft_drop"));
+    assert.deepEqual(softDropRows, [0, 1, 2, 3, 4]);
+    assert.deepEqual(aiPlayer.aiPlan.remainingActions, ["hard_drop"]);
+    assert.equal(aiPlayer.aiPlan.terminalSoftDropsExecuted, 5);
+    assert.equal(aiPlayer.authoritativeState.pieceIndex, 1);
+    assert.equal(aiPlayer.authoritativeState.board.flat().every(cell => cell === null), true);
+
+    const lockResult = await service.processAiStep("PVE-AI-LOCK", "ai", gameCore);
+
     assert.equal(lockResult.action, "hard_drop");
+    assert.deepEqual(lockResult.decision.plannedActions, ["move_left", "hard_drop"]);
     assert.deepEqual(lockResult.placementResult.lockedPiece, {
         pieceType: "square",
         rotation: 0,
@@ -487,8 +511,18 @@ test("hard_drop은 검증된 lockedPiece와 실제 성공 inputSequence로 log�
         col: 2,
     });
     assert.equal(aiPlayer.authoritativeState.pieceIndex, 2);
+    assert.equal(aiPlayer.authoritativeState.score, 28);
+    assert.equal(lockResult.placementResult.scoreDelta, 28);
     assert.equal(aiPlayer.aiPlan, null);
-    assert.deepEqual(executedActions, ["move_left", "hard_drop"]);
+    assert.deepEqual(executedActions, [
+        "move_left",
+        "soft_drop",
+        "soft_drop",
+        "soft_drop",
+        "soft_drop",
+        "soft_drop",
+        "hard_drop",
+    ]);
     assert.equal(savedLogs.length, 1);
     assert.deepEqual(savedLogs[0].selectedPlacement, {
         pieceType: "square",
@@ -504,11 +538,19 @@ test("hard_drop은 검증된 lockedPiece와 실제 성공 inputSequence로 log�
     });
     assert.deepEqual(
         savedLogs[0].inputSequence.map(input => input.action),
-        ["move_left", "hard_drop"],
+        [
+            "move_left",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "soft_drop",
+            "hard_drop",
+        ],
     );
     assert.deepEqual(
         savedLogs[0].inputSequence.map(input => input.sequence),
-        [1, 2],
+        [1, 2, 3, 4, 5, 6, 7],
     );
     assert.deepEqual(savedLogs[0].boardBefore, stateBefore.board);
     assert.deepEqual(savedLogs[0].activePiece, {
@@ -525,42 +567,32 @@ test("hard_drop은 검증된 lockedPiece와 실제 성공 inputSequence로 log�
     assert.equal(validatePlacementDecisionLog(savedLogs[0]).ok, true);
 });
 
-test("hard_drop 결과가 plan과 다르면 state를 되돌리지 않고 log를 저장하지 않는다", async () => {
+test("terminal soft_drop이 예상보다 일찍 lock되면 divergence로 처리하고 log를 저장하지 않는다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();
     const match = createPveMatch("PVE-AI-DIVERGED");
     const aiPlayer = setActivePiece(match, {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 18,
         col: 3,
     });
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 19, col: 3 },
         plannedActions: ["hard_drop"],
     });
     let logCount = 0;
+    const appliedActions = [];
     const service = createPveAiPlayerService({
         loadHeuristicAi: createStubAi(decision),
-        applyInput() {
-            aiPlayer.authoritativeState.board[19][0] = "square";
-            aiPlayer.authoritativeState.pieceIndex = 2;
-            return {
-                ok: true,
-                gameplayResult: {
-                    ok: true,
-                    placementResult: {
-                        lockedPiece: {
-                            pieceType: "square",
-                            rotation: 0,
-                            row: 18,
-                            col: 0,
-                        },
-                        attackLines: 0,
-                        gameOver: false,
-                    },
-                },
-            };
+        applyInput(roomId, playerId, input, core) {
+            appliedActions.push(input.action);
+            return applyAuthoritativeInputToMatchPlayerState(
+                roomId,
+                playerId,
+                input,
+                core,
+            );
         },
         savePlacementDecisionLog() {
             logCount += 1;
@@ -573,10 +605,113 @@ test("hard_drop 결과가 plan과 다르면 state를 되돌리지 않고 log를 
     assert.equal(result.ok, false);
     assert.equal(result.reason, "AI_PLAN_DIVERGED");
     assert.equal(result.stateChanged, true);
-    assert.equal(aiPlayer.authoritativeState.board[19][0], "square");
+    assert.deepEqual(appliedActions, ["soft_drop"]);
+    assert.deepEqual(result.placementResult.lockedPiece, {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 3,
+    });
+    assert.equal(aiPlayer.authoritativeState.board[18][3], "square");
+    assert.equal(aiPlayer.authoritativeState.board[19][4], "square");
     assert.equal(aiPlayer.authoritativeState.pieceIndex, 2);
     assert.equal(aiPlayer.aiPlan, null);
     assert.equal(logCount, 0);
+});
+
+test("실패한 terminal soft_drop은 inputSequence에 기록하지 않는다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    const match = createPveMatch("PVE-AI-SOFT-DROP-FAIL");
+    const aiPlayer = setActivePiece(match, {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    });
+    const decision = createDecision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    const appliedActions = [];
+    let logCount = 0;
+    const service = createPveAiPlayerService({
+        loadHeuristicAi: createStubAi(decision),
+        applyInput(roomId, playerId, input) {
+            appliedActions.push(input.action);
+            return { ok: false, reason: "SOFT_DROP_RETRY" };
+        },
+        savePlacementDecisionLog() {
+            logCount += 1;
+        },
+    });
+
+    await service.processAiStep("PVE-AI-SOFT-DROP-FAIL", "ai", gameCore);
+    const plan = aiPlayer.aiPlan;
+    const result = await service.processAiStep(
+        "PVE-AI-SOFT-DROP-FAIL",
+        "ai",
+        gameCore,
+    );
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "SOFT_DROP_RETRY");
+    assert.deepEqual(appliedActions, ["soft_drop"]);
+    assert.deepEqual(plan.executedInputs, []);
+    assert.equal(plan.terminalSoftDropsExecuted, 0);
+    assert.equal(aiPlayer.aiPlan, null);
+    assert.equal(logCount, 0);
+});
+
+test("selectedPlacement까지 거리가 5보다 짧으면 필요한 soft_drop만 실행한다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    const match = createPveMatch("PVE-AI-SHORT-DROP");
+    const aiPlayer = setActivePiece(match, {
+        pieceType: "square",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    });
+    aiPlayer.authoritativeState.board[4][3] = "stack";
+    aiPlayer.authoritativeState.board[4][4] = "stack";
+    const decision = createDecision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 2, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    const service = createPveAiPlayerService({
+        loadHeuristicAi: createStubAi(decision),
+        savePlacementDecisionLog(log) {
+            return { ok: true, log, reason: null };
+        },
+    });
+
+    await service.processAiStep("PVE-AI-SHORT-DROP", "ai", gameCore);
+    const stepResults = [];
+    const softDropRows = [];
+    for (let index = 0; index < 4; index += 1) {
+        const result = await service.processAiStep("PVE-AI-SHORT-DROP", "ai", gameCore);
+        stepResults.push(result);
+        if (result.action === "soft_drop") {
+            softDropRows.push(aiPlayer.authoritativeState.activePiece.row);
+        }
+    }
+
+    assert.deepEqual(stepResults.map(result => result.action), [
+        "soft_drop",
+        "soft_drop",
+        "soft_drop",
+        "hard_drop",
+    ]);
+    assert.deepEqual(softDropRows, [0, 1, 2]);
+    assert.deepEqual(stepResults.at(-1).placementResult.lockedPiece, {
+        pieceType: "square",
+        rotation: 0,
+        row: 2,
+        col: 3,
+    });
+    assert.equal(aiPlayer.authoritativeState.score, 0);
+    assert.equal(aiPlayer.aiPlan, null);
 });
 
 test("AI player는 human input log를 기록할 수 없다", () => {

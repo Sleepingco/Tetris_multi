@@ -16,6 +16,7 @@ const AI_ACTIONS = new Set([
     "soft_drop",
     "hard_drop",
 ]);
+const MAX_TERMINAL_SOFT_DROPS = 5;
 
 let heuristicAiPromise = null;
 
@@ -46,7 +47,7 @@ function createPveAiPlayerService(dependencies = {}) {
     /**
      * AI plan 생성 또는 authoritative action 하나만 처리한다.
      * - plan이 없으면 현재 state에서 decision을 만들고 실행은 다음 cadence로 미룬다.
-     * - plan이 있으면 remainingActions의 첫 action만 기존 authoritative input 경로에 적용한다.
+     * - plan이 있으면 planned action 또는 terminal soft drop 하나를 authoritative input 경로에 적용한다.
      *
      * @param {string} roomId - match room id
      * @param {string} playerId - heuristic AI player id
@@ -132,7 +133,13 @@ function createPveAiPlayerService(dependencies = {}) {
                 };
             }
 
-            const action = plan.remainingActions[0];
+            const plannedAction = plan.remainingActions[0];
+            const shouldSoftDropBeforeLock = plannedAction === "hard_drop" &&
+                currentState.activePiece?.row < plan.selectedPlacement.row &&
+                plan.terminalSoftDropsExecuted < MAX_TERMINAL_SOFT_DROPS;
+            const action = shouldSoftDropBeforeLock
+                ? "soft_drop"
+                : plannedAction;
             const input = {
                 action,
                 pieceIndex: plan.pieceIndex,
@@ -147,7 +154,11 @@ function createPveAiPlayerService(dependencies = {}) {
                 });
             }
 
-            plan.remainingActions.shift();
+            if (shouldSoftDropBeforeLock) {
+                plan.terminalSoftDropsExecuted += 1;
+            } else {
+                plan.remainingActions.shift();
+            }
             plan.executedInputs.push({
                 ...input,
                 sequence: plan.executedInputs.length + 1,
@@ -280,6 +291,7 @@ function createAiPlan(stateBefore, decision) {
         selectedPlacement: clonePlacement(decision.selectedPlacement),
         remainingActions: [...decision.plannedActions],
         executedInputs: [],
+        terminalSoftDropsExecuted: 0,
         decision: {
             ...decision,
             selectedPlacement: clonePlacement(decision.selectedPlacement),
