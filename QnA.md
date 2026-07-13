@@ -3495,3 +3495,122 @@ opponentGame.playLineClearEffect(rows)
 | 프로젝트 전체 리뷰 | Sol | Ultra |
 | Codex 프롬프트 작성 | Terra 또는 Sol | High |
 | 포트폴리오 기술 근거 작성 | Sol | Extra High |
+
+---
+
+## Q. 빠른 입력에서 왜 server snapshot correction이 내 블록을 되돌렸고, 왜 시간 기준으로 바꿨어? (2026-07-10)
+
+문제의 원인은 서버가 틀린 상태를 보낸 것이 아니라, client와 server의 정상적인 처리 시간 차이를 너무 빨리 desync로 판단한 것이다.
+
+클라이언트는 키 입력을 받으면 조작감을 위해 즉시 조각을 움직인다. 서버도 같은 입력을 처리하지만, 네트워크 왕복과 서버 처리 뒤에 결과 snapshot을 보낸다.
+
+```txt
+right 입력을 계속 누르는 상황
+
+client local: col 3 -> col 4 -> col 5
+server state: col 3 -> col 4
+```
+
+이 한 칸 차이는 오류가 아니라 정상적인 local prediction 상태다.
+
+기존 정책은 activePiece 차이가 snapshot 두 번 연속 보이면 full `applySnapshot()`을 실행했다.
+
+```txt
+snapshot 1: server col 4 / local col 3
+-> 잠시 대기
+
+snapshot 2: server col 5 / local col 4
+-> 계속 다르므로 drift라고 판단
+-> myGame.applySnapshot(serverSnapshot)
+-> 내 조각이 서버 위치로 되돌아감
+```
+
+문제는 snapshot이 500ms ticker 때만 오는 것이 아니라, 성공한 `game:input` 직후에도 온다는 점이다. 빠르게 키를 누르면 두 snapshot은 1초가 아니라 수십 ms 차이로 도착할 수 있다. 따라서 "두 번 연속 다름"은 지속적인 오류의 증거가 될 수 없다.
+
+수정 후 판단 기준은 다음과 같다.
+
+```txt
+기존: snapshot이 몇 번 연속 다른가?
+변경: 확정 상태가 실제로 얼마나 오래 또는 크게 다른가?
+```
+
+own player snapshot에서는 `activePiece`의 다음 차이를 correction 근거로 사용하지 않는다.
+
+```txt
+pieceType
+row
+col
+rotation
+snapshot tick
+```
+
+이 값들은 조작 중인 조각의 순간 상태이므로 local prediction을 우선한다.
+
+대신 correction은 확정 결과가 어긋난 경우에만 한다.
+
+```txt
+즉시 correction
+1. server snapshot이 gameOver
+2. server가 garbage를 실제 board에 적용한 경우
+   예: pendingGarbageLines 감소 + board 변경
+3. 같은 pieceIndex인데 settled board가 다른 경우
+4. server와 local의 pieceIndex 차이가 2 이상인 경우
+
+지연 correction
+5. pieceIndex 차이가 1인 상태가 같은 방향으로 750ms 이상 유지되는 경우
+```
+
+`pieceIndex`는 조각이 lock되고 다음 조각으로 진행되는 확정 단계에 가까운 값이다. 차이가 1이면 잠시 처리 순서가 밀린 것일 수 있으므로 기다린다. 차이가 2 이상이면 조각 고정, spawn, garbage 적용 같은 진행 단계가 실제로 어긋났을 가능성이 높아 즉시 맞춘다.
+
+또한 local phase가 `lineClearing`이면 full correction을 미룬다. 서버 snapshot을 바로 적용하면 내 화면에서 진행 중인 line clear effect가 사라질 수 있기 때문이다. 단, `gameOver`는 최종 결과이므로 즉시 적용할 수 있다.
+
+정리하면 역할은 다음과 같다.
+
+```txt
+움직이는 activePiece
+-> client prediction 우선
+
+고정된 board, score, garbage 적용, gameOver
+-> server authoritative 우선
+```
+
+이 방식은 최종 입력 sequence 기반 reconciliation 전의 현실적인 중간 단계다. 장기적으로는 server snapshot에 "서버가 처리한 마지막 input sequence"를 넣고, client가 아직 확인되지 않은 입력만 다시 적용하는 방식이 가장 정확하다.
+
+---
+
+## Q. boardMetrics가 이미 있는데 AI 구현은 이제 어떤 순서로 가야 해? (2026-07-10)
+
+`boardMetrics`는 이미 구현된 기반으로 보면 된다.
+
+현재 파일 위치는 다음과 같다.
+
+```txt
+src/client/game/core/boardMetrics.js
+test/testBoardMetrics.js
+```
+
+이 함수들은 board를 읽어서 `columnHeights`, `aggregateHeight`, `maxHeight`, `holes`, `bumpiness`, `completeLines`를 계산한다. DOM, runtime, socket에 의존하지 않는 순수 함수라서 Node 테스트로 바로 검증할 수 있고, 원본 board를 mutate하지 않는 테스트도 있다.
+
+현재 `src/client/game/core`에 둔 이유는 board 표현과 core 판정 함수가 이 경계에 있기 때문이다. 나중에 서버 AI, 클라이언트 분석, 별도 학습 파이프라인이 같은 metric을 더 넓게 공유해야 하면 `shared` 계층으로 옮길 수 있다. 지금은 불필요한 이동보다 순수성과 테스트를 유지하는 것이 우선이다.
+
+다음 구현 순서는 이렇다.
+
+```txt
+boardMetrics       // 완료
+-> placementGenerator
+-> simulatePlacement
+-> heuristicEvaluator
+-> PVE AI Player
+```
+
+PVE AI는 추천 코치가 아니라 실제 상대다. 즉 "사용자에게 어디에 두라고 알려주는 기능"이 아니라, 게임 안에서 자기 board를 보고 배치를 선택하는 player다.
+
+현재 우선순위는 ML 학습이 아니다. 먼저 휴리스틱 PVE AI와 로그 축적을 만든 뒤, 사용자 배치와 PVE AI 선택을 비교할 수 있는 지표를 쌓는다.
+
+후순위로 미룰 것:
+
+- Python AI 서버
+- 강화학습
+- LLM 코칭 리포트
+
+LLM은 나중에 판단 엔진이 아니라 설명 계층으로 붙인다. 판단은 `boardMetrics`, 배치 시뮬레이션, 휴리스틱 평가 같은 분석 계층이 만들고, LLM은 그 결과를 사람이 읽기 쉽게 풀어주는 역할이다.

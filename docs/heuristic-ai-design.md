@@ -2,11 +2,12 @@
 
 ## Purpose
 
-This document describes the future heuristic AI components.
-It separates pure decision logic from game loop integration so that the work does not interfere with the current server authoritative transition.
+This document describes the heuristic AI path after the server authoritative multiplayer MVP.
+It separates pure decision logic from game loop integration so the AI work does not change the current multiplayer or server authoritative flow.
 
-The first AI should choose the best placement for the current piece.
+The first AI should choose the best placement for the current piece and play as a real PVE opponent.
 It should be simple, testable, and explainable.
+It is not a recommendation coach. Coaching and LLM explanations come later, after gameplay AI and logs exist.
 
 ## Current vs Future
 
@@ -14,24 +15,31 @@ Current implementation:
 
 - Core board functions exist for collision, locking, and line clearing.
 - Runtime currently handles lock flow and placement logging on the client.
-- `boardMetrics` exists as a pure module with Node tests.
+- `src/client/game/core/boardMetrics.js` exists as a pure module with Node tests in `test/testBoardMetrics.js`.
 - A first server authoritative input, ticker, state, and snapshot flow exists.
 - No placement generator, simulator, evaluator, or AI controller exists yet.
 - Final two-browser regression for the authoritative flow is still pending.
 
 Future implementation:
 
-- Additional pure AI utility modules generate, simulate, and evaluate candidate placements.
+- Additional pure AI utility modules are added in this order:
+  1. `placementGenerator`
+  2. `simulatePlacement`
+  3. `heuristicEvaluator`
+  4. PVE AI Player
 - The AI controller runs only after the authoritative game state boundary passes the final browser regression.
 - PVE mode uses the same game rules as human play.
+- The current priority is heuristic PVE AI and log accumulation, not ML training.
+- Python AI server, reinforcement learning, and LLM coaching are later layers.
 
 ## Components
 
 ### boardMetrics
 
 `boardMetrics` reads a board and returns numeric features.
+It is already implemented at `src/client/game/core/boardMetrics.js`.
 
-Expected metrics:
+Implemented metrics:
 
 - `columnHeights`: height of each column.
 - `aggregateHeight`: sum of all column heights.
@@ -42,7 +50,10 @@ Expected metrics:
 
 This module should be pure.
 It must not mutate the board.
-It should be reusable for both heuristic scoring and ML feature extraction.
+It should be reusable for heuristic scoring now and later ML feature extraction.
+
+It currently lives in `src/client/game/core` because it uses the same board representation as the pure core rules and does not depend on DOM, runtime, rendering, sockets, or browser APIs.
+If both server-side AI and client-side tooling need a wider shared import boundary later, this module can move to a `shared` layer without changing its contract.
 
 ### placementGenerator
 
@@ -134,7 +145,8 @@ gameState
   -> selectedPlacement
 ```
 
-This is only a design shape, not a current implementation.
+Only `boardMetrics` exists today.
+The remaining modules should be implemented in the listed order: `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player.
 
 ## Testing Strategy
 
@@ -142,6 +154,7 @@ Test pure modules first:
 
 - empty board metrics
 - holes and height metrics
+- mutation prevention for board metrics
 - legal placement enumeration
 - simulation does not mutate input board
 - evaluator chooses a safer board when line clear is equal
@@ -160,3 +173,11 @@ The AI controller should wait until these server-side boundaries are stable:
 - placement logs can be generated from server-confirmed state
 
 Until then, implement only pure functions and documentation.
+
+## Out of Scope For Now
+
+- Do not implement PVE as a recommendation coach. It is a real opponent mode.
+- Do not start ML training before heuristic baseline and logs exist.
+- Do not add a Python AI server before the JavaScript pure-function baseline is stable.
+- Do not start reinforcement learning before replayable state, metrics, and evaluation criteria are available.
+- Do not attach LLM coaching until AI decisions and user-vs-AI comparison data can be summarized reliably.

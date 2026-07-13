@@ -16,22 +16,23 @@ Current implementation:
 - `game_start`, `placement_decision`, and `game_over` logs exist.
 - JSONL persistence exists under `data/logs`.
 - A basic dataset policy exists in `docs/game-log-dataset-policy.md`.
+- New human and heuristic AI placement logs use feature-ready `schemaVersion: 2`.
+- Human logs include a same-state heuristic comparison.
 
 Future implementation:
 
-- Logs include feature-ready metrics.
-- Human and AI decisions can be compared on the same `boardBefore`.
 - Dataset rows can be generated from placement candidates.
 - ML models can learn to score placements.
 
-## Required Log Fields
+## Placement Log Fields
 
-Future placement logs should include:
+New `schemaVersion: 2` placement logs include:
 
 - `gameId`
 - `roomId`
 - `playerId`
-- `source`: `human`, `heuristic_ai`, or `ml_ai`
+- `source`: `human` or `heuristic_ai`
+- `modelType`: `null` or `heuristic`
 - `tick`
 - `pieceIndex`
 - `boardBefore`
@@ -44,7 +45,8 @@ Future placement logs should include:
 - `placementResult`
 - `metricsBefore`
 - `metricsAfter`
-- `aiEvaluation`
+- `evaluation`
+- `aiComparison` for human logs
 
 `source` is important because human, heuristic AI, and ML AI decisions should be separable in analysis.
 
@@ -59,6 +61,10 @@ For the same `boardBefore`, the system should eventually compare:
 
 This comparison should not require the UI.
 It should be computed from serialized game state and pure simulation.
+
+Human `aiComparison` currently stores the heuristic placement and score, the
+human placement score, their difference, and whether both placements match.
+Legacy `schemaVersion: 1` rows remain readable but are not feature-complete v2 rows.
 
 ## Dataset Generation Flow
 
@@ -148,4 +154,3 @@ Treat these as lower confidence:
 - Train a model from client-authored logs as if they were authoritative truth.
 - Use reinforcement learning.
 - Let an ML model directly drive multiplayer input before PVE rules are stable.
-

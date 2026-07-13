@@ -2,6 +2,18 @@
 
 ---
 
+## AI 문서와 boardMetrics 상태 동기화
+
+- `src/client/game/core/boardMetrics.js`가 이미 구현된 순수 board metric 기반임을 문서에 반영했다.
+- `test/testBoardMetrics.js`가 empty board, complete line, hole, bumpiness, height, mutation 방지를 검증한다는 점을 기록했다.
+- 다음 AI 구현 순서를 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player로 정리했다.
+- PVE AI는 추천 코치가 아니라 실제 AI 상대이며, 현재 우선순위는 ML 학습이 아니라 휴리스틱 PVE AI와 로그 축적이라고 명시했다.
+- Python AI 서버, 강화학습, LLM 코칭 리포트는 후순위로 유지했다.
+- `boardMetrics`가 현재 `src/client/game/core`에 있는 이유와, 필요해지면 나중에 `shared` 계층으로 옮길 수 있다는 기준을 적었다.
+- 현재 `npm test` 기준 전체 275개 테스트 통과 상태를 확인했다.
+
+---
+
 ## Server Authoritative 멀티 MVP 전환 정리
 
 ### 핵심 변화
@@ -71,12 +83,30 @@
 
 - 상대 보드는 `opponentGame.applySnapshot(snapshot)`으로 server snapshot을 full apply한다.
 - 내 보드는 기본적으로 local prediction을 우선한다.
-- 내 playerId의 snapshot은 먼저 `pendingGarbageLines` 표시를 갱신한다.
-- 내 보드 full apply는 다음 경우로 제한한다.
+- `game:join:result`에 player별 client snapshot DTO를 포함해, game page 진입 시 server가 먼저 진행한 state와 양쪽 runtime을 초기 정렬한다.
+- 내 초기 snapshot은 gravity를 재개하고, 상대 초기 snapshot은 snapshot-only 상태를 유지한다.
+- 내 playerId의 snapshot은 `pendingGarbageLines` 표시를 갱신하면서 다음 조건에서만 full apply한다.
   - `snapshot.phase === "gameOver"`
-  - local phase가 `lineClearing`이 아니고, `pendingGarbageLines`가 감소했으며, server board가 local board와 다른 경우
-- 단순히 server `pieceIndex`가 앞섰다는 이유만으로 내 보드를 full apply하지 않는다.
-- 이 정책으로 내 line clear effect를 보호하면서, 실제 garbage 적용 board는 gameOver 전에도 반영할 수 있게 했다.
+  - garbage 적용으로 `pendingGarbageLines`가 감소하고 server board가 local board와 다른 경우
+  - 같은 `pieceIndex`인데 settled board가 다른 경우
+  - server/local `pieceIndex` 차이가 2 이상인 경우
+  - 같은 방향의 `pieceIndex` 차이 1이 750ms 이상 유지되는 경우
+- local phase가 `lineClearing`이면 non-gameOver full apply를 보류해 line clear effect를 보호한다.
+- active piece의 `pieceType`, `row`, `col`, `rotation` 차이와 snapshot `tick` 차이는 움직이는 조각의 일시적인 prediction 차이로 보고 own correction 판단에서 제외한다.
+- own full apply 후 phase가 `playing`이면 gravity를 재개한다. 상대 보드는 계속 독립 gravity를 실행하지 않는다.
+- authoritative `pieceQueue`를 적용할 때 client runtime의 숨은 server bag queue를 비워 같은 조각이 중복 공급되지 않게 한다.
+
+### Prediction drift와 입력 반응 안정화
+
+- A가 보는 A의 local board와 B가 보는 A의 authoritative board가 장시간 달라지는 문제를 보완했다.
+- server input 적용이 `PIECE_INDEX_MISMATCH`로 실패하면 authoritative state는 변경하지 않고 현재 player snapshot을 즉시 room에 emit한다.
+- sender에도 `game:input:result`로 mismatch reason을 반환해 실패를 조용히 삼키지 않는다.
+- 초기 correction은 snapshot 2회 연속 차이를 persistent drift로 판단했지만, server가 모든 성공한 input 뒤에도 snapshot을 보내므로 빠른 키 입력에서 과도한 full apply가 발생할 수 있었다.
+- 이를 `{ key, startedAtMs }` 기반 시간 정책으로 변경했다.
+  - 750ms 미만의 한 조각 차이는 local prediction을 유지한다.
+  - gap 방향이 바뀌거나 snapshot이 다시 일치하면 drift timer를 초기화한다.
+  - 빠른 좌우 이동, soft drop, 회전 중 active piece 차이는 own board를 덮어쓰지 않는다.
+- 이 정책으로 local 입력 반응을 유지하면서, lock 이후 settled board와 piece 순번은 server state로 다시 수렴하도록 했다.
 
 ### Match finish와 cleanup
 
@@ -112,6 +142,8 @@
   - `npm test -- --test-reporter=dot`
   - `git diff --check`
 - 자동 테스트 기준으로 server authoritative 멀티 MVP 핵심 흐름은 닫힌 상태다.
+- `scripts/verify.sh` 기준 전체 275개 테스트가 통과했다.
+- 초기 join snapshot 정렬, `PIECE_INDEX_MISMATCH` 복구, settled board 수렴, 750ms piece gap 경계, rapid input over-correction 방지를 자동 테스트로 고정했다.
 - 포트폴리오 시연 완료 판정은 2탭 수동 회귀 통과 후로 둔다.
 
 ### 남은 확인
@@ -119,7 +151,9 @@
 - 2탭에서 다음 흐름을 최종 확인해야 한다.
   - room create/join/start
   - 양쪽 입력 반응
+  - 좌우 이동/soft drop/회전 연속 입력 중 own board가 되돌아가거나 끊기지 않는지
   - 상대 보드 authoritative snapshot 표시
+  - hard drop과 lock 이후 A가 보는 A board와 B가 보는 A board가 다시 수렴하는지
   - 내 line clear effect
   - incoming garbage 표시와 실제 board 적용
   - top-out/gameOver/match finish
@@ -1167,7 +1201,7 @@ Socket.IO room join/broadcast 흐름과 UI 스타일 정리
 
 ### 목적
 
-- 향후 AI 추천, 플레이 분석, 리플레이, 학습 데이터 생성을 위해 "플레이어가 한 조각을 어디에 두기로 결정했는지"를 이벤트 단위로 남길 수 있게 했다.
+- 향후 PVE AI 선택 비교, 플레이 분석, 리플레이, 학습 데이터 생성을 위해 "플레이어가 한 조각을 어디에 두기로 결정했는지"를 이벤트 단위로 남길 수 있게 했다.
 - 매 프레임 전체 상태를 저장하면 데이터가 너무 커지고 의미 있는 의사결정 단위를 찾기 어렵기 때문에, 우선 piece lock 시점만 기록 대상으로 삼았다.
 - 이번 단계에서는 AI 판단, board metrics, ML 학습, DB 저장까지 확장하지 않고, `placement_decision` 로그 객체를 안정적으로 만드는 것에 집중했다.
 
@@ -1206,7 +1240,7 @@ Socket.IO room join/broadcast 흐름과 UI 스타일 정리
 
 ### 이번에 하지 않은 것
 
-- AI 추천 결과 저장
+- PVE AI 선택 결과 저장
 - board metrics 계산
 - DB 저장
 - 서버에서 game state 직접 계산
@@ -1697,8 +1731,8 @@ client input
 - **상대 보드 line clear 표시용 effect**
   - 정확한 gameplay 로직이 아니라 presentation effect로 별도 검토합니다.
   - 소리는 제외합니다.
-- **AI 분석 준비**
-  - placement decision log와 board metric을 기준으로 rule-based 분석/추천 후보를 정리합니다.
+- **휴리스틱 PVE AI 준비**
+  - placement decision log와 board metric을 기준으로 PVE AI 선택 후보를 정리합니다.
 
 ## 검증
 
@@ -1715,5 +1749,5 @@ client input
 
 1. 2탭 수동 회귀
 2. 상대 보드 line clear 표시용 effect 여부 결정
-3. AI 분석 feature / board metric / rule-based baseline 설계
+3. `placementGenerator` / `simulatePlacement` / `heuristicEvaluator` 설계
 4. 커밋/문서 최종 정리

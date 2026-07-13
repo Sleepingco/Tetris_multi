@@ -29,6 +29,9 @@
 - 하지만 현재 MVP 멀티는 `seed` 기반 완전 결정론보다 `server bag` 정책이 더 현실적이다.
 - LLM 기능은 현재 MVP 범위가 아니다.
 - 추후 LLM은 게임 판단이나 AI 의사결정의 원천이 아니라, 플레이 로그와 AI 분석 결과를 사용자에게 설명하는 코칭 리포트 계층으로 둔다.
+- AI 구현의 다음 축은 ML 학습이 아니라 휴리스틱 PVE AI 상대와 로그 축적이다.
+- PVE AI는 추천 코치가 아니라 실제 게임에 참여하는 AI 상대다.
+- Python AI 서버, 강화학습, LLM 코칭은 `placementGenerator` / `simulatePlacement` / `heuristicEvaluator` / PVE AI Player가 안정화된 뒤 검토한다.
 
 ## Current Status
 
@@ -43,6 +46,8 @@
 - client DTO에는 표시용 `pendingGarbageLines` scalar를 내려준다.
 - server gameOver가 match finish의 원천이다.
 - match cleanup, inputLog 상한, roomId collision retry가 보강됐다.
+- `src/client/game/core/boardMetrics.js`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현됐다.
+- `test/testBoardMetrics.js`가 board metric 계산과 원본 board mutation 방지를 검증한다.
 - 자동 테스트 기준으로 멀티 MVP 핵심 구현은 완료에 가깝다.
 - 포트폴리오 시연 완료 판정은 2탭 수동 회귀 통과 후로 둔다.
 
@@ -89,6 +94,8 @@
 - [x] server authoritative match finish 공통 helper 추가
 - [x] 정상 gameOver와 `game:leave`에서 match cleanup 수행
 - [x] roomId 충돌 재시도와 `inputLog` 상한 추가
+- [x] `src/client/game/core/boardMetrics.js`에 `columnHeights`, `aggregateHeight`, `maxHeight`, `holes`, `bumpiness`, `completeLines` 계산 순수 함수 추가
+- [x] `test/testBoardMetrics.js`로 board metric과 mutation 방지 검증
 
 ### 부분 완료
 
@@ -116,6 +123,8 @@
 - 실제 멀티 게임의 최종 진실 원천은 server authoritative state로 이동했다.
 - 내 보드는 조작감을 위해 client prediction을 유지하고, 서버 snapshot은 gameOver/garbage 적용 등 제한된 상황에서만 full apply한다.
 - shadow/debug 방향은 현재 main 우선순위가 아니다. debug 시스템을 다시 키우지 않고, 2탭 회귀 통과 후 AI 분석 로그와 평가 지표로 넘어간다.
+- AI 쪽은 이미 구현된 `boardMetrics`를 기반으로 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player 순서로 진행한다.
+- 현재 `boardMetrics`는 core board 표현을 그대로 읽는 DOM-free 순수 함수라서 `src/client/game/core`에 둔다. 서버/클라이언트/AI가 더 넓게 공유하는 시점이 오면 `shared` 계층으로 이동할 수 있다.
 
 ## Current Architecture
 
@@ -524,10 +533,12 @@
    - 서버 snapshot DTO에 표시용 `lineClearEffect`를 넣을지 결정한다.
    - 소리는 재생하지 않는다.
    - 같은 effect가 반복 재생되지 않도록 `pieceIndex` 또는 effect key를 둔다.
-3. AI 분석 단계 진입 준비
-   - placement decision log에서 AI 분석에 필요한 최소 feature를 정리한다.
-   - board metric, placement quality, attack/cancel/garbage 결과를 비교 대상으로 잡는다.
-   - LLM은 아직 붙이지 않고, rule-based 분석/추천 기준부터 만든다.
+3. 휴리스틱 PVE AI 단계 진입 준비
+   - `boardMetrics`는 이미 구현된 기반으로 본다.
+   - 다음 구현 순서는 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player다.
+   - PVE AI는 추천 코치가 아니라 실제 상대다.
+   - placement decision log와 PVE AI 선택을 비교할 수 있게 최소 feature를 정리한다.
+   - LLM은 아직 붙이지 않고, 휴리스틱 PVE AI와 로그 축적을 먼저 만든다.
 4. 문서/커밋 정리
    - server authoritative 전환 커밋과 안정화 커밋을 구분해 유지한다.
    - `.DS_Store` 같은 로컬 파일은 커밋하지 않는다.
@@ -551,7 +562,11 @@
 - [x] Step 10. server authoritative input/ticker loop 추가
 - [x] Step 11. 서버 authoritative snapshot 방향으로 전환
 - [ ] Step 12. 2탭 수동 회귀 통과
-- [ ] Step 13. AI 분석 feature와 rule-based baseline 설계
+- [x] Step 13-0. `boardMetrics` 순수 함수와 Node 테스트 추가
+- [ ] Step 13-1. `placementGenerator` 설계/구현
+- [ ] Step 13-2. `simulatePlacement` 설계/구현
+- [ ] Step 13-3. `heuristicEvaluator` 설계/구현
+- [ ] Step 13-4. PVE AI Player 설계/구현
 
 ### 이후 단계
 
@@ -559,9 +574,10 @@
 - [ ] seed 기반 replay 실험
 - [x] authoritative tick과 snapshot 주기 1차 정리
 - [ ] 2탭 회귀 통과 후 multiplayer MVP 완료 선언
-- [ ] multiplayer MVP 완료 후 AI 분석 단계로 이동
+- [ ] multiplayer MVP 완료 후 휴리스틱 PVE AI 단계로 이동
 - [ ] 플레이 로그 수집과 사용자 행동 feature 추출
-- [ ] rule-based AI와 사용자 수 비교 지표 추가
+- [ ] PVE AI 선택과 사용자 선택 비교 지표 추가
+- [ ] ML/RL은 휴리스틱 baseline과 로그가 안정화된 뒤 검토
 - [ ] LLM 코칭 리포트는 분석 지표와 AI 비교 결과가 준비된 뒤 검토
 
 ## MVP Event Contract
@@ -909,9 +925,12 @@ legacy 서버 처리:
 ### 멀티 MVP 이후
 
 - [ ] 배포와 운영 기초 정리
-- [ ] AI 상대 추가
+- [ ] `placementGenerator` 추가
+- [ ] `simulatePlacement` 추가
+- [ ] `heuristicEvaluator` 추가
+- [ ] PVE AI 상대 추가
 - [ ] 플레이 로그 기반 사용자 패턴 분석
-- [ ] 사용자 행동과 AI 추천 행동 비교
+- [ ] 사용자 행동과 PVE AI 선택 비교
 - [ ] LLM 기반 코칭 리포트 추가 검토
 - [ ] deterministic seed/replay 고도화
 
@@ -930,10 +949,14 @@ legacy 서버 처리:
 
 - AI는 DOM이 아니라 game state를 읽는다.
 - AI 출력은 사람과 같은 `action` 형식을 사용한다.
-- rule-based AI를 먼저 만들고, 이후 ML/RL은 비교 가능한 지표 위에서 확장한다.
+- 현재 구현된 AI 기반은 `src/client/game/core/boardMetrics.js`다.
+- 현재 다음 구현 순서는 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player다.
+- PVE AI는 추천 코치가 아니라 실제 AI 상대다.
+- rule-based PVE AI를 먼저 만들고, 이후 ML/RL은 비교 가능한 지표와 로그 위에서 확장한다.
+- Python AI 서버는 현재 범위가 아니며, JavaScript 순수 함수 baseline이 안정화된 뒤 검토한다.
 - LLM은 보조 설명 계층이다.
-- LLM 입력은 원본 게임 로그 전체가 아니라 요약 통계, 주요 실수 장면, AI 추천 행동, 사용자 행동 차이를 중심으로 구성한다.
-- LLM이 판단을 대신하지 않는다. 판단은 rule/ML 분석 계층에서 만들고, LLM은 그 결과를 자연어로 설명한다.
+- LLM 입력은 원본 게임 로그 전체가 아니라 요약 통계, 주요 실수 장면, PVE AI 선택 행동, 사용자 행동 차이를 중심으로 구성한다.
+- LLM이 판단을 대신하지 않는다. 판단은 휴리스틱/ML 분석 계층에서 만들고, LLM은 그 결과를 자연어로 설명한다.
 
 ## Existing Docs Note
 
