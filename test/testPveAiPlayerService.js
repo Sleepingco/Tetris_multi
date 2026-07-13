@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
 const {
+    applyAuthoritativeInputToMatchPlayerState,
     createMatch,
     getAuthoritativePlayerSnapshot,
     getMatchState,
@@ -448,11 +449,18 @@ test("hard_drop은 검증된 lockedPiece와 실제 성공 inputSequence로 log�
         plannedActions: ["move_left", "hard_drop"],
     });
     const savedLogs = [];
+    const executedActions = [];
     let timestamp = 1000;
     const service = createPveAiPlayerService({
         loadHeuristicAi: createStubAi(decision),
-        applyPlacement() {
-            throw new Error("direct placement must not be called");
+        applyInput(roomId, playerId, input, core) {
+            executedActions.push(input.action);
+            return applyAuthoritativeInputToMatchPlayerState(
+                roomId,
+                playerId,
+                input,
+                core,
+            );
         },
         now() {
             timestamp += 1;
@@ -480,6 +488,7 @@ test("hard_drop은 검증된 lockedPiece와 실제 성공 inputSequence로 log�
     });
     assert.equal(aiPlayer.authoritativeState.pieceIndex, 2);
     assert.equal(aiPlayer.aiPlan, null);
+    assert.deepEqual(executedActions, ["move_left", "hard_drop"]);
     assert.equal(savedLogs.length, 1);
     assert.deepEqual(savedLogs[0].selectedPlacement, {
         pieceType: "square",

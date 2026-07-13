@@ -4,7 +4,6 @@
 // =============================
 const {
     applyAuthoritativeInput,
-    applyAuthoritativePlacement,
     applyAuthoritativeGravityStep,
 } = require("./playerGameplayStep.js");
 
@@ -280,48 +279,6 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
     return createSuccess(match, { gameplayResult });
 }
 
-function applyAuthoritativePlacementToMatchPlayerState(roomId, playerId, command, gameCore) {
-    const match = matches.get(roomId);
-    if (!match) return createFailure("MATCH_NOT_FOUND");
-
-    const player = match.players.find(matchPlayer => matchPlayer.playerId === playerId);
-    if (!player) return createFailure("PLAYER_NOT_FOUND");
-    if (player.playerType !== "heuristic_ai") {
-        return createFailure("PLAYER_PLACEMENT_NOT_ALLOWED");
-    }
-    if (!player.authoritativeState) {
-        return {
-            ok: false,
-            match,
-            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
-        };
-    }
-    if (command?.pieceIndex !== player.authoritativeState.pieceIndex) {
-        return {
-            ok: false,
-            match,
-            reason: "PIECE_INDEX_MISMATCH",
-        };
-    }
-
-    const gameplayResult = applyAuthoritativePlacement(
-        player.authoritativeState,
-        command,
-        gameCore,
-    );
-    if (!gameplayResult.ok) {
-        return {
-            ok: false,
-            match,
-            reason: gameplayResult.reason,
-            gameplayResult,
-        };
-    }
-
-    attachPresentationEffectId(gameplayResult, playerId);
-    return createSuccess(match, { gameplayResult });
-}
-
 function ensurePlayerBagQueue(roomId, playerId, minimumRemaining = 7) {
     const match = matches.get(roomId);
     if (!match) return createFailure("MATCH_NOT_FOUND");
@@ -568,7 +525,6 @@ module.exports = {
     appendPlayerBagChunk,
     appendPendingGarbageToOpponent,
     applyAuthoritativeInputToMatchPlayerState,
-    applyAuthoritativePlacementToMatchPlayerState,
     applyGravityStepToMatchPlayerState,
     createMatch,
     deleteMatch,

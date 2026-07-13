@@ -35,72 +35,6 @@ function applyAuthoritativeInput(authoritativeState, input, gameCore) {
     return createFailure("UNSUPPORTED_ACTION");
 }
 
-function applyAuthoritativePlacement(authoritativeState, command, gameCore) {
-    if (!authoritativeState) {
-        return createFailure("INVALID_AUTHORITATIVE_STATE");
-    }
-    if (!gameCore) {
-        return createFailure("INVALID_GAME_CORE");
-    }
-    if (authoritativeState.phase !== "playing") {
-        return createFailure("GAME_NOT_PLAYING");
-    }
-
-    const activePiece = authoritativeState.activePiece;
-    const placement = command?.placement;
-    if (!activePiece?.pieceType || !placement) {
-        return createFailure("INVALID_PLACEMENT");
-    }
-    if (placement.pieceType !== activePiece.pieceType) {
-        return createFailure("PIECE_TYPE_MISMATCH");
-    }
-
-    const rotations = gameCore.BLOCKS?.[placement.pieceType];
-    if (
-        !Array.isArray(rotations) ||
-        !Number.isInteger(placement.rotation) ||
-        placement.rotation < 0 ||
-        placement.rotation >= rotations.length ||
-        !Number.isInteger(placement.row) ||
-        !Number.isInteger(placement.col)
-    ) {
-        return createFailure("INVALID_PLACEMENT");
-    }
-    if (placement.row < activePiece.row) {
-        return createFailure("PLACEMENT_ABOVE_ACTIVE_PIECE");
-    }
-
-    const lockedPiece = {
-        pieceType: placement.pieceType,
-        rotation: placement.rotation,
-        row: placement.row,
-        col: placement.col,
-    };
-    if (
-        gameCore.isPieceAboveTop(lockedPiece, gameCore.BLOCKS) ||
-        !gameCore.canPlacePiece(authoritativeState.board, lockedPiece, gameCore.BLOCKS)
-    ) {
-        return createFailure("INVALID_PLACEMENT");
-    }
-    if (gameCore.canPlacePiece(authoritativeState.board, {
-        ...lockedPiece,
-        row: lockedPiece.row + 1,
-    }, gameCore.BLOCKS)) {
-        return createFailure("PLACEMENT_NOT_FINAL");
-    }
-
-    authoritativeState.lastActionWasRotation = false;
-    const result = lockPieceAndSpawnNext(authoritativeState, gameCore, {
-        lockedPiece,
-        droppedRows: Math.max(0, lockedPiece.row - activePiece.row),
-        useHardDropScore: true,
-    });
-    if (result.ok) {
-        incrementCurrentTick(authoritativeState);
-    }
-    return result;
-}
-
 function applyAuthoritativeGravityStep(authoritativeState, gameCore) {
     if (!authoritativeState) {
         return createFailure("INVALID_AUTHORITATIVE_STATE");
@@ -470,6 +404,5 @@ function incrementCurrentTick(authoritativeState) {
 
 module.exports = {
     applyAuthoritativeInput,
-    applyAuthoritativePlacement,
     applyAuthoritativeGravityStep,
 };

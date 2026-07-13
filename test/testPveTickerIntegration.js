@@ -8,7 +8,6 @@ const { createPveAiPlayerService } = require(
     "../src/server/services/pveAiPlayerService.js"
 );
 const {
-    applyAuthoritativePlacementToMatchPlayerState,
     createMatch,
     getMatchState,
     resetMatches,
@@ -167,11 +166,11 @@ test("PVE ticker는 AI 후보가 없으면 human 승리로 match를 종료한다
     assert.equal(getMatchState(roomId).ok, false);
 });
 
-test("AI executor 최종 board는 같은 selectedPlacement의 direct placement 결과와 같다", async () => {
+test("AI executor는 고정 fixture의 authoritative input 결과를 유지한다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();
-    const createFixtureMatch = (roomId) => createMatch({
-        roomId,
+    const match = createMatch({
+        roomId: "PVE-EXECUTOR",
         mode: "pve",
         status: "playing",
         players: [
@@ -179,10 +178,7 @@ test("AI executor 최종 board는 같은 selectedPlacement의 direct placement �
             { playerId: "ai", playerType: "heuristic_ai" },
         ],
     }).match;
-    const executorMatch = createFixtureMatch("PVE-EXECUTOR");
-    const directMatch = createFixtureMatch("PVE-DIRECT");
-    const executorPlayer = executorMatch.players.find(player => player.playerId === "ai");
-    const directPlayer = directMatch.players.find(player => player.playerId === "ai");
+    const executorPlayer = match.players.find(player => player.playerId === "ai");
     const fixtureState = {
         ...structuredClone(executorPlayer.authoritativeState),
         board: Array.from({ length: 20 }, () => Array(10).fill(null)),
@@ -192,38 +188,49 @@ test("AI executor 최종 board는 같은 selectedPlacement의 direct placement �
         pieceIndex: 1,
     };
     executorPlayer.authoritativeState = structuredClone(fixtureState);
-    directPlayer.authoritativeState = structuredClone(fixtureState);
+    const savedLogs = [];
     const service = createPveAiPlayerService({
         savePlacementDecisionLog(log) {
+            savedLogs.push(log);
             return { ok: true, log, reason: null };
         },
     });
 
     const planResult = await service.processAiStep("PVE-EXECUTOR", "ai", gameCore);
-    const directResult = applyAuthoritativePlacementToMatchPlayerState(
-        "PVE-DIRECT",
-        "ai",
-        {
-            pieceIndex: 1,
-            placement: planResult.decision.selectedPlacement,
-        },
-        gameCore,
-    );
     let executorResult;
+    const actions = [];
     for (let step = 0; step < 20; step += 1) {
         executorResult = await service.processAiStep("PVE-EXECUTOR", "ai", gameCore);
+        actions.push(executorResult.action);
         if (executorResult.placementResult) break;
     }
 
-    assert.equal(directResult.ok, true);
+    assert.equal(planResult.reason, "AI_PLAN_CREATED");
     assert.equal(executorResult.ok, true);
+    assert.deepEqual(actions, ["move_left", "move_left", "move_left", "hard_drop"]);
+    assert.deepEqual(executorResult.placementResult.lockedPiece, {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 0,
+    });
+    assert.equal(executorPlayer.authoritativeState.board[18][0], "square");
+    assert.equal(executorPlayer.authoritativeState.board[18][1], "square");
+    assert.equal(executorPlayer.authoritativeState.board[19][0], "square");
+    assert.equal(executorPlayer.authoritativeState.board[19][1], "square");
+    assert.equal(executorPlayer.authoritativeState.score, 38);
+    assert.equal(executorPlayer.authoritativeState.lines, 0);
+    assert.equal(executorPlayer.authoritativeState.pieceIndex, 2);
+    assert.deepEqual(executorPlayer.authoritativeState.activePiece, {
+        pieceType: "tree",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    });
+    assert.equal(executorPlayer.aiPlan, null);
+    assert.equal(savedLogs.length, 1);
     assert.deepEqual(
-        executorResult.placementResult.lockedPiece,
-        directResult.gameplayResult.placementResult.lockedPiece,
+        savedLogs[0].inputSequence.map(input => input.action),
+        ["move_left", "move_left", "move_left", "hard_drop"],
     );
-    assert.deepEqual(executorPlayer.authoritativeState.board, directPlayer.authoritativeState.board);
-    assert.equal(executorPlayer.authoritativeState.score, directPlayer.authoritativeState.score);
-    assert.equal(executorPlayer.authoritativeState.lines, directPlayer.authoritativeState.lines);
-    assert.equal(executorPlayer.authoritativeState.pieceIndex, directPlayer.authoritativeState.pieceIndex);
-    assert.deepEqual(executorPlayer.authoritativeState.activePiece, directPlayer.authoritativeState.activePiece);
 });

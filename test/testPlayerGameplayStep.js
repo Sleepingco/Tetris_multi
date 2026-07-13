@@ -2,10 +2,13 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+const playerGameplayStep = require(
+    "../src/server/services/playerGameplayStep.js"
+);
 const {
     applyAuthoritativeInput,
     applyAuthoritativeGravityStep,
-} = require("../src/server/services/playerGameplayStep.js");
+} = playerGameplayStep;
 
 function createPlayerState(gameCore, overrides = {}) {
     const activePiece = overrides.activePiece ?? {
@@ -62,6 +65,12 @@ function createLineClearBoard(gameCore, piece, rowsToClear, extraFilledCells = [
 
     return board;
 }
+
+test("playerGameplayStep는 legacy placement public API를 노출하지 않는다", () => {
+    const legacyExport = ["apply", "Authoritative", "Placement"].join("");
+
+    assert.equal(Object.hasOwn(playerGameplayStep, legacyExport), false);
+});
 
 test("applyAuthoritativeGravityStep은 조각을 아래로 1칸 내리고 currentTick을 증가시킨다", async () => {
     const gameCore = await loadGameCore();

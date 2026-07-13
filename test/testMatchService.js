@@ -318,7 +318,10 @@ test("appendPendingGarbageToOpponent는 invalid garbage면 상대 state를 변�
 });
 
 test("matchService public entry는 authoritative input과 gravity wrapper만 노출한다", () => {
+    const legacyExport = ["apply", "Authoritative", "Placement", "ToMatchPlayerState"].join("");
+
     assert.equal(matchService.applyInputToMatchPlayerState, undefined);
+    assert.equal(Object.hasOwn(matchService, legacyExport), false);
     assert.equal(typeof matchService.applyAuthoritativeInputToMatchPlayerState, "function");
     assert.equal(typeof matchService.applyGravityStepToMatchPlayerState, "function");
 });
