@@ -119,6 +119,7 @@ export function createTetrisRuntime({
         pieceIndex: 0,
         inputLog: [],
         placementDecisionLog: [],
+        decisionStartPiece: null,
         pendingLockScoreBefore: null,
         pendingGarbageQueue: [],
         authoritativePendingGarbageLines: 0,
@@ -202,6 +203,7 @@ export function createTetrisRuntime({
         runtime.currentTick = 0
         runtime.inputLog = []
         runtime.placementDecisionLog = []
+        runtime.decisionStartPiece = null
         runtime.pendingLockScoreBefore = null
         runtime.pendingGarbageQueue = []
         runtime.authoritativePendingGarbageLines = 0
@@ -231,6 +233,7 @@ export function createTetrisRuntime({
     function activateSpawnedPiece(piece) {
         setActivePiece(piece)
         gameState.pendingPiece = { ...piece }
+        captureDecisionStartPiece(piece)
     }
 
     /**
@@ -571,6 +574,7 @@ export function createTetrisRuntime({
         if (intent.kind === "gameOver") {
             gameState.phase = GAME_PHASE.GAME_OVER
             gameState.inputQueue = []
+            runtime.decisionStartPiece = null
             stopGameLoops()
             setActivePiece(intent.active)
             renderBoard()
@@ -632,6 +636,7 @@ export function createTetrisRuntime({
 
         const lockedPiece = clonePendingPiece(activePiece)
         const placementContext = createPlacementDecisionContext(lockedPiece)
+        runtime.decisionStartPiece = null
         const touchesAboveTop = isPieceAboveTop(activePiece, BLOCKS)
         gameState.isTSpin = isTSpinLock({
             board,
@@ -831,6 +836,7 @@ export function createTetrisRuntime({
         ui.dispose()
         ui.hideGameOver()
         gameState.inputQueue = []
+        runtime.decisionStartPiece = null
         runtime.boardCtx = null
     }
 
@@ -999,6 +1005,7 @@ export function createTetrisRuntime({
         const scoreBefore = Number.isFinite(runtime.pendingLockScoreBefore)
             ? runtime.pendingLockScoreBefore
             : gameState.score
+        const decisionStartPiece = runtime.decisionStartPiece
 
         return {
             eventType: "placement_decision",
@@ -1012,7 +1019,9 @@ export function createTetrisRuntime({
             createdAt: Date.now(),
             scoreBefore,
             boardBefore: serializeGameState(gameState).board,
-            activePiece: createPieceLog(lockedPiece),
+            ...(decisionStartPiece
+                ? { activePiece: createPieceLog(decisionStartPiece) }
+                : {}),
             nextQueue: [...gameState.pieceQueue],
             holdPiece: gameState.holdPieceType,
             inputSequence: getInputSequenceForPiece(runtime.pieceIndex),
@@ -1073,7 +1082,7 @@ export function createTetrisRuntime({
         const analysis = createHumanPlacementLogAnalysis({
             boardBefore: log.boardBefore,
             boardAfter: log.boardAfter,
-            activePiece: log.activePiece,
+            activePieceAtDecisionStart: log.activePiece,
             selectedPlacement: log.selectedPlacement,
         })
         if (
@@ -1409,6 +1418,11 @@ export function createTetrisRuntime({
         gameState.backToBack = restored.backToBack
 
         setActivePiece(restored.activePiece)
+        if (gameState.phase === GAME_PHASE.GAME_OVER) {
+            runtime.decisionStartPiece = null
+        } else {
+            captureDecisionStartPiece(restored.activePiece)
+        }
 
         const snapshotTick = Number.isInteger(snapshot.tick) && snapshot.tick >= 0
             ? snapshot.tick
@@ -1503,6 +1517,27 @@ export function createTetrisRuntime({
             row: piece.row,
             col: piece.col,
         }
+    }
+
+    /**
+      * 현재 조각의 판단 시작 상태를 placement log 분석용 메타데이터로 복사한다.
+      * - gameplay 상태와 분리하며 유효하지 않은 조각은 이전 값을 남기지 않는다.
+      *
+      * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - spawn 또는 snapshot으로 적용된 조각
+      * @returns {void}
+      */
+    function captureDecisionStartPiece(piece) {
+        const rotations = BLOCKS[piece?.pieceType]
+        const isValid = Array.isArray(rotations) &&
+            Number.isInteger(piece.rotation) &&
+            piece.rotation >= 0 &&
+            piece.rotation < rotations.length &&
+            Number.isInteger(piece.row) &&
+            Number.isInteger(piece.col)
+
+        runtime.decisionStartPiece = isValid
+            ? clonePendingPiece(piece)
+            : null
     }
     return {
         init,

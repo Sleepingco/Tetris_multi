@@ -490,7 +490,7 @@ test("runtime은 next와 hold preview DOM을 렌더링한다", async (t) => {
     assert.equal(countPreviewCells(holdPreviewEl) > 0, true);
 });
 
-test("piece lock 시점에 최소 placement_decision 로그를 생성한다", async (t) => {
+test("authoritative snapshot 이후 placement_decision은 시작 조각과 최종 배치를 분리한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const placementLogs = [];
     const game = createTetrisRuntime({
@@ -512,13 +512,13 @@ test("piece lock 시점에 최소 placement_decision 로그를 생성한다", as
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 10,
             col: 4,
         },
         pendingPiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 10,
             col: 4,
         },
         pieceQueue: ["bar", "tree"],
@@ -530,7 +530,7 @@ test("piece lock 시점에 최소 placement_decision 로그를 생성한다", as
     });
 
     const targetTick = game.runtime.currentTick + 1;
-    game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, 7);
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, targetTick, 7);
 
     await waitForTick(game, targetTick);
 
@@ -550,19 +550,19 @@ test("piece lock 시점에 최소 placement_decision 로그를 생성한다", as
     assert.equal(log.boardAfter[18][4], "square");
     assert.equal(log.boardAfter[19][5], "square");
     assert.equal(log.activePiece.pieceType, "square");
-    assert.equal(log.activePiece.row, 18);
+    assert.equal(log.activePiece.row, 10);
     assert.equal(log.activePiece.col, 4);
     assert.deepEqual(log.nextQueue, ["bar", "tree"]);
     assert.equal(log.holdPiece, "zee");
-    assert.deepEqual(log.inputSequence.map(input => input.action), [INPUT_ACTION.SOFT_DROP]);
+    assert.deepEqual(log.inputSequence.map(input => input.action), [INPUT_ACTION.HARD_DROP]);
     assert.equal(log.inputSequence[0].pieceIndex, 7);
     assert.equal(log.selectedPlacement.pieceType, "square");
     assert.equal(log.selectedPlacement.row, 18);
     assert.equal(log.selectedPlacement.col, 4);
     assert.equal(log.placementResult.linesCleared, 0);
     assert.equal(log.placementResult.scoreBefore, 100);
-    assert.equal(log.placementResult.scoreAfter, 100);
-    assert.equal(log.placementResult.scoreDelta, 0);
+    assert.equal(log.placementResult.scoreAfter, 116);
+    assert.equal(log.placementResult.scoreDelta, 16);
     assert.equal(log.placementResult.gameOver, false);
     assert.deepEqual(log.metricsBefore.columnHeights, Array(10).fill(0));
     assert.equal(log.metricsAfter.aggregateHeight, 4);
@@ -577,6 +577,172 @@ test("piece lock 시점에 최소 placement_decision 로그를 생성한다", as
         log.aiComparison.heuristicScore - log.aiComparison.userScore,
     );
     assert.equal(typeof log.aiComparison.samePlacement, "boolean");
+    assert.equal(validatePlacementDecisionLog(log).ok, true);
+});
+
+test("일반 spawn 후 hard drop 로그는 spawn 상태와 최종 locked 위치를 기록한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        mode: "multi",
+        gameId: "game-spawn",
+        roomId: "room-spawn",
+        playerId: "player-spawn",
+        rng: () => 0,
+    });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const spawnedPiece = game.getSnapshot().activePiece;
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, targetTick, game.runtime.pieceIndex);
+
+    await waitForTick(game, targetTick);
+
+    const [log] = game.getPlacementDecisionLog();
+    assert.equal(log.schemaVersion, 2);
+    assert.deepEqual(
+        {
+            pieceType: log.activePiece.pieceType,
+            rotation: log.activePiece.rotation,
+            row: log.activePiece.row,
+            col: log.activePiece.col,
+        },
+        spawnedPiece,
+    );
+    assert.equal(log.activePiece.row, -1);
+    assert.equal(log.activePiece.col, 3);
+    assert.equal(log.selectedPlacement.pieceType, spawnedPiece.pieceType);
+    assert.notEqual(log.selectedPlacement.row, log.activePiece.row);
+    assert.equal(validatePlacementDecisionLog(log).ok, true);
+});
+
+test("hold 후 로그는 incoming piece의 spawn 상태를 판단 시작 상태로 사용한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        mode: "multi",
+        gameId: "game-hold",
+        roomId: "room-hold",
+        playerId: "player-hold",
+    });
+    t.after(() => game.destroy());
+
+    game.init({
+        autoStart: true,
+        serverBagChunks: [["tree", "bar", "square", "zee", "eleft", "eright", "ess"]],
+    });
+    const pieceIndex = game.runtime.pieceIndex;
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HOLD, targetTick, pieceIndex);
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, targetTick, pieceIndex);
+
+    await waitForTick(game, targetTick);
+
+    const [log] = game.getPlacementDecisionLog();
+    assert.equal(log.activePiece.pieceType, "bar");
+    assert.equal(log.activePiece.rotation, 0);
+    assert.equal(log.activePiece.row, -1);
+    assert.equal(log.activePiece.col, 3);
+    assert.equal(log.selectedPlacement.pieceType, "bar");
+    assert.notEqual(log.selectedPlacement.row, log.activePiece.row);
+    assert.deepEqual(
+        log.inputSequence.map(input => input.action),
+        [INPUT_ACTION.HOLD, INPUT_ACTION.HARD_DROP],
+    );
+});
+
+test("새 조각 spawn은 이전 조각의 판단 시작 상태를 재사용하지 않는다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        mode: "multi",
+        gameId: "game-sequence",
+        roomId: "room-sequence",
+        playerId: "player-sequence",
+    });
+    t.after(() => game.destroy());
+
+    game.init({
+        autoStart: true,
+        serverBagChunks: [["tree", "bar", "square", "zee", "eleft", "eright", "ess"]],
+    });
+    const firstTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, firstTick, game.runtime.pieceIndex);
+    await waitForTick(game, firstTick);
+
+    const secondStart = game.getSnapshot().activePiece;
+    const secondPieceIndex = game.runtime.pieceIndex;
+    const secondTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, secondTick, secondPieceIndex);
+    await waitForTick(game, secondTick);
+
+    const [firstLog, secondLog] = game.getPlacementDecisionLog();
+    assert.equal(firstLog.activePiece.pieceType, "tree");
+    assert.equal(secondStart.pieceType, "bar");
+    assert.deepEqual(
+        {
+            pieceType: secondLog.activePiece.pieceType,
+            rotation: secondLog.activePiece.rotation,
+            row: secondLog.activePiece.row,
+            col: secondLog.activePiece.col,
+        },
+        secondStart,
+    );
+});
+
+test("init reset과 gameOver snapshot은 판단 시작 메타데이터를 정리한다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    assert.ok(game.runtime.decisionStartPiece);
+
+    game.init({ autoStart: false });
+    assert.equal(game.runtime.decisionStartPiece, null);
+
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 4,
+            col: 3,
+        },
+        phase: "playing",
+    });
+    assert.equal(game.runtime.decisionStartPiece.row, 4);
+
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        phase: "gameOver",
+    });
+    assert.equal(game.runtime.decisionStartPiece, null);
+});
+
+test("판단 시작 상태가 없으면 human 로그는 schemaVersion 1로 fallback한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        mode: "multi",
+        gameId: "game-fallback",
+        roomId: "room-fallback",
+        playerId: "player-fallback",
+        rng: () => 0,
+    });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    game.runtime.decisionStartPiece = null;
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, targetTick, game.runtime.pieceIndex);
+
+    await waitForTick(game, targetTick);
+
+    const [log] = game.getPlacementDecisionLog();
+    assert.equal(log.schemaVersion, 1);
+    assert.equal(log.activePiece, undefined);
+    assert.ok(log.selectedPlacement);
+    assert.equal(log.source, undefined);
+    assert.equal(log.evaluation, undefined);
+    assert.equal(log.aiComparison, undefined);
     assert.equal(validatePlacementDecisionLog(log).ok, true);
 });
 

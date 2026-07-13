@@ -1,5 +1,5 @@
 import { getBoardMetrics } from "../../core/boardMetrics.js";
-import { generatePlacements } from "./placementGenerator.js";
+import { generateReachablePlacements } from "./reachablePlacementPlanner.js";
 import { simulatePlacement } from "./simulatePlacement.js";
 
 export const HEURISTIC_WEIGHTS = Object.freeze({
@@ -117,12 +117,20 @@ export function evaluatePlacement(board, placement) {
  * 현재 조각의 모든 후보를 평가해 높은 점수부터 결정적인 순서로 정렬한다.
  *
  * @param {Array<Array<string|null>>} board - 현재 보드
- * @param {{pieceType: string}} activePiece - 현재 활성 조각
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} activePiece - 현재 활성 조각
  * @returns {Array<Object>} 점수 내림차순 평가 결과
  */
 export function rankPlacements(board, activePiece) {
-    return generatePlacements(board, activePiece)
-        .map(placement => evaluatePlacement(board, placement))
+    return generateReachablePlacements(board, activePiece)
+        .map(candidate => {
+            const evaluation = evaluatePlacement(board, candidate.placement);
+            if (!evaluation) return null;
+
+            return {
+                ...evaluation,
+                plannedActions: [...candidate.plannedActions],
+            };
+        })
         .filter(Boolean)
         .sort(compareRankedPlacements);
 }
@@ -131,7 +139,7 @@ export function rankPlacements(board, activePiece) {
  * 현재 상태에서 가장 높은 점수를 받은 표준 placement를 반환한다.
  *
  * @param {Array<Array<string|null>>} board - 현재 보드
- * @param {{pieceType: string}} activePiece - 현재 활성 조각
+ * @param {{pieceType: string, rotation: number, row: number, col: number}} activePiece - 현재 활성 조각
  * @returns {Object|null} 최적 placement 또는 null
  */
 export function getBestPlacement(board, activePiece) {
@@ -175,6 +183,7 @@ export function getHeuristicDecision(gameState) {
         source: DECISION_SOURCE,
         modelType: MODEL_TYPE,
         selectedPlacement: best.placement,
+        plannedActions: [...best.plannedActions],
         score: best.score,
         candidateCount: rankedPlacements.length,
         metricsBefore: best.metricsBefore,

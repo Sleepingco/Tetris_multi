@@ -194,6 +194,12 @@ test("rankPlacements와 getBestPlacement는 최고 점수 후보를 결정적으
     }));
     assert.deepEqual(firstRanking, secondRanking);
     assert.deepEqual(getBestPlacement(board, activePiece), firstRanking[0].placement);
+    assert.deepEqual(firstRanking[0].plannedActions, [
+        "move_left",
+        "move_left",
+        "move_left",
+        "hard_drop",
+    ]);
     assert.deepEqual(firstRanking[0].placement, {
         pieceType: "bar",
         rotation: 0,
@@ -222,6 +228,7 @@ test("getHeuristicDecision은 안정적인 성공 schema와 reason을 반환한�
         "source",
         "modelType",
         "selectedPlacement",
+        "plannedActions",
         "score",
         "candidateCount",
         "metricsBefore",
@@ -231,6 +238,7 @@ test("getHeuristicDecision은 안정적인 성공 schema와 reason을 반환한�
     assert.equal(decision.ok, true);
     assert.equal(decision.source, "heuristic_ai");
     assert.equal(decision.modelType, "heuristic");
+    assert.equal(decision.plannedActions.at(-1), "hard_drop");
     assert.equal(decision.score, 10);
     assert.ok(decision.candidateCount > 0);
     assert.deepEqual(Object.keys(decision.reason), [
@@ -241,6 +249,59 @@ test("getHeuristicDecision은 안정적인 성공 schema와 reason을 반환한�
         "maxHeightDelta",
     ]);
     assert.equal(decision.reason.linesCleared, 1);
+});
+
+test("decision의 selectedPlacement와 plannedActions는 같은 reachable 후보에서 나온다", async () => {
+    const {
+        getHeuristicDecision,
+        rankPlacements,
+    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+    const gameState = createGameState(createBoard(), "tree");
+    const ranked = rankPlacements(gameState.board, gameState.activePiece);
+    const decision = getHeuristicDecision(gameState);
+
+    assert.equal(decision.ok, true);
+    assert.deepEqual(decision.selectedPlacement, ranked[0].placement);
+    assert.deepEqual(decision.plannedActions, ranked[0].plannedActions);
+});
+
+test("heuristicEvaluator는 도달 불가능한 고득점 placement를 선택하지 않는다", async () => {
+    const {
+        evaluatePlacement,
+        getHeuristicDecision,
+    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+    const { generatePlacements } = await import(
+        "../src/client/game/ai/heuristic/placementGenerator.js"
+    );
+    const board = createBoard();
+    board[19] = Array(10).fill("stack");
+    board[19][0] = null;
+    board[19][1] = null;
+    [5, 6].forEach(row => {
+        board[row][3] = "stack";
+        board[row][6] = "stack";
+    });
+    board[7][4] = "stack";
+    board[7][5] = "stack";
+    const gameState = {
+        ...createGameState(board, "square"),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 5,
+            col: 4,
+        },
+    };
+    const unreachablePlacement = generatePlacements(board, gameState.activePiece).find(placement => {
+        return placement.rotation === 0 && placement.row === 18 && placement.col === 0;
+    });
+    const unreachableEvaluation = evaluatePlacement(board, unreachablePlacement);
+    const decision = getHeuristicDecision(gameState);
+
+    assert.ok(unreachableEvaluation.score > decision.score);
+    assert.notDeepEqual(decision.selectedPlacement, unreachablePlacement);
+    assert.equal(decision.selectedPlacement.row, 5);
+    assert.equal(decision.selectedPlacement.col, 4);
 });
 
 test("후보가 없으면 안정적인 실패 decision을 반환한다", async () => {

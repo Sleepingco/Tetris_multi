@@ -61,6 +61,8 @@ test("AI turn은 piece마다 placement를 적용하고 authoritative log를 저�
     assert.equal(savedLogs[0].modelType, "heuristic");
     assert.equal(savedLogs[0].pieceIndex, pieceIndexBefore);
     assert.equal(savedLogs[0].evaluation.candidateCount > 0, true);
+    assert.equal(result.decision.plannedActions.at(-1), "hard_drop");
+    assert.deepEqual(savedLogs[0].inputSequence, []);
     assert.ok(savedLogs[0].metricsBefore);
     assert.ok(savedLogs[0].metricsAfter);
     assert.equal(savedLogs[0].aiComparison, undefined);
