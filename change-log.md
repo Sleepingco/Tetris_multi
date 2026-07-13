@@ -1,166 +1,4 @@
-# 2026년 7월 10일
 
----
-
-## AI 문서와 boardMetrics 상태 동기화
-
-- `src/client/game/core/boardMetrics.js`가 이미 구현된 순수 board metric 기반임을 문서에 반영했다.
-- `test/testBoardMetrics.js`가 empty board, complete line, hole, bumpiness, height, mutation 방지를 검증한다는 점을 기록했다.
-- 다음 AI 구현 순서를 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player로 정리했다.
-- PVE AI는 추천 코치가 아니라 실제 AI 상대이며, 현재 우선순위는 ML 학습이 아니라 휴리스틱 PVE AI와 로그 축적이라고 명시했다.
-- Python AI 서버, 강화학습, LLM 코칭 리포트는 후순위로 유지했다.
-- `boardMetrics`가 현재 `src/client/game/core`에 있는 이유와, 필요해지면 나중에 `shared` 계층으로 옮길 수 있다는 기준을 적었다.
-- 현재 `npm test` 기준 전체 275개 테스트 통과 상태를 확인했다.
-
----
-
-## Server Authoritative 멀티 MVP 전환 정리
-
-### 핵심 변화
-
-- 멀티플레이 동기화 기준을 기존 client-driven snapshot relay에서 server authoritative snapshot 중심으로 전환했다.
-- 서버가 player별 `authoritativeState`를 들고, `game:input`과 server gravity ticker를 통해 상태를 갱신한다.
-- 상대 보드는 더 이상 상대 input relay나 client snapshot을 예측 실행하지 않고, `game:authoritative:snapshot`만 적용한다.
-- 내 보드는 조작감을 위해 client prediction을 유지하되, server snapshot은 제한적으로만 적용한다.
-
-### 제거/축소된 legacy client-driven 경로
-
-- client가 보내던 `game:snapshot` 송신/수신 흐름을 제거했다.
-- client가 공격량을 직접 선언하던 `game:garbage:attack` 흐름을 제거했다.
-- client가 패배를 직접 보고하던 `game:over` 흐름을 제거했다.
-- `game:garbage:append`는 더 이상 client runtime queue를 변경하지 않는다.
-- garbage, game over, match finish는 server authoritative lock/tick 결과를 따른다.
-
-### Server authoritative state
-
-- `matchService`가 player별 `authoritativeState`를 보관한다.
-- 초기 match 생성 시 server bag chunk에서 첫 조각을 즉시 spawn한다.
-- server state는 다음을 포함한다.
-  - `board`
-  - `activePiece`
-  - `pendingPiece`
-  - `pieceQueue`
-  - `holdPieceType`
-  - `score`
-  - `lines`
-  - `phase`
-  - `combo`
-  - `backToBack`
-  - `pieceIndex`
-  - `pendingGarbageQueue`
-- `applyAuthoritativeInput()`는 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold`를 단일 public entry로 처리한다.
-- lock 경로에서 line clear, score, combo, B2B, T-Spin, garbage cancel/apply, top-out을 server state에 반영한다.
-
-### Authoritative ticker
-
-- `authoritativeTickerService`를 추가했다.
-- room별 ticker는 100ms마다 깨어나지만, gravity step은 500ms 누적 기준으로 처리한다.
-- event loop가 밀려도 callback당 gravity step은 최대 1회로 제한한다.
-- ticker 경로에서도 lock 결과의 attack/cancel/garbage/gameOver를 처리한다.
-- room이 더 이상 playing이 아니거나 match가 사라지면 ticker를 정리한다.
-
-### Authoritative snapshot
-
-- 서버는 `game:authoritative:snapshot`을 room에 emit한다.
-- snapshot DTO는 client 적용 후보로 다음을 포함한다.
-  - `board`
-  - `activePiece`
-  - `pieceQueue`
-  - `holdPieceType`
-  - `holdUsedThisDrop`
-  - `score`
-  - `lines`
-  - `phase`
-  - `combo`
-  - `backToBack`
-  - `tick`
-  - `pieceIndex`
-  - `pendingGarbageLines`
-- `pendingGarbageQueue` 자체는 DTO에 노출하지 않고, 표시용 scalar인 `pendingGarbageLines`만 내려준다.
-- 공격자가 lock으로 garbage를 만들면 target player의 snapshot도 즉시 emit한다.
-
-### Client 적용 정책
-
-- 상대 보드는 `opponentGame.applySnapshot(snapshot)`으로 server snapshot을 full apply한다.
-- 내 보드는 기본적으로 local prediction을 우선한다.
-- `game:join:result`에 player별 client snapshot DTO를 포함해, game page 진입 시 server가 먼저 진행한 state와 양쪽 runtime을 초기 정렬한다.
-- 내 초기 snapshot은 gravity를 재개하고, 상대 초기 snapshot은 snapshot-only 상태를 유지한다.
-- 내 playerId의 snapshot은 `pendingGarbageLines` 표시를 갱신하면서 다음 조건에서만 full apply한다.
-  - `snapshot.phase === "gameOver"`
-  - garbage 적용으로 `pendingGarbageLines`가 감소하고 server board가 local board와 다른 경우
-  - 같은 `pieceIndex`인데 settled board가 다른 경우
-  - server/local `pieceIndex` 차이가 2 이상인 경우
-  - 같은 방향의 `pieceIndex` 차이 1이 750ms 이상 유지되는 경우
-- local phase가 `lineClearing`이면 non-gameOver full apply를 보류해 line clear effect를 보호한다.
-- active piece의 `pieceType`, `row`, `col`, `rotation` 차이와 snapshot `tick` 차이는 움직이는 조각의 일시적인 prediction 차이로 보고 own correction 판단에서 제외한다.
-- own full apply 후 phase가 `playing`이면 gravity를 재개한다. 상대 보드는 계속 독립 gravity를 실행하지 않는다.
-- authoritative `pieceQueue`를 적용할 때 client runtime의 숨은 server bag queue를 비워 같은 조각이 중복 공급되지 않게 한다.
-
-### Prediction drift와 입력 반응 안정화
-
-- A가 보는 A의 local board와 B가 보는 A의 authoritative board가 장시간 달라지는 문제를 보완했다.
-- server input 적용이 `PIECE_INDEX_MISMATCH`로 실패하면 authoritative state는 변경하지 않고 현재 player snapshot을 즉시 room에 emit한다.
-- sender에도 `game:input:result`로 mismatch reason을 반환해 실패를 조용히 삼키지 않는다.
-- 초기 correction은 snapshot 2회 연속 차이를 persistent drift로 판단했지만, server가 모든 성공한 input 뒤에도 snapshot을 보내므로 빠른 키 입력에서 과도한 full apply가 발생할 수 있었다.
-- 이를 `{ key, startedAtMs }` 기반 시간 정책으로 변경했다.
-  - 750ms 미만의 한 조각 차이는 local prediction을 유지한다.
-  - gap 방향이 바뀌거나 snapshot이 다시 일치하면 drift timer를 초기화한다.
-  - 빠른 좌우 이동, soft drop, 회전 중 active piece 차이는 own board를 덮어쓰지 않는다.
-- 이 정책으로 local 입력 반응을 유지하면서, lock 이후 settled board와 piece 순번은 server state로 다시 수렴하도록 했다.
-
-### Match finish와 cleanup
-
-- `finishAuthoritativeMatch()`를 추가해 input 경로와 ticker 경로의 gameOver side effect를 한 곳으로 모았다.
-- 공통 처리 순서:
-  1. `finishGame()`
-  2. `game_over` log 생성용 match 정보 확보
-  3. ticker stop
-  4. `match:finish` emit
-  5. `deleteMatch(roomId)`
-  6. `game_over` log 저장
-- 중복 finish는 `ALREADY_FINISHED`로 처리하고 emit/log/delete를 반복하지 않는다.
-
-### Server 안정화
-
-- `roomId` 생성 시 충돌을 감지하고 최대 5회 재시도한다.
-- 재시도 실패 시 `ROOM_ID_GENERATION_FAILED`를 반환한다.
-- `matchService.deleteMatch(roomId)`를 추가했다.
-- `game:leave` 성공 시 match를 정리한다.
-- 정상 authoritative gameOver finish에서도 match를 정리한다.
-- player별 `inputLog`는 최대 1000개로 제한한다.
-- `nextInputSequence`로 오래된 로그가 잘려도 sequence 중복을 막는다.
-
-### 테스트/검증
-
-- 주요 검증 명령:
-  - `node --test test/testMultiplayerGameSession.js`
-  - `node --test test/testTetrisRuntime.js`
-  - `node --test test/testMultiplayerSocket.js`
-  - `node --test test/testAuthoritativeTickerService.js`
-  - `node --test test/testMatchService.js`
-  - `node --test test/testRoomService.js`
-  - `npm test -- --test-reporter=dot`
-  - `git diff --check`
-- 자동 테스트 기준으로 server authoritative 멀티 MVP 핵심 흐름은 닫힌 상태다.
-- `scripts/verify.sh` 기준 전체 275개 테스트가 통과했다.
-- 초기 join snapshot 정렬, `PIECE_INDEX_MISMATCH` 복구, settled board 수렴, 750ms piece gap 경계, rapid input over-correction 방지를 자동 테스트로 고정했다.
-- 포트폴리오 시연 완료 판정은 2탭 수동 회귀 통과 후로 둔다.
-
-### 남은 확인
-
-- 2탭에서 다음 흐름을 최종 확인해야 한다.
-  - room create/join/start
-  - 양쪽 입력 반응
-  - 좌우 이동/soft drop/회전 연속 입력 중 own board가 되돌아가거나 끊기지 않는지
-  - 상대 보드 authoritative snapshot 표시
-  - hard drop과 lock 이후 A가 보는 A board와 B가 보는 A board가 다시 수렴하는지
-  - 내 line clear effect
-  - incoming garbage 표시와 실제 board 적용
-  - top-out/gameOver/match finish
-  - lobby 복귀/restart/rejoin
-- AI 기능은 이 수동 회귀가 통과된 뒤 시작한다.
-
----
 
 # 2025년 10월 20일
 
@@ -1751,3 +1589,297 @@ client input
 2. 상대 보드 line clear 표시용 effect 여부 결정
 3. `placementGenerator` / `simulatePlacement` / `heuristicEvaluator` 설계
 4. 커밋/문서 최종 정리
+
+---
+# 2026년 7월 10일
+
+---
+
+## AI 문서와 boardMetrics 상태 동기화
+
+- `src/client/game/core/boardMetrics.js`가 이미 구현된 순수 board metric 기반임을 문서에 반영했다.
+- `test/testBoardMetrics.js`가 empty board, complete line, hole, bumpiness, height, mutation 방지를 검증한다는 점을 기록했다.
+- 다음 AI 구현 순서를 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player로 정리했다.
+- PVE AI는 추천 코치가 아니라 실제 AI 상대이며, 현재 우선순위는 ML 학습이 아니라 휴리스틱 PVE AI와 로그 축적이라고 명시했다.
+- Python AI 서버, 강화학습, LLM 코칭 리포트는 후순위로 유지했다.
+- `boardMetrics`가 현재 `src/client/game/core`에 있는 이유와, 필요해지면 나중에 `shared` 계층으로 옮길 수 있다는 기준을 적었다.
+- 현재 `npm test` 기준 전체 275개 테스트 통과 상태를 확인했다.
+
+---
+
+## Server Authoritative 멀티 MVP 전환 정리
+
+### 핵심 변화
+
+- 멀티플레이 동기화 기준을 기존 client-driven snapshot relay에서 server authoritative snapshot 중심으로 전환했다.
+- 서버가 player별 `authoritativeState`를 들고, `game:input`과 server gravity ticker를 통해 상태를 갱신한다.
+- 상대 보드는 더 이상 상대 input relay나 client snapshot을 예측 실행하지 않고, `game:authoritative:snapshot`만 적용한다.
+- 내 보드는 조작감을 위해 client prediction을 유지하되, server snapshot은 제한적으로만 적용한다.
+
+### 제거/축소된 legacy client-driven 경로
+
+- client가 보내던 `game:snapshot` 송신/수신 흐름을 제거했다.
+- client가 공격량을 직접 선언하던 `game:garbage:attack` 흐름을 제거했다.
+- client가 패배를 직접 보고하던 `game:over` 흐름을 제거했다.
+- `game:garbage:append`는 더 이상 client runtime queue를 변경하지 않는다.
+- garbage, game over, match finish는 server authoritative lock/tick 결과를 따른다.
+
+### Server authoritative state
+
+- `matchService`가 player별 `authoritativeState`를 보관한다.
+- 초기 match 생성 시 server bag chunk에서 첫 조각을 즉시 spawn한다.
+- server state는 다음을 포함한다.
+  - `board`
+  - `activePiece`
+  - `pendingPiece`
+  - `pieceQueue`
+  - `holdPieceType`
+  - `score`
+  - `lines`
+  - `phase`
+  - `combo`
+  - `backToBack`
+  - `pieceIndex`
+  - `pendingGarbageQueue`
+- `applyAuthoritativeInput()`는 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold`를 단일 public entry로 처리한다.
+- lock 경로에서 line clear, score, combo, B2B, T-Spin, garbage cancel/apply, top-out을 server state에 반영한다.
+
+### Authoritative ticker
+
+- `authoritativeTickerService`를 추가했다.
+- room별 ticker는 100ms마다 깨어나지만, gravity step은 500ms 누적 기준으로 처리한다.
+- event loop가 밀려도 callback당 gravity step은 최대 1회로 제한한다.
+- ticker 경로에서도 lock 결과의 attack/cancel/garbage/gameOver를 처리한다.
+- room이 더 이상 playing이 아니거나 match가 사라지면 ticker를 정리한다.
+
+### Authoritative snapshot
+
+- 서버는 `game:authoritative:snapshot`을 room에 emit한다.
+- snapshot DTO는 client 적용 후보로 다음을 포함한다.
+  - `board`
+  - `activePiece`
+  - `pieceQueue`
+  - `holdPieceType`
+  - `holdUsedThisDrop`
+  - `score`
+  - `lines`
+  - `phase`
+  - `combo`
+  - `backToBack`
+  - `tick`
+  - `pieceIndex`
+  - `pendingGarbageLines`
+- `pendingGarbageQueue` 자체는 DTO에 노출하지 않고, 표시용 scalar인 `pendingGarbageLines`만 내려준다.
+- 공격자가 lock으로 garbage를 만들면 target player의 snapshot도 즉시 emit한다.
+
+### Client 적용 정책
+
+- 상대 보드는 `opponentGame.applySnapshot(snapshot)`으로 server snapshot을 full apply한다.
+- 내 보드는 기본적으로 local prediction을 우선한다.
+- `game:join:result`에 player별 client snapshot DTO를 포함해, game page 진입 시 server가 먼저 진행한 state와 양쪽 runtime을 초기 정렬한다.
+- 내 초기 snapshot은 gravity를 재개하고, 상대 초기 snapshot은 snapshot-only 상태를 유지한다.
+- 내 playerId의 snapshot은 `pendingGarbageLines` 표시를 갱신하면서 다음 조건에서만 full apply한다.
+  - `snapshot.phase === "gameOver"`
+  - garbage 적용으로 `pendingGarbageLines`가 감소하고 server board가 local board와 다른 경우
+  - 같은 `pieceIndex`인데 settled board가 다른 경우
+  - server/local `pieceIndex` 차이가 2 이상인 경우
+  - 같은 방향의 `pieceIndex` 차이 1이 750ms 이상 유지되는 경우
+- local phase가 `lineClearing`이면 non-gameOver full apply를 보류해 line clear effect를 보호한다.
+- active piece의 `pieceType`, `row`, `col`, `rotation` 차이와 snapshot `tick` 차이는 움직이는 조각의 일시적인 prediction 차이로 보고 own correction 판단에서 제외한다.
+- own full apply 후 phase가 `playing`이면 gravity를 재개한다. 상대 보드는 계속 독립 gravity를 실행하지 않는다.
+- authoritative `pieceQueue`를 적용할 때 client runtime의 숨은 server bag queue를 비워 같은 조각이 중복 공급되지 않게 한다.
+
+### Prediction drift와 입력 반응 안정화
+
+- A가 보는 A의 local board와 B가 보는 A의 authoritative board가 장시간 달라지는 문제를 보완했다.
+- server input 적용이 `PIECE_INDEX_MISMATCH`로 실패하면 authoritative state는 변경하지 않고 현재 player snapshot을 즉시 room에 emit한다.
+- sender에도 `game:input:result`로 mismatch reason을 반환해 실패를 조용히 삼키지 않는다.
+- 초기 correction은 snapshot 2회 연속 차이를 persistent drift로 판단했지만, server가 모든 성공한 input 뒤에도 snapshot을 보내므로 빠른 키 입력에서 과도한 full apply가 발생할 수 있었다.
+- 이를 `{ key, startedAtMs }` 기반 시간 정책으로 변경했다.
+  - 750ms 미만의 한 조각 차이는 local prediction을 유지한다.
+  - gap 방향이 바뀌거나 snapshot이 다시 일치하면 drift timer를 초기화한다.
+  - 빠른 좌우 이동, soft drop, 회전 중 active piece 차이는 own board를 덮어쓰지 않는다.
+- 이 정책으로 local 입력 반응을 유지하면서, lock 이후 settled board와 piece 순번은 server state로 다시 수렴하도록 했다.
+
+### Match finish와 cleanup
+
+- `finishAuthoritativeMatch()`를 추가해 input 경로와 ticker 경로의 gameOver side effect를 한 곳으로 모았다.
+- 공통 처리 순서:
+  1. `finishGame()`
+  2. `game_over` log 생성용 match 정보 확보
+  3. ticker stop
+  4. `match:finish` emit
+  5. `deleteMatch(roomId)`
+  6. `game_over` log 저장
+- 중복 finish는 `ALREADY_FINISHED`로 처리하고 emit/log/delete를 반복하지 않는다.
+
+### Server 안정화
+
+- `roomId` 생성 시 충돌을 감지하고 최대 5회 재시도한다.
+- 재시도 실패 시 `ROOM_ID_GENERATION_FAILED`를 반환한다.
+- `matchService.deleteMatch(roomId)`를 추가했다.
+- `game:leave` 성공 시 match를 정리한다.
+- 정상 authoritative gameOver finish에서도 match를 정리한다.
+- player별 `inputLog`는 최대 1000개로 제한한다.
+- `nextInputSequence`로 오래된 로그가 잘려도 sequence 중복을 막는다.
+
+### 테스트/검증
+
+- 주요 검증 명령:
+  - `node --test test/testMultiplayerGameSession.js`
+  - `node --test test/testTetrisRuntime.js`
+  - `node --test test/testMultiplayerSocket.js`
+  - `node --test test/testAuthoritativeTickerService.js`
+  - `node --test test/testMatchService.js`
+  - `node --test test/testRoomService.js`
+  - `npm test -- --test-reporter=dot`
+  - `git diff --check`
+- 자동 테스트 기준으로 server authoritative 멀티 MVP 핵심 흐름은 닫힌 상태다.
+- `scripts/verify.sh` 기준 전체 275개 테스트가 통과했다.
+- 초기 join snapshot 정렬, `PIECE_INDEX_MISMATCH` 복구, settled board 수렴, 750ms piece gap 경계, rapid input over-correction 방지를 자동 테스트로 고정했다.
+- 포트폴리오 시연 완료 판정은 2탭 수동 회귀 통과 후로 둔다.
+
+### 남은 확인
+
+- 2탭에서 다음 흐름을 최종 확인해야 한다.
+  - room create/join/start
+  - 양쪽 입력 반응
+  - 좌우 이동/soft drop/회전 연속 입력 중 own board가 되돌아가거나 끊기지 않는지
+  - 상대 보드 authoritative snapshot 표시
+  - hard drop과 lock 이후 A가 보는 A board와 B가 보는 A board가 다시 수렴하는지
+  - 내 line clear effect
+  - incoming garbage 표시와 실제 board 적용
+  - top-out/gameOver/match finish
+  - lobby 복귀/restart/rejoin
+- AI 기능은 이 수동 회귀가 통과된 뒤 시작한다.
+
+---
+
+# 2026년 7월 14일
+
+---
+
+## 상대 보드 line clear presentation 동기화
+
+- server authoritative lock 결과에 gameplay state와 분리된 `presentationEffect`를 추가했다.
+- line clear 직전 board와 삭제 대상 row를 기존 `game:authoritative:snapshot` payload에 선택적으로 포함한다.
+- 상대 runtime은 authoritative snapshot을 먼저 적용한 뒤 line clear presentation만 재생한다.
+- presentation은 전달받은 board 복사본만 렌더링하고 authoritative board, active piece, phase, score, input queue를 변경하지 않는다.
+- 상대 화면에서는 line clear 효과음을 재생하지 않는다.
+- effect의 `playerId`, `pieceIndex`, `id`를 기준으로 own-player effect, 중복 effect, 오래된 effect를 차단한다.
+- input lock과 ticker gravity lock 모두 같은 presentation 경로를 사용한다.
+
+## Local prediction correction 안정화
+
+- own authoritative snapshot이 대기 중인 local input을 덮지 않도록 correction 적용을 다음 snapshot까지 보류한다.
+- snapshot의 `tick`이 local tick보다 과거여도 runtime tick을 되감지 않도록 단조 증가 규칙을 적용했다.
+- playing snapshot을 full apply한 뒤 중단된 input loop와 gravity를 다시 시작할 수 있게 보완했다.
+- snapshot correction 직후 이전 lock score 문맥이 다음 조각으로 누수되지 않도록 `pendingLockScoreBefore`를 초기화한다.
+- 빠른 좌우 이동, 회전, soft drop 중 local prediction이 반복적으로 되돌아가는 현상을 줄이면서 settled board correction은 유지한다.
+
+## 휴리스틱 PVE 기본 흐름
+
+- PVE room mode와 `heuristic_ai` player type을 추가했다.
+- 로비에서 PVP 방 생성과 AI 대전을 구분해 시작할 수 있다.
+- PVE room은 human host와 heuristic AI player를 함께 생성하며 외부 guest 참가를 허용하지 않는다.
+- human socket이 AI playerId로 input을 보내는 경로를 차단했다.
+- server authoritative ticker가 human player에는 gravity step을, heuristic AI에는 AI turn을 실행한다.
+- AI 판단 실패나 legal placement 부재도 server authoritative game over와 match finish 흐름으로 연결한다.
+
+## 휴리스틱 AI 순수 모듈
+
+- `src/client/game/ai/heuristic`에 다음 순수 모듈을 추가했다.
+  - `placementGenerator.js`
+  - `simulatePlacement.js`
+  - `heuristicEvaluator.js`
+  - `placementLogAnalysis.js`
+- placement 후보 생성, 가상 board 적용, line clear 반영, board metric 평가를 DOM/Canvas/Socket.IO 없이 실행한다.
+- 휴리스틱 평가는 다음 metric을 사용한다.
+  - lines cleared
+  - holes
+  - aggregate height
+  - bumpiness
+  - max height
+- 동일한 입력에서 후보 순서와 최종 선택이 같도록 score 이후 동점 처리 기준을 고정했다.
+- AI 판단 결과는 `selectedPlacement`, score, candidate count, 평가 근거를 함께 반환한다.
+
+## Reachability planner
+
+- 기존 회전/열별 직선 hard drop 후보를 실제 입력으로 도달 가능한 후보 탐색으로 확장했다.
+- 새 모듈: `src/client/game/ai/heuristic/reachablePlacementPlanner.js`
+- BFS 상태 key는 `pieceType:rotation:row:col`을 사용한다.
+- 고정 action 탐색 순서:
+  1. `move_left`
+  2. `move_right`
+  3. `rotate`
+  4. `soft_drop`
+- 각 도달 상태에서 마지막 `hard_drop`을 붙여 `{ placement, plannedActions }` 후보를 만든다.
+- 이동 intent는 `resolveInputMoveIntent()`, 충돌과 SRS wall kick은 `resolveMoveAttempt()`를 재사용한다.
+- 동일 final placement는 BFS에서 처음 발견한 최단 경로 하나만 유지한다.
+- 같은 길이의 경로는 고정 action 순서로 결정해 결과를 재현할 수 있게 했다.
+- 장애물 아래 tuck, wall kick, 좌우 이동, 회전이 필요한 placement도 실제 authoritative input replay로 검증했다.
+- `heuristicEvaluator`는 reachable 후보만 평가하고 decision에 `plannedActions`를 포함한다.
+
+## Human placement log 의미 보정
+
+- reachability planner는 BFS 시작 위치가 필요하므로 human placement log의 `activePiece` 의미를 바로잡았다.
+- `runtime.decisionStartPiece`에 gameplay state와 분리된 분석용 조각 시작 상태를 보관한다.
+- 판단 시작 상태는 다음 경계에서 갱신한다.
+  - 일반 spawn
+  - hold 후 incoming piece spawn
+  - own authoritative snapshot full correction
+- placement log 필드 의미:
+  - `activePiece`: spawn 또는 correction 직후 판단 시작 상태
+  - `selectedPlacement`: 실제 최종 locked 위치
+- 새 조각 spawn, init/reset, game over, destroy에서 이전 판단 시작 상태가 누수되지 않게 정리했다.
+- 판단 시작 상태가 없으면 locked piece를 BFS 시작점으로 대신 사용하지 않는다.
+- 이 경우 부정확한 `aiComparison`을 생성하지 않고 `schemaVersion: 1` legacy log로 fallback한다.
+
+## Placement log schema와 분석 데이터
+
+- feature-ready human/heuristic AI placement log는 `schemaVersion: 2`를 사용한다.
+- 공통 분석 필드:
+  - `source`
+  - `modelType`
+  - `metricsBefore`
+  - `metricsAfter`
+  - `evaluation`
+- human 로그는 같은 board와 판단 시작 조각을 기준으로 heuristic 선택과 실제 선택을 비교한 `aiComparison`을 기록한다.
+- heuristic AI 로그는 `source: "heuristic_ai"`, `modelType: "heuristic"`을 기록한다.
+- validator는 schema version, board shape, placement, metric, evaluation, source/model 조합과 human `aiComparison`을 검증한다.
+- schema v1은 legacy 호환을 위해 유지하지만 feature-ready 데이터셋에서는 제외 또는 migration 대상으로 둔다.
+
+## 현재 AI 실행 경계
+
+- reachability planner가 만든 `plannedActions`는 현재 decision 결과에만 포함된다.
+- PVE AI는 아직 `selectedPlacement`를 server authoritative placement 경로로 직접 적용한다.
+- AI placement log의 `inputSequence`는 아직 빈 배열이다.
+- 다음 단계는 `plannedActions`를 server authoritative input 경로로 하나씩 실행하는 AI action executor다.
+- executor에서 실제 성공한 action만 `inputSequence`에 기록해야 하며, 계획했지만 실패하거나 폐기된 action은 학습 데이터에 넣지 않는다.
+- 아직 구현하지 않은 항목:
+  - AI action queue
+  - action별 authoritative snapshot
+  - AI action cadence
+  - `pieceIndex` mismatch 시 plan 폐기와 재계획
+  - direct placement 경로 제거
+
+## 문서 정리
+
+- 프로젝트 진입용 `README.md`를 추가했다.
+- `docs/current-project-architecture-report.md`에 현재 client/server authoritative/PVE/로그 구조를 정리했다.
+- `PLAN.md`, `QnA.md`, `docs/heuristic-ai-design.md`, `docs/game-log-dataset-policy.md`, `docs/ml-dataset-plan.md`를 현재 구현 상태에 맞춰 갱신했다.
+- LLM은 게임 판단 원천이 아니라 분석 결과를 설명하는 후순위 코칭 계층으로 유지한다.
+
+## 테스트와 검증
+
+- line clear presentation의 gameplay state 비변경과 무음 재생을 검증했다.
+- local prediction correction에서 pending input 보호, tick 단조 증가, input loop 복구를 검증했다.
+- PVE room lifecycle, AI player input 차단, ticker integration, AI game over를 검증했다.
+- placement generation, simulation, heuristic evaluation, placement log analysis를 순수 테스트로 고정했다.
+- reachability planner의 wall kick, tuck, 최단 경로, 결정론, mutation 방지, authoritative action replay를 검증했다.
+- human 로그의 일반 spawn, hold, correction, 연속 piece, fallback 의미를 검증했다.
+- `bash scripts/verify.sh` 기준 전체 348개 테스트가 통과했다.
+- 기존 `MODULE_TYPELESS_PACKAGE_JSON` 경고는 남아 있지만 테스트 실패는 아니다.
+
+---
+
