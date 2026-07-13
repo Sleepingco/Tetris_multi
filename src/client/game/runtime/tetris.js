@@ -48,6 +48,7 @@ import {
     serializeGameState,
     deserializeGameState,
 } from "../state/stateSerialization.js"
+import { createHumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.js"
 const NEXT_QUEUE_SIZE = 2
 
 // =============================
@@ -1068,6 +1069,27 @@ export function createTetrisRuntime({
         const appliedGarbage = applyPendingGarbageQueue()
         log.placementResult.appliedGarbageLines = appliedGarbage.appliedLines
         log.placementResult.gameOver = log.placementResult.gameOver || appliedGarbage.overflow
+
+        const analysis = createHumanPlacementLogAnalysis({
+            boardBefore: log.boardBefore,
+            boardAfter: log.boardAfter,
+            activePiece: log.activePiece,
+            selectedPlacement: log.selectedPlacement,
+        })
+        if (
+            analysis &&
+            typeof log.gameId === "string" && log.gameId.length > 0 &&
+            typeof log.roomId === "string" && log.roomId.length > 0 &&
+            typeof log.playerId === "string" && log.playerId.length > 0
+        ) {
+            log.schemaVersion = 2
+            log.source = "human"
+            log.modelType = null
+            log.metricsBefore = analysis.metricsBefore
+            log.metricsAfter = analysis.metricsAfter
+            log.evaluation = analysis.evaluation
+            log.aiComparison = analysis.aiComparison
+        }
 
         runtime.placementDecisionLog.push(log)
         if (typeof placementDecisionRecorder === "function") {

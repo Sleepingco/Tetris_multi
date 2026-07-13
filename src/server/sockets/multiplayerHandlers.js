@@ -122,10 +122,13 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         || defaultAuthoritativeTickerService
 
     clientSocket.on("room:create", (player) => {
-        const hostPlayer = player
-            ? { ...player, socketId: clientSocket.id }
+        const createPayload = player?.player
+            ? player
+            : { player, mode: "pvp" }
+        const hostPlayer = createPayload.player
+            ? { ...createPayload.player, socketId: clientSocket.id }
             : null
-        const result = createRoom(hostPlayer)
+        const result = createRoom(hostPlayer, { mode: createPayload.mode })
 
         if (result.ok) {
             clientSocket.join(result.room.roomId);
@@ -199,7 +202,12 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     clientSocket.on("game:join", (payload = {}) => {
         const { roomId, playerId } = payload
-        const result = syncRoom(roomId, playerId)
+        let result = syncRoom(roomId, playerId)
+        if (result.ok && !isHumanPlayer(result.room, playerId)) {
+            result = createNotAuthorizedResult()
+        } else if (result.ok) {
+            result = syncRoom(roomId, playerId, clientSocket.id)
+        }
         const matchResult = result.ok
             ? getMatchState(roomId)
             : { match: null }
@@ -221,6 +229,11 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         if (!result.ok) {
             clientSocket.emit("game:input:result", result)
+            return
+        }
+
+        if (!isAuthorizedHumanSocket(result.room, playerId, clientSocket.id)) {
+            clientSocket.emit("game:input:result", createNotAuthorizedResult())
             return
         }
 
@@ -322,6 +335,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
+        if (!isAuthorizedHumanSocket(result.room, playerId, clientSocket.id)) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: "NOT_AUTHORIZED",
+            })
+            return
+        }
+
         if (result.room.status !== "playing" && result.room.status !== "finished") {
             clientSocket.emit("game:log:result", {
                 ok: false,
@@ -353,6 +375,10 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             && log.playerId === playerId
             && log.roomId === roomId
             && log.eventType === "placement_decision"
+            && (
+                (log.schemaVersion === 1 && (log.source === undefined || log.source === "human"))
+                || (log.schemaVersion === 2 && log.source === "human")
+            )
             && hasValidPlacementResultScalars
 
         if (!hasValidPlacementDecisionLog) {
@@ -375,6 +401,11 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         if (!result.ok) {
             clientSocket.emit("game:bag:result", result)
+            return
+        }
+
+        if (!isAuthorizedHumanSocket(result.room, playerId, clientSocket.id)) {
+            clientSocket.emit("game:bag:result", createNotAuthorizedResult())
             return
         }
 
@@ -403,7 +434,14 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     clientSocket.on("game:leave", (payload = {}) => {
         const { roomId, playerId } = payload
-        const result = leaveGame(roomId, playerId)
+        const roomResult = syncRoom(roomId, playerId)
+        const result = roomResult.ok && isAuthorizedHumanSocket(
+            roomResult.room,
+            playerId,
+            clientSocket.id,
+        )
+            ? leaveGame(roomId, playerId)
+            : createNotAuthorizedResult()
         if (result.ok) {
             authoritativeTickerService.stopRoomTicker(roomId)
             deleteMatch(roomId)
@@ -421,9 +459,12 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     // 로비 복귀 시 최신 socketId를 room player에 다시 연결하고 finished room 복귀 조건을 확인한다.
     clientSocket.on("room:sync", (payload = {}) => {
         const { roomId, playerId } = payload
-        const result = syncRoom(roomId, playerId, clientSocket.id, {
-            location: "lobby",
-        })
+        const currentResult = syncRoom(roomId, playerId)
+        const result = currentResult.ok && isHumanPlayer(currentResult.room, playerId)
+            ? syncRoom(roomId, playerId, clientSocket.id, {
+                location: "lobby",
+            })
+            : createNotAuthorizedResult()
 
         if (result.ok && result.room) {
             clientSocket.join(result.room.roomId)
@@ -472,6 +513,7 @@ function createGameJoinMatchDto(match) {
 
     return {
         roomId: match.roomId,
+        mode: match.mode || "pvp",
         status: match.status,
         createdAt: match.createdAt,
         players: match.players.map(player => {
@@ -479,6 +521,7 @@ function createGameJoinMatchDto(match) {
 
             return {
                 playerId: player.playerId,
+                playerType: player.playerType || "human",
                 bagChunks: Array.isArray(player.bagChunks)
                     ? player.bagChunks.map(chunk => [...chunk])
                     : [],
@@ -532,13 +575,36 @@ function createGameStartLog(room, match) {
         schemaVersion: 1,
         gameId: createGameId(room.roomId, match),
         roomId: room.roomId,
-        mode: "multi",
+        mode: room.mode === "pve" ? "pve" : "multi",
         startedAt: match.createdAt || Date.now(),
         players: room.players.map(player => ({
             playerId: player.playerId,
             nickname: player.nickname,
             role: player.playerId === room.hostPlayerId ? "host" : "guest",
+            playerType: player.playerType || "human",
         })),
+    }
+}
+
+function isHumanPlayer(room, playerId) {
+    return room?.players?.some(player => {
+        return player.playerId === playerId && player.playerType !== "heuristic_ai"
+    })
+}
+
+function isAuthorizedHumanSocket(room, playerId, socketId) {
+    return room?.players?.some(player => {
+        return player.playerId === playerId &&
+            player.playerType !== "heuristic_ai" &&
+            player.socketId === socketId
+    })
+}
+
+function createNotAuthorizedResult() {
+    return {
+        ok: false,
+        room: null,
+        reason: "NOT_AUTHORIZED",
     }
 }
 

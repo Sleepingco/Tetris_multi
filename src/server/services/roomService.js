@@ -6,6 +6,14 @@ const { randomUUID } = require("crypto")
 // =============================
 const rooms = new Map()
 const MAX_ROOM_ID_GENERATION_ATTEMPTS = 5
+const ROOM_MODE = Object.freeze({
+    PVP: "pvp",
+    PVE: "pve",
+})
+const PLAYER_TYPE = Object.freeze({
+    HUMAN: "human",
+    HEURISTIC_AI: "heuristic_ai",
+})
 
 function success(room, meta = {}) {
     return {
@@ -43,6 +51,25 @@ function createUniqueRoomId(roomIdGenerator = generateRoomId) {
     }
 
     return null
+}
+
+function normalizeRoomMode(mode) {
+    return mode === ROOM_MODE.PVE ? ROOM_MODE.PVE : ROOM_MODE.PVP
+}
+
+function createHumanPlayer(player) {
+    return {
+        ...player,
+        playerType: PLAYER_TYPE.HUMAN,
+    }
+}
+
+function createHeuristicAiPlayer(roomId) {
+    return {
+        playerId: `heuristic-ai-${roomId}`,
+        nickname: "Heuristic AI",
+        playerType: PLAYER_TYPE.HEURISTIC_AI,
+    }
 }
 
 function getRoomPlayerContext(roomId, playerId) {
@@ -87,16 +114,25 @@ function createRoom(hostPlayer, options = {}) {
     if (!hostPlayer) {
         return failure("HOST_PLAYER_REQUIRED")
     }
+    if (!hostPlayer.playerId) {
+        return failure("HOST_PLAYER_ID_REQUIRED")
+    }
 
     const roomId = createUniqueRoomId(options.generateRoomId)
     if (!roomId) {
         return failure("ROOM_ID_GENERATION_FAILED")
     }
 
+    const mode = normalizeRoomMode(options.mode)
+    const humanHost = createHumanPlayer(hostPlayer)
+    const players = mode === ROOM_MODE.PVE
+        ? [humanHost, createHeuristicAiPlayer(roomId)]
+        : [humanHost]
     const room = {
         roomId,
-        hostPlayerId: hostPlayer.playerId,
-        players: [hostPlayer],
+        mode,
+        hostPlayerId: humanHost.playerId,
+        players,
         status: "waiting",
         createdAt: Date.now(),
     }
@@ -123,6 +159,9 @@ function joinRoom(roomId, guestPlayer) {
     if (!roomState) {
         return failure("ROOM_NOT_FOUND")
     }
+    if (roomState.mode === ROOM_MODE.PVE) {
+        return failure("PVE_ROOM_NOT_JOINABLE")
+    }
     if (roomState.players.length >= 2) {
         return failure("ROOM_FULL")
     }
@@ -132,7 +171,7 @@ function joinRoom(roomId, guestPlayer) {
         return failure("PLAYER_ALREADY_JOINED")
     }
 
-    roomState.players.push(guestPlayer)
+    roomState.players.push(createHumanPlayer(guestPlayer))
     roomState.status = "waiting"
 
     return success(roomState)
@@ -160,6 +199,14 @@ function removePlayer(roomId, playerId) {
 
     const removedPlayer = roomState.players[playerIndex]
     roomState.players.splice(playerIndex, 1)
+
+    if (
+        roomState.mode === ROOM_MODE.PVE &&
+        removedPlayer.playerType === PLAYER_TYPE.HUMAN
+    ) {
+        rooms.delete(roomId)
+        return success(null)
+    }
 
     if (roomState.players.length === 0) {
         rooms.delete(roomId)
@@ -271,7 +318,10 @@ function startGame(roomId, playerId, socketId = null) {
         return failure("NOT_AUTHORIZED")
     }
 
-    if (roomState.players.length !== 2) {
+    const hasValidPvePlayers = roomState.mode === ROOM_MODE.PVE &&
+        roomState.players.filter(player => player.playerType === PLAYER_TYPE.HUMAN).length === 1 &&
+        roomState.players.filter(player => player.playerType === PLAYER_TYPE.HEURISTIC_AI).length === 1
+    if (roomState.players.length !== 2 || (roomState.mode === ROOM_MODE.PVE && !hasValidPvePlayers)) {
         return failure("NOT_ENOUGH_PLAYERS")
     }
 
@@ -329,7 +379,10 @@ function syncRoom(roomId, playerId, socketId = null, options = {}) {
             context.roomState.lobbyPlayerIds.push(playerId)
         }
 
-        const allPlayersReturnedToLobby = context.roomState.players.every(player => {
+        const lobbyPlayers = context.roomState.mode === ROOM_MODE.PVE
+            ? context.roomState.players.filter(player => player.playerType === PLAYER_TYPE.HUMAN)
+            : context.roomState.players
+        const allPlayersReturnedToLobby = lobbyPlayers.every(player => {
             return context.roomState.lobbyPlayerIds.includes(player.playerId)
         })
 
@@ -392,6 +445,8 @@ function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
 }
 
 module.exports = {
+    PLAYER_TYPE,
+    ROOM_MODE,
     createRoom,
     getRoomState,
     joinRoom,

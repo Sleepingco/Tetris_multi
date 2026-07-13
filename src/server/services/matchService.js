@@ -4,6 +4,7 @@
 // =============================
 const {
     applyAuthoritativeInput,
+    applyAuthoritativePlacement,
     applyAuthoritativeGravityStep,
 } = require("./playerGameplayStep.js");
 
@@ -54,16 +55,19 @@ function createMatch(room) {
 
     const match = {
         roomId: room.roomId,
+        mode: room.mode || "pvp",
         status: room.status || "playing",
         players: room.players.map((player) => {
             const bagChunks = createInitialBagChunks();
 
             return {
                 playerId: player.playerId,
+                playerType: player.playerType || "human",
                 inputLog: [],
                 nextInputSequence: 1,
                 bagChunks,
                 authoritativeState: createInitialPlayerState(bagChunks),
+                lastDecisionPieceIndex: null,
             };
         }),
         createdAt: Date.now(),
@@ -118,6 +122,10 @@ function recordInput(roomId, playerId, input) {
 
     if (!player) {
         return createFailure("PLAYER_NOT_FOUND");
+    }
+
+    if (player.playerType !== "human") {
+        return createFailure("PLAYER_INPUT_NOT_ALLOWED");
     }
 
     if (!input || typeof input.action !== "string") {
@@ -272,6 +280,78 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
     return createSuccess(match, { gameplayResult });
 }
 
+function applyAuthoritativePlacementToMatchPlayerState(roomId, playerId, command, gameCore) {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+
+    const player = match.players.find(matchPlayer => matchPlayer.playerId === playerId);
+    if (!player) return createFailure("PLAYER_NOT_FOUND");
+    if (player.playerType !== "heuristic_ai") {
+        return createFailure("PLAYER_PLACEMENT_NOT_ALLOWED");
+    }
+    if (!player.authoritativeState) {
+        return {
+            ok: false,
+            match,
+            reason: "AUTHORITATIVE_STATE_NOT_FOUND",
+        };
+    }
+    if (command?.pieceIndex !== player.authoritativeState.pieceIndex) {
+        return {
+            ok: false,
+            match,
+            reason: "PIECE_INDEX_MISMATCH",
+        };
+    }
+
+    const gameplayResult = applyAuthoritativePlacement(
+        player.authoritativeState,
+        command,
+        gameCore,
+    );
+    if (!gameplayResult.ok) {
+        return {
+            ok: false,
+            match,
+            reason: gameplayResult.reason,
+            gameplayResult,
+        };
+    }
+
+    attachPresentationEffectId(gameplayResult, playerId);
+    return createSuccess(match, { gameplayResult });
+}
+
+function ensurePlayerBagQueue(roomId, playerId, minimumRemaining = 7) {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+
+    const player = match.players.find(matchPlayer => matchPlayer.playerId === playerId);
+    if (!player) return createFailure("PLAYER_NOT_FOUND");
+
+    const remaining = player.authoritativeState?.pieceQueue?.length ?? 0;
+    if (remaining > minimumRemaining) {
+        return createSuccess(match, { bagChunk: null });
+    }
+
+    return appendPlayerBagChunk(roomId, playerId);
+}
+
+function markAuthoritativePlayerGameOver(roomId, playerId, reason = "game_over") {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+
+    const player = match.players.find(matchPlayer => matchPlayer.playerId === playerId);
+    if (!player?.authoritativeState) {
+        return createFailure(player ? "AUTHORITATIVE_STATE_NOT_FOUND" : "PLAYER_NOT_FOUND");
+    }
+
+    player.authoritativeState.phase = "gameOver";
+    player.authoritativeState.gameOver = true;
+    player.authoritativeState.gameOverReason = reason;
+    return createSuccess(match);
+}
+
 function applyGravityStepToMatchPlayerState(roomId, playerId, gameCore) {
     const match = matches.get(roomId);
 
@@ -409,6 +489,7 @@ function createInitialPlayerState(bagChunks = []) {
         score: 0,
         lines: 0,
         phase: "playing",
+        gameOver: false,
         combo: -1,
         backToBack: false,
         currentTick: 0,
@@ -442,6 +523,7 @@ function cloneAuthoritativeState(authoritativeState) {
         score: authoritativeState.score,
         lines: authoritativeState.lines,
         phase: authoritativeState.phase,
+        gameOver: Boolean(authoritativeState.gameOver),
         combo: authoritativeState.combo,
         backToBack: authoritativeState.backToBack,
         currentTick: authoritativeState.currentTick,
@@ -469,6 +551,7 @@ function createClientSnapshotDto(authoritativeSnapshot) {
         score: authoritativeSnapshot.score,
         lines: authoritativeSnapshot.lines,
         phase: authoritativeSnapshot.phase,
+        gameOver: Boolean(authoritativeSnapshot.gameOver),
         combo: authoritativeSnapshot.combo,
         backToBack: authoritativeSnapshot.backToBack,
         tick: authoritativeSnapshot.currentTick,
@@ -485,12 +568,15 @@ module.exports = {
     appendPlayerBagChunk,
     appendPendingGarbageToOpponent,
     applyAuthoritativeInputToMatchPlayerState,
+    applyAuthoritativePlacementToMatchPlayerState,
     applyGravityStepToMatchPlayerState,
     createMatch,
     deleteMatch,
     getAuthoritativePlayerSnapshot,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
+    ensurePlayerBagQueue,
+    markAuthoritativePlayerGameOver,
     MAX_INPUT_LOG_ENTRIES_PER_PLAYER,
     recordInput,
     resetMatches,

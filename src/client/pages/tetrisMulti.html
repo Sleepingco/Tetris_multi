@@ -242,6 +242,7 @@
             const hostPlayer = room.players.find(player => player.playerId === room.hostPlayerId)
             const guestPlayer = room.players.find(player => player.playerId !== room.hostPlayerId)
             const myRole = playerId === room.hostPlayerId ? "host" : "guest"
+            const isPveMode = room.mode === "pve"
 
             console.log("room : ", room)
             console.log("playerId : ", playerId)
@@ -267,7 +268,7 @@
 
             if (myRole === "host") {
                 player1RoleBadge.textContent = "내 보드"
-                player2RoleBadge.textContent = "상대 보드"
+                player2RoleBadge.textContent = isPveMode ? "AI 상대" : "상대 보드"
             } else {
                 player1RoleBadge.textContent = "상대 보드"
                 player2RoleBadge.textContent = "내 보드"
@@ -403,6 +404,7 @@
                     roomId,
                     playerId,
                     opponentPlayerId,
+                    mode: isPveMode ? "pve" : "multi",
                     match: result.match,
                     myCanvas,
                     opponentCanvas,

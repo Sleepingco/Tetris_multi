@@ -2624,3 +2624,84 @@ test("playing room에서는 로비 socket disconnect 후에도 game:join을 허�
     assert.equal(joinResult.payload.room.players.length, 2)
     assert.deepEqual(gameHostSocket.joinedRooms, [roomId])
 })
+
+test("PVE room:create는 heuristic AI player를 만들고 human host가 바로 시작할 수 있다", () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("pve-host-socket")
+
+    registerTestSocketHandlers(socketServer, {
+        saveGameEventLog(log) {
+            return Promise.resolve({ ok: true, log, reason: null })
+        },
+    })
+    socketServer.connect(hostSocket)
+
+    hostSocket.trigger("room:create", {
+        mode: "pve",
+        player: {
+            playerId: "pve-host",
+            nickname: "Host",
+        },
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const aiPlayer = createResult.room.players.find(player => {
+        return player.playerType === "heuristic_ai"
+    })
+
+    assert.equal(createResult.ok, true)
+    assert.equal(createResult.room.mode, "pve")
+    assert.ok(aiPlayer)
+
+    hostSocket.trigger("room:start", {
+        roomId: createResult.room.roomId,
+        playerId: "pve-host",
+    })
+    const startResult = hostSocket.lastClientEvent("room:result").payload
+    const match = getMatchState(createResult.room.roomId).match
+
+    assert.equal(startResult.ok, true)
+    assert.equal(startResult.room.status, "playing")
+    assert.equal(match.mode, "pve")
+    assert.equal(match.players[1].playerType, "heuristic_ai")
+})
+
+test("human socket은 heuristic AI playerId로 game input을 보낼 수 없다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("pve-input-host-socket")
+
+    registerTestSocketHandlers(socketServer, {
+        saveGameEventLog(log) {
+            return Promise.resolve({ ok: true, log, reason: null })
+        },
+    })
+    socketServer.connect(hostSocket)
+
+    hostSocket.trigger("room:create", {
+        mode: "pve",
+        player: {
+            playerId: "pve-input-host",
+            nickname: "Host",
+        },
+    })
+    const createResult = hostSocket.lastClientEvent("room:result").payload
+    const roomId = createResult.room.roomId
+    const aiPlayer = createResult.room.players.find(player => {
+        return player.playerType === "heuristic_ai"
+    })
+    hostSocket.trigger("room:start", {
+        roomId,
+        playerId: "pve-input-host",
+    })
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: aiPlayer.playerId,
+        action: "hard_drop",
+        tick: 1,
+        pieceIndex: 1,
+    })
+
+    const inputResult = hostSocket.lastClientEvent("game:input:result").payload
+    assert.equal(inputResult.ok, false)
+    assert.equal(inputResult.reason, "NOT_AUTHORIZED")
+})

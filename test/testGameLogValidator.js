@@ -9,14 +9,96 @@ const {
 } = require("../src/server/validators/gameLogValidator.js");
 
 function createPlacementDecisionLog(overrides = {}) {
+    const placement = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 0,
+        cells: [
+            { row: 0, col: 0 },
+            { row: 0, col: 1 },
+            { row: 1, col: 0 },
+            { row: 1, col: 1 },
+        ],
+    };
+    const metricsBefore = {
+        columnHeights: [0, 0],
+        aggregateHeight: 0,
+        maxHeight: 0,
+        holes: 0,
+        bumpiness: 0,
+        completeLines: 0,
+    };
+    const metricsAfter = {
+        columnHeights: [2, 2],
+        aggregateHeight: 4,
+        maxHeight: 2,
+        holes: 0,
+        bumpiness: 0,
+        completeLines: 2,
+    };
+
+    return {
+        eventType: "placement_decision",
+        schemaVersion: 2,
+        playerId: "player-001",
+        gameId: "game-001",
+        roomId: "room-001",
+        source: "human",
+        modelType: null,
+        tick: 10,
+        pieceIndex: 3,
+        createdAt: 1780000000000,
+        boardBefore: [
+            [null, null],
+            [null, null],
+        ],
+        boardAfter: [
+            ["square", "square"],
+            ["square", "square"],
+        ],
+        activePiece: { ...placement, cells: placement.cells.map(cell => ({ ...cell })) },
+        nextQueue: ["bar", "tree"],
+        holdPiece: null,
+        selectedPlacement: placement,
+        placementResult: {
+            linesCleared: 2,
+            scoreDelta: 300,
+            gameOver: false,
+        },
+        metricsBefore,
+        metricsAfter,
+        evaluation: {
+            score: 20,
+            candidateCount: 1,
+            reason: {
+                linesCleared: 2,
+                holesDelta: 0,
+                bumpinessDelta: 0,
+                aggregateHeightDelta: 4,
+                maxHeightDelta: 2,
+            },
+        },
+        aiComparison: {
+            heuristicPlacement: { ...placement, cells: placement.cells.map(cell => ({ ...cell })) },
+            heuristicScore: 20,
+            userScore: 20,
+            betterBy: 0,
+            samePlacement: true,
+        },
+        ...overrides,
+    };
+}
+
+function createLegacyPlacementDecisionLog(overrides = {}) {
     return {
         eventType: "placement_decision",
         schemaVersion: 1,
-        playerId: "player-001",
-        gameId: "game-001",
-        pieceIndex: 3,
-        boardBefore: [[null, null]],
-        boardAfter: [["square", "square"]],
+        playerId: "legacy-player",
+        gameId: "legacy-game",
+        pieceIndex: 1,
+        boardBefore: [[null]],
+        boardAfter: [["square"]],
         selectedPlacement: {
             pieceType: "square",
             rotation: 0,
@@ -27,14 +109,32 @@ function createPlacementDecisionLog(overrides = {}) {
     };
 }
 
-test("validatePlacementDecisionLog는 최소 placement_decision 로그를 허용한다", () => {
+test("validatePlacementDecisionLog는 schemaVersion 1 legacy 로그를 허용한다", () => {
+    const result = validatePlacementDecisionLog(createLegacyPlacementDecisionLog());
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+});
+
+test("validatePlacementDecisionLog는 human schemaVersion 2 로그를 허용한다", () => {
     const result = validatePlacementDecisionLog(createPlacementDecisionLog());
 
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
 });
 
-test("validatePlacementDecisionLog는 필수 필드가 없으면 실패한다", () => {
+test("validatePlacementDecisionLog는 heuristic_ai schemaVersion 2 로그를 허용한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        source: "heuristic_ai",
+        modelType: "heuristic",
+        aiComparison: undefined,
+    }));
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+});
+
+test("validatePlacementDecisionLog는 selectedPlacement가 없으면 실패한다", () => {
     const result = validatePlacementDecisionLog(createPlacementDecisionLog({
         selectedPlacement: null,
     }));
@@ -45,7 +145,7 @@ test("validatePlacementDecisionLog는 필수 필드가 없으면 실패한다", 
 
 test("validatePlacementDecisionLog는 payload가 너무 크면 실패한다", () => {
     const result = validatePlacementDecisionLog(
-        createPlacementDecisionLog({
+        createLegacyPlacementDecisionLog({
             boardBefore: [Array(100).fill("square")],
             boardAfter: [Array(100).fill("square")],
         }),
@@ -54,6 +154,84 @@ test("validatePlacementDecisionLog는 payload가 너무 크면 실패한다", ()
 
     assert.equal(result.ok, false);
     assert.equal(result.reason, "LOG_PAYLOAD_TOO_LARGE");
+});
+
+test("validatePlacementDecisionLog는 metricsBefore와 metricsAfter를 검증한다", () => {
+    const invalidBefore = validatePlacementDecisionLog(createPlacementDecisionLog({
+        metricsBefore: {
+            columnHeights: [0],
+            aggregateHeight: 0,
+            maxHeight: 0,
+            holes: 0,
+            bumpiness: 0,
+            completeLines: 0,
+        },
+    }));
+    const invalidAfter = validatePlacementDecisionLog(createPlacementDecisionLog({
+        metricsAfter: null,
+    }));
+
+    assert.equal(invalidBefore.reason, "INVALID_METRICS_BEFORE");
+    assert.equal(invalidAfter.reason, "INVALID_METRICS_AFTER");
+});
+
+test("validatePlacementDecisionLog는 evaluation schema를 검증한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        evaluation: {
+            score: Number.NaN,
+            candidateCount: 0,
+            reason: {},
+        },
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "INVALID_EVALUATION");
+});
+
+test("validatePlacementDecisionLog는 schemaVersion 2 source 누락을 거부한다", () => {
+    const result = validatePlacementDecisionLog(createPlacementDecisionLog({
+        source: undefined,
+    }));
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "SOURCE_REQUIRED");
+});
+
+test("validatePlacementDecisionLog는 source/modelType 조합과 aiComparison을 검증한다", () => {
+    const invalidSource = validatePlacementDecisionLog(createPlacementDecisionLog({
+        source: "ml_ai",
+        modelType: "heuristic",
+    }));
+    const invalidComparison = validatePlacementDecisionLog(createPlacementDecisionLog({
+        aiComparison: {
+            heuristicPlacement: null,
+            heuristicScore: 10,
+            userScore: 5,
+            betterBy: 5,
+            samePlacement: false,
+        },
+    }));
+
+    assert.equal(invalidSource.reason, "INVALID_SOURCE_MODEL");
+    assert.equal(invalidComparison.reason, "INVALID_AI_COMPARISON");
+});
+
+test("validatePlacementDecisionLog는 malformed board와 순환 payload를 안전하게 거부한다", () => {
+    const malformedResult = validatePlacementDecisionLog(createPlacementDecisionLog({
+        boardAfter: [["square"], ["square", "square"]],
+    }));
+    const malformedPlacement = createPlacementDecisionLog();
+    malformedPlacement.selectedPlacement.cells[3] = { row: 0, col: 0 };
+    const placementResult = validatePlacementDecisionLog(malformedPlacement);
+    const cyclicLog = createPlacementDecisionLog();
+    cyclicLog.self = cyclicLog;
+    const cyclicResult = validatePlacementDecisionLog(cyclicLog);
+
+    assert.equal(malformedResult.ok, false);
+    assert.equal(malformedResult.reason, "INVALID_BOARD");
+    assert.equal(placementResult.reason, "INVALID_SELECTED_PLACEMENT");
+    assert.equal(cyclicResult.ok, false);
+    assert.equal(cyclicResult.reason, "INVALID_LOG_PAYLOAD");
 });
 
 test("validateGameStartLog는 최소 game_start 로그를 허용한다", () => {

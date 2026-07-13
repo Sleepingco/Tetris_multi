@@ -101,6 +101,7 @@ test("createMatch는 player별 최소 authoritative state를 만든다", () => {
         score: 0,
         lines: 0,
         phase: "playing",
+        gameOver: false,
         combo: -1,
         backToBack: false,
         currentTick: 0,

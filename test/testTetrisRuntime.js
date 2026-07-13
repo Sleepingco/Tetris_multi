@@ -1,5 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { validatePlacementDecisionLog } = require(
+    "../src/server/validators/gameLogValidator.js"
+);
 
 function installBrowserStubs() {
     globalThis.__audioPlayCalls = [];
@@ -534,11 +537,13 @@ test("piece lock 시점에 최소 placement_decision 로그를 생성한다", as
     const [log] = placementLogs;
     assert.equal(placementLogs.length, 1);
     assert.equal(log.eventType, "placement_decision");
-    assert.equal(log.schemaVersion, 1);
+    assert.equal(log.schemaVersion, 2);
     assert.equal(log.mode, "multi");
     assert.equal(log.gameId, "game-001");
     assert.equal(log.roomId, "room-001");
     assert.equal(log.playerId, "player-001");
+    assert.equal(log.source, "human");
+    assert.equal(log.modelType, null);
     assert.equal(log.tick, targetTick);
     assert.equal(log.pieceIndex, 7);
     assert.equal(log.boardBefore[18][4], null);
@@ -559,6 +564,20 @@ test("piece lock 시점에 최소 placement_decision 로그를 생성한다", as
     assert.equal(log.placementResult.scoreAfter, 100);
     assert.equal(log.placementResult.scoreDelta, 0);
     assert.equal(log.placementResult.gameOver, false);
+    assert.deepEqual(log.metricsBefore.columnHeights, Array(10).fill(0));
+    assert.equal(log.metricsAfter.aggregateHeight, 4);
+    assert.equal(Number.isFinite(log.evaluation.score), true);
+    assert.equal(log.evaluation.candidateCount > 0, true);
+    assert.ok(log.evaluation.reason);
+    assert.ok(log.aiComparison.heuristicPlacement);
+    assert.equal(Number.isFinite(log.aiComparison.heuristicScore), true);
+    assert.equal(log.aiComparison.userScore, log.evaluation.score);
+    assert.equal(
+        log.aiComparison.betterBy,
+        log.aiComparison.heuristicScore - log.aiComparison.userScore,
+    );
+    assert.equal(typeof log.aiComparison.samePlacement, "boolean");
+    assert.equal(validatePlacementDecisionLog(log).ok, true);
 });
 
 test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한다", async (t) => {

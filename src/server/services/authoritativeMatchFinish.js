@@ -10,7 +10,7 @@ function createGameOverLog(result, match) {
         schemaVersion: 1,
         gameId: createGameId(result.room.roomId, match),
         roomId: result.room.roomId,
-        mode: "multi",
+        mode: match?.mode === "pve" ? "pve" : "multi",
         endedAt: Date.now(),
         winnerPlayerId: result.winnerPlayerId,
         loserPlayerId: result.loserPlayerId,

@@ -9,6 +9,7 @@ const { finishGame: defaultFinishGame } = require("./roomService.js");
 const { loadGameCore: defaultLoadGameCore } = require("./gameCoreLoader.js");
 const { saveGameEventLog: defaultSaveGameEventLog } = require("./logService.js");
 const { finishAuthoritativeMatch } = require("./authoritativeMatchFinish.js");
+const { createPveAiPlayerService } = require("./pveAiPlayerService.js");
 
 const AUTHORITATIVE_TICK_MS = 100;
 const AUTHORITATIVE_GRAVITY_INTERVAL_MS = 500;
@@ -39,6 +40,8 @@ function createAuthoritativeTickerService(dependencies = {}) {
     const saveGameEventLog = dependencies.saveGameEventLog || defaultSaveGameEventLog;
     const createGarbageHoleCol = dependencies.createGarbageHoleCol
         || (() => Math.floor(Math.random() * 10));
+    const pveAiPlayerService = dependencies.pveAiPlayerService
+        || createPveAiPlayerService();
     const tickers = new Map();
 
     function startRoomTicker(roomId, socketServer) {
@@ -67,6 +70,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
             intervalId,
             socketServer,
             accumulatorMs: 0,
+            isProcessing: false,
         });
 
         return {
@@ -102,53 +106,84 @@ function createAuthoritativeTickerService(dependencies = {}) {
         const ticker = tickers.get(roomId);
         if (!ticker) return;
 
-        ticker.accumulatorMs += elapsedMs;
-        if (ticker.accumulatorMs < gravityIntervalMs) return;
+        if (ticker.isProcessing) return;
+        ticker.isProcessing = true;
 
-        ticker.accumulatorMs -= gravityIntervalMs;
+        try {
+            ticker.accumulatorMs += elapsedMs;
+            if (ticker.accumulatorMs < gravityIntervalMs) return;
 
-        const matchResult = getMatchState(roomId);
-        if (!matchResult.ok || !matchResult.match) {
-            stopRoomTicker(roomId);
-            return;
-        }
+            ticker.accumulatorMs -= gravityIntervalMs;
 
-        const gameCore = await loadGameCore();
-        const players = Array.isArray(matchResult.match.players)
-            ? matchResult.match.players
-            : [];
-
-        for (const player of players) {
-            const playerId = player.playerId;
-            const stepResult = applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
-            if (!stepResult.ok) continue;
-
-            const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
-            const snapshot = emitAuthoritativeSnapshot(
-                roomId,
-                playerId,
-                socketServer,
-                stepResult.presentationEffect,
-            );
-            if (placementSideEffect?.targetPlayerId) {
-                emitAuthoritativeSnapshot(roomId, placementSideEffect.targetPlayerId, socketServer);
+            const matchResult = getMatchState(roomId);
+            if (!matchResult.ok || !matchResult.match) {
+                stopRoomTicker(roomId);
+                return;
             }
 
-            if (stepResult.placementResult?.gameOver || snapshot?.phase === "gameOver") {
-                await finishAuthoritativeMatch({
+            const gameCore = await loadGameCore();
+            const players = Array.isArray(matchResult.match.players)
+                ? matchResult.match.players
+                : [];
+
+            for (const player of players) {
+                const playerId = player.playerId;
+                const stepResult = player.playerType === "heuristic_ai"
+                    ? await pveAiPlayerService.processAiTurn(roomId, playerId, gameCore)
+                    : applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
+
+                if (!stepResult.ok) {
+                    if (stepResult.gameOver) {
+                        emitAuthoritativeSnapshot(roomId, playerId, socketServer);
+                        await finishAuthoritativeMatch({
+                            roomId,
+                            loserPlayerId: playerId,
+                            finishReason: normalizeAiFinishReason(stepResult.reason),
+                            match: matchResult.match,
+                            finishGame,
+                            stopRoomTicker,
+                            emitMatchFinish(payload) {
+                                socketServer.to(roomId).emit("match:finish", payload);
+                            },
+                            saveGameEventLog,
+                            deleteMatch,
+                        });
+                        break;
+                    }
+                    continue;
+                }
+                if (stepResult.skipped) continue;
+
+                const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
+                const snapshot = emitAuthoritativeSnapshot(
                     roomId,
-                    loserPlayerId: playerId,
-                    match: matchResult.match,
-                    finishGame,
-                    stopRoomTicker,
-                    emitMatchFinish(payload) {
-                        socketServer.to(roomId).emit("match:finish", payload);
-                    },
-                    saveGameEventLog,
-                    deleteMatch,
-                });
-                break;
+                    playerId,
+                    socketServer,
+                    stepResult.presentationEffect
+                        || stepResult.gameplayResult?.presentationEffect,
+                );
+                if (placementSideEffect?.targetPlayerId) {
+                    emitAuthoritativeSnapshot(roomId, placementSideEffect.targetPlayerId, socketServer);
+                }
+
+                if (stepResult.placementResult?.gameOver || snapshot?.phase === "gameOver") {
+                    await finishAuthoritativeMatch({
+                        roomId,
+                        loserPlayerId: playerId,
+                        match: matchResult.match,
+                        finishGame,
+                        stopRoomTicker,
+                        emitMatchFinish(payload) {
+                            socketServer.to(roomId).emit("match:finish", payload);
+                        },
+                        saveGameEventLog,
+                        deleteMatch,
+                    });
+                    break;
+                }
             }
+        } finally {
+            ticker.isProcessing = false;
         }
     }
 
@@ -187,6 +222,11 @@ function createAuthoritativeTickerService(dependencies = {}) {
         if (!appendResult.ok) return null;
 
         return appendResult;
+    }
+
+    function normalizeAiFinishReason(reason) {
+        if (reason === "NO_LEGAL_PLACEMENT") return "ai_no_legal_placement";
+        return "ai_decision_failed";
     }
 
     return {

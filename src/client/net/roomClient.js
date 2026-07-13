@@ -14,9 +14,9 @@ export function getServerConnection() {
     return serverConnection
 }
 
-export function requestCreateRoom(player) {
+export function requestCreateRoom(player, mode = "pvp") {
     lastRoomRequestType = "create"
-    serverConnection.emit("room:create", player)
+    serverConnection.emit("room:create", { player, mode })
 }
 
 export function onRoomResult(handler) {

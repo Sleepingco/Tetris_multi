@@ -103,7 +103,10 @@
 
                     <div class="action-box" style="padding: 16px;">
                         <p style="text-align:center; font-size:0.85rem;">방을 만들고 상대에게 코드를 공유하세요.</p>
-                        <button id="btnCreateRoom" class="btn ghost" style="width:100%;" type="button">방 생성</button>
+                        <div class="join-group">
+                            <button id="btnCreateRoom" class="btn ghost" type="button">PVP 방 생성</button>
+                            <button id="btnCreatePveRoom" class="btn" type="button">AI 대전</button>
+                        </div>
                         <div id="roomStatus" class="room-status" hidden>
                             <div class="room-status-row">
                                 <span>방 코드</span>
@@ -273,6 +276,7 @@
         // 방 생성, 참가 요청, 방 나가기 처럼 사용자가 roomClient에 명령을 보내는 진입점이다.
         // =============================
         const btnCreateRoom = queryElement(document, "#btnCreateRoom")
+        const btnCreatePveRoom = queryElement(document, "#btnCreatePveRoom")
         const btnLeaveRoom = queryElement(document, "#btnLeaveRoom")
 
         function createGuestNickname() {
@@ -334,7 +338,10 @@
         }
 
         btnCreateRoom?.addEventListener("click", () => {
-            requestCreateRoom(currentPlayer)
+            requestCreateRoom(currentPlayer, "pvp")
+        })
+        btnCreatePveRoom?.addEventListener("click", () => {
+            requestCreateRoom(currentPlayer, "pve")
         })
         btnLeaveRoom?.addEventListener("click", () => {
             if (!currentRoomId) {
@@ -392,7 +399,9 @@
                 return
             }
 
-            primaryActionDesc.textContent = "두 명이 모였습니다. 게임 시작 준비가 가능합니다."
+            primaryActionDesc.textContent = room.mode === "pve"
+                ? "휴리스틱 AI 상대와 게임을 시작할 수 있습니다."
+                : "두 명이 모였습니다. 게임 시작 준비가 가능합니다."
             primaryActionBtn.disabled = false
         }
 
