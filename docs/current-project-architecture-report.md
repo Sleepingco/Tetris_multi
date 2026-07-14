@@ -1,6 +1,6 @@
 # Tetris Multi 프로젝트 구조 및 확장 의도 보고서
 
-> 기준 시점: 2026-07-11 작업 트리. 이 문서는 현재 코드와 `change-log.md`의 변경 흐름을 함께 읽어, **현재 무엇이 동작하는지**와 **왜 이 경계로 나누었는지**를 설명한다.
+> 기준 시점: 2026-07-14. 이 문서는 현재 코드와 `change-log.md`의 변경 흐름을 함께 읽어, **현재 무엇이 동작하는지**와 **왜 이 경계로 나누었는지**를 설명한다.
 
 ## 1. 한눈에 보는 결론
 
@@ -98,7 +98,7 @@ DOM 없이 판정                   브라우저에서 조율                   
   - 실제 경기 단위 상태를 관리한다. 플레이어마다 `authoritativeState`, input log, server bag chunk를 보관한다.
   - authoritative state에는 board, active/pending piece, queue, hold, score, lines, combo, back-to-back, piece index, pending garbage가 들어간다.
 - `src/server/services/playerGameplayStep.js`
-  - 서버 상태에 human input 또는 AI의 최종 placement를 적용한다. lock 이후 line clear, T-Spin, 공격 상쇄·적용, top-out, 다음 조각 spawn까지 같은 경로에서 처리한다.
+  - 서버 상태에 human과 AI 모두의 authoritative input을 적용한다. lock 이후 line clear, T-Spin, 공격 상쇄·적용, top-out, 다음 조각 spawn까지 같은 경로에서 처리한다.
 - `src/server/services/authoritativeTickerService.js`
   - room별 ticker가 중력 진행을 책임진다. 100ms 간격으로 깨어나고 500ms 누적 기준으로 gravity step을 최대 한 번 적용해 event loop 지연 중 과도한 진행을 피한다.
 - `src/server/services/authoritativeMatchFinish.js`
@@ -119,17 +119,20 @@ DOM 없이 판정                   브라우저에서 조율                   
 
 ```text
 authoritative game state
-  -> placementGenerator: 가능한 최종 배치 열거
-  -> simulatePlacement: 각 배치를 복제 보드에서 실행
+  -> reachablePlacementPlanner: 실제 입력으로 닿을 수 있는 후보와 최단 action 계획 생성
+  -> simulatePlacement: 각 후보를 복제 보드에서 실행
   -> boardMetrics: 결과 보드 수치 추출
   -> heuristicEvaluator: 점수화·순위화
-  -> pveAiPlayerService: 최고 배치를 서버에 적용
+  -> pveAiPlayerService: 계획 action을 서버 input 경로로 한 개씩 적용
 ```
 
 ### 4.1 AI 모듈의 현재 역할
 
 - `placementGenerator.js`
-  - 활성 조각의 회전·열별로 실제로 떨어질 수 있는 모든 최종 배치를 만든다.
+  - 보드 위에서 가능한 기본 최종 배치를 계산하는 순수 기반 모듈이다.
+- `reachablePlacementPlanner.js`
+  - 단순히 “이론적으로 놓을 수 있는 위치”가 아니라 현재 active piece에서 실제 입력으로 도달 가능한 후보만 BFS로 찾는다.
+  - `move_left → move_right → rotate → soft_drop`의 고정 순서와 동일 배치의 최단 경로 규칙으로, 같은 상태에서는 항상 같은 계획을 만든다. wall kick과 장애물 아래 tuck도 기존 core 이동 판정을 재사용한다.
 - `simulatePlacement.js`
   - 입력 보드를 복제한 뒤 배치를 고정하고 줄 삭제를 적용한다. 후보들을 비교할 때 원본 보드가 변하지 않는 것이 핵심이다.
 - `heuristicEvaluator.js`
@@ -137,9 +140,12 @@ authoritative game state
 - `placementLogAnalysis.js`
   - 사람의 실제 배치를 같은 상태에서 계산한 heuristic 최선안과 비교한다. “AI가 더 높은 점수를 준 정도”와 같은 배치인지 여부를 로그에 남긴다.
 - `pveAiPlayerService.js`
-  - server authoritative snapshot을 AI의 입력으로 사용한다. AI가 선택한 최종 배치를 `playerGameplayStep`의 검증 경로에 적용하고, 결과를 placement log로 저장한다.
+  - server authoritative snapshot을 AI 판단 입력으로 사용한다. 선택한 계획을 `move_left`, `rotate`, `soft_drop`, `hard_drop` 같은 authoritative input으로 한 단계씩 실행하고, 실제 실행된 input만 placement log로 저장한다.
+  - 조각 순번이 바뀌어 계획이 오래되었거나 실행 결과가 선택한 배치와 달라지면 계획을 버리고 다시 판단한다.
+- `aiDifficulty.js`
+  - AI의 판단 규칙은 그대로 두고, hard drop 직전의 terminal soft drop 수만 난이도별 실행 프로필로 분리한다. normal은 내려오는 모습이 보이고, hard는 즉시 hard drop한다.
 
-AI도 서버의 placement 검증을 통과해야 한다. 따라서 AI가 별도 규칙을 갖거나 클라이언트 화면을 우회해 보드를 바꾸지 않는다. PVE의 공정성과 재현성을 유지하는 설계다.
+초기에는 AI가 선택한 최종 placement를 서버에 직접 적용하는 임시 경로가 있었지만, 현재는 제거됐다. AI도 사람과 같은 authoritative input 경로를 지나므로, 별도 규칙으로 보드를 바꾸지 않는다. 이는 PVE의 공정성·가시성·리플레이 가능성을 함께 지키는 설계다.
 
 ### 4.2 의도적으로 뒤로 미룬 범위
 
@@ -190,20 +196,38 @@ ML이 들어와도 placement generator는 규칙 기반으로 유지하고, 모�
 | server authoritative 전환 | 서버 input/ticker/lock/garbage/game over/snapshot | 최종 진실 원천을 서버로 이동하고 불일치·신뢰 문제 축소 |
 | prediction 안정화 | persistent drift, garbage correction, gravity 재개 | 권위를 유지하면서 빠른 조작의 체감 품질 보존 |
 | PVE AI·로그 확장 작업 | 휴리스틱 배치 평가, AI player type, schema v2 | 실제 상대와 설명 가능한 데이터를 먼저 만들고 ML의 기반 확보 |
+| 도달 가능 AI 실행 | BFS action plan, authoritative input executor, 난이도별 cadence | AI의 계산 결과와 실제 플레이·로그를 일치시킴 |
+
+### 6.1 문제 → 해결 → 설계 이유
+
+change log에 남은 핵심 결정은 다음과 같이 연결된다.
+
+| 발견한 문제 | 해결한 변경 | 설계 선택 | 이 선택이 필요한 이유 |
+| --- | --- | --- | --- |
+| 화면 클래스가 게임 상태여서 테스트·네트워크·AI가 화면에 묶임 | DOM 상태를 2차원 `board` 배열로 전환 | board를 단일 진실 원천으로 두고 render는 소비자로 한정 | 같은 상태를 Node 테스트, snapshot, AI 시뮬레이션에서 그대로 재사용하기 위해 |
+| 스폰·회전·하드드롭·타이머 코드가 서로 얽혀 수정 시 회귀 위험이 큼 | `core / state / runtime / render / ui / entry` 분리 | core는 순수 판정, runtime은 순서 조율, render는 표시 | 규칙을 브라우저 밖에서도 검증하고, UI 변경이 판정에 영향을 주지 않게 하기 위해 |
+| 초기 snapshot relay에서는 양쪽 클라이언트가 서로 다른 보드·공격·패배를 판단할 수 있음 | server authoritative state, input 처리, gravity ticker, snapshot 도입 | 서버만 lock·garbage·game over·승패를 확정 | 멀티에서 최종 진실을 하나로 만들고, 클라이언트 신뢰 문제와 drift를 줄이기 위해 |
+| 서버 snapshot을 매번 적용하면 빠른 조작이 되돌아가고, 무시하면 오래된 보드가 남음 | pending input 보호, tick 단조 증가, persistent drift correction | 내 보드는 prediction 우선, 상대 보드는 full authoritative apply | 입력 반응성과 최종 수렴을 동시에 얻기 위해 |
+| 상대의 line clear가 최종 보드만 바뀌어 보이고, 효과를 재생하려고 state를 건드리면 동기화가 깨질 수 있음 | `presentationEffect`를 snapshot과 분리 | effect는 복제 board로만 재생하고 gameplay state는 변경 금지 | 표시용 시간 효과와 게임 규칙 상태를 분리해 화면 효과가 권위 상태를 오염시키지 않기 위해 |
+| 페이지 이동·재입장 후 socket id가 바뀌면 권한 오류, 임의 payload는 이벤트 위조 위험 | room sync, socket 갱신, action/payload/player 권한 검증 | socket handler는 입구·검증, room/match service는 상태 전이 | 실제 브라우저 수명 주기와 권한 경계를 서버가 일관되게 관리하기 위해 |
+| 입력 로그를 그대로 분석 데이터로 쓰면 조각별 판단의 전후 맥락과 결과가 부족함 | `placement_decision`, JSONL 저장, schema v2 validator | lock 단위를 분석 이벤트로 하고 동기화 input log와 장기 분석 로그를 분리 | AI 비교·리플레이·ML feature를 작은 의미 단위로 안정적으로 축적하기 위해 |
+| 이론상 가능한 배치가 실제 키 입력으로는 닿지 않을 수 있음 | reachability planner와 BFS 최단 계획 | existing move/SRS core를 재사용하여 reachable 후보만 평가 | AI의 “선택”이 실제 플레이로 재현되고 로그의 선택과 실행이 일치하게 하기 위해 |
+| AI가 최종 좌표를 직접 적용하면 사람과 다른 규칙 경로를 타고, input log가 비어 있음 | direct placement 제거, AI action executor 추가 | AI도 authoritative input을 하나씩 실행하고 성공한 입력만 기록 | PVE의 공정성, AI 이동의 가시성, replay/학습 데이터의 신뢰성을 확보하기 위해 |
+| AI 행동이 너무 즉시 끝나거나 난이도 차이가 판단 규칙 복제로 번질 수 있음 | normal/hard execution profile 도입 | 평가기는 공유하고 실행 cadence만 분리 | AI 지능과 연출·난이도를 독립적으로 조절하기 위해 |
 
 ## 7. 현재 상태와 다음 검증 기준
 
-현재 저장소의 `main`은 server authoritative 멀티 MVP를 안정화한 상태이며, 작업 트리에는 휴리스틱 PVE AI와 feature-ready 로그 확장이 진행 중이다. 이 둘을 같은 “완료 상태”로 보지 않는 것이 중요하다.
+현재 `main`은 server authoritative 멀티 MVP 위에, authoritative input을 사용하는 휴리스틱 PVE AI와 feature-ready placement log를 올린 상태다. PVP와 PVE 모두 자동 테스트로 핵심 경로를 고정했지만, 실제 브라우저에서의 체감 회귀는 별도 확인 대상이다.
 
 우선 확인할 흐름은 다음과 같다.
 
 ```text
 PVP: create -> join -> start -> rapid input -> lock/garbage -> game over -> lobby
-PVE: create(pve) -> start -> AI placement -> authoritative snapshot -> finish -> logs
+PVE: create(pve, difficulty) -> start -> AI plan -> authoritative inputs -> snapshot -> finish -> logs
 ```
 
 - PVP에서는 두 브라우저 탭으로 빠른 좌우/회전/soft drop, lock 직후, garbage, top-out, lobby 복귀를 확인한다.
-- PVE에서는 AI가 최종 배치만 적용해도 동일한 authoritative 규칙에서 line clear·garbage·game over가 처리되는지 확인한다.
+- PVE에서는 AI의 계획 action이 하나씩 보이고, 실제 authoritative input 결과가 line clear·garbage·game over·placement log에 일관되게 반영되는지 확인한다.
 - 로그에서는 v2 placement row가 정상 게임의 `game_start`·`game_over`와 같은 `gameId`로 연결되고, human/AI source가 정확히 구분되는지 확인한다.
 - 자동 검증은 런타임·room·match·socket·authoritative ticker·AI 순수 함수·로그 validator 테스트를 함께 실행하는 `bash scripts/verify.sh`가 기준이다.
 
