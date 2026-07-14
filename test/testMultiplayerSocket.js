@@ -106,9 +106,19 @@ function createNoopAuthoritativeTickerService() {
     }
 }
 
+function saveTestLog(log) {
+    return {
+        ok: true,
+        log,
+        reason: null,
+    }
+}
+
 function registerTestSocketHandlers(socketServer, dependencies = {}) {
     registerSocketHandlers(socketServer, {
         authoritativeTickerService: createNoopAuthoritativeTickerService(),
+        saveGameEventLog: saveTestLog,
+        savePlacementDecisionLog: saveTestLog,
         ...dependencies,
     })
 }
