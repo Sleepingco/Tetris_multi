@@ -754,7 +754,7 @@ test("legacy game:snapshot은 더 이상 상대 socket에게 전달되지 않는
     assert.equal(snapshotResult, undefined)
 })
 
-test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게 전달된다", () => {
+test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게 전달된다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("input-host-socket")
     const guestSocket = new FakeClientSocket("input-guest-socket")
@@ -792,12 +792,13 @@ test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게
         playerId: "input-guest-player",
     })
 
-    hostSocket.trigger("game:input", {
+    await hostSocket.triggerAsync("game:input", {
         roomId,
         playerId: "input-host-player",
         action: "move_left",
         tick: 12,
         pieceIndex: 4,
+        clientSequence: 1,
     })
 
     const guestInputEvent = guestSocket.lastClientEvent("game:input")
@@ -808,12 +809,20 @@ test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게
     assert.equal(guestInputEvent.payload.action, "move_left")
     assert.equal(guestInputEvent.payload.tick, 12)
     assert.equal(guestInputEvent.payload.pieceIndex, 4)
+    assert.equal(guestInputEvent.payload.clientSequence, 1)
 
     const matchResult = getMatchState(roomId)
     assert.equal(matchResult.ok, true)
     assert.equal(matchResult.match.players[0].inputLog[0].action, "move_left")
     assert.equal(matchResult.match.players[0].inputLog[0].tick, 12)
     assert.equal(matchResult.match.players[0].inputLog[0].pieceIndex, 4)
+    assert.equal(matchResult.match.players[0].inputLog[0].clientSequence, 1)
+
+    const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
+    assert.equal(inputResult.ok, false)
+    assert.equal(inputResult.reason, "PIECE_INDEX_MISMATCH")
+    assert.equal(inputResult.clientSequence, 1)
+    assert.equal(inputResult.pieceIndex, 4)
 })
 
 test("game:input은 relay를 유지하면서 authoritativeState에도 input을 적용한다", async () => {
@@ -875,6 +884,7 @@ test("game:input은 relay를 유지하면서 authoritativeState에도 input을 �
         action: "hard_drop",
         tick: 12,
         pieceIndex: 1,
+        clientSequence: 1,
     })
 
     const guestInputEvent = guestSocket.lastClientEvent("game:input")
@@ -888,6 +898,13 @@ test("game:input은 relay를 유지하면서 authoritativeState에도 input을 �
 
     assert.equal(hostPlayer.authoritativeState.score, 38)
     assert.equal(hostPlayer.authoritativeState.pieceIndex, 2)
+    const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
+    assert.deepEqual(inputResult, {
+        ok: true,
+        reason: null,
+        clientSequence: 1,
+        pieceIndex: 1,
+    })
     assert.equal(hostPlayer.authoritativeState.board[18][3], "square")
     assert.equal(hostPlayer.authoritativeState.board[18][4], "square")
     assert.equal(hostPlayer.authoritativeState.board[19][3], "square")
@@ -954,6 +971,7 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
         action: "hard_drop",
         tick: 12,
         pieceIndex: 1,
+        clientSequence: 1,
     })
 
     assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, [
@@ -1046,6 +1064,7 @@ test("game:input server lock gameOver는 match finish와 ticker 정리를 처리
         action: "hard_drop",
         tick: 12,
         pieceIndex: 1,
+        clientSequence: 1,
     })
 
     const authoritativeSnapshotEvent = socketServer.roomEvents.findLast(event => {
@@ -1125,6 +1144,7 @@ test("game:input 첫 move_left는 match 시작 직후 authoritativeState에 반�
         action: "move_left",
         tick: 12,
         pieceIndex: hostPlayer.authoritativeState.pieceIndex,
+        clientSequence: 1,
     })
 
     const guestInputEvent = guestSocket.lastClientEvent("game:input")
@@ -1188,6 +1208,7 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
         action: "move_left",
         tick: 12,
         pieceIndex: initialPieceIndex,
+        clientSequence: 1,
     })
 
     const moveRelayEvent = guestSocket.lastClientEvent("game:input")
@@ -1219,6 +1240,7 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
         action: "hard_drop",
         tick: 13,
         pieceIndex: initialPieceIndex,
+        clientSequence: 2,
     })
 
     const hardDropRelayEvent = guestSocket.lastClientEvent("game:input")
@@ -1269,6 +1291,7 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
         action: "move_left",
         tick: 14,
         pieceIndex: initialPieceIndex,
+        clientSequence: 3,
     })
 
     const staleRelayEvent = guestSocket.lastClientEvent("game:input")
@@ -1284,6 +1307,30 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
         return event.eventName === "game:authoritative:snapshot"
     }).length, snapshotEventCountBeforeStaleInput + 1)
     assert.equal(hostSocket.lastClientEvent("game:input:result")?.payload.reason, "PIECE_INDEX_MISMATCH")
+
+    const relayCountBeforeOutOfOrder = guestSocket.clientEvents.filter(event => {
+        return event.eventName === "game:input"
+    }).length
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-sequence-host-player",
+        action: "move_right",
+        tick: 15,
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex,
+        clientSequence: 2,
+    })
+
+    assert.equal(hostPlayer.inputLog.length, 3)
+    assert.equal(guestSocket.clientEvents.filter(event => {
+        return event.eventName === "game:input"
+    }).length, relayCountBeforeOutOfOrder)
+    assert.deepEqual(hostPlayer.authoritativeState, stateBeforeStaleInput)
+    assert.deepEqual(hostSocket.lastClientEvent("game:input:result")?.payload, {
+        ok: false,
+        reason: "CLIENT_SEQUENCE_OUT_OF_ORDER",
+        clientSequence: 2,
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex,
+    })
 })
 
 test("game:input PIECE_INDEX_MISMATCH는 state를 변경하지 않고 즉시 authoritative snapshot을 emit한다", async () => {
@@ -1336,6 +1383,7 @@ test("game:input PIECE_INDEX_MISMATCH는 state를 변경하지 않고 즉시 aut
         action: "move_left",
         tick: 12,
         pieceIndex: hostPlayer.authoritativeState.pieceIndex + 1,
+        clientSequence: 1,
     })
 
     const guestInputEvent = guestSocket.lastClientEvent("game:input")
@@ -1355,10 +1403,53 @@ test("game:input PIECE_INDEX_MISMATCH는 state를 변경하지 않고 즉시 aut
 
     assert.equal(inputResult?.ok, false)
     assert.equal(inputResult?.reason, "PIECE_INDEX_MISMATCH")
+    assert.equal(inputResult?.clientSequence, 1)
+    assert.equal(inputResult?.pieceIndex, beforeState.pieceIndex + 1)
     assert.equal(snapshotEvents.length, 1)
     assert.equal(snapshotEvents[0].payload.snapshot.pieceIndex, beforeState.pieceIndex)
+    assert.equal(snapshotEvents[0].payload.snapshot.lastProcessedClientSequence, 1)
     assert.deepEqual(snapshotEvents[0].payload.snapshot.board, beforeState.board)
     assert.equal(Object.hasOwn(snapshotEvents[0].payload.snapshot, "pendingGarbageQueue"), false)
+})
+
+test("game:input은 clientSequence가 없으면 INVALID_INPUT으로 거부한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("missing-client-sequence-host-socket")
+    const guestSocket = new FakeClientSocket("missing-client-sequence-guest-socket")
+
+    registerTestSocketHandlers(socketServer)
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "missing-client-sequence-host-player",
+        nickname: "Host",
+    })
+    const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "missing-client-sequence-guest-player",
+            nickname: "Guest",
+        },
+    })
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "missing-client-sequence-host-player",
+    })
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "missing-client-sequence-host-player",
+        action: "move_left",
+        tick: 1,
+        pieceIndex: 1,
+    })
+
+    const result = hostSocket.lastClientEvent("game:input:result")?.payload
+    assert.equal(result?.ok, false)
+    assert.equal(result?.reason, "INVALID_INPUT")
+    assert.equal(guestSocket.lastClientEvent("game:input"), undefined)
 })
 
 test("game:input은 authoritative apply가 실패해도 relay와 input log를 유지한다", async () => {
@@ -1419,6 +1510,7 @@ test("game:input은 authoritative apply가 실패해도 relay와 input log를 �
         action: "hard_drop",
         tick: 12,
         pieceIndex: currentPieceIndex,
+        clientSequence: 1,
     })
 
     const guestInputEvent = guestSocket.lastClientEvent("game:input")
@@ -1426,10 +1518,77 @@ test("game:input은 authoritative apply가 실패해도 relay와 input log를 �
     assert.equal(guestInputEvent.eventName, "game:input")
     assert.equal(guestInputEvent.payload.playerId, "authoritative-failure-host-player")
     assert.equal(guestInputEvent.payload.action, "hard_drop")
-    assert.equal(hostSocket.lastClientEvent("game:input:result"), undefined)
+    assert.deepEqual(hostSocket.lastClientEvent("game:input:result")?.payload, {
+        ok: false,
+        reason: "INVALID_PLAYER_STATE",
+        clientSequence: 1,
+        pieceIndex: currentPieceIndex,
+    })
     assert.equal(hostPlayer.inputLog[0].action, "hard_drop")
     assert.equal(hostPlayer.inputLog[0].tick, 12)
     assert.equal(hostPlayer.inputLog[0].pieceIndex, currentPieceIndex)
+})
+
+test("game:input authoritative 예외는 sequence를 ack하고 현재 snapshot과 실패 result를 보낸다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("authoritative-exception-host-socket")
+    const guestSocket = new FakeClientSocket("authoritative-exception-guest-socket")
+
+    registerTestSocketHandlers(socketServer, {
+        loadGameCore() {
+            return Promise.reject(new Error("core load failed"))
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+
+    hostSocket.trigger("room:create", {
+        playerId: "authoritative-exception-host-player",
+        nickname: "Host",
+    })
+    const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: {
+            playerId: "authoritative-exception-guest-player",
+            nickname: "Guest",
+        },
+    })
+    await hostSocket.triggerAsync("room:start", {
+        roomId,
+        playerId: "authoritative-exception-host-player",
+    })
+
+    const match = getMatchState(roomId).match
+    const hostPlayer = match.players.find(player => {
+        return player.playerId === "authoritative-exception-host-player"
+    })
+    const stateBeforeInput = structuredClone(hostPlayer.authoritativeState)
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: "authoritative-exception-host-player",
+        action: "move_left",
+        tick: 1,
+        pieceIndex: stateBeforeInput.pieceIndex,
+        clientSequence: 1,
+    })
+
+    const snapshotEvent = socketServer.roomEvents.findLast(event => {
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === "authoritative-exception-host-player"
+    })
+    assert.equal(hostPlayer.lastProcessedClientSequence, 1)
+    assert.deepEqual(hostPlayer.authoritativeState, stateBeforeInput)
+    assert.equal(hostPlayer.inputLog.length, 1)
+    assert.equal(guestSocket.lastClientEvent("game:input")?.payload.clientSequence, 1)
+    assert.equal(snapshotEvent.payload.snapshot.lastProcessedClientSequence, 1)
+    assert.deepEqual(hostSocket.lastClientEvent("game:input:result")?.payload, {
+        ok: false,
+        reason: "AUTHORITATIVE_INPUT_FAILED",
+        clientSequence: 1,
+        pieceIndex: stateBeforeInput.pieceIndex,
+    })
 })
 
 test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 반환한다", async () => {
@@ -1753,6 +1912,7 @@ test("game:log:placement_decision은 finished 상태의 늦은 로그 저장을 
         action: "hard_drop",
         tick: 12,
         pieceIndex: 1,
+        clientSequence: 1,
     })
 
     await hostSocket.triggerAsync("game:log:placement_decision", {
@@ -1938,6 +2098,7 @@ test("server authoritative gameOver는 game_over 로그를 저장한다", async 
         action: "hard_drop",
         tick: 12,
         pieceIndex: 1,
+        clientSequence: 1,
     })
 
     const overLog = savedLogs.find(log => log.eventType === "game_over")
@@ -2040,6 +2201,7 @@ test("game:input은 room 참가자가 아닌 playerId면 상대에게 전달하�
         playerId: "input-auth-intruder",
         action: "move_left",
         tick: 12,
+        clientSequence: 1,
     })
 
     const inputResult = intruderSocket.lastClientEvent("game:input:result")?.payload
@@ -2083,6 +2245,7 @@ test("game:input은 허용되지 않은 action이면 상대에게 전달하지 �
         playerId: "input-invalid-host",
         action: "delete_board",
         tick: 12,
+        clientSequence: 1,
     })
 
     const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
@@ -2127,6 +2290,7 @@ test("game:input은 invalid tick 또는 pieceIndex면 상대에게 전달하지 
         action: "move_left",
         tick: -1,
         pieceIndex: 4,
+        clientSequence: 1,
     })
 
     const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
@@ -2167,6 +2331,7 @@ test("game:input은 playing 상태가 아니면 상대에게 전달하지 않는
         action: "move_left",
         tick: 12,
         pieceIndex: 4,
+        clientSequence: 1,
     })
 
     const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
@@ -2260,6 +2425,7 @@ test("server authoritative gameOver 이후 한 명만 로비로 돌아오면 roo
         action: "hard_drop",
         tick: 12,
         pieceIndex: 1,
+        clientSequence: 1,
     })
 
     hostLobbySocket.trigger("room:sync", {
@@ -2403,6 +2569,7 @@ test("game:join은 진행된 server state의 player별 client snapshot과 bag ch
     assert.equal(hostJoinPlayer.snapshot.tick, 5)
     assert.equal(hostJoinPlayer.snapshot.activePiece.row, 4)
     assert.equal(hostJoinPlayer.snapshot.board[19][0], "square")
+    assert.equal(hostJoinPlayer.snapshot.lastProcessedClientSequence, 0)
 })
 
 test("game:bag:request는 새 server bag chunk를 room에 broadcast한다", () => {
@@ -2762,6 +2929,7 @@ test("human socket은 heuristic AI playerId로 game input을 보낼 수 없다",
         action: "hard_drop",
         tick: 1,
         pieceIndex: 1,
+        clientSequence: 1,
     })
 
     const inputResult = hostSocket.lastClientEvent("game:input:result").payload

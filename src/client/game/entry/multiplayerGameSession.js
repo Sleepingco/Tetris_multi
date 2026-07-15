@@ -81,12 +81,31 @@ export function startMultiplayerGame({
     if (myInitialSnapshot) {
         myGame.applySnapshot(myInitialSnapshot, { resumeGravity: true })
     }
+    const initialClientSequence = Number.isInteger(myInitialSnapshot?.lastProcessedClientSequence)
+        && myInitialSnapshot.lastProcessedClientSequence >= 0
+        ? myInitialSnapshot.lastProcessedClientSequence
+        : 0
+    let nextClientSequence = initialClientSequence + 1
+    let lastAcknowledgedClientSequence = initialClientSequence
+    const pendingServerInputs = new Map()
+    let deferredOwnSnapshot = null
+    let pendingOwnDriftState = null
     myGame.runtime.detachKeyboard = attachKeyboardInput({
         enqueueAction: (action) => {
             const input = myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
             if (!input) return
 
-            sendGameInput(roomId, playerId, input.action, input.tick, input.pieceIndex)
+            const clientSequence = nextClientSequence
+            nextClientSequence += 1
+            pendingServerInputs.set(clientSequence, input)
+            sendGameInput(
+                roomId,
+                playerId,
+                input.action,
+                input.tick,
+                input.pieceIndex,
+                clientSequence,
+            )
         },
     })
 
@@ -111,10 +130,103 @@ export function startMultiplayerGame({
     }
 
     let hasPendingBagRequest = false
-    let pendingOwnDriftState = null
     let lastOpponentPresentationPieceIndex = -1
     let lastOpponentPresentationEffectId = null
     const bagLowWatermark = 7
+
+    function acknowledgeServerInputs(clientSequence) {
+        if (!Number.isInteger(clientSequence) || clientSequence < 0) return
+        if (clientSequence >= nextClientSequence) return
+        if (clientSequence <= lastAcknowledgedClientSequence) return
+
+        lastAcknowledgedClientSequence = clientSequence
+        for (const sequence of pendingServerInputs.keys()) {
+            if (sequence <= clientSequence) {
+                pendingServerInputs.delete(sequence)
+            }
+        }
+    }
+
+    function updateOwnPendingGarbage(snapshot) {
+        if (Number.isInteger(snapshot.pendingGarbageLines)) {
+            myGame.setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
+        }
+    }
+
+    function deferOwnSnapshot(snapshot) {
+        const incomingSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
+            ? snapshot.lastProcessedClientSequence
+            : 0
+        const deferredSequence = Number.isInteger(deferredOwnSnapshot?.lastProcessedClientSequence)
+            ? deferredOwnSnapshot.lastProcessedClientSequence
+            : -1
+
+        if (!deferredOwnSnapshot || incomingSequence >= deferredSequence) {
+            deferredOwnSnapshot = snapshot
+        }
+        pendingOwnDriftState = null
+    }
+
+    function evaluateOwnSnapshot(snapshot, localSnapshot = myGame.getSnapshot()) {
+        const correctionDecision = evaluateOwnSnapshotCorrection(
+            snapshot,
+            localSnapshot,
+            pendingOwnDriftState,
+            globalThis.performance.now(),
+        )
+        pendingOwnDriftState = correctionDecision.nextPendingDriftState
+
+        if (correctionDecision.shouldCorrect) {
+            pendingOwnDriftState = null
+            myGame.applySnapshot(snapshot, { resumeGravity: true })
+        }
+    }
+
+    function applyDeferredOwnSnapshotIfReady() {
+        if (!deferredOwnSnapshot) return
+        if (pendingServerInputs.size > 0 || myGame.getPendingInputCount() > 0) return
+
+        const snapshot = deferredOwnSnapshot
+        deferredOwnSnapshot = null
+        const snapshotClientSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
+            && snapshot.lastProcessedClientSequence >= 0
+            ? snapshot.lastProcessedClientSequence
+            : 0
+        if (snapshotClientSequence < lastAcknowledgedClientSequence) return
+
+        evaluateOwnSnapshot(snapshot)
+    }
+
+    function handleOwnAuthoritativeSnapshot(snapshot) {
+        const localSnapshot = myGame.getSnapshot()
+        const snapshotClientSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
+            && snapshot.lastProcessedClientSequence >= 0
+            ? snapshot.lastProcessedClientSequence
+            : 0
+
+        if (snapshot.phase === "gameOver") {
+            updateOwnPendingGarbage(snapshot)
+            acknowledgeServerInputs(snapshotClientSequence)
+            pendingServerInputs.clear()
+            deferredOwnSnapshot = null
+            pendingOwnDriftState = null
+            myGame.applySnapshot(snapshot, { resumeGravity: true })
+            return
+        }
+
+        if (snapshotClientSequence < lastAcknowledgedClientSequence) return
+
+        updateOwnPendingGarbage(snapshot)
+        acknowledgeServerInputs(snapshotClientSequence)
+
+        if (pendingServerInputs.size > 0 || myGame.getPendingInputCount() > 0) {
+            deferOwnSnapshot(snapshot)
+            return
+        }
+
+        deferredOwnSnapshot = null
+        evaluateOwnSnapshot(snapshot, localSnapshot)
+    }
 
     /**
      * server bag 잔량이 낮아지면 한 번만 추가 chunk를 요청한다.
@@ -157,34 +269,7 @@ export function startMultiplayerGame({
         }
 
         if (remotePlayerId === playerId) {
-            const localSnapshot = myGame.getSnapshot()
-            if (
-                snapshot.phase !== "gameOver" &&
-                myGame.getPendingInputCount() > 0
-            ) {
-                pendingOwnDriftState = null
-                if (Number.isInteger(snapshot.pendingGarbageLines)) {
-                    myGame.setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
-                }
-                return
-            }
-            const correctionDecision = evaluateOwnSnapshotCorrection(
-                snapshot,
-                localSnapshot,
-                pendingOwnDriftState,
-                globalThis.performance.now(),
-            )
-            pendingOwnDriftState = correctionDecision.nextPendingDriftState
-
-            if (correctionDecision.shouldCorrect) {
-                pendingOwnDriftState = null
-                myGame.applySnapshot(snapshot, { resumeGravity: true })
-                return
-            }
-
-            if (Number.isInteger(snapshot.pendingGarbageLines)) {
-                myGame.setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
-            }
+            handleOwnAuthoritativeSnapshot(snapshot)
         }
     })
 
@@ -198,10 +283,20 @@ export function startMultiplayerGame({
         if (!Array.isArray(effect.rows) || !Array.isArray(effect.boardBeforeClear)) return false
         return true
     }
-    const detachGameInputResult = onGameInputResult((result) => {
-        if (result.ok) return
-        console.warn("game:input failed:", result.reason)
+    const detachGameInputResultListener = onGameInputResult((result) => {
+        if (Number.isInteger(result?.clientSequence)) {
+            acknowledgeServerInputs(result.clientSequence)
+            applyDeferredOwnSnapshotIfReady()
+        }
+        if (!result?.ok) {
+            console.warn("game:input failed:", result?.reason)
+        }
     })
+    const detachGameInputResult = () => {
+        detachGameInputResultListener()
+        pendingServerInputs.clear()
+        deferredOwnSnapshot = null
+    }
     const detachGameBagAppend = receiveGameBagAppend(({ playerId: bagPlayerId, bagChunk }) => {
         if (!Array.isArray(bagChunk)) return
 

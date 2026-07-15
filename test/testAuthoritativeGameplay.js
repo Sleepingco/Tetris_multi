@@ -285,8 +285,10 @@ test("getAuthoritativePlayerSnapshotDto는 client snapshot 후보 필드와 tick
         "tick",
         "pieceIndex",
         "pendingGarbageLines",
+        "lastProcessedClientSequence",
     ]);
     assert.equal(dto.pieceIndex, hostPlayer.authoritativeState.pieceIndex);
+    assert.equal(dto.lastProcessedClientSequence, 0);
     assert.equal(dto.gameOver, false);
     assert.equal(dto.score, hostPlayer.authoritativeState.score);
     assert.deepEqual(dto.activePiece, hostPlayer.authoritativeState.activePiece);
