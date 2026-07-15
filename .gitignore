@@ -6,3 +6,4 @@ coverage/
 dist/
 
 data/logs/*.jsonl
+data/datasets/
