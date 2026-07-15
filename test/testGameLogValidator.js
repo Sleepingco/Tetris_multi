@@ -123,6 +123,24 @@ test("validatePlacementDecisionLog는 human schemaVersion 2 로그를 허용한�
     assert.equal(result.reason, null);
 });
 
+test("validatePlacementDecisionLog는 optional authoritative lineage를 검증한다", () => {
+    const validResult = validatePlacementDecisionLog(createPlacementDecisionLog({
+        authoritativeClientSequence: 7,
+        authoritativePieceIndex: 3,
+    }));
+    const missingPairResult = validatePlacementDecisionLog(createPlacementDecisionLog({
+        authoritativeClientSequence: 7,
+    }));
+    const mismatchedPieceResult = validatePlacementDecisionLog(createPlacementDecisionLog({
+        authoritativeClientSequence: 7,
+        authoritativePieceIndex: 4,
+    }));
+
+    assert.equal(validResult.ok, true);
+    assert.equal(missingPairResult.reason, "INVALID_AUTHORITATIVE_LINEAGE");
+    assert.equal(mismatchedPieceResult.reason, "INVALID_AUTHORITATIVE_LINEAGE");
+});
+
 test("validatePlacementDecisionLog는 heuristic_ai schemaVersion 2 로그를 허용한다", () => {
     const result = validatePlacementDecisionLog(createPlacementDecisionLog({
         source: "heuristic_ai",

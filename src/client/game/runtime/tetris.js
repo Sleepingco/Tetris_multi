@@ -487,7 +487,7 @@ export function createTetrisRuntime({
       * 정규화된 입력 액션을 맞는 게임플레이 처리기로 직접 분기한다.
       *
       * @param {string} action - 입력 계층에서 넘어온 액션 식별자
-      * @returns {{applied: boolean, reason: string|null}} 실제 action 적용 결과
+      * @returns {{applied: boolean, placementCommitted: boolean, reason: string|null}} 실제 action 적용 결과
       */
     function handleAction(action) {
         const moveType = applyInputAction(action)
@@ -498,6 +498,7 @@ export function createTetrisRuntime({
                 || (action === INPUT_ACTION.SOFT_DROP && intentKind === "lock")
             return {
                 applied,
+                placementCommitted: action === INPUT_ACTION.SOFT_DROP && intentKind === "lock",
                 reason: applied ? null : intentKind === "retry" ? "MOVE_RETRY" : "MOVE_NOT_HANDLED",
             }
         }
@@ -506,15 +507,23 @@ export function createTetrisRuntime({
             const applied = hardDrop()
             return {
                 applied,
+                placementCommitted: applied,
                 reason: applied ? null : "INVALID_PLAYER_STATE",
             }
         }
 
         if (action === INPUT_ACTION.HOLD) {
-            return holdPiece()
+            return {
+                ...holdPiece(),
+                placementCommitted: false,
+            }
         }
 
-        return { applied: false, reason: "UNSUPPORTED_ACTION" }
+        return {
+            applied: false,
+            placementCommitted: false,
+            reason: "UNSUPPORTED_ACTION",
+        }
     }
 
     // =============================
@@ -1032,7 +1041,7 @@ export function createTetrisRuntime({
       * - 네트워크와 snapshot 상태에는 저장하지 않는다.
       *
       * @param {{action: string, tick: number, pieceIndex: number|null}} input - 판정한 입력
-      * @param {{applied: boolean, reason: string|null}} result - action 적용 결과
+      * @param {{applied: boolean, placementCommitted?: boolean, reason: string|null}} result - action 적용 결과
       * @param {Object|null} activePieceBefore - action 적용 전 조각
       * @returns {void}
       */
@@ -1046,6 +1055,7 @@ export function createTetrisRuntime({
                 pieceIndex: input.pieceIndex,
             },
             applied: result?.applied === true,
+            placementCommitted: result?.placementCommitted === true,
             reason: result?.reason ?? null,
             activePieceBefore: clonePendingPiece(activePieceBefore),
             activePieceAfter: clonePendingPiece(gameState.activePiece),

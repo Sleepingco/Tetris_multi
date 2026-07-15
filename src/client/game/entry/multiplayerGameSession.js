@@ -66,6 +66,11 @@ export function startMultiplayerGame({
     const gameId = match?.createdAt
         ? `${roomId}-${match.createdAt}`
         : roomId
+    const pendingPlacementAttempts = new Map()
+    const placementAttemptKeyByClientSequence = new Map()
+    const settledPlacementAttemptKeys = new Set()
+    let placementLogBufferClosed = false
+    let hasAuthoritativeGameOver = false
 
     console.log("my bag chunks:", myBagChunks)
     console.log("opponent bag chunks:", opponentBagChunks)
@@ -83,8 +88,7 @@ export function startMultiplayerGame({
         roomId,
         playerId,
         placementDecisionRecorder(log) {
-            // 배치 로그는 분석/디버깅용으로 남기고, garbage 판정은 서버 lock 결과를 따른다.
-            sendPlacementDecisionLog(roomId, playerId, log)
+            bufferLocalPlacementLog(log)
         },
         inputOutcomeRecorder: handleLocalInputOutcome,
     })
@@ -103,6 +107,110 @@ export function startMultiplayerGame({
     let deferredOwnSnapshot = null
     let pendingOwnDriftState = null
     let lastForcedResyncClientSequence = -1
+
+    function createPlacementAttemptKey(pieceIndex, tick) {
+        if (!Number.isInteger(pieceIndex) || pieceIndex < 0) return null
+        if (!Number.isInteger(tick) || tick < 0) return null
+        return `${pieceIndex}:${tick}`
+    }
+
+    function getOrCreatePlacementAttempt(key, pieceIndex, tick) {
+        if (!key || placementLogBufferClosed || settledPlacementAttemptKeys.has(key)) return null
+        if (!pendingPlacementAttempts.has(key)) {
+            pendingPlacementAttempts.set(key, {
+                pieceIndex,
+                tick,
+                log: null,
+                clientSequence: null,
+                authoritativeCommitted: false,
+            })
+        }
+        return pendingPlacementAttempts.get(key)
+    }
+
+    function settlePlacementAttempt(key) {
+        if (!key) return
+        pendingPlacementAttempts.delete(key)
+        settledPlacementAttemptKeys.add(key)
+    }
+
+    function flushPlacementAttempt(key) {
+        const attempt = pendingPlacementAttempts.get(key)
+        if (!attempt?.log || !attempt.authoritativeCommitted) return false
+        if (!Number.isInteger(attempt.clientSequence)) return false
+
+        sendPlacementDecisionLog(roomId, playerId, {
+            ...attempt.log,
+            authoritativeClientSequence: attempt.clientSequence,
+            authoritativePieceIndex: attempt.pieceIndex,
+        })
+        settlePlacementAttempt(key)
+        maybeClosePlacementLogBufferAfterGameOver()
+        return true
+    }
+
+    function bufferLocalPlacementLog(log) {
+        const key = createPlacementAttemptKey(log?.pieceIndex, log?.tick)
+        const attempt = getOrCreatePlacementAttempt(key, log?.pieceIndex, log?.tick)
+        if (!attempt || attempt.log) return
+
+        attempt.log = log
+        flushPlacementAttempt(key)
+    }
+
+    function registerTerminalPlacementInput(outcome, clientSequence) {
+        if (outcome?.placementCommitted !== true) return
+
+        const pieceIndex = outcome.input?.pieceIndex
+        const tick = outcome.input?.tick
+        const key = createPlacementAttemptKey(pieceIndex, tick)
+        const attempt = getOrCreatePlacementAttempt(key, pieceIndex, tick)
+        if (!attempt) return
+
+        attempt.clientSequence = clientSequence
+        placementAttemptKeyByClientSequence.set(clientSequence, key)
+    }
+
+    function discardPlacementLogBuffer({ close = false } = {}) {
+        for (const key of pendingPlacementAttempts.keys()) {
+            settledPlacementAttemptKeys.add(key)
+        }
+        pendingPlacementAttempts.clear()
+        placementAttemptKeyByClientSequence.clear()
+        if (close) placementLogBufferClosed = true
+    }
+
+    function handlePlacementInputResult(result) {
+        const clientSequence = result?.clientSequence
+        if (!Number.isInteger(clientSequence)) return
+
+        const key = placementAttemptKeyByClientSequence.get(clientSequence)
+        if (!key) return
+        placementAttemptKeyByClientSequence.delete(clientSequence)
+
+        const attempt = pendingPlacementAttempts.get(key)
+        const placementCommitted = result?.ok === true
+            && result?.placementCommitted === true
+            && result?.pieceIndex === attempt?.pieceIndex
+        if (!attempt || !placementCommitted) {
+            settlePlacementAttempt(key)
+            return
+        }
+
+        attempt.authoritativeCommitted = true
+        flushPlacementAttempt(key)
+    }
+
+    function maybeClosePlacementLogBufferAfterGameOver() {
+        if (!hasAuthoritativeGameOver || placementLogBufferClosed) return
+        if (placementAttemptKeyByClientSequence.size > 0) return
+        const awaitsDelayedLocalLog = [...pendingPlacementAttempts.values()].some(attempt => {
+            return attempt.authoritativeCommitted && !attempt.log
+        })
+        if (awaitsDelayedLocalLog) return
+
+        discardPlacementLogBuffer({ close: true })
+    }
 
     function createExpectedTransform(outcome) {
         const piece = AFTER_ACTION_TRANSFORM_INPUTS.has(outcome.input.action)
@@ -125,6 +233,7 @@ export function startMultiplayerGame({
         const expectedTransform = createExpectedTransform(outcome)
         const clientSequence = nextClientSequence
         nextClientSequence += 1
+        registerTerminalPlacementInput(outcome, clientSequence)
         pendingServerInputs.set(clientSequence, {
             ...outcome.input,
             ...(expectedTransform ? { expectedTransform } : {}),
@@ -250,6 +359,7 @@ export function startMultiplayerGame({
 
         lastForcedResyncClientSequence = clientSequence
         updateOwnPendingGarbage(snapshot)
+        discardPlacementLogBuffer()
         pendingServerInputs.clear()
         deferredOwnSnapshot = null
         pendingOwnDriftState = null
@@ -269,12 +379,14 @@ export function startMultiplayerGame({
             : 0
 
         if (snapshot.phase === "gameOver") {
+            hasAuthoritativeGameOver = true
             updateOwnPendingGarbage(snapshot)
             acknowledgeServerInputs(snapshotClientSequence)
             pendingServerInputs.clear()
             deferredOwnSnapshot = null
             pendingOwnDriftState = null
             myGame.applySnapshot(snapshot, { resumeGravity: true })
+            maybeClosePlacementLogBufferAfterGameOver()
             return
         }
 
@@ -348,6 +460,7 @@ export function startMultiplayerGame({
         return true
     }
     const detachGameInputResultListener = onGameInputResult((result) => {
+        handlePlacementInputResult(result)
         if (Number.isInteger(result?.clientSequence)) {
             acknowledgeServerInputs(result.clientSequence)
         }
@@ -361,9 +474,11 @@ export function startMultiplayerGame({
         if (!result?.ok) {
             console.warn("game:input failed:", result?.reason)
         }
+        maybeClosePlacementLogBufferAfterGameOver()
     })
     const detachGameInputResult = () => {
         detachGameInputResultListener()
+        discardPlacementLogBuffer({ close: true })
         pendingServerInputs.clear()
         deferredOwnSnapshot = null
     }

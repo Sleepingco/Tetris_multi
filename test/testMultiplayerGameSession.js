@@ -107,7 +107,9 @@ function createFakeCanvas() {
         restore() {},
         roundRect() {},
         save() {},
+        scale() {},
         stroke() {},
+        translate() {},
     };
 
     canvas.getContext = () => context;
@@ -278,6 +280,40 @@ function createAuthoritativeSnapshot(overrides = {}) {
         lastProcessedClientSequence: 0,
         ...overrides,
     };
+}
+
+function installAnimationFrameQueue() {
+    const callbacks = new Map();
+    let nextFrameId = 1;
+    globalThis.requestAnimationFrame = (callback) => {
+        const frameId = nextFrameId;
+        nextFrameId += 1;
+        callbacks.set(frameId, callback);
+        return frameId;
+    };
+    globalThis.cancelAnimationFrame = frameId => callbacks.delete(frameId);
+    return callbacks;
+}
+
+function applySingleLineClearFixture(session) {
+    const snapshot = session.myGame.getSnapshot();
+    const board = Array.from({ length: 20 }, () => Array(10).fill(null));
+    board[19].fill("stack");
+    board[19][4] = null;
+    board[19][5] = null;
+    session.myGame.applySnapshot({
+        ...snapshot,
+        board,
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pieceQueue: ["bar", "tree"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    return snapshot;
 }
 
 test("game join 초기 authoritative snapshot으로 내 보드와 상대 보드를 정렬한다", async (t) => {
@@ -528,6 +564,174 @@ test("같은 local drain의 성공 move와 hard_drop은 원래 pieceIndex 순서
     ]);
 });
 
+test("human hard_drop 로그는 authoritative commit 뒤 정확히 한 번 전송된다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const pieceIndex = session.myGame.runtime.pieceIndex;
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: " ",
+        code: "Space",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+
+    const inputEvent = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    });
+    assert.equal(inputEvent.payload.action, "hard_drop");
+    assert.equal(
+        sharedFakeSocket.emitted.some(event => event.eventName === "game:log:placement_decision"),
+        false,
+    );
+
+    const result = {
+        ok: true,
+        reason: null,
+        clientSequence: inputEvent.payload.clientSequence,
+        pieceIndex,
+        placementCommitted: true,
+    };
+    sharedFakeSocket.emitServer("game:input:result", result);
+    sharedFakeSocket.emitServer("game:input:result", result);
+
+    const logEvents = sharedFakeSocket.emitted.filter(event => {
+        return event.eventName === "game:log:placement_decision";
+    });
+    assert.equal(logEvents.length, 1);
+    assert.equal(logEvents[0].payload.log.authoritativeClientSequence, inputEvent.payload.clientSequence);
+    assert.equal(logEvents[0].payload.log.authoritativePieceIndex, pieceIndex);
+});
+
+test("terminal input 실패는 human placement 로그를 폐기한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+
+    for (const reason of ["PREDICTION_DIVERGED", "PIECE_INDEX_MISMATCH"]) {
+        await t.test(reason, async () => {
+            const session = startMultiplayerGame(createSessionParams());
+            try {
+                const pieceIndex = session.myGame.runtime.pieceIndex;
+                sharedFakeSocket.emitted = [];
+                emitDocumentEvent("keydown", {
+                    key: " ",
+                    code: "Space",
+                    repeat: false,
+                    preventDefault() {},
+                });
+                await waitForLocalInputTick();
+                const inputEvent = sharedFakeSocket.emitted.find(event => {
+                    return event.eventName === "game:input";
+                });
+                const result = {
+                    ok: false,
+                    reason,
+                    clientSequence: inputEvent.payload.clientSequence,
+                    pieceIndex,
+                    placementCommitted: false,
+                };
+                if (reason === "PREDICTION_DIVERGED") {
+                    result.snapshot = createAuthoritativeSnapshot({
+                        pieceIndex,
+                        lastProcessedClientSequence: inputEvent.payload.clientSequence,
+                    });
+                }
+
+                sharedFakeSocket.emitServer("game:input:result", result);
+                sharedFakeSocket.emitServer("game:input:result", result);
+
+                assert.equal(
+                    sharedFakeSocket.emitted.some(event => {
+                        return event.eventName === "game:log:placement_decision";
+                    }),
+                    false,
+                );
+            } finally {
+                cleanupSession(session);
+            }
+        });
+    }
+});
+
+test("line clear는 authoritative result가 local log보다 먼저 와도 한 번만 전송된다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const frameCallbacks = installAnimationFrameQueue();
+
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+    const snapshot = applySingleLineClearFixture(session);
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: " ",
+        code: "Space",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+    const inputEvent = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    });
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: true,
+        reason: null,
+        clientSequence: inputEvent.payload.clientSequence,
+        pieceIndex: snapshot.pieceIndex,
+        placementCommitted: true,
+    });
+    assert.equal(
+        sharedFakeSocket.emitted.some(event => event.eventName === "game:log:placement_decision"),
+        false,
+    );
+
+    const animationCallback = frameCallbacks.get(session.myGame.runtime.animationFrameId);
+    animationCallback(globalThis.performance.now() + 400);
+
+    const logEvents = sharedFakeSocket.emitted.filter(event => {
+        return event.eventName === "game:log:placement_decision";
+    });
+    assert.equal(logEvents.length, 1);
+    assert.equal(logEvents[0].payload.log.authoritativeClientSequence, inputEvent.payload.clientSequence);
+    assert.equal(logEvents[0].payload.log.authoritativePieceIndex, snapshot.pieceIndex);
+});
+
+test("실패한 line clear terminal input은 늦은 local log도 전송하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const frameCallbacks = installAnimationFrameQueue();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+    const snapshot = applySingleLineClearFixture(session);
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: " ",
+        code: "Space",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+    const inputEvent = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    });
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: false,
+        reason: "PIECE_INDEX_MISMATCH",
+        clientSequence: inputEvent.payload.clientSequence,
+        pieceIndex: snapshot.pieceIndex,
+        placementCommitted: false,
+    });
+
+    const animationCallback = frameCallbacks.get(session.myGame.runtime.animationFrameId);
+    animationCallback(globalThis.performance.now() + 400);
+
+    assert.equal(
+        sharedFakeSocket.emitted.some(event => event.eventName === "game:log:placement_decision"),
+        false,
+    );
+});
+
 test("rotate와 hard_drop expectedTransform은 각각 after와 before 조각을 사용한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
@@ -611,6 +815,56 @@ test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조�
     });
     assert.equal(session.myGame.getSnapshot().activePiece.pieceType, "square");
     assert.equal("row" in inputEvent.payload.expectedTransform, false);
+    assert.equal(
+        sharedFakeSocket.emitted.some(event => event.eventName === "game:log:placement_decision"),
+        false,
+    );
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: true,
+        reason: null,
+        clientSequence: inputEvent.payload.clientSequence,
+        pieceIndex,
+        placementCommitted: true,
+    });
+    assert.equal(
+        sharedFakeSocket.emitted.filter(event => {
+            return event.eventName === "game:log:placement_decision";
+        }).length,
+        1,
+    );
+});
+
+test("이동만 한 soft_drop은 authoritative result 후에도 placement 로그를 전송하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const pieceIndex = session.myGame.runtime.pieceIndex;
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "ArrowDown",
+        code: "ArrowDown",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+    const inputEvent = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    });
+    assert.equal(inputEvent.payload.action, "soft_drop");
+
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: true,
+        reason: null,
+        clientSequence: inputEvent.payload.clientSequence,
+        pieceIndex,
+        placementCommitted: false,
+    });
+
+    assert.equal(
+        sharedFakeSocket.emitted.some(event => event.eventName === "game:log:placement_decision"),
+        false,
+    );
 });
 
 test("더 높은 acknowledgment 뒤 오래된 divergence result는 현재 prediction을 덮지 않는다", async (t) => {

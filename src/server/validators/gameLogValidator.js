@@ -51,6 +51,9 @@ function validatePlacementDecisionLog(log, options = {}) {
     if (!log.selectedPlacement || typeof log.selectedPlacement !== "object" || Array.isArray(log.selectedPlacement)) {
         return createFailure("SELECTED_PLACEMENT_REQUIRED");
     }
+    if (!isValidAuthoritativeLineage(log)) {
+        return createFailure("INVALID_AUTHORITATIVE_LINEAGE");
+    }
 
     if (log.schemaVersion === 1) {
         return validateLegacyPlacementDecisionLog(log);
@@ -276,6 +279,20 @@ function isNonEmptyString(value) {
 
 function isPlainObject(value) {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isValidAuthoritativeLineage(log) {
+    const hasClientSequence = Object.hasOwn(log, "authoritativeClientSequence");
+    const hasPieceIndex = Object.hasOwn(log, "authoritativePieceIndex");
+    if (!hasClientSequence && !hasPieceIndex) return true;
+
+    return hasClientSequence &&
+        hasPieceIndex &&
+        Number.isInteger(log.authoritativeClientSequence) &&
+        log.authoritativeClientSequence >= 1 &&
+        Number.isInteger(log.authoritativePieceIndex) &&
+        log.authoritativePieceIndex >= 0 &&
+        log.authoritativePieceIndex === log.pieceIndex;
 }
 
 function isValidBoard(board) {

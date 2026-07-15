@@ -219,6 +219,7 @@ test("enqueueInput은 현재 조각과 같은 pieceIndex 입력을 적용한다"
             pieceIndex: before.pieceIndex,
         },
         applied: true,
+        placementCommitted: false,
         reason: null,
         activePieceBefore: before.activePiece,
         activePieceAfter: after.activePiece,
@@ -283,7 +284,13 @@ test("enqueueInput은 pieceIndex가 없는 로컬 입력을 기존처럼 적용�
 
 test("enqueueInput은 soft drop 입력으로 현재 조각을 한 칸 내린다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
     t.after(() => game.destroy());
 
     game.init({ autoStart: true });
@@ -296,6 +303,8 @@ test("enqueueInput은 soft drop 입력으로 현재 조각을 한 칸 내린다"
 
     const after = game.getSnapshot();
     assert.equal(after.activePiece.row, before.activePiece.row + 1);
+    assert.equal(outcomes[0].applied, true);
+    assert.equal(outcomes[0].placementCommitted, false);
 });
 
 test("enqueueInput은 rotate 입력으로 현재 조각을 회전한다", async (t) => {
@@ -430,6 +439,7 @@ test("soft_drop lock과 hard_drop은 applied true outcome을 남긴다", async (
             await waitForTick(game, targetTick);
 
             assert.equal(outcomes[0].applied, true);
+            assert.equal(outcomes[0].placementCommitted, true);
             assert.equal(outcomes[0].reason, null);
             assert.equal(outcomes[0].input.pieceIndex, pieceIndex);
         } finally {
@@ -454,6 +464,7 @@ test("soft_drop lock과 hard_drop은 applied true outcome을 남긴다", async (
             await waitForTick(game, targetTick);
 
             assert.equal(outcomes[0].applied, true);
+            assert.equal(outcomes[0].placementCommitted, true);
             assert.equal(outcomes[0].reason, null);
             assert.equal(outcomes[0].input.pieceIndex, pieceIndex);
         } finally {
@@ -483,10 +494,11 @@ test("정상 hold는 true이고 같은 drop의 두 번째 hold는 false다", asy
 
     assert.deepEqual(outcomes.map(outcome => ({
         applied: outcome.applied,
+        placementCommitted: outcome.placementCommitted,
         reason: outcome.reason,
     })), [
-        { applied: true, reason: null },
-        { applied: false, reason: "HOLD_NOT_AVAILABLE" },
+        { applied: true, placementCommitted: false, reason: null },
+        { applied: false, placementCommitted: false, reason: "HOLD_NOT_AVAILABLE" },
     ]);
 });
 

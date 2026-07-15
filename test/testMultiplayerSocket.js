@@ -320,6 +320,7 @@ test("malformed expectedTransform은 input log와 relay 전에 거부된다", as
         reason: "INVALID_EXPECTED_TRANSFORM",
         clientSequence: 1,
         pieceIndex: 1,
+        placementCommitted: false,
     })
     assert.equal(fixture.hostPlayer.inputLog.length, 0)
     assert.equal(fixture.guestSocket.lastClientEvent("game:input"), undefined)
@@ -351,6 +352,7 @@ test("soft_drop의 malformed expectedTransform은 input log와 relay 전에 거�
         reason: "INVALID_EXPECTED_TRANSFORM",
         clientSequence: 1,
         pieceIndex: 1,
+        placementCommitted: false,
     })
     assert.equal(fixture.hostPlayer.inputLog.length, 0)
     assert.equal(fixture.guestSocket.lastClientEvent("game:input"), undefined)
@@ -781,6 +783,7 @@ test("pending socket input 뒤의 같은 player gravity는 shared mutation queue
         reason: null,
         clientSequence: 1,
         pieceIndex: stateBeforeInput.pieceIndex,
+        placementCommitted: false,
     })
 })
 
@@ -1757,6 +1760,7 @@ test("game:input은 game:join으로 같은 room에 들어간 상대 socket에게
     assert.equal(inputResult.reason, "PIECE_INDEX_MISMATCH")
     assert.equal(inputResult.clientSequence, 1)
     assert.equal(inputResult.pieceIndex, 4)
+    assert.equal(inputResult.placementCommitted, false)
 })
 
 test("game:input은 relay를 유지하면서 authoritativeState에도 input을 적용한다", async () => {
@@ -1839,6 +1843,7 @@ test("game:input은 relay를 유지하면서 authoritativeState에도 input을 �
         reason: null,
         clientSequence: 1,
         pieceIndex: 1,
+        placementCommitted: true,
     })
     assert.equal(hostPlayer.authoritativeState.board[18][3], "square")
     assert.equal(hostPlayer.authoritativeState.board[18][4], "square")
@@ -2286,6 +2291,7 @@ test("game:input은 연속 input relay와 inputLog를 유지하면서 authoritat
         reason: "CLIENT_SEQUENCE_OUT_OF_ORDER",
         clientSequence: 2,
         pieceIndex: hostPlayer.authoritativeState.pieceIndex,
+        placementCommitted: false,
     })
 })
 
@@ -2475,6 +2481,7 @@ test("game:input은 authoritative apply가 실패해도 relay와 input log를 �
         reason: "HOLD_NOT_AVAILABLE",
         clientSequence: 1,
         pieceIndex: currentPieceIndex,
+        placementCommitted: false,
     })
     assert.equal(hostPlayer.inputLog[0].action, "hold")
     assert.equal(hostPlayer.inputLog[0].tick, 12)
@@ -2543,6 +2550,7 @@ test("game:input authoritative 예외는 sequence를 ack하고 현재 snapshot�
         reason: "AUTHORITATIVE_INPUT_FAILED",
         clientSequence: 1,
         pieceIndex: stateBeforeInput.pieceIndex,
+        placementCommitted: false,
     })
 })
 

@@ -252,13 +252,14 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             expectedTransform,
         } = payload
         let hasEmittedInputResult = false
-        const emitInputResult = (ok, reason, snapshot = null) => {
+        const emitInputResult = (ok, reason, snapshot = null, placementCommitted = false) => {
             hasEmittedInputResult = true
             const resultPayload = {
                 ok,
                 reason,
                 clientSequence,
                 pieceIndex,
+                placementCommitted: ok && placementCommitted === true,
             }
             if (snapshot) resultPayload.snapshot = snapshot
             clientSocket.emit("game:input:result", resultPayload)
@@ -367,7 +368,12 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                     if (placementSideEffect?.targetPlayerId) {
                         emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
                     }
-                    emitInputResult(true, null)
+                    emitInputResult(
+                        true,
+                        null,
+                        null,
+                        Boolean(authoritativeResult.gameplayResult?.placementResult),
+                    )
                     await handleServerGameOverResult(
                         socketServer,
                         roomId,
