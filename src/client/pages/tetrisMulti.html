@@ -47,6 +47,7 @@
                 <p>2인 멀티 MVP</p>
             </div>
             <div class="multi-actions">
+                <button id="soundToggle" class="sound-toggle" type="button" aria-pressed="false">사운드 켜기</button>
                 <button id="themeToggle" class="sound-toggle" type="button" aria-pressed="false">다크 모드</button>
                 <a class="home-btn" href="./index.html">홈으로</a>
             </div>
@@ -157,8 +158,10 @@
         import { queryElement } from "../game/entry/dom.js"
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
         import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.js"
+        import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js"
         import { requestJoinGameRoom, onGameJoinResult, leaveGame, onGameOpponentLeft, onMatchFinish, requestLeaveRoom } from "../net/roomClient.js"
         import { onPlacementDecisionLogResult } from "../net/logClient.js"
+        const soundToggleBtn = queryElement(document, "#soundToggle")
         const themeToggleBtn = queryElement(document, "#themeToggle")
         const player1Name = queryElement(document, "#player1Name")
         const player2Name = queryElement(document, "#player2Name")
@@ -243,6 +246,7 @@
             const guestPlayer = room.players.find(player => player.playerId !== room.hostPlayerId)
             const myRole = playerId === room.hostPlayerId ? "host" : "guest"
             const isPveMode = room.mode === "pve"
+            const cleanupSound = initGameSound(soundToggleBtn)
 
             console.log("room : ", room)
             console.log("playerId : ", playerId)
@@ -420,6 +424,7 @@
                     opponentLinesEl,
                     opponentPendingGarbageEl,
                     opponentGarbageLogEl,
+                    onUserInteract: tryPlayMusic,
                 })
             })
 
@@ -438,6 +443,7 @@
                 themeToggleBtn?.removeEventListener("click", onToggleTheme)
                 homeBtn?.removeEventListener("click", handleHomeClick)
                 detachMatchFinish()
+                cleanupSound?.()
                 if (shouldNotifyGameLeave) {
                     leaveGame(roomId, playerId);
                 }
