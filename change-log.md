@@ -1883,3 +1883,37 @@ client input
 
 ---
 
+# 2026년 7월 15일
+
+---
+
+## Authoritative input sequence와 rollback 방지
+
+- 빠른 이동이나 회전 후 lock 직전에 own authoritative snapshot이 local prediction을 이전 위치로 되돌리는 문제를 수정했다.
+- client input마다 1부터 증가하는 `clientSequence`를 부여하고, server player metadata에 `lastProcessedClientSequence`를 저장한다.
+- `lastProcessedClientSequence`는 gameplay state가 아니라 input 처리 완료 acknowledgment이므로 `authoritativeState`와 분리했다.
+- reconnect 시 initial authoritative snapshot의 마지막 처리 sequence 다음 값부터 input sequence를 재개한다.
+- client는 server acknowledgment 전 입력을 `pendingServerInputs`로 관리하고, 미처리 입력이 있으면 own snapshot full correction을 보류한다.
+- pending input이 모두 처리된 뒤에만 기존 own snapshot correction 정책으로 deferred snapshot을 다시 평가한다.
+- 최신 acknowledged sequence보다 오래된 deferred snapshot은 폐기하고 다음 authoritative snapshot을 기다린다.
+- `gameOver` snapshot은 pending input 여부와 관계없이 즉시 적용한다.
+
+## Server input 처리 경계 강화
+
+- 같은 socket의 `game:input`을 직렬 처리해 input 순서가 authoritative apply 순서와 일치하도록 했다.
+- 중복되거나 역순인 `clientSequence`는 `recordInput()`과 상대 relay 전에 `CLIENT_SEQUENCE_OUT_OF_ORDER`로 거부한다.
+- `PIECE_INDEX_MISMATCH`는 gameplay state를 변경하지 않지만 해당 sequence를 처리 완료로 acknowledgment한다.
+- authoritative core 로딩 또는 input 적용 중 내부 예외가 발생하면 현재 snapshot과 `AUTHORITATIVE_INPUT_FAILED` result를 반환한다.
+- 내부 예외도 terminal failure로 acknowledgment해 client pending input이 영구적으로 남지 않게 했다.
+- `game:input:result`와 authoritative snapshot에 `clientSequence` 또는 `lastProcessedClientSequence`를 포함해 client가 처리 완료 경계를 확인할 수 있게 했다.
+
+## 테스트와 검증
+
+- local input queue가 비어도 server acknowledgment 전 stale own snapshot이 prediction을 되감지 않는지 검증했다.
+- 최신 acknowledgment snapshot 적용, 오래된 deferred snapshot 폐기, reconnect sequence 재개를 검증했다.
+- 중복·역순 input이 input log와 상대 relay, authoritative state를 변경하지 않는지 검증했다.
+- authoritative 내부 예외가 sequence를 acknowledgment하고 현재 snapshot과 실패 result를 반환하는지 검증했다.
+- `bash scripts/verify.sh` 기준 전체 397개 테스트가 통과했다.
+- 수정 JavaScript 파일의 `node --check`와 `git diff --check`가 통과했다.
+- production game event log의 line count와 SHA-256이 테스트 전후 동일함을 확인했다.
+- 실제 브라우저에서는 빠른 좌우 이동, 회전, soft drop, hard drop과 lock 직전 rollback이 사라졌는지 2탭 수동 회귀 확인이 남아 있다.

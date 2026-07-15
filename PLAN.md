@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-10 기준. main은 `server authoritative state + authoritative snapshot + server garbage/gameOver` 기반 멀티 MVP 상태로 본다. 과하게 커졌던 shadow/debug 실험은 별도 브랜치로 분리했고, main 계획에서는 debug/shadow 확장이 아니라 2탭 최종 회귀와 AI 분석 준비를 우선한다.
+- Last update: 2026-07-15 기준. main은 `server authoritative state + authoritative snapshot + server garbage/gameOver` 기반 멀티 MVP 상태다. 현재 최우선 안정화 항목은 간헐적으로 남아 있는 own board rollback 재현과 해결이며, 입력별 full snapshot 전송 최적화는 rollback 안정화 이후로 미룬다.
 
 ## Document Role
 
@@ -125,6 +125,50 @@
 - shadow/debug 방향은 현재 main 우선순위가 아니다. debug 시스템을 다시 키우지 않고, 2탭 회귀 통과 후 AI 분석 로그와 평가 지표로 넘어간다.
 - AI 쪽은 이미 구현된 `boardMetrics`를 기반으로 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player 순서로 진행한다.
 - 현재 `boardMetrics`는 core board 표현을 그대로 읽는 DOM-free 순수 함수라서 `src/client/game/core`에 둔다. 서버/클라이언트/AI가 더 넓게 공유하는 시점이 오면 `shared` 계층으로 이동할 수 있다.
+
+### 2026-07-15 멀티 안정화 개선사항
+
+#### P0: 간헐적 own board rollback
+
+- 현재 관찰된 문제:
+  - 사용자가 조각을 lock 직전 위치까지 이동하거나 회전했는데, own authoritative correction이 적용되면서 직전 위치로 되돌아가는 현상이 간헐적으로 남아 있다.
+  - 자동 테스트에서는 sequence/ack 경계가 통과하지만 실제 브라우저 플레이에서는 아직 완전히 해결됐다고 판단하지 않는다.
+- 현재 적용된 방어:
+  - client input마다 단조 증가하는 `clientSequence`를 전송한다.
+  - server player metadata의 `lastProcessedClientSequence`로 처리 완료 경계를 관리한다.
+  - server acknowledgment 전 input이 있으면 own snapshot full correction을 보류한다.
+  - 최신 acknowledgment보다 오래된 deferred snapshot은 폐기한다.
+  - 같은 socket의 input은 server에서 직렬 처리한다.
+  - 중복·역순 sequence는 input log 저장과 상대 relay 전에 거부한다.
+  - `PIECE_INDEX_MISMATCH`와 authoritative 내부 예외도 terminal result로 acknowledgment한다.
+- 남은 조사 범위:
+  - 빠른 좌우 이동, 연속 회전, soft drop 유지, hard drop, lock 직전 입력 중 어떤 순서에서 재현되는지 고정한다.
+  - rollback 직전의 local/server `clientSequence`, `lastProcessedClientSequence`, `pieceIndex`, `phase`를 비교한다.
+  - deferred snapshot이 pending input 해소 직후 적용되는 경우와 server lock이 먼저 확정되는 경우를 구분한다.
+  - 원인을 확인하기 전 correction 조건, lock delay 또는 snapshot 주기를 임의로 완화하지 않는다.
+- 완료 기준:
+  - 2탭 반복 플레이에서 lock 직전 이동·회전이 이전 상태로 돌아가지 않는다.
+  - correction 후에도 own input loop, gravity, line clear effect가 유지된다.
+  - A가 보는 A board와 B가 보는 A board가 lock 이후 정상적으로 수렴한다.
+  - garbage 적용, gameOver, reconnect sequence 재개가 회귀하지 않는다.
+- 이 문제는 전체 rollback netcode 구현과 다르다. 현재 목표는 stale authoritative snapshot이 정상적인 local prediction을 되감는 경로를 제거하는 것이다.
+
+#### P2: 입력별 full snapshot 전송 최적화
+
+- 현재 구조는 authoritative input이 성공할 때마다 room에 full snapshot을 보내므로 소수 사용자 MVP에는 충분하지만 동시 room이 많아지면 board 복사, JSON 직렬화, 네트워크 전송 비용이 커질 수 있다.
+- 이 최적화는 rollback 원인 추적과 섞지 않고, rollback 안정화와 커밋 이후 별도 작업으로 진행한다.
+- 목표 전송 정책:
+  - 매 input: sender에게 작은 `game:input:result` acknowledgment만 전송한다.
+  - 일반 이동 상태: player별 최신 snapshot을 모아 약 100ms 주기로 trailing coalescing한다.
+  - lock, line clear presentation, garbage 적용, gameOver: 즉시 full snapshot을 전송한다.
+  - `PIECE_INDEX_MISMATCH`, `AUTHORITATIVE_INPUT_FAILED`, game join/reconnect: 즉시 correction snapshot을 전송한다.
+  - 상대 client가 더 이상 소비하지 않는 `game:input` relay는 참조를 확인한 뒤 제거 후보로 둔다.
+- 구현 시 지켜야 할 조건:
+  - coalescing 구간의 마지막 authoritative state를 반드시 전송한다.
+  - `presentationEffect` 같은 일회성 결과를 일반 snapshot 병합 과정에서 잃지 않는다.
+  - own board는 local prediction으로 즉시 반응하고, 상대 보드는 주기적 authoritative snapshot으로 갱신한다.
+  - rapid input 5개가 100ms 안에 들어오면 acknowledgment는 5개, 일반 movement snapshot은 최대 1개가 되는지 테스트한다.
+  - lock/garbage/gameOver snapshot은 주기적 flush를 기다리지 않는지 테스트한다.
 
 ## Current Architecture
 
