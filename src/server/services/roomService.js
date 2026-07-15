@@ -253,6 +253,7 @@ function getRoomSocketContext(socketId) {
 /**
  * disconnect된 socket의 player를 room에서 제거한다.
  * - playing 중인 room은 게임 화면 재연결 가능성을 위해 자동 제거하지 않는다.
+ * - finished room은 결과 화면에서 로비로 복귀할 수 있게 자동 제거하지 않는다.
  *
  * @param {string} socketId - 끊어진 socket id
  * @returns {{ok: boolean, room: Object|null, reason: string|null, roomId?: string|null, player?: Object|null}} 제거 결과와 player 문맥
@@ -271,6 +272,13 @@ function removePlayerBySocketId(socketId) {
 
     if (room.status === "playing") {
         return failure("GAME_PLAYING", {
+            roomId: room.roomId,
+            player,
+        })
+    }
+
+    if (room.status === "finished") {
+        return failure("GAME_FINISHED", {
             roomId: room.roomId,
             player,
         })

@@ -365,7 +365,12 @@ test("heartbeatTimer는 game:snapshot과 game:over 없이 bag 요청만 유지�
 
 test("내 키보드 입력은 game:input으로 서버에 전송된다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
-    const session = startMultiplayerGame(createSessionParams());
+    let userInteractionCount = 0;
+    const session = startMultiplayerGame(createSessionParams({
+        onUserInteract() {
+            userInteractionCount += 1;
+        },
+    }));
     t.after(() => cleanupSession(session));
 
     sharedFakeSocket.emitted = [];
@@ -376,13 +381,26 @@ test("내 키보드 입력은 game:input으로 서버에 전송된다", async (t
         preventDefault() {},
     });
 
+    assert.equal(
+        sharedFakeSocket.emitted.some(event => event.eventName === "game:input"),
+        false,
+    );
+    await waitForLocalInputTick();
+
     const inputEvent = sharedFakeSocket.emitted.find(event => {
         return event.eventName === "game:input";
     });
 
+    assert.equal(userInteractionCount, 1);
     assert.equal(inputEvent.payload.roomId, "room-1");
     assert.equal(inputEvent.payload.playerId, "player-me");
     assert.equal(inputEvent.payload.action, "move_left");
+    assert.deepEqual(inputEvent.payload.expectedTransform, {
+        pieceType: "tree",
+        rotation: 0,
+        col: 2,
+    });
+    assert.equal("row" in inputEvent.payload.expectedTransform, false);
     assert.equal(Number.isInteger(inputEvent.payload.tick), true);
     assert.equal(Number.isInteger(inputEvent.payload.pieceIndex), true);
     assert.equal(inputEvent.payload.clientSequence, 1);
@@ -404,11 +422,337 @@ test("reconnect 초기 snapshot ack 다음 값부터 clientSequence를 재개한
         repeat: false,
         preventDefault() {},
     });
+    await waitForLocalInputTick();
 
     const inputEvent = sharedFakeSocket.emitted.find(event => {
         return event.eventName === "game:input";
     });
     assert.equal(inputEvent.payload.clientSequence, 8);
+});
+
+test("실패한 wall input은 전송하지 않고 성공 입력 sequence는 gap 없이 증가한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const initialSnapshot = session.myGame.getSnapshot();
+    const pieceIndex = initialSnapshot.pieceIndex;
+    session.myGame.applySnapshot({
+        ...initialSnapshot,
+        board: Array.from({ length: 20 }, () => Array(10).fill(null)),
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 0,
+            col: 0,
+        },
+        pieceQueue: ["bar", "tree", "zee"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    sharedFakeSocket.emitted = [];
+
+    for (const input of [
+        { key: "ArrowLeft", code: "ArrowLeft" },
+        { key: "ArrowRight", code: "ArrowRight" },
+        { key: " ", code: "Space" },
+    ]) {
+        emitDocumentEvent("keydown", {
+            ...input,
+            repeat: false,
+            preventDefault() {},
+        });
+    }
+
+    assert.equal(
+        sharedFakeSocket.emitted.some(event => event.eventName === "game:input"),
+        false,
+    );
+    await waitForLocalInputTick();
+
+    const inputEvents = sharedFakeSocket.emitted.filter(event => {
+        return event.eventName === "game:input";
+    });
+    assert.deepEqual(inputEvents.map(event => event.payload.action), [
+        "move_right",
+        "hard_drop",
+    ]);
+    assert.deepEqual(inputEvents.map(event => event.payload.clientSequence), [1, 2]);
+    assert.deepEqual(inputEvents.map(event => event.payload.pieceIndex), [
+        pieceIndex,
+        pieceIndex,
+    ]);
+    assert.equal(inputEvents[0].payload.tick, inputEvents[1].payload.tick);
+});
+
+test("같은 local drain의 성공 move와 hard_drop은 원래 pieceIndex 순서로 전송된다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const pieceIndex = session.myGame.runtime.pieceIndex;
+    sharedFakeSocket.emitted = [];
+    for (const input of [
+        { key: "ArrowLeft", code: "ArrowLeft" },
+        { key: " ", code: "Space" },
+    ]) {
+        emitDocumentEvent("keydown", {
+            ...input,
+            repeat: false,
+            preventDefault() {},
+        });
+    }
+
+    await waitForLocalInputTick();
+
+    const inputEvents = sharedFakeSocket.emitted.filter(event => {
+        return event.eventName === "game:input";
+    });
+    assert.deepEqual(inputEvents.map(event => ({
+        action: event.payload.action,
+        pieceIndex: event.payload.pieceIndex,
+        clientSequence: event.payload.clientSequence,
+        expectedTransform: event.payload.expectedTransform,
+    })), [
+        {
+            action: "move_left",
+            pieceIndex,
+            clientSequence: 1,
+            expectedTransform: { pieceType: "tree", rotation: 0, col: 2 },
+        },
+        {
+            action: "hard_drop",
+            pieceIndex,
+            clientSequence: 2,
+            expectedTransform: { pieceType: "tree", rotation: 0, col: 2 },
+        },
+    ]);
+});
+
+test("rotate와 hard_drop expectedTransform은 각각 after와 before 조각을 사용한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    for (const input of [
+        { key: "ArrowUp", code: "ArrowUp" },
+        { key: " ", code: "Space" },
+    ]) {
+        emitDocumentEvent("keydown", {
+            ...input,
+            repeat: false,
+            preventDefault() {},
+        });
+    }
+    await waitForLocalInputTick();
+
+    const inputEvents = sharedFakeSocket.emitted.filter(event => {
+        return event.eventName === "game:input";
+    });
+    assert.deepEqual(inputEvents.map(event => ({
+        action: event.payload.action,
+        clientSequence: event.payload.clientSequence,
+        expectedTransform: event.payload.expectedTransform,
+    })), [
+        {
+            action: "rotate",
+            clientSequence: 1,
+            expectedTransform: { pieceType: "tree", rotation: 1, col: 3 },
+        },
+        {
+            action: "hard_drop",
+            clientSequence: 2,
+            expectedTransform: { pieceType: "tree", rotation: 1, col: 3 },
+        },
+    ]);
+    assert.equal(inputEvents.some(event => "row" in event.payload.expectedTransform), false);
+});
+
+test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조각을 사용한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    const snapshot = session.myGame.getSnapshot();
+    const pieceIndex = snapshot.pieceIndex;
+    session.myGame.applySnapshot({
+        ...snapshot,
+        board: Array.from({ length: 20 }, () => Array(10).fill(null)),
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 18,
+            col: 3,
+        },
+        pieceQueue: ["square", "bar"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    sharedFakeSocket.emitted = [];
+
+    emitDocumentEvent("keydown", {
+        key: "ArrowDown",
+        code: "ArrowDown",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+
+    const inputEvent = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    });
+    assert.deepEqual(inputEvent.payload, {
+        roomId: "room-1",
+        playerId: "player-me",
+        action: "soft_drop",
+        tick: inputEvent.payload.tick,
+        pieceIndex,
+        clientSequence: 1,
+        expectedTransform: { pieceType: "tree", rotation: 0, col: 3 },
+    });
+    assert.equal(session.myGame.getSnapshot().activePiece.pieceType, "square");
+    assert.equal("row" in inputEvent.payload.expectedTransform, false);
+});
+
+test("더 높은 acknowledgment 뒤 오래된 divergence result는 현재 prediction을 덮지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    for (const input of [
+        { key: "ArrowLeft", code: "ArrowLeft" },
+        { key: "ArrowRight", code: "ArrowRight" },
+    ]) {
+        emitDocumentEvent("keydown", {
+            ...input,
+            repeat: false,
+            preventDefault() {},
+        });
+    }
+    await waitForLocalInputTick();
+
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: true,
+        reason: null,
+        clientSequence: 2,
+        pieceIndex: session.myGame.runtime.pieceIndex,
+    });
+    const currentBoard = session.myGame.getSnapshot().board.map(row => [...row]);
+    const staleBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
+    staleBoard[19][0] = "garbage";
+
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: false,
+        reason: "PREDICTION_DIVERGED",
+        clientSequence: 1,
+        pieceIndex: session.myGame.runtime.pieceIndex,
+        snapshot: {
+            ...session.myGame.getSnapshot(),
+            board: staleBoard,
+            lastProcessedClientSequence: 1,
+        },
+    });
+
+    assert.deepEqual(session.myGame.getSnapshot().board, currentBoard);
+});
+
+test("PREDICTION_DIVERGED result snapshot은 pending prediction을 버리고 즉시 적용한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+    const divergedSequence = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    }).payload.clientSequence;
+
+    session.myGame.enqueueInput(
+        "move_right",
+        session.myGame.runtime.currentTick + 100,
+        session.myGame.runtime.pieceIndex,
+    );
+    assert.equal(session.myGame.getPendingInputCount(), 1);
+
+    const authoritativeBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
+    authoritativeBoard[19][8] = "garbage";
+    const authoritativeSnapshot = createAuthoritativeSnapshot({
+        board: authoritativeBoard,
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 1,
+            col: 3,
+        },
+        tick: 20,
+        pieceIndex: 1,
+        lastProcessedClientSequence: divergedSequence,
+    });
+
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: false,
+        reason: "PREDICTION_DIVERGED",
+        clientSequence: divergedSequence,
+        pieceIndex: 1,
+        snapshot: authoritativeSnapshot,
+    });
+
+    assert.deepEqual(session.myGame.getSnapshot().board, authoritativeBoard);
+    assert.equal(session.myGame.getSnapshot().activePiece.col, 3);
+    assert.equal(session.myGame.getPendingInputCount(), 0);
+    assert.equal(session.myGame.runtime.gravityRunning, true);
+
+    const duplicateBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
+    duplicateBoard[19][0] = "bar";
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: false,
+        reason: "PREDICTION_DIVERGED",
+        clientSequence: divergedSequence,
+        pieceIndex: 1,
+        snapshot: {
+            ...authoritativeSnapshot,
+            board: duplicateBoard,
+        },
+    });
+    assert.deepEqual(session.myGame.getSnapshot().board, authoritativeBoard);
+});
+
+test("gameOver divergence correction은 gravity를 재개하지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+    const clientSequence = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    }).payload.clientSequence;
+    const snapshot = createAuthoritativeSnapshot({
+        phase: "gameOver",
+        lastProcessedClientSequence: clientSequence,
+    });
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: false,
+        reason: "PREDICTION_DIVERGED",
+        clientSequence,
+        pieceIndex: 1,
+        snapshot,
+    });
+
+    assert.equal(session.myGame.getSnapshot().phase, "gameOver");
+    assert.equal(session.myGame.runtime.gravityRunning, false);
 });
 
 test("local queue가 비어도 server ack 전 stale own snapshot은 prediction을 되감지 않는다", async (t) => {

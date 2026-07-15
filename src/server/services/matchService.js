@@ -19,6 +19,8 @@ const BOARD_ROWS = 20;
 const BOARD_COLS = 10;
 const SPAWN_ROW = -1;
 const SPAWN_COL = 3;
+const POSITION_TRANSFORM_ACTIONS = new Set(["move_left", "move_right", "rotate"]);
+const LOCKING_TRANSFORM_ACTIONS = new Set(["soft_drop", "hard_drop"]);
 
 function createSuccess(match, extra = {}) {
     return {
@@ -295,20 +297,56 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
         };
     }
 
+    const expectedTransform = input?.expectedTransform;
+    if (
+        LOCKING_TRANSFORM_ACTIONS.has(input?.action) &&
+        expectedTransform &&
+        !doesPieceMatchExpectedTransform(player.authoritativeState.activePiece, expectedTransform)
+    ) {
+        markClientInputProcessed(player, clientSequence);
+        return {
+            ok: false,
+            match,
+            reason: "PREDICTION_DIVERGED",
+        };
+    }
+
     const gameplayResult = applyAuthoritativeInput(player.authoritativeState, input, gameCore);
     if (!gameplayResult.ok) {
         markClientInputProcessed(player, clientSequence);
         return {
             ok: false,
             match,
-            reason: gameplayResult.reason,
+            reason: expectedTransform
+                && POSITION_TRANSFORM_ACTIONS.has(input?.action)
+                && gameplayResult.reason === "MOVE_RETRY"
+                ? "PREDICTION_DIVERGED"
+                : gameplayResult.reason,
             gameplayResult,
         };
     }
 
     markClientInputProcessed(player, clientSequence);
+    if (
+        expectedTransform &&
+        POSITION_TRANSFORM_ACTIONS.has(input?.action) &&
+        !doesPieceMatchExpectedTransform(player.authoritativeState.activePiece, expectedTransform)
+    ) {
+        return {
+            ok: false,
+            match,
+            reason: "PREDICTION_DIVERGED",
+            gameplayResult,
+        };
+    }
     attachPresentationEffectId(gameplayResult, playerId);
     return createSuccess(match, { gameplayResult });
+}
+
+function doesPieceMatchExpectedTransform(piece, expectedTransform) {
+    return piece?.pieceType === expectedTransform.pieceType
+        && piece.rotation === expectedTransform.rotation
+        && piece.col === expectedTransform.col;
 }
 
 function markClientInputProcessed(player, clientSequence) {

@@ -162,7 +162,13 @@ function createFakeCanvas() {
 
 test("enqueueInput은 현재 조각과 다른 pieceIndex 입력을 적용하지 않는다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
     t.after(() => game.destroy());
 
     game.init({ autoStart: true });
@@ -176,11 +182,22 @@ test("enqueueInput은 현재 조각과 다른 pieceIndex 입력을 적용하지 
     const after = game.getSnapshot();
     assert.equal(after.activePiece.col, before.activePiece.col);
     assert.equal(after.pieceIndex, before.pieceIndex);
+    assert.equal(outcomes.length, 1);
+    assert.equal(outcomes[0].applied, false);
+    assert.equal(outcomes[0].reason, "PIECE_INDEX_MISMATCH");
+    assert.deepEqual(outcomes[0].activePieceBefore, before.activePiece);
+    assert.deepEqual(outcomes[0].activePieceAfter, before.activePiece);
 });
 
 test("enqueueInput은 현재 조각과 같은 pieceIndex 입력을 적용한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
     t.after(() => game.destroy());
 
     game.init({ autoStart: true });
@@ -194,6 +211,56 @@ test("enqueueInput은 현재 조각과 같은 pieceIndex 입력을 적용한다"
     const after = game.getSnapshot();
     assert.equal(after.activePiece.col, before.activePiece.col - 1);
     assert.equal(after.pieceIndex, before.pieceIndex);
+    assert.equal(outcomes.length, 1);
+    assert.deepEqual(outcomes[0], {
+        input: {
+            action: INPUT_ACTION.MOVE_LEFT,
+            tick: targetTick,
+            pieceIndex: before.pieceIndex,
+        },
+        applied: true,
+        reason: null,
+        activePieceBefore: before.activePiece,
+        activePieceAfter: after.activePiece,
+    });
+});
+
+test("벽에 막힌 move_left는 applied false outcome을 남긴다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const baseSnapshot = game.getSnapshot();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 0,
+    };
+    game.applySnapshot({
+        ...baseSnapshot,
+        board: createEmptyBoard(),
+        activePiece,
+        pieceQueue: ["bar", "tree"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    const targetTick = game.runtime.currentTick + 1;
+
+    game.enqueueInput(INPUT_ACTION.MOVE_LEFT, targetTick, game.runtime.pieceIndex);
+    await waitForTick(game, targetTick);
+
+    assert.equal(outcomes.length, 1);
+    assert.equal(outcomes[0].applied, false);
+    assert.equal(outcomes[0].reason, "MOVE_RETRY");
+    assert.deepEqual(outcomes[0].activePieceBefore, activePiece);
+    assert.deepEqual(outcomes[0].activePieceAfter, activePiece);
 });
 
 test("enqueueInput은 pieceIndex가 없는 로컬 입력을 기존처럼 적용한다", async (t) => {
@@ -233,7 +300,13 @@ test("enqueueInput은 soft drop 입력으로 현재 조각을 한 칸 내린다"
 
 test("enqueueInput은 rotate 입력으로 현재 조각을 회전한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
     t.after(() => game.destroy());
 
     game.init({ autoStart: true });
@@ -246,6 +319,175 @@ test("enqueueInput은 rotate 입력으로 현재 조각을 회전한다", async 
 
     const after = game.getSnapshot();
     assert.equal(after.activePiece.rotation, (before.activePiece.rotation + 1) % 4);
+    assert.equal(outcomes[0].applied, true);
+    assert.equal(outcomes[0].reason, null);
+});
+
+test("wall kick 회전 성공은 applied true outcome을 남긴다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const baseSnapshot = game.getSnapshot();
+    game.applySnapshot({
+        ...baseSnapshot,
+        board: createEmptyBoard(),
+        activePiece: {
+            pieceType: "tree",
+            rotation: 1,
+            row: 0,
+            col: -1,
+        },
+        pieceQueue: ["bar", "square"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    const targetTick = game.runtime.currentTick + 1;
+
+    game.enqueueInput(INPUT_ACTION.ROTATE, targetTick, game.runtime.pieceIndex);
+    await waitForTick(game, targetTick);
+
+    assert.equal(outcomes[0].applied, true);
+    assert.equal(outcomes[0].reason, null);
+    assert.equal(outcomes[0].activePieceAfter.rotation, 2);
+    assert.equal(outcomes[0].activePieceAfter.col, 0);
+});
+
+test("모든 wall kick이 막힌 rotate는 applied false outcome을 남긴다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const activePiece = {
+        pieceType: "tree",
+        rotation: 0,
+        row: 4,
+        col: 3,
+    };
+    const blockedBoard = Array.from({ length: 20 }, () => Array(10).fill("garbage"));
+    for (const [row, col] of [[4, 4], [5, 3], [5, 4], [5, 5]]) {
+        blockedBoard[row][col] = null;
+    }
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: blockedBoard,
+        activePiece,
+        pieceQueue: ["bar", "square"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    const targetTick = game.runtime.currentTick + 1;
+
+    game.enqueueInput(INPUT_ACTION.ROTATE, targetTick, game.runtime.pieceIndex);
+    await waitForTick(game, targetTick);
+
+    assert.equal(outcomes[0].applied, false);
+    assert.equal(outcomes[0].reason, "MOVE_RETRY");
+    assert.deepEqual(outcomes[0].activePieceAfter, activePiece);
+});
+
+test("soft_drop lock과 hard_drop은 applied true outcome을 남긴다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+
+    await t.test("soft_drop lock", async () => {
+        const outcomes = [];
+        const game = createTetrisRuntime({
+            rng: () => 0,
+            inputOutcomeRecorder(outcome) {
+                outcomes.push(outcome);
+            },
+        });
+        try {
+            game.init({ autoStart: true });
+            game.applySnapshot({
+                ...game.getSnapshot(),
+                board: createEmptyBoard(),
+                activePiece: {
+                    pieceType: "square",
+                    rotation: 0,
+                    row: 18,
+                    col: 4,
+                },
+                pieceQueue: ["bar", "tree"],
+                phase: "playing",
+            }, { resumeGravity: true });
+            const pieceIndex = game.runtime.pieceIndex;
+            const targetTick = game.runtime.currentTick + 1;
+
+            game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, pieceIndex);
+            await waitForTick(game, targetTick);
+
+            assert.equal(outcomes[0].applied, true);
+            assert.equal(outcomes[0].reason, null);
+            assert.equal(outcomes[0].input.pieceIndex, pieceIndex);
+        } finally {
+            game.destroy();
+        }
+    });
+
+    await t.test("hard_drop", async () => {
+        const outcomes = [];
+        const game = createTetrisRuntime({
+            rng: () => 0,
+            inputOutcomeRecorder(outcome) {
+                outcomes.push(outcome);
+            },
+        });
+        try {
+            game.init({ autoStart: true });
+            const pieceIndex = game.runtime.pieceIndex;
+            const targetTick = game.runtime.currentTick + 1;
+
+            game.enqueueInput(INPUT_ACTION.HARD_DROP, targetTick, pieceIndex);
+            await waitForTick(game, targetTick);
+
+            assert.equal(outcomes[0].applied, true);
+            assert.equal(outcomes[0].reason, null);
+            assert.equal(outcomes[0].input.pieceIndex, pieceIndex);
+        } finally {
+            game.destroy();
+        }
+    });
+});
+
+test("정상 hold는 true이고 같은 drop의 두 번째 hold는 false다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const outcomes = [];
+    const game = createTetrisRuntime({
+        rng: () => 0,
+        inputOutcomeRecorder(outcome) {
+            outcomes.push(outcome);
+        },
+    });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const pieceIndex = game.runtime.pieceIndex;
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HOLD, targetTick, pieceIndex);
+    game.enqueueInput(INPUT_ACTION.HOLD, targetTick, pieceIndex);
+
+    await waitForTick(game, targetTick);
+
+    assert.deepEqual(outcomes.map(outcome => ({
+        applied: outcome.applied,
+        reason: outcome.reason,
+    })), [
+        { applied: true, reason: null },
+        { applied: false, reason: "HOLD_NOT_AVAILABLE" },
+    ]);
 });
 
 test("enqueueInput은 같은 tick에 과도하게 입력을 쌓지 않는다", async (t) => {
@@ -444,6 +686,98 @@ test("applySnapshot은 gameOver snapshot에서 resumeGravity 요청을 무시한
     }, { resumeGravity: true });
 
     assert.equal(game.runtime.gravityRunning, false);
+});
+
+test("forced snapshot은 stale inputQueue와 진행 중 line clear callback을 무효화한다", async (t) => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const originalGetComputedStyle = globalThis.getComputedStyle;
+    const animationCallbacks = new Map();
+    let nextAnimationFrameId = 1;
+    globalThis.requestAnimationFrame = (callback) => {
+        const frameId = nextAnimationFrameId;
+        nextAnimationFrameId += 1;
+        animationCallbacks.set(frameId, callback);
+        return frameId;
+    };
+    globalThis.cancelAnimationFrame = (frameId) => {
+        animationCallbacks.delete(frameId);
+    };
+    globalThis.getComputedStyle = () => ({
+        getPropertyValue() {
+            return "";
+        },
+    });
+    t.after(() => {
+        globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+        globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+        globalThis.getComputedStyle = originalGetComputedStyle;
+    });
+
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        boardCanvasEl: createFakeCanvas(),
+        rng: () => 0,
+    });
+    t.after(() => game.destroy());
+
+    const board = createEmptyBoard();
+    board[19] = Array(10).fill("bar");
+    board[19][4] = null;
+    board[19][5] = null;
+    game.init({ autoStart: true });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board,
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pieceQueue: ["bar", "tree"],
+        phase: "playing",
+        tick: 40,
+        pieceIndex: 8,
+    }, { resumeGravity: true });
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, 8);
+    await waitForTick(game, targetTick);
+
+    assert.equal(game.getSnapshot().phase, "lineClearing");
+    const staleAnimationCallback = [...animationCallbacks.values()][0];
+    assert.equal(typeof staleAnimationCallback, "function");
+
+    const authoritativeBoard = createEmptyBoard();
+    authoritativeBoard[19][9] = "garbage";
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: authoritativeBoard,
+        activePiece: {
+            pieceType: "tree",
+            rotation: 0,
+            row: 2,
+            col: 3,
+        },
+        inputQueue: [{ action: "move_left", tick: 999, pieceIndex: 8 }],
+        phase: "playing",
+        score: 7,
+        lines: 0,
+        tick: 50,
+        pieceIndex: 8,
+    }, {
+        resumeGravity: true,
+        clearInputQueue: true,
+        cancelPresentation: true,
+    });
+    const correctedSnapshot = game.getSnapshot();
+
+    staleAnimationCallback(performance.now() + 400);
+
+    assert.deepEqual(game.getSnapshot(), correctedSnapshot);
+    assert.deepEqual(game.getSnapshot().board, authoritativeBoard);
+    assert.equal(game.getPendingInputCount(), 0);
+    assert.equal(game.runtime.gravityRunning, true);
 });
 
 test("server bag runtime은 authoritative pieceQueue 적용 시 숨은 대기 queue를 중복 보존하지 않는다", async (t) => {

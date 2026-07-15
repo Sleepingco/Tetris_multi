@@ -10,6 +10,9 @@ const { loadGameCore: defaultLoadGameCore } = require("./gameCoreLoader.js");
 const { saveGameEventLog: defaultSaveGameEventLog } = require("./logService.js");
 const { finishAuthoritativeMatch } = require("./authoritativeMatchFinish.js");
 const { createPveAiPlayerService } = require("./pveAiPlayerService.js");
+const {
+    createAuthoritativePlayerMutationQueue,
+} = require("./authoritativePlayerMutationQueue.js");
 
 const AUTHORITATIVE_TICK_MS = 100;
 const AUTHORITATIVE_GRAVITY_INTERVAL_MS = 500;
@@ -44,6 +47,8 @@ function createAuthoritativeTickerService(dependencies = {}) {
         || (() => Math.floor(Math.random() * 10));
     const pveAiPlayerService = dependencies.pveAiPlayerService
         || createPveAiPlayerService();
+    const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
+        || createAuthoritativePlayerMutationQueue();
     const tickers = new Map();
 
     function startRoomTicker(roomId, socketServer) {
@@ -140,68 +145,90 @@ function createAuthoritativeTickerService(dependencies = {}) {
 
             const gameCore = await loadGameCore();
 
-            for (const player of players) {
-                const playerId = player.playerId;
-                const isAiPlayer = player.playerType === "heuristic_ai";
-                if (isAiPlayer && !shouldProcessAi) continue;
-                if (!isAiPlayer && !shouldApplyGravity) continue;
-
-                const stepResult = isAiPlayer
-                    ? await pveAiPlayerService.processAiStep(roomId, playerId, gameCore)
-                    : applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
-
-                if (!stepResult.ok && !stepResult.stateChanged) {
-                    if (stepResult.gameOver) {
-                        emitAuthoritativeSnapshot(roomId, playerId, socketServer);
-                        await finishAuthoritativeMatch({
-                            roomId,
-                            loserPlayerId: playerId,
-                            finishReason: normalizeAiFinishReason(stepResult.reason),
-                            match: matchResult.match,
-                            finishGame,
-                            stopRoomTicker,
-                            emitMatchFinish(payload) {
-                                socketServer.to(roomId).emit("match:finish", payload);
-                            },
-                            saveGameEventLog,
-                            deleteMatch,
-                        });
-                        break;
-                    }
-                    continue;
-                }
-                if (stepResult.skipped) continue;
-
-                const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
-                const snapshot = emitAuthoritativeSnapshot(
+            const duePlayers = players.filter(player => {
+                return player.playerType === "heuristic_ai"
+                    ? shouldProcessAi
+                    : shouldApplyGravity;
+            });
+            const playerTasks = duePlayers.map(player => {
+                const processPlayer = () => processDuePlayer({
                     roomId,
-                    playerId,
+                    player,
+                    gameCore,
                     socketServer,
-                    stepResult.presentationEffect
-                        || stepResult.gameplayResult?.presentationEffect,
-                );
-                if (placementSideEffect?.targetPlayerId) {
-                    emitAuthoritativeSnapshot(roomId, placementSideEffect.targetPlayerId, socketServer);
+                    match: matchResult.match,
+                });
+
+                if (player.playerType === "heuristic_ai") {
+                    return Promise.resolve().then(processPlayer);
                 }
 
-                if (stepResult.placementResult?.gameOver || snapshot?.phase === "gameOver") {
-                    await finishAuthoritativeMatch({
-                        roomId,
-                        loserPlayerId: playerId,
-                        match: matchResult.match,
-                        finishGame,
-                        stopRoomTicker,
-                        emitMatchFinish(payload) {
-                            socketServer.to(roomId).emit("match:finish", payload);
-                        },
-                        saveGameEventLog,
-                        deleteMatch,
-                    });
-                    break;
-                }
-            }
+                return authoritativePlayerMutationQueue.enqueueAuthoritativePlayerMutation(
+                    roomId,
+                    player.playerId,
+                    processPlayer,
+                );
+            });
+
+            await Promise.allSettled(playerTasks);
         } finally {
             ticker.isProcessing = false;
+        }
+    }
+
+    async function processDuePlayer({ roomId, player, gameCore, socketServer, match }) {
+        const playerId = player.playerId;
+        const isAiPlayer = player.playerType === "heuristic_ai";
+        const stepResult = isAiPlayer
+            ? await pveAiPlayerService.processAiStep(roomId, playerId, gameCore)
+            : applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
+
+        if (!stepResult.ok && !stepResult.stateChanged) {
+            if (stepResult.gameOver) {
+                emitAuthoritativeSnapshot(roomId, playerId, socketServer);
+                await finishAuthoritativeMatch({
+                    roomId,
+                    loserPlayerId: playerId,
+                    finishReason: normalizeAiFinishReason(stepResult.reason),
+                    match,
+                    finishGame,
+                    stopRoomTicker,
+                    emitMatchFinish(payload) {
+                        socketServer.to(roomId).emit("match:finish", payload);
+                    },
+                    saveGameEventLog,
+                    deleteMatch,
+                });
+            }
+            return;
+        }
+        if (stepResult.skipped) return;
+
+        const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
+        const snapshot = emitAuthoritativeSnapshot(
+            roomId,
+            playerId,
+            socketServer,
+            stepResult.presentationEffect
+                || stepResult.gameplayResult?.presentationEffect,
+        );
+        if (placementSideEffect?.targetPlayerId) {
+            emitAuthoritativeSnapshot(roomId, placementSideEffect.targetPlayerId, socketServer);
+        }
+
+        if (stepResult.placementResult?.gameOver || snapshot?.phase === "gameOver") {
+            await finishAuthoritativeMatch({
+                roomId,
+                loserPlayerId: playerId,
+                match,
+                finishGame,
+                stopRoomTicker,
+                emitMatchFinish(payload) {
+                    socketServer.to(roomId).emit("match:finish", payload);
+                },
+                saveGameEventLog,
+                deleteMatch,
+            });
         }
     }
 

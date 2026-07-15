@@ -177,6 +177,68 @@ test("ticker callback은 500ms 누적 후 player별 gravity step과 authoritativ
     assert.equal(socketServer.roomEvents.length, 4);
 });
 
+test("한 player gravity reject는 다른 player gravity와 snapshot을 막지 않는다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const gravityCalls = [];
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-player-error",
+                players: [
+                    { playerId: "p1" },
+                    { playerId: "p2" },
+                ],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId) {
+            gravityCalls.push(playerId);
+            if (playerId === "p1") {
+                throw new Error("expected player failure");
+            }
+
+            return {
+                ok: true,
+                gravityResult: { kind: "move" },
+                placementResult: null,
+            };
+        },
+        getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+            return {
+                ok: true,
+                snapshot: {
+                    board: [[playerId]],
+                    activePiece: null,
+                    pieceQueue: [],
+                    holdPieceType: null,
+                    holdUsedThisDrop: false,
+                    score: 0,
+                    lines: 0,
+                    phase: "playing",
+                    combo: -1,
+                    backToBack: false,
+                    tick: 1,
+                    pieceIndex: 1,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-player-error", socketServer);
+
+    await assert.doesNotReject(() => {
+        return tickerService.tickRoom("room-player-error", socketServer, 500);
+    });
+
+    assert.deepEqual(gravityCalls, ["p1", "p2"]);
+    assert.deepEqual(socketServer.roomEvents.map(event => event.payload.playerId), ["p2"]);
+    assert.equal(tickerService.hasRoomTicker("room-player-error"), true);
+});
+
 test("ticker catch-up은 elapsedMs가 커도 callback당 gravity step을 최대 1회만 처리한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();
@@ -374,8 +436,12 @@ test("isProcessing 중복 callback은 같은 AI action을 두 번 실행하지 �
     const socketServer = createFakeSocketServer();
     let aiCallCount = 0;
     let resolveStep;
+    let resolveStepStarted;
     const stepPromise = new Promise(resolve => {
         resolveStep = resolve;
+    });
+    const stepStartedPromise = new Promise(resolve => {
+        resolveStepStarted = resolve;
     });
     const tickerService = createAuthoritativeTickerService({
         setIntervalFn: scheduler.setInterval,
@@ -391,6 +457,7 @@ test("isProcessing 중복 callback은 같은 AI action을 두 번 실행하지 �
         pveAiPlayerService: {
             processAiStep() {
                 aiCallCount += 1;
+                resolveStepStarted();
                 return stepPromise;
             },
         },
@@ -402,6 +469,7 @@ test("isProcessing 중복 callback은 같은 AI action을 두 번 실행하지 �
 
     tickerService.startRoomTicker("room-ai-processing", socketServer);
     const firstTick = tickerService.tickRoom("room-ai-processing", socketServer, 100);
+    await stepStartedPromise;
     const duplicateTick = tickerService.tickRoom("room-ai-processing", socketServer, 100);
     await duplicateTick;
 
@@ -498,6 +566,7 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();
     const appendedGarbage = [];
+    const processingOrder = [];
     const tickerService = createAuthoritativeTickerService({
         setIntervalFn: scheduler.setInterval,
         clearIntervalFn: scheduler.clearInterval,
@@ -514,6 +583,7 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
             },
         }),
         applyGravityStepToMatchPlayerState(roomId, playerId) {
+            processingOrder.push(`apply:${playerId}`);
             return {
                 ok: true,
                 gravityResult: { kind: "lock" },
@@ -533,6 +603,7 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
             };
         },
         appendPendingGarbageToOpponent(roomId, fromPlayerId, garbage) {
+            processingOrder.push(`garbage:${fromPlayerId}`);
             appendedGarbage.push({ roomId, fromPlayerId, garbage });
             return {
                 ok: true,
@@ -541,6 +612,7 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
             };
         },
         getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+            processingOrder.push(`snapshot:${playerId}`);
             return {
                 ok: true,
                 snapshot: {
@@ -571,6 +643,14 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
             fromPlayerId: "p1",
             garbage: { lines: 2, holeCol: 6 },
         },
+    ]);
+    assert.deepEqual(processingOrder, [
+        "apply:p1",
+        "garbage:p1",
+        "snapshot:p1",
+        "snapshot:p2",
+        "apply:p2",
+        "snapshot:p2",
     ]);
     const garbageEvent = socketServer.roomEvents.find(event => {
         return event.eventName === "game:garbage:append";
@@ -788,6 +868,102 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
         },
     ]);
     assert.equal(typeof savedLogs[0].endedAt, "number");
+});
+
+test("같은 callback의 복수 gameOver 결과도 match finish와 log를 한 번만 만든다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const finishedPlayers = [];
+    const deletedRoomIds = [];
+    const savedLogs = [];
+    let roomStatus = "playing";
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-double-game-over",
+                createdAt: 1000,
+                players: [
+                    { playerId: "p1" },
+                    { playerId: "p2" },
+                ],
+            },
+        }),
+        applyGravityStepToMatchPlayerState() {
+            return {
+                ok: true,
+                gravityResult: { kind: "lock" },
+                placementResult: {
+                    attackLines: 0,
+                    gameOver: true,
+                },
+            };
+        },
+        getAuthoritativePlayerSnapshotDto(roomId, playerId) {
+            return {
+                ok: true,
+                snapshot: {
+                    board: [[playerId]],
+                    activePiece: null,
+                    pieceQueue: [],
+                    holdPieceType: null,
+                    holdUsedThisDrop: false,
+                    score: 0,
+                    lines: 0,
+                    phase: "gameOver",
+                    combo: -1,
+                    backToBack: false,
+                    tick: 1,
+                    pieceIndex: 1,
+                },
+            };
+        },
+        finishGame(roomId, loserPlayerId, reason) {
+            if (roomStatus !== "playing") {
+                return {
+                    ok: false,
+                    room: null,
+                    reason: "GAME_NOT_PLAYING",
+                    winnerPlayerId: null,
+                    loserPlayerId,
+                    finishReason: reason,
+                };
+            }
+
+            roomStatus = "finished";
+            finishedPlayers.push(loserPlayerId);
+            return {
+                ok: true,
+                room: { roomId, status: roomStatus },
+                winnerPlayerId: loserPlayerId === "p1" ? "p2" : "p1",
+                loserPlayerId,
+                finishReason: reason,
+            };
+        },
+        deleteMatch(roomId) {
+            deletedRoomIds.push(roomId);
+            return { ok: true, match: null, reason: null };
+        },
+        saveGameEventLog(log) {
+            savedLogs.push(log);
+            return Promise.resolve({ ok: true, log, reason: null });
+        },
+    });
+
+    tickerService.startRoomTicker("room-double-game-over", socketServer);
+    await tickerService.tickRoom("room-double-game-over", socketServer, 500);
+
+    const finishEvents = socketServer.roomEvents.filter(event => {
+        return event.eventName === "match:finish";
+    });
+    assert.deepEqual(finishedPlayers, ["p1"]);
+    assert.deepEqual(deletedRoomIds, ["room-double-game-over"]);
+    assert.equal(finishEvents.length, 1);
+    assert.equal(savedLogs.length, 1);
+    assert.equal(tickerService.hasRoomTicker("room-double-game-over"), false);
 });
 
 test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중복하지 않는다", async () => {

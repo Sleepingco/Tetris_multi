@@ -95,6 +95,7 @@ export function createTetrisRuntime({
     roomId = null,
     playerId = null,
     placementDecisionRecorder = null,
+    inputOutcomeRecorder = null,
 }) {
     const gameState = createGameState({
         spawnRow: SPAWN_ROW,
@@ -109,6 +110,7 @@ export function createTetrisRuntime({
         boardCtx: null,
         inputTimer: undefined,
         animationFrameId: null,
+        animationVersion: 0,
         detachKeyboard: null,
         bagMode: "local",
         serverBagQueue: [],
@@ -263,12 +265,14 @@ export function createTetrisRuntime({
     /**
       * 홀드가 가능한 상황이면 현재 조각과 홀드 슬롯을 교체한다.
       *
-      * @returns {void}
+      * @returns {{applied: boolean, reason: string|null}} 홀드 적용 결과
       */
     function holdPiece() {
         const { activePiece, holdPieceType, holdUsedThisDrop } = gameState
         const currentType = activePiece.pieceType
-        if (!currentType || holdUsedThisDrop) return
+        if (!currentType || holdUsedThisDrop) {
+            return { applied: false, reason: "HOLD_NOT_AVAILABLE" }
+        }
 
         stopGravity()
 
@@ -284,7 +288,7 @@ export function createTetrisRuntime({
         if (!incomingType) {
             startGravity()
             console.error("No piece available while resolving hold.")
-            return
+            return { applied: false, reason: "NO_PIECE_AVAILABLE" }
         }
 
         const swappedPiece = createSpawnedPiece(incomingType, SPAWN_ROW, SPAWN_COL)
@@ -295,6 +299,7 @@ export function createTetrisRuntime({
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         startGravity()
         renderBlocks("spawn")
+        return { applied: true, reason: null }
     }
 
     // =============================
@@ -365,13 +370,19 @@ export function createTetrisRuntime({
             if (nextInput.tick > currentTick) break
 
             gameState.inputQueue.shift()
+            const activePieceBefore = clonePendingPiece(gameState.activePiece)
             if (!isInputForCurrentPiece(nextInput)) {
+                recordInputOutcome(nextInput, {
+                    applied: false,
+                    reason: "PIECE_INDEX_MISMATCH",
+                }, activePieceBefore)
                 count++
                 continue
             }
 
             recordAppliedInput(nextInput)
-            handleAction(nextInput.action)
+            const actionResult = handleAction(nextInput.action)
+            recordInputOutcome(nextInput, actionResult, activePieceBefore)
             count++
             if (!canProcessPlayerInput()) return
         }
@@ -424,11 +435,11 @@ export function createTetrisRuntime({
     /**
       * activePiece를 도달 가능한 최하단까지 내리고 하드 드롭 점수를 부여한다.
       *
-      * @returns {void}
+      * @returns {boolean} 현재 조각이 실제로 고정됐으면 true
       */
     function hardDrop() {
         const { activePiece } = gameState
-        if (!activePiece.pieceType) return
+        if (!activePiece.pieceType) return false
         stopGravity()
 
         const { row } = activePiece
@@ -445,7 +456,8 @@ export function createTetrisRuntime({
         }
 
         gameState.pendingPiece = { ...activePiece, row: nextRow }
-        renderBlocks("hardDrop")
+        const moveResult = renderBlocks("hardDrop")
+        return moveResult?.intent?.kind === "lock"
     }
 
     /**
@@ -475,23 +487,34 @@ export function createTetrisRuntime({
       * 정규화된 입력 액션을 맞는 게임플레이 처리기로 직접 분기한다.
       *
       * @param {string} action - 입력 계층에서 넘어온 액션 식별자
-      * @returns {void}
+      * @returns {{applied: boolean, reason: string|null}} 실제 action 적용 결과
       */
     function handleAction(action) {
         const moveType = applyInputAction(action)
         if (moveType) {
-            renderBlocks(moveType)
-            return
+            const moveResult = renderBlocks(moveType)
+            const intentKind = moveResult?.intent?.kind
+            const applied = intentKind === "ok"
+                || (action === INPUT_ACTION.SOFT_DROP && intentKind === "lock")
+            return {
+                applied,
+                reason: applied ? null : intentKind === "retry" ? "MOVE_RETRY" : "MOVE_NOT_HANDLED",
+            }
         }
 
         if (action === INPUT_ACTION.HARD_DROP) {
-            hardDrop()
-            return
+            const applied = hardDrop()
+            return {
+                applied,
+                reason: applied ? null : "INVALID_PLAYER_STATE",
+            }
         }
 
         if (action === INPUT_ACTION.HOLD) {
-            holdPiece()
+            return holdPiece()
         }
+
+        return { applied: false, reason: "UNSUPPORTED_ACTION" }
     }
 
     // =============================
@@ -610,11 +633,12 @@ export function createTetrisRuntime({
       * - 엔진 판정 결과를 intent로 만들고, 런타임 부수효과로 실행한다.
       *
       * @param {string} [moveType=""] - 이동 시도 원인 (`fall`, `horizontal`, `rotate`, `spawn` 등)
-      * @returns {void}
+      * @returns {{intent: Object, pendingPiece: Object}|null} 적용한 이동 판정 결과
       */
     function renderBlocks(moveType = "") {
         const moveResult = resolvePendingMove(moveType)
         applyMoveIntent(moveResult)
+        return moveResult
     }
 
     // =============================
@@ -814,10 +838,9 @@ export function createTetrisRuntime({
       */
     function stopGameLoops() {
         clearInterval(runtime.inputTimer)
-        if (runtime.animationFrameId) cancelAnimationFrame(runtime.animationFrameId)
+        cancelLineClearEffect()
         runtime.currentTick = 0
         runtime.inputTimer = undefined
-        runtime.animationFrameId = null
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
         runtime.lastTickAt = 0
@@ -919,12 +942,15 @@ export function createTetrisRuntime({
             return
         }
 
-        if (runtime.animationFrameId) cancelAnimationFrame(runtime.animationFrameId)
+        cancelLineClearEffect()
+        const animationVersion = runtime.animationVersion
 
         const DURATION = 350
         const startTime = performance.now()
 
         function animate(currentTime) {
+            if (animationVersion !== runtime.animationVersion) return
+
             let elapsed = currentTime - startTime
             let progress = Math.min(elapsed / DURATION, 1)
 
@@ -944,11 +970,17 @@ export function createTetrisRuntime({
                 runtime.animationFrameId = requestAnimationFrame(animate)
             } else {
                 runtime.animationFrameId = null
-                if (onComplete) onComplete()
+                if (onComplete && animationVersion === runtime.animationVersion) onComplete()
             }
         }
 
         runtime.animationFrameId = requestAnimationFrame(animate)
+    }
+
+    function cancelLineClearEffect() {
+        runtime.animationVersion += 1
+        if (runtime.animationFrameId !== null) cancelAnimationFrame(runtime.animationFrameId)
+        runtime.animationFrameId = null
     }
 
     /**
@@ -992,6 +1024,31 @@ export function createTetrisRuntime({
             pieceIndex: input.pieceIndex,
             sequence: runtime.inputLog.length + 1,
             createdAt: Date.now(),
+        })
+    }
+
+    /**
+      * runtime tick에서 판정이 끝난 입력의 최소 결과를 외부 recorder에 전달한다.
+      * - 네트워크와 snapshot 상태에는 저장하지 않는다.
+      *
+      * @param {{action: string, tick: number, pieceIndex: number|null}} input - 판정한 입력
+      * @param {{applied: boolean, reason: string|null}} result - action 적용 결과
+      * @param {Object|null} activePieceBefore - action 적용 전 조각
+      * @returns {void}
+      */
+    function recordInputOutcome(input, result, activePieceBefore) {
+        if (typeof inputOutcomeRecorder !== "function") return
+
+        inputOutcomeRecorder({
+            input: {
+                action: input.action,
+                tick: input.tick,
+                pieceIndex: input.pieceIndex,
+            },
+            applied: result?.applied === true,
+            reason: result?.reason ?? null,
+            activePieceBefore: clonePendingPiece(activePieceBefore),
+            activePieceAfter: clonePendingPiece(gameState.activePiece),
         })
     }
 
@@ -1386,11 +1443,16 @@ export function createTetrisRuntime({
       * - 복원 직후 중력 누적값은 초기화해 이전 루프 상태가 이어지지 않게 한다.
       *
       * @param {Object|null} snapshot - 복원할 스냅샷
-      * @param {{resumeGravity?: boolean}} options - 복원 뒤 local gravity 재개 여부
+      * @param {{resumeGravity?: boolean, clearInputQueue?: boolean, cancelPresentation?: boolean}} options - 복원 옵션
       * @returns {void}
       */
-    function applySnapshot(snapshot, { resumeGravity = false } = {}) {
+    function applySnapshot(snapshot, {
+        resumeGravity = false,
+        clearInputQueue = false,
+        cancelPresentation = false,
+    } = {}) {
         if (!snapshot) return
+        if (cancelPresentation) cancelLineClearEffect()
 
         const restored = deserializeGameState(snapshot, {
             spawnRow: SPAWN_ROW,
@@ -1416,6 +1478,7 @@ export function createTetrisRuntime({
         gameState.isTSpin = restored.isTSpin
         gameState.combo = restored.combo
         gameState.backToBack = restored.backToBack
+        if (clearInputQueue) gameState.inputQueue = []
 
         setActivePiece(restored.activePiece)
         if (gameState.phase === GAME_PHASE.GAME_OVER) {

@@ -27,9 +27,6 @@ const {
     savePlacementDecisionLog,
 } = require("../services/logService.js")
 const {
-    createAuthoritativeTickerService,
-} = require("../services/authoritativeTickerService.js")
-const {
     finishAuthoritativeMatch,
 } = require("../services/authoritativeMatchFinish.js")
 
@@ -40,6 +37,22 @@ const VALID_GAME_ACTIONS = new Set([
     "rotate",
     "hard_drop",
     "hold",
+])
+const EXPECTED_TRANSFORM_ACTIONS = new Set([
+    "move_left",
+    "move_right",
+    "soft_drop",
+    "rotate",
+    "hard_drop",
+])
+const VALID_PIECE_TYPES = new Set([
+    "bar",
+    "eleft",
+    "eright",
+    "ess",
+    "square",
+    "tree",
+    "zee",
 ])
 const PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS = [
     "linesCleared",
@@ -62,8 +75,6 @@ const PLACEMENT_RESULT_BOOLEAN_FIELDS = [
     "backToBack",
     "gameOver",
 ]
-const defaultAuthoritativeTickerService = createAuthoritativeTickerService()
-
 /**
  * room 퇴장 결과를 Socket.IO room leave와 남은 참가자 broadcast로 연결한다.
  * - 마지막 참가자가 나가 room이 삭제된 경우에는 broadcast할 room이 없으므로 조용히 종료한다.
@@ -121,7 +132,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     const saveEventLog = dependencies.saveGameEventLog || saveGameEventLog
     const createGarbageHoleCol = dependencies.createGarbageHoleCol || (() => Math.floor(Math.random() * 10))
     const authoritativeTickerService = dependencies.authoritativeTickerService
-        || defaultAuthoritativeTickerService
+    const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
     const loadAuthoritativeGameCore = dependencies.loadGameCore || loadGameCore
     let gameInputProcessingChain = null
 
@@ -231,16 +242,26 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     // 같은 socket의 입력은 record → relay → authoritative apply 순서로 직렬 처리한다.
     async function processGameInput(payload = {}) {
-        const { roomId, playerId, action, tick, pieceIndex, clientSequence } = payload
+        const {
+            roomId,
+            playerId,
+            action,
+            tick,
+            pieceIndex,
+            clientSequence,
+            expectedTransform,
+        } = payload
         let hasEmittedInputResult = false
-        const emitInputResult = (ok, reason) => {
+        const emitInputResult = (ok, reason, snapshot = null) => {
             hasEmittedInputResult = true
-            clientSocket.emit("game:input:result", {
+            const resultPayload = {
                 ok,
                 reason,
                 clientSequence,
                 pieceIndex,
-            })
+            }
+            if (snapshot) resultPayload.snapshot = snapshot
+            clientSocket.emit("game:input:result", resultPayload)
         }
         const result = syncRoom(roomId, playerId)
 
@@ -271,11 +292,20 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
+        if (
+            EXPECTED_TRANSFORM_ACTIONS.has(action) &&
+            !isValidExpectedTransform(expectedTransform)
+        ) {
+            emitInputResult(false, "INVALID_EXPECTED_TRANSFORM")
+            return
+        }
+
         const input = {
             action,
             tick,
             pieceIndex,
             clientSequence,
+            ...(expectedTransform ? { expectedTransform: { ...expectedTransform } } : {}),
         }
         const sequenceValidation = validateClientInputSequence(roomId, playerId, clientSequence)
         if (!sequenceValidation.ok) {
@@ -299,37 +329,54 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         })
 
         try {
-            const gameCore = await loadAuthoritativeGameCore()
-            const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
-            if (!authoritativeResult.ok) {
-                emitAuthoritativeSnapshot(socketServer, roomId, playerId)
-                emitInputResult(false, authoritativeResult.reason)
-                return
-            }
-            const placementSideEffect = handleServerPlacementResult(
+            await authoritativePlayerMutationQueue.enqueueAuthoritativePlayerMutation(
                 roomId,
                 playerId,
-                authoritativeResult.gameplayResult?.placementResult,
-                createGarbageHoleCol,
-            )
+                async () => {
+                    const gameCore = await loadAuthoritativeGameCore()
+                    const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(
+                        roomId,
+                        playerId,
+                        input,
+                        gameCore,
+                    )
+                    if (!authoritativeResult.ok) {
+                        const snapshot = emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+                        emitInputResult(
+                            false,
+                            authoritativeResult.reason,
+                            authoritativeResult.reason === "PREDICTION_DIVERGED"
+                                ? snapshot
+                                : null,
+                        )
+                        return
+                    }
+                    const placementSideEffect = handleServerPlacementResult(
+                        roomId,
+                        playerId,
+                        authoritativeResult.gameplayResult?.placementResult,
+                        createGarbageHoleCol,
+                    )
 
-            emitAuthoritativeSnapshot(
-                socketServer,
-                roomId,
-                playerId,
-                authoritativeResult.gameplayResult?.presentationEffect,
-            )
-            if (placementSideEffect?.targetPlayerId) {
-                emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
-            }
-            emitInputResult(true, null)
-            await handleServerGameOverResult(
-                socketServer,
-                roomId,
-                playerId,
-                authoritativeResult.gameplayResult?.placementResult,
-                authoritativeTickerService,
-                saveEventLog,
+                    emitAuthoritativeSnapshot(
+                        socketServer,
+                        roomId,
+                        playerId,
+                        authoritativeResult.gameplayResult?.presentationEffect,
+                    )
+                    if (placementSideEffect?.targetPlayerId) {
+                        emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
+                    }
+                    emitInputResult(true, null)
+                    await handleServerGameOverResult(
+                        socketServer,
+                        roomId,
+                        playerId,
+                        authoritativeResult.gameplayResult?.placementResult,
+                        authoritativeTickerService,
+                        saveEventLog,
+                    )
+                },
             )
         } catch {
             if (hasEmittedInputResult) return
@@ -503,6 +550,17 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.emit("room:result", result)
     })
 
+}
+
+function isValidExpectedTransform(expectedTransform) {
+    return expectedTransform !== null
+        && typeof expectedTransform === "object"
+        && !Array.isArray(expectedTransform)
+        && VALID_PIECE_TYPES.has(expectedTransform.pieceType)
+        && Number.isInteger(expectedTransform.rotation)
+        && expectedTransform.rotation >= 0
+        && expectedTransform.rotation < 4
+        && Number.isInteger(expectedTransform.col)
 }
 
 function handleServerPlacementResult(roomId, playerId, placementResult, createGarbageHoleCol) {

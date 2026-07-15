@@ -1,5 +1,11 @@
 const { registerChatHandlers } = require("./chatHandlers.js")
 const { registerMultiplayerHandlers } = require("./multiplayerHandlers.js")
+const {
+    createAuthoritativeTickerService,
+} = require("../services/authoritativeTickerService.js")
+const {
+    createAuthoritativePlayerMutationQueue,
+} = require("../services/authoritativePlayerMutationQueue.js")
 
 /**
  * Socket.IO connection 진입점을 한 곳에 둔다.
@@ -10,11 +16,21 @@ const { registerMultiplayerHandlers } = require("./multiplayerHandlers.js")
  * @returns {void}
  */
 function registerSocketHandlers(socketServer, dependencies = {}) {
+    const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
+        || createAuthoritativePlayerMutationQueue()
+    const authoritativeTickerService = dependencies.authoritativeTickerService
+        || createAuthoritativeTickerService({ authoritativePlayerMutationQueue })
+    const multiplayerDependencies = {
+        ...dependencies,
+        authoritativePlayerMutationQueue,
+        authoritativeTickerService,
+    }
+
     socketServer.on("connection", (clientSocket) => {
         console.log("a user connected")
 
         registerChatHandlers(socketServer, clientSocket)
-        registerMultiplayerHandlers(socketServer, clientSocket, dependencies)
+        registerMultiplayerHandlers(socketServer, clientSocket, multiplayerDependencies)
     })
 }
 

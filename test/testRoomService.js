@@ -373,6 +373,36 @@ test("removePlayerBySocketId는 playing room의 player를 제거하지 않는다
     assert.equal(getRoomState(createResult.room.roomId).players.length, 2)
 })
 
+test("removePlayerBySocketId는 finished room의 player를 disconnect로 제거하지 않는다", () => {
+    const hostPlayer = {
+        playerId: "finished-socket-host",
+        nickname: "Host",
+        socketId: "finished-socket-host-socket",
+    }
+    const guestPlayer = {
+        playerId: "finished-socket-guest",
+        nickname: "Guest",
+        socketId: "finished-socket-guest-socket",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    joinRoom(createResult.room.roomId, guestPlayer)
+    startGame(createResult.room.roomId, hostPlayer.playerId)
+    finishGame(createResult.room.roomId, guestPlayer.playerId)
+
+    const result = removePlayerBySocketId(guestPlayer.socketId)
+    const room = getRoomState(createResult.room.roomId)
+
+    assert.equal(result.ok, false)
+    assert.equal(result.room, null)
+    assert.equal(result.reason, "GAME_FINISHED")
+    assert.equal(result.roomId, createResult.room.roomId)
+    assert.equal(result.player.playerId, guestPlayer.playerId)
+    assert.equal(room.status, "finished")
+    assert.equal(room.players.length, 2)
+    assert.equal(room.hostPlayerId, hostPlayer.playerId)
+})
+
 test("removePlayerBySocketId는 없는 socketId면 SOCKET_NOT_FOUND를 반환한다", () => {
     const result = removePlayerBySocketId("missing-socket")
 

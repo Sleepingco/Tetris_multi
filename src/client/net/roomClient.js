@@ -101,15 +101,20 @@ export function sendGameInput(
     tick = null,
     pieceIndex = null,
     clientSequence = null,
+    expectedTransform = null,
 ) {
-    serverConnection.emit("game:input", {
+    const payload = {
         roomId,
         playerId,
         action,
         tick,
         pieceIndex,
         clientSequence,
-    })
+    }
+    if (expectedTransform) {
+        payload.expectedTransform = expectedTransform
+    }
+    serverConnection.emit("game:input", payload)
 }
 
 export function receiveGameInput(handler) {

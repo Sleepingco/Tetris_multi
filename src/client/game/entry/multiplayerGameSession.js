@@ -11,6 +11,16 @@ import {
 import { sendPlacementDecisionLog } from "../../net/logClient.js"
 import { evaluateOwnSnapshotCorrection } from "../runtime/snapshotCorrection.js"
 
+const AFTER_ACTION_TRANSFORM_INPUTS = new Set([
+    "move_left",
+    "move_right",
+    "rotate",
+])
+const BEFORE_ACTION_TRANSFORM_INPUTS = new Set([
+    "soft_drop",
+    "hard_drop",
+])
+
 function getPlayerBagChunks(match, targetPlayerId) {
     const matchPlayer = match?.players?.find(player => player.playerId === targetPlayerId)
     return Array.isArray(matchPlayer?.bagChunks) ? matchPlayer.bagChunks : null
@@ -49,6 +59,7 @@ export function startMultiplayerGame({
     opponentLinesEl,
     opponentPendingGarbageEl,
     opponentGarbageLogEl,
+    onUserInteract,
 }) {
     const myBagChunks = getPlayerBagChunks(match, playerId)
     const opponentBagChunks = getPlayerBagChunks(match, opponentPlayerId)
@@ -75,6 +86,7 @@ export function startMultiplayerGame({
             // 배치 로그는 분석/디버깅용으로 남기고, garbage 판정은 서버 lock 결과를 따른다.
             sendPlacementDecisionLog(roomId, playerId, log)
         },
+        inputOutcomeRecorder: handleLocalInputOutcome,
     })
     myGame.init({ autoStart: true, serverBagChunks: myBagChunks })
     const myInitialSnapshot = getPlayerInitialSnapshot(match, playerId)
@@ -90,23 +102,49 @@ export function startMultiplayerGame({
     const pendingServerInputs = new Map()
     let deferredOwnSnapshot = null
     let pendingOwnDriftState = null
+    let lastForcedResyncClientSequence = -1
+
+    function createExpectedTransform(outcome) {
+        const piece = AFTER_ACTION_TRANSFORM_INPUTS.has(outcome.input.action)
+            ? outcome.activePieceAfter
+            : BEFORE_ACTION_TRANSFORM_INPUTS.has(outcome.input.action)
+                ? outcome.activePieceBefore
+                : null
+        if (!piece?.pieceType) return null
+
+        return {
+            pieceType: piece.pieceType,
+            rotation: piece.rotation,
+            col: piece.col,
+        }
+    }
+
+    function handleLocalInputOutcome(outcome) {
+        if (!outcome?.applied || !outcome.input) return
+
+        const expectedTransform = createExpectedTransform(outcome)
+        const clientSequence = nextClientSequence
+        nextClientSequence += 1
+        pendingServerInputs.set(clientSequence, {
+            ...outcome.input,
+            ...(expectedTransform ? { expectedTransform } : {}),
+        })
+        sendGameInput(
+            roomId,
+            playerId,
+            outcome.input.action,
+            outcome.input.tick,
+            outcome.input.pieceIndex,
+            clientSequence,
+            expectedTransform,
+        )
+    }
+
     myGame.runtime.detachKeyboard = attachKeyboardInput({
         enqueueAction: (action) => {
-            const input = myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
-            if (!input) return
-
-            const clientSequence = nextClientSequence
-            nextClientSequence += 1
-            pendingServerInputs.set(clientSequence, input)
-            sendGameInput(
-                roomId,
-                playerId,
-                input.action,
-                input.tick,
-                input.pieceIndex,
-                clientSequence,
-            )
+            myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
         },
+        onUserInteract,
     })
 
     const opponentGame = createTetrisRuntime({
@@ -195,6 +233,32 @@ export function startMultiplayerGame({
         if (snapshotClientSequence < lastAcknowledgedClientSequence) return
 
         evaluateOwnSnapshot(snapshot)
+    }
+
+    function applyForcedOwnSnapshot(result) {
+        const snapshot = result?.snapshot
+        const clientSequence = result?.clientSequence
+        if (!snapshot || !Array.isArray(snapshot.board)) return false
+        if (!Number.isInteger(clientSequence) || clientSequence < 0) return false
+        if (clientSequence >= nextClientSequence) return false
+        if (clientSequence <= lastForcedResyncClientSequence) return false
+
+        const snapshotClientSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
+            ? snapshot.lastProcessedClientSequence
+            : clientSequence
+        if (snapshotClientSequence < lastAcknowledgedClientSequence) return false
+
+        lastForcedResyncClientSequence = clientSequence
+        updateOwnPendingGarbage(snapshot)
+        pendingServerInputs.clear()
+        deferredOwnSnapshot = null
+        pendingOwnDriftState = null
+        myGame.applySnapshot(snapshot, {
+            resumeGravity: true,
+            clearInputQueue: true,
+            cancelPresentation: true,
+        })
+        return true
     }
 
     function handleOwnAuthoritativeSnapshot(snapshot) {
@@ -286,6 +350,12 @@ export function startMultiplayerGame({
     const detachGameInputResultListener = onGameInputResult((result) => {
         if (Number.isInteger(result?.clientSequence)) {
             acknowledgeServerInputs(result.clientSequence)
+        }
+        if (result?.reason === "PREDICTION_DIVERGED" && applyForcedOwnSnapshot(result)) {
+            console.warn("game:input failed:", result.reason)
+            return
+        }
+        if (Number.isInteger(result?.clientSequence)) {
             applyDeferredOwnSnapshotIfReady()
         }
         if (!result?.ok) {

@@ -521,6 +521,31 @@ test("applyAuthoritativeInputToMatchPlayerState는 hard_drop을 player authorita
     assert.deepEqual(hostPlayer.inputLog, []);
 });
 
+test("internal soft_drop은 expectedTransform 없이 기존 authoritative 규칙을 사용한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("INTERNAL_SOFT_DROP"));
+    const match = getMatchState("INTERNAL_SOFT_DROP").match;
+    const hostPlayer = match.players.find(player => player.playerId === "host-player");
+    hostPlayer.authoritativeState.activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 4,
+    };
+    hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
+
+    const result = applyAuthoritativeInputToMatchPlayerState("INTERNAL_SOFT_DROP", "host-player", {
+        action: "soft_drop",
+        pieceIndex: hostPlayer.authoritativeState.pieceIndex,
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(hostPlayer.authoritativeState.activePiece.row, 1);
+});
+
 test("applyAuthoritativeInputToMatchPlayerState는 없는 match면 실패 결과를 반환한다", () => {
     resetMatches();
 
