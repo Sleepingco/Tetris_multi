@@ -1246,6 +1246,80 @@ test("disconnect는 끊어진 socket의 player를 room에서 제거하고 남은
     assert.equal(socketServer.roomEvents.at(-1).payload.text, "Guest님이 퇴장하였습니다.")
 })
 
+test("game:leave 이후 old game socket disconnect와 lobby sync 순서와 무관하게 남은 player를 보존한다", () => {
+    const socketServer = new FakeSocketServer()
+
+    registerTestSocketHandlers(socketServer)
+
+    function createStartedRoom(prefix) {
+        const hostGameSocket = new FakeClientSocket(`${prefix}-host-game-socket`)
+        const guestGameSocket = new FakeClientSocket(`${prefix}-guest-game-socket`)
+        const hostLobbySocket = new FakeClientSocket(`${prefix}-host-lobby-socket`)
+        const hostPlayerId = `${prefix}-host-player`
+        const guestPlayerId = `${prefix}-guest-player`
+
+        socketServer.connect(hostGameSocket)
+        socketServer.connect(guestGameSocket)
+        socketServer.connect(hostLobbySocket)
+
+        hostGameSocket.trigger("room:create", {
+            playerId: hostPlayerId,
+            nickname: "Host",
+        })
+        const roomId = hostGameSocket.lastClientEvent("room:result").payload.room.roomId
+        guestGameSocket.trigger("room:join", {
+            roomId,
+            player: {
+                playerId: guestPlayerId,
+                nickname: "Guest",
+            },
+        })
+        hostGameSocket.trigger("room:start", {
+            roomId,
+            playerId: hostPlayerId,
+        })
+        guestGameSocket.trigger("game:leave", {
+            roomId,
+            playerId: guestPlayerId,
+        })
+
+        return {
+            roomId,
+            hostPlayerId,
+            hostGameSocket,
+            hostLobbySocket,
+        }
+    }
+
+    const disconnectFirst = createStartedRoom("leave-race-disconnect-first")
+    disconnectFirst.hostGameSocket.trigger("disconnect")
+    disconnectFirst.hostLobbySocket.trigger("room:sync", {
+        roomId: disconnectFirst.roomId,
+        playerId: disconnectFirst.hostPlayerId,
+    })
+
+    let room = getRoomState(disconnectFirst.roomId)
+    assert.equal(disconnectFirst.hostLobbySocket.lastClientEvent("room:result").payload.ok, true)
+    assert.equal(room.status, "waiting")
+    assert.equal(room.players.length, 1)
+    assert.equal(room.players[0].playerId, disconnectFirst.hostPlayerId)
+    assert.equal(room.players[0].socketId, disconnectFirst.hostLobbySocket.id)
+
+    const syncFirst = createStartedRoom("leave-race-sync-first")
+    syncFirst.hostLobbySocket.trigger("room:sync", {
+        roomId: syncFirst.roomId,
+        playerId: syncFirst.hostPlayerId,
+    })
+    syncFirst.hostGameSocket.trigger("disconnect")
+
+    room = getRoomState(syncFirst.roomId)
+    assert.equal(syncFirst.hostLobbySocket.lastClientEvent("room:result").payload.ok, true)
+    assert.equal(room.status, "waiting")
+    assert.equal(room.players.length, 1)
+    assert.equal(room.players[0].playerId, syncFirst.hostPlayerId)
+    assert.equal(room.players[0].socketId, syncFirst.hostLobbySocket.id)
+})
+
 test("finished game socket disconnect와 lobby sync 순서는 player와 room을 보존하고 재시작할 수 있다", () => {
     const socketServer = new FakeSocketServer()
     const hostGameSocket = new FakeClientSocket("finished-race-host-game-socket")

@@ -627,6 +627,73 @@ test("leaveGame은 playing room에서 guest도 나갈 수 있고 room을 waiting
     assert.equal(result.room.players[0].playerId, hostPlayer.playerId)
 })
 
+test("leaveGame 이후 old game socket disconnect가 먼저 와도 남은 player를 보존한다", () => {
+    const hostPlayer = {
+        playerId: "leave-disconnect-first-host",
+        nickname: "Host",
+        socketId: "leave-disconnect-first-old-socket",
+    }
+    const guestPlayer = {
+        playerId: "leave-disconnect-first-guest",
+        nickname: "Guest",
+        socketId: "leave-disconnect-first-guest-socket",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    const roomId = createResult.room.roomId
+    joinRoom(roomId, guestPlayer)
+    startGame(roomId, hostPlayer.playerId)
+    leaveGame(roomId, guestPlayer.playerId)
+
+    const disconnectResult = removePlayerBySocketId(hostPlayer.socketId)
+    let room = getRoomState(roomId)
+
+    assert.equal(disconnectResult.ok, false)
+    assert.equal(disconnectResult.reason, "LOBBY_TRANSITION")
+    assert.equal(room.players.length, 1)
+    assert.equal(room.players[0].playerId, hostPlayer.playerId)
+
+    syncRoom(roomId, hostPlayer.playerId, "leave-disconnect-first-new-socket", {
+        location: "lobby",
+    })
+    const lobbyDisconnectResult = removePlayerBySocketId("leave-disconnect-first-new-socket")
+
+    assert.equal(lobbyDisconnectResult.ok, true)
+    assert.equal(getRoomState(roomId), null)
+})
+
+test("leaveGame 이후 lobby sync가 먼저 오면 old game socket disconnect가 player를 제거하지 않는다", () => {
+    const hostPlayer = {
+        playerId: "leave-sync-first-host",
+        nickname: "Host",
+        socketId: "leave-sync-first-old-socket",
+    }
+    const guestPlayer = {
+        playerId: "leave-sync-first-guest",
+        nickname: "Guest",
+        socketId: "leave-sync-first-guest-socket",
+    }
+
+    const createResult = createRoom(hostPlayer)
+    const roomId = createResult.room.roomId
+    joinRoom(roomId, guestPlayer)
+    startGame(roomId, hostPlayer.playerId)
+    leaveGame(roomId, guestPlayer.playerId)
+
+    const syncResult = syncRoom(roomId, hostPlayer.playerId, "leave-sync-first-new-socket", {
+        location: "lobby",
+    })
+    const disconnectResult = removePlayerBySocketId(hostPlayer.socketId)
+    const room = getRoomState(roomId)
+
+    assert.equal(syncResult.ok, true)
+    assert.equal(disconnectResult.ok, false)
+    assert.equal(disconnectResult.reason, "SOCKET_NOT_FOUND")
+    assert.equal(room.players.length, 1)
+    assert.equal(room.players[0].playerId, hostPlayer.playerId)
+    assert.equal(room.players[0].socketId, "leave-sync-first-new-socket")
+})
+
 test("leaveGame은 없는 roomId면 ROOM_NOT_FOUND를 반환하고 예외를 던지지 않는다", () => {
     assert.doesNotThrow(() => {
         const result = leaveGame("UNKNOWN", "missing-player")

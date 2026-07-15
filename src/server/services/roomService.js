@@ -10,6 +10,7 @@ const {
 // 현재 MVP에서는 단일 Node 프로세스 메모리에 room lifecycle을 저장한다.
 // =============================
 const rooms = new Map()
+const lobbyTransitionSocketContexts = new Map()
 const MAX_ROOM_ID_GENERATION_ATTEMPTS = 5
 const ROOM_MODE = Object.freeze({
     PVP: "pvp",
@@ -211,6 +212,7 @@ function removePlayer(roomId, playerId) {
     }
 
     const removedPlayer = roomState.players[playerIndex]
+    lobbyTransitionSocketContexts.delete(removedPlayer.socketId)
     roomState.players.splice(playerIndex, 1)
 
     if (
@@ -254,6 +256,7 @@ function getRoomSocketContext(socketId) {
  * disconnect된 socket의 player를 room에서 제거한다.
  * - playing 중인 room은 게임 화면 재연결 가능성을 위해 자동 제거하지 않는다.
  * - finished room은 결과 화면에서 로비로 복귀할 수 있게 자동 제거하지 않는다.
+ * - game leave 직후 남은 player의 이전 game socket은 lobby 전환 중 한 번 보존한다.
  *
  * @param {string} socketId - 끊어진 socket id
  * @returns {{ok: boolean, room: Object|null, reason: string|null, roomId?: string|null, player?: Object|null}} 제거 결과와 player 문맥
@@ -269,6 +272,21 @@ function removePlayerBySocketId(socketId) {
     }
 
     const { room, player } = found
+    const lobbyTransitionContext = lobbyTransitionSocketContexts.get(socketId)
+
+    if (
+        room.status === "waiting" &&
+        lobbyTransitionContext?.roomId === room.roomId &&
+        lobbyTransitionContext?.playerId === player.playerId
+    ) {
+        lobbyTransitionSocketContexts.delete(socketId)
+        return failure("LOBBY_TRANSITION", {
+            roomId: room.roomId,
+            player,
+        })
+    }
+
+    lobbyTransitionSocketContexts.delete(socketId)
 
     if (room.status === "playing") {
         return failure("GAME_PLAYING", {
@@ -367,7 +385,20 @@ function leaveGame(roomId, playerId) {
         return failure("NOT_ENOUGH_PLAYERS")
     }
 
-    return removePlayer(roomId, playerId)
+    const result = removePlayer(roomId, playerId)
+
+    if (result.ok && result.room) {
+        result.room.players.forEach(player => {
+            if (player.playerType === PLAYER_TYPE.HUMAN && player.socketId) {
+                lobbyTransitionSocketContexts.set(player.socketId, {
+                    roomId,
+                    playerId: player.playerId,
+                })
+            }
+        })
+    }
+
+    return result
 }
 
 /**
@@ -388,6 +419,9 @@ function syncRoom(roomId, playerId, socketId = null, options = {}) {
     }
 
     if (socketId) {
+        if (options.location === "lobby") {
+            lobbyTransitionSocketContexts.delete(context.player.socketId)
+        }
         context.player.socketId = socketId
     }
 
