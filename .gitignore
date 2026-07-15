@@ -11,3 +11,7 @@ data/datasets/
 Obsidian.md
 테트리스 멀티 옵시디언 정리/
 /.obsidian
+
+test-results/
+playwright-report/
+blob-report/

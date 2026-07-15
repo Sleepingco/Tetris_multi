@@ -10,6 +10,7 @@ const {
 } = require("../src/server/services/logService.js");
 const {
     appendJsonLine,
+    resolveGameEventsLogPath,
 } = require("../src/server/repositories/jsonlLogRepository.js");
 
 function createPlacementDecisionLog(overrides = {}) {
@@ -123,6 +124,20 @@ test("appendJsonLine은 디렉터리를 만들고 JSON object 한 줄을 append�
     const lines = fs.readFileSync(filePath, "utf8").trim().split("\n");
     assert.equal(lines.length, 1);
     assert.deepEqual(JSON.parse(lines[0]), log);
+});
+
+test("appendJsonLine은 GAME_EVENTS_LOG_PATH 환경 설정을 저장 경로로 사용한다", async () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tetris-env-log-"));
+    const filePath = path.join(tempDir, "isolated", "e2e-game-events.jsonl");
+    const log = createPlacementDecisionLog();
+    const env = { GAME_EVENTS_LOG_PATH: filePath };
+
+    assert.equal(resolveGameEventsLogPath(env), filePath);
+
+    await appendJsonLine(log, { env });
+
+    const savedLog = JSON.parse(fs.readFileSync(filePath, "utf8").trim());
+    assert.deepEqual(savedLog, log);
 });
 
 test("savePlacementDecisionLog는 유효한 로그를 repository에 저장한다", async () => {
