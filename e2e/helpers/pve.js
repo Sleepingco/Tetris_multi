@@ -65,9 +65,15 @@ function createPveSocketMonitor(page) {
                     playerId: eventPayload.playerId,
                     tick: snapshot.tick,
                     pieceIndex: snapshot.pieceIndex,
+                    board: snapshot.board.map(row => [...row]),
                     activePiece: snapshot.activePiece
                         ? { ...snapshot.activePiece }
                         : null,
+                    holdPieceType: snapshot.holdPieceType,
+                    holdUsedThisDrop: snapshot.holdUsedThisDrop,
+                    score: snapshot.score,
+                    lines: snapshot.lines,
+                    backToBack: snapshot.backToBack,
                     boardFingerprint: createBoardFingerprint(snapshot.board),
                     occupiedCellCount: snapshot.board
                         .flat()

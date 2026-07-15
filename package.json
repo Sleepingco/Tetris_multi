@@ -7,7 +7,8 @@
     "test": "node --test",
     "test:e2e": "playwright test",
     "dataset:export": "node scripts/export-placement-dataset.js",
-    "dataset:evaluate": "node scripts/evaluate-placement-dataset.js"
+    "dataset:evaluate": "node scripts/evaluate-placement-dataset.js",
+    "model:train-placement-ranker": "node scripts/train-placement-ranker.js"
   },
   "keywords": [],
   "author": "",

@@ -11,6 +11,11 @@ const {
 } = require("./helpers/pve.js");
 
 const EMPTY_BOTTOM_BOARD = Array(80).fill("empty").join("|");
+const MAX_BAG_SETUP_PIECES = 7;
+const RIGHT_STACK_COLUMNS = Object.freeze({
+    bar: 6,
+    square: 8,
+});
 
 function getActionSummary(initialSnapshot, snapshots) {
     if (!initialSnapshot?.activePiece || !Number.isInteger(initialSnapshot.pieceIndex)) {
@@ -93,6 +98,116 @@ async function waitForAiActionSummary(monitor, requiredActionTypes) {
             monitor.getSnapshots(aiPlayerId),
         ),
     };
+}
+
+function getLatestSnapshot(monitor, playerId) {
+    return monitor.getSnapshots(playerId).at(-1) || null;
+}
+
+async function moveActivePieceToColumn(page, monitor, playerId, targetCol) {
+    let snapshot = getLatestSnapshot(monitor, playerId);
+
+    while (snapshot?.activePiece?.col !== targetCol) {
+        const direction = snapshot.activePiece.col < targetCol
+            ? "ArrowRight"
+            : "ArrowLeft";
+        const previousSequence = snapshot.sequence;
+        const pieceIndex = snapshot.pieceIndex;
+        await page.keyboard.press(direction);
+
+        await expect.poll(() => {
+            const latest = getLatestSnapshot(monitor, playerId);
+            return latest?.sequence > previousSequence &&
+                latest.pieceIndex === pieceIndex &&
+                latest.activePiece?.col !== snapshot.activePiece.col;
+        }).toBe(true);
+        snapshot = getLatestSnapshot(monitor, playerId);
+    }
+
+    return snapshot;
+}
+
+async function hardDropActivePiece(page, monitor, playerId) {
+    const beforeDrop = getLatestSnapshot(monitor, playerId);
+    await page.keyboard.press("Space");
+    await expect.poll(() => {
+        return getLatestSnapshot(monitor, playerId)?.pieceIndex > beforeDrop.pieceIndex;
+    }).toBe(true);
+    return getLatestSnapshot(monitor, playerId);
+}
+
+async function holdActivePiece(page, monitor, playerId) {
+    const beforeHold = getLatestSnapshot(monitor, playerId);
+    await page.keyboard.press("KeyC");
+    await expect.poll(() => {
+        const latest = getLatestSnapshot(monitor, playerId);
+        return latest?.sequence > beforeHold.sequence &&
+            latest.pieceIndex === beforeHold.pieceIndex &&
+            latest.activePiece?.pieceType !== beforeHold.activePiece?.pieceType;
+    }).toBe(true);
+    return getLatestSnapshot(monitor, playerId);
+}
+
+async function buildTSpinCornerAndSelectTree(page, monitor, humanPlayerId) {
+    let supportPlaced = false;
+    let treeHeld = false;
+
+    for (let pieceCount = 0; pieceCount < MAX_BAG_SETUP_PIECES; pieceCount += 1) {
+        const snapshot = getLatestSnapshot(monitor, humanPlayerId);
+        const pieceType = snapshot?.activePiece?.pieceType;
+
+        if (pieceType === "tree" && !supportPlaced) {
+            await holdActivePiece(page, monitor, humanPlayerId);
+            treeHeld = true;
+            continue;
+        }
+
+        if (pieceType === "square" && !supportPlaced) {
+            await moveActivePieceToColumn(page, monitor, humanPlayerId, 1);
+            await hardDropActivePiece(page, monitor, humanPlayerId);
+            supportPlaced = true;
+
+            if (treeHeld) {
+                await holdActivePiece(page, monitor, humanPlayerId);
+            }
+            continue;
+        }
+
+        if (pieceType === "tree" && supportPlaced) {
+            return getLatestSnapshot(monitor, humanPlayerId);
+        }
+
+        const targetCol = RIGHT_STACK_COLUMNS[pieceType] ?? 7;
+        await moveActivePieceToColumn(page, monitor, humanPlayerId, targetCol);
+        await hardDropActivePiece(page, monitor, humanPlayerId);
+    }
+
+    const selectedTree = getLatestSnapshot(monitor, humanPlayerId);
+    expect(supportPlaced).toBe(true);
+    expect(selectedTree?.activePiece?.pieceType).toBe("tree");
+    return selectedTree;
+}
+
+async function softDropActivePieceToRow(page, monitor, playerId, targetRow) {
+    let snapshot = getLatestSnapshot(monitor, playerId);
+
+    while (snapshot?.activePiece?.row < targetRow) {
+        const previousSequence = snapshot.sequence;
+        const previousRow = snapshot.activePiece.row;
+        const pieceIndex = snapshot.pieceIndex;
+        await page.keyboard.press("ArrowDown");
+
+        await expect.poll(() => {
+            const latest = getLatestSnapshot(monitor, playerId);
+            return latest?.sequence > previousSequence &&
+                latest.pieceIndex === pieceIndex &&
+                latest.activePiece?.row > previousRow;
+        }).toBe(true);
+        snapshot = getLatestSnapshot(monitor, playerId);
+    }
+
+    expect(snapshot.activePiece.row).toBe(targetRow);
+    return snapshot;
 }
 
 test("PVE normal은 AI 중간 action과 human 입력/중력을 함께 진행한다", async ({ page }) => {
@@ -185,6 +300,73 @@ test("PVE hard는 terminal soft drop 없이 action 단계 후 hard drop한다", 
 
         const aiBoard = await readBottomBoardFingerprint(page, 2, 8);
         expect(aiBoard).not.toBe(EMPTY_BOTTOM_BOARD);
+    } finally {
+        monitor.dispose();
+    }
+});
+
+test("PVE human은 실제 7-bag 입력으로 코너를 빌드업하고 T-Spin을 완성한다", async ({ page }) => {
+    const monitor = createPveSocketMonitor(page);
+
+    try {
+        await createPveRoom(page, "normal");
+        await startPveMatch(page);
+
+        const { aiPlayerId } = await waitForAiActionSummary(monitor, ["move"]);
+        await expect.poll(() => monitor.getObservedPlayerIds().length).toBe(2);
+        const humanPlayerId = monitor.getObservedPlayerIds().find(playerId => {
+            return playerId !== aiPlayerId;
+        });
+
+        await test.step("O 블록으로 왼쪽 wall-kick 3-corner를 만든다", async () => {
+            await buildTSpinCornerAndSelectTree(page, monitor, humanPlayerId);
+            const setupSnapshot = getLatestSnapshot(monitor, humanPlayerId);
+
+            expect(setupSnapshot.activePiece.pieceType).toBe("tree");
+            expect(setupSnapshot.activePiece.rotation).toBe(0);
+            expect(setupSnapshot.pendingGarbageLines).toBe(0);
+            expect(setupSnapshot.board[18].slice(1, 3)).toEqual([
+                "square",
+                "square",
+            ]);
+            expect(setupSnapshot.board[19].slice(1, 3)).toEqual([
+                "square",
+                "square",
+            ]);
+            expect(setupSnapshot.board[16][0]).toBeNull();
+            expect(setupSnapshot.board[17].slice(0, 2)).toEqual([null, null]);
+            expect(setupSnapshot.board[18][0]).toBeNull();
+        });
+
+        await test.step("SRS wall kick 후 hard drop으로 T-Spin 보너스를 받는다", async () => {
+            await moveActivePieceToColumn(page, monitor, humanPlayerId, 0);
+            await softDropActivePieceToRow(page, monitor, humanPlayerId, 16);
+            const beforeTSpin = getLatestSnapshot(monitor, humanPlayerId);
+            const scoreText = page.locator('.player-column[data-player="1"] .score');
+            const clientScoreBefore = Number(await scoreText.textContent());
+            const boardBeforeTSpin = await readBottomBoardFingerprint(page, 1, 8);
+            await page.keyboard.press("ArrowUp");
+            await page.keyboard.press("Space");
+
+            await expect.poll(() => {
+                return getLatestSnapshot(monitor, humanPlayerId)?.pieceIndex >
+                    beforeTSpin.pieceIndex;
+            }).toBe(true);
+
+            const afterTSpin = getLatestSnapshot(monitor, humanPlayerId);
+            const scoreDelta = afterTSpin.score - beforeTSpin.score;
+            expect(scoreDelta).toBe(15);
+            expect(afterTSpin.lines).toBe(beforeTSpin.lines);
+            expect(afterTSpin.board[16][0]).toBe("tree");
+            expect(afterTSpin.board[17].slice(0, 2)).toEqual(["tree", "tree"]);
+            expect(afterTSpin.board[18][0]).toBe("tree");
+            await expect.poll(async () => {
+                return Number(await scoreText.textContent()) - clientScoreBefore;
+            }).toBe(15);
+
+            const boardAfterTSpin = await readBottomBoardFingerprint(page, 1, 8);
+            expect(boardAfterTSpin).not.toBe(boardBeforeTSpin);
+        });
     } finally {
         monitor.dispose();
     }
