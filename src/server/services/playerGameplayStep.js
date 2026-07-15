@@ -35,7 +35,7 @@ function applyAuthoritativeInput(authoritativeState, input, gameCore) {
     return createFailure("UNSUPPORTED_ACTION");
 }
 
-function applyAuthoritativeGravityStep(authoritativeState, gameCore) {
+function applyAuthoritativeGravityStep(authoritativeState, gameCore, options = {}) {
     if (!authoritativeState) {
         return createFailure("INVALID_AUTHORITATIVE_STATE");
     }
@@ -93,6 +93,17 @@ function applyAuthoritativeGravityStep(authoritativeState, gameCore) {
     }
 
     if (moveIntent.kind === "lock") {
+        if (options.lockGroundedPiece !== true) {
+            return {
+                ok: true,
+                reason: null,
+                gravityResult: {
+                    kind: "grounded",
+                    moveIntent,
+                },
+            };
+        }
+
         const lockResult = lockPieceAndSpawnNext(authoritativeState, gameCore, {
             lockedPiece: { ...moveIntent.active },
             droppedRows: 0,

@@ -159,8 +159,21 @@ test("gravity lock line clear도 match 경계에서 presentation effect id를 �
     hostPlayer.authoritativeState.pieceQueue = ["tree"];
     hostPlayer.authoritativeState.pieceIndex = 11;
 
-    const result = applyGravityStepToMatchPlayerState(roomId, "host-player", gameCore);
+    const groundedResult = applyGravityStepToMatchPlayerState(
+        roomId,
+        "host-player",
+        gameCore,
+    );
+    const result = applyGravityStepToMatchPlayerState(
+        roomId,
+        "host-player",
+        gameCore,
+        { lockGroundedPiece: true },
+    );
 
+    assert.equal(groundedResult.ok, true);
+    assert.equal(groundedResult.gravityResult.kind, "grounded");
+    assert.equal(groundedResult.presentationEffect, undefined);
     assert.equal(result.ok, true);
     assert.equal(result.gravityResult.kind, "lock");
     assert.equal(result.presentationEffect.id, "host-player:11:line_clear");

@@ -102,7 +102,32 @@ test("applyAuthoritativeGravityStep은 조각을 아래로 1칸 내리고 curren
     assert.equal(Object.hasOwn(playerState, "inputLog"), false);
 });
 
-test("applyAuthoritativeGravityStep은 아래가 막히면 lock과 next spawn을 처리한다", async () => {
+test("applyAuthoritativeGravityStep은 첫 blocked gravity에서 state를 변경하지 않고 grounded를 반환한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["tree"],
+        pieceIndex: 1,
+    });
+    const beforeState = structuredClone(playerState);
+
+    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.gravityResult.kind, "grounded");
+    assert.deepEqual(playerState, beforeState);
+    assert.equal(result.placementResult, undefined);
+});
+
+test("applyAuthoritativeGravityStep은 같은 piece의 다음 blocked gravity에서 lock한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
         pieceType: "square",
@@ -117,7 +142,9 @@ test("applyAuthoritativeGravityStep은 아래가 막히면 lock과 next spawn을
         pieceIndex: 1,
     });
 
-    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+    const result = applyAuthoritativeGravityStep(playerState, gameCore, {
+        lockGroundedPiece: true,
+    });
 
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
@@ -158,7 +185,9 @@ test("applyAuthoritativeGravityStep은 gravity lock의 line clear와 score를 �
         pieceIndex: 1,
     });
 
-    const result = applyAuthoritativeGravityStep(playerState, gameCore);
+    const result = applyAuthoritativeGravityStep(playerState, gameCore, {
+        lockGroundedPiece: true,
+    });
 
     assert.equal(result.ok, true);
     assert.equal(result.gravityResult.kind, "lock");

@@ -116,6 +116,7 @@ export function createTetrisRuntime({
         serverBagQueue: [],
         gravityRunning: false,
         gravityAccumulatorMs: 0,
+        automaticGroundedPieceIndex: null,
         lastTickAt: 0,
         currentTick: 0,
         pieceIndex: 0,
@@ -207,6 +208,7 @@ export function createTetrisRuntime({
         runtime.placementDecisionLog = []
         runtime.decisionStartPiece = null
         runtime.pendingLockScoreBefore = null
+        runtime.automaticGroundedPieceIndex = null
         runtime.pendingGarbageQueue = []
         runtime.authoritativePendingGarbageLines = 0
         ui.renderPendingGarbage(0)
@@ -233,6 +235,7 @@ export function createTetrisRuntime({
       * @returns {void}
       */
     function activateSpawnedPiece(piece) {
+        runtime.automaticGroundedPieceIndex = null
         setActivePiece(piece)
         gameState.pendingPiece = { ...piece }
         captureDecisionStartPiece(piece)
@@ -548,11 +551,14 @@ export function createTetrisRuntime({
         runtime.gravityAccumulatorMs += deltaMs
 
         while (runtime.gravityAccumulatorMs >= gameState.fallIntervalMs) {
-            shiftActivePiece(1, 0)
-            renderBlocks("fall")
             runtime.gravityAccumulatorMs -= gameState.fallIntervalMs
+            shiftActivePiece(1, 0)
+            const gravityResult = renderBlocks("fall", {
+                automaticGravity: true,
+            })
 
             if (!canProcessPlayerInput()) return
+            if (gravityResult?.intent?.kind === "lock") return
         }
     }
 
@@ -595,15 +601,17 @@ export function createTetrisRuntime({
       * 이동 판정 결과를 실제 런타임 상태 변경, 렌더링, UI 부수효과로 반영한다.
       *
       * @param {{intent: Object, pendingPiece: Object}|null} moveResult - `resolvePendingMove`가 반환한 이동 결과
+      * @param {{automaticGravity?: boolean}} options - automatic gravity lock grace 적용 여부
       * @returns {void}
       */
-    function applyMoveIntent(moveResult) {
+    function applyMoveIntent(moveResult, options = {}) {
         if (!moveResult) return
 
         gameState.pendingPiece = { ...moveResult.pendingPiece }
         const { intent } = moveResult
 
         if (intent.kind === "gameOver") {
+            runtime.automaticGroundedPieceIndex = null
             gameState.phase = GAME_PHASE.GAME_OVER
             gameState.inputQueue = []
             runtime.decisionStartPiece = null
@@ -616,6 +624,15 @@ export function createTetrisRuntime({
 
         if (intent.kind === "lock") {
             setActivePiece(intent.active)
+            if (
+                options.automaticGravity === true &&
+                runtime.automaticGroundedPieceIndex !== runtime.pieceIndex
+            ) {
+                runtime.automaticGroundedPieceIndex = runtime.pieceIndex
+                renderBoard()
+                return
+            }
+            runtime.automaticGroundedPieceIndex = null
             seizeBlock()
             return
         }
@@ -627,6 +644,9 @@ export function createTetrisRuntime({
         }
 
         if (intent.kind === "ok") {
+            if (options.automaticGravity === true) {
+                runtime.automaticGroundedPieceIndex = null
+            }
             gameState.phase = GAME_PHASE.PLAYING
             if (intent.shouldStartGravity) startGravity()
             setActivePiece(intent.active)
@@ -642,11 +662,12 @@ export function createTetrisRuntime({
       * - 엔진 판정 결과를 intent로 만들고, 런타임 부수효과로 실행한다.
       *
       * @param {string} [moveType=""] - 이동 시도 원인 (`fall`, `horizontal`, `rotate`, `spawn` 등)
+      * @param {{automaticGravity?: boolean}} options - automatic gravity 실행 문맥
       * @returns {{intent: Object, pendingPiece: Object}|null} 적용한 이동 판정 결과
       */
-    function renderBlocks(moveType = "") {
+    function renderBlocks(moveType = "", options = {}) {
         const moveResult = resolvePendingMove(moveType)
-        applyMoveIntent(moveResult)
+        applyMoveIntent(moveResult, options)
         return moveResult
     }
 
@@ -663,6 +684,7 @@ export function createTetrisRuntime({
       * @returns {void}
       */
     function seizeBlock() {
+        runtime.automaticGroundedPieceIndex = null
         const { activePiece, board } = gameState
         const { pieceType, rotation, row, col } = activePiece
         if (!pieceType) return
@@ -852,6 +874,7 @@ export function createTetrisRuntime({
         runtime.inputTimer = undefined
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
+        runtime.automaticGroundedPieceIndex = null
         runtime.lastTickAt = 0
         runtime.pieceIndex = 0
     }
@@ -1503,6 +1526,7 @@ export function createTetrisRuntime({
         runtime.currentTick = Math.max(runtime.currentTick, snapshotTick)
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
+        runtime.automaticGroundedPieceIndex = null
         runtime.pieceIndex = snapshot.pieceIndex ?? runtime.pieceIndex
         runtime.pendingLockScoreBefore = null
 

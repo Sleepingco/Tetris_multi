@@ -221,10 +221,18 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     clientSocket.on("game:join", (payload = {}) => {
         const { roomId, playerId } = payload
         let result = syncRoom(roomId, playerId)
+        let shouldResetPlayerGravity = false
         if (result.ok && !isHumanPlayer(result.room, playerId)) {
             result = createNotAuthorizedResult()
         } else if (result.ok) {
+            const roomPlayer = result.room.players.find(player => {
+                return player.playerId === playerId
+            })
+            shouldResetPlayerGravity = roomPlayer?.socketId !== clientSocket.id
             result = syncRoom(roomId, playerId, clientSocket.id)
+            if (result.ok && shouldResetPlayerGravity) {
+                authoritativeTickerService?.resetPlayerGravity?.(roomId, playerId)
+            }
         }
         const matchResult = result.ok
             ? getMatchState(roomId)
@@ -352,10 +360,20 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                         )
                         return
                     }
+                    const gameplayResult = authoritativeResult.gameplayResult
+                    if (gameplayResult?.holdResult || gameplayResult?.placementResult) {
+                        authoritativeTickerService?.resetPlayerGravity?.(
+                            roomId,
+                            playerId,
+                            {
+                                lineClear: (gameplayResult.placementResult?.linesCleared ?? 0) > 0,
+                            },
+                        )
+                    }
                     const placementSideEffect = handleServerPlacementResult(
                         roomId,
                         playerId,
-                        authoritativeResult.gameplayResult?.placementResult,
+                        gameplayResult?.placementResult,
                         createGarbageHoleCol,
                     )
 
@@ -363,7 +381,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                         socketServer,
                         roomId,
                         playerId,
-                        authoritativeResult.gameplayResult?.presentationEffect,
+                        gameplayResult?.presentationEffect,
                     )
                     if (placementSideEffect?.targetPlayerId) {
                         emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
@@ -372,13 +390,13 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                         true,
                         null,
                         null,
-                        Boolean(authoritativeResult.gameplayResult?.placementResult),
+                        Boolean(gameplayResult?.placementResult),
                     )
                     await handleServerGameOverResult(
                         socketServer,
                         roomId,
                         playerId,
-                        authoritativeResult.gameplayResult?.placementResult,
+                        gameplayResult?.placementResult,
                         authoritativeTickerService,
                         saveEventLog,
                     )

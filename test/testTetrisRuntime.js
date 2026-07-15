@@ -139,6 +139,12 @@ function createEmptyBoard() {
     return Array.from({ length: 20 }, () => Array(10).fill(null));
 }
 
+async function advanceAutomaticGravity(game) {
+    const targetTick = game.runtime.currentTick + 1;
+    game.runtime.gravityAccumulatorMs = 500;
+    await waitForTick(game, targetTick);
+}
+
 function createFakeCanvas() {
     const canvas = {};
     const context = {
@@ -305,6 +311,95 @@ test("enqueueInput은 soft drop 입력으로 현재 조각을 한 칸 내린다"
     assert.equal(after.activePiece.row, before.activePiece.row + 1);
     assert.equal(outcomes[0].applied, true);
     assert.equal(outcomes[0].placementCommitted, false);
+});
+
+test("automatic gravity는 첫 blocked에서 대기하고 같은 조각의 두 번째 blocked에서 lock한다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const initialSnapshot = game.getSnapshot();
+    const groundedPiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 4,
+    };
+    game.applySnapshot({
+        ...initialSnapshot,
+        board: createEmptyBoard(),
+        activePiece: groundedPiece,
+        pieceQueue: ["bar", "tree"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    const pieceIndex = game.runtime.pieceIndex;
+
+    await advanceAutomaticGravity(game);
+
+    const afterFirstBlocked = game.getSnapshot();
+    assert.deepEqual(afterFirstBlocked.activePiece, groundedPiece);
+    assert.equal(afterFirstBlocked.pieceIndex, pieceIndex);
+    assert.equal(afterFirstBlocked.board.flat().includes("square"), false);
+    assert.equal(game.runtime.automaticGroundedPieceIndex, pieceIndex);
+
+    await advanceAutomaticGravity(game);
+
+    const afterSecondBlocked = game.getSnapshot();
+    assert.equal(afterSecondBlocked.pieceIndex, pieceIndex + 1);
+    assert.equal(afterSecondBlocked.activePiece.pieceType, "bar");
+    assert.equal(game.runtime.automaticGroundedPieceIndex, null);
+    assert.deepEqual(
+        afterSecondBlocked.board.slice(18).map(row => row.slice(4, 6)),
+        [["square", "square"], ["square", "square"]],
+    );
+});
+
+test("automatic gravity move는 grounded marker를 해제해 새 바닥에서 다시 grace를 준다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+    const ledgeBoard = createEmptyBoard();
+    ledgeBoard[19][5] = "stack";
+    const ledgePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 17,
+        col: 4,
+    };
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board: ledgeBoard,
+        activePiece: ledgePiece,
+        pieceQueue: ["bar", "tree"],
+        phase: "playing",
+    }, { resumeGravity: true });
+    const pieceIndex = game.runtime.pieceIndex;
+
+    await advanceAutomaticGravity(game);
+    assert.equal(game.getSnapshot().pieceIndex, pieceIndex);
+    assert.equal(game.runtime.automaticGroundedPieceIndex, pieceIndex);
+
+    const moveTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.MOVE_LEFT, moveTick, pieceIndex);
+    await waitForTick(game, moveTick);
+    assert.equal(game.getSnapshot().activePiece.col, 3);
+
+    await advanceAutomaticGravity(game);
+    assert.equal(game.getSnapshot().activePiece.row, 18);
+    assert.equal(game.runtime.automaticGroundedPieceIndex, null);
+
+    await advanceAutomaticGravity(game);
+    assert.equal(game.getSnapshot().pieceIndex, pieceIndex);
+    assert.equal(game.getSnapshot().board.flat().includes("square"), false);
+    assert.equal(game.runtime.automaticGroundedPieceIndex, pieceIndex);
+
+    await advanceAutomaticGravity(game);
+    assert.equal(game.getSnapshot().pieceIndex, pieceIndex + 1);
+    assert.equal(game.getSnapshot().activePiece.pieceType, "bar");
+    assert.equal(game.runtime.automaticGroundedPieceIndex, null);
 });
 
 test("enqueueInput은 rotate 입력으로 현재 조각을 회전한다", async (t) => {
@@ -489,6 +584,7 @@ test("정상 hold는 true이고 같은 drop의 두 번째 hold는 false다", asy
     const targetTick = game.runtime.currentTick + 1;
     game.enqueueInput(INPUT_ACTION.HOLD, targetTick, pieceIndex);
     game.enqueueInput(INPUT_ACTION.HOLD, targetTick, pieceIndex);
+    game.runtime.automaticGroundedPieceIndex = pieceIndex;
 
     await waitForTick(game, targetTick);
 
@@ -500,6 +596,7 @@ test("정상 hold는 true이고 같은 drop의 두 번째 hold는 false다", asy
         { applied: true, placementCommitted: false, reason: null },
         { applied: false, placementCommitted: false, reason: "HOLD_NOT_AVAILABLE" },
     ]);
+    assert.equal(game.runtime.automaticGroundedPieceIndex, null);
 });
 
 test("enqueueInput은 같은 tick에 과도하게 입력을 쌓지 않는다", async (t) => {
@@ -537,6 +634,7 @@ test("applySnapshot은 snapshot의 pieceIndex를 runtime에 반영한다", async
     game.init({ autoStart: false });
 
     const before = game.getSnapshot();
+    game.runtime.automaticGroundedPieceIndex = before.pieceIndex;
     game.applySnapshot({
         ...before,
         score: 40,
@@ -553,6 +651,7 @@ test("applySnapshot은 snapshot의 pieceIndex를 runtime에 반영한다", async
     assert.equal(after.tick, before.tick + 10);
     assert.equal(after.pieceIndex, before.pieceIndex + 3);
     assert.equal(game.runtime.pieceIndex, before.pieceIndex + 3);
+    assert.equal(game.runtime.automaticGroundedPieceIndex, null);
 });
 
 test("applySnapshot은 resumeGravity 옵션과 playing phase가 함께 있을 때만 중력을 재개한다", async (t) => {

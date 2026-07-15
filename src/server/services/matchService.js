@@ -428,7 +428,7 @@ function markAuthoritativePlayerGameOver(roomId, playerId, reason = "game_over")
     return createSuccess(match);
 }
 
-function applyGravityStepToMatchPlayerState(roomId, playerId, gameCore) {
+function applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, options = {}) {
     const match = matches.get(roomId);
 
     if (!match) {
@@ -451,7 +451,11 @@ function applyGravityStepToMatchPlayerState(roomId, playerId, gameCore) {
         };
     }
 
-    const gravityStepResult = applyAuthoritativeGravityStep(player.authoritativeState, gameCore);
+    const gravityStepResult = applyAuthoritativeGravityStep(
+        player.authoritativeState,
+        gameCore,
+        options,
+    );
     if (!gravityStepResult.ok) {
         return {
             ok: false,

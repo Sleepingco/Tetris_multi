@@ -787,6 +787,60 @@ test("pending socket input 뒤의 같은 player gravity는 shared mutation queue
     })
 })
 
+test("hard_drop과 hold spawn은 해당 player의 gravity 500ms를 다시 시작한다", async (t) => {
+    for (const action of ["hard_drop", "hold"]) {
+        await t.test(action, async () => {
+            const gameCore = await loadGameCore()
+            const mutationQueue = createAuthoritativePlayerMutationQueue()
+            const tickerService = createAuthoritativeTickerService({
+                authoritativePlayerMutationQueue: mutationQueue,
+                setIntervalFn() {
+                    return { unref() {} }
+                },
+                clearIntervalFn() {},
+                loadGameCore: async () => gameCore,
+                saveGameEventLog: saveTestLog,
+            })
+            const fixture = await createStartedPvpSocketFixture(`gravity-reset-${action}`, {
+                authoritativePlayerMutationQueue: mutationQueue,
+                authoritativeTickerService: tickerService,
+            })
+            const activePiece = {
+                pieceType: "tree",
+                rotation: 0,
+                row: 0,
+                col: 3,
+            }
+            setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
+
+            await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 400)
+            await fixture.hostSocket.triggerAsync("game:input", {
+                roomId: fixture.roomId,
+                playerId: fixture.hostPlayerId,
+                action,
+                tick: 1,
+                pieceIndex: 1,
+                clientSequence: 1,
+                ...(action === "hard_drop"
+                    ? { expectedTransform: createExpectedTransform(activePiece) }
+                    : {}),
+            })
+
+            const spawnedPiece = { ...fixture.hostPlayer.authoritativeState.activePiece }
+            assert.equal(fixture.hostSocket.lastClientEvent("game:input:result")?.payload.ok, true)
+
+            await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 499)
+            assert.deepEqual(fixture.hostPlayer.authoritativeState.activePiece, spawnedPiece)
+
+            await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 1)
+            assert.equal(
+                fixture.hostPlayer.authoritativeState.activePiece.row,
+                spawnedPiece.row + 1,
+            )
+        })
+    }
+})
+
 test("응답 대기 없는 move/rotate 후 hard_drop은 마지막 성공 위치의 정확한 cell을 고정한다", async (t) => {
     const gameCore = await loadGameCore()
     const cases = [
@@ -874,7 +928,7 @@ test("응답 대기 없는 move/rotate 후 hard_drop은 마지막 성공 위치�
     }
 })
 
-test("gravity가 먼저 queue에 등록되어 lock하면 뒤의 move/hard_drop은 mismatch로 구분된다", async () => {
+test("첫 blocked gravity가 먼저 등록되어도 grace 중 move/hard_drop은 변경된 위치에 lock한다", async () => {
     const gameCore = await loadGameCore()
     const mutationQueue = createAuthoritativePlayerMutationQueue()
     const holdQueue = createDeferred()
@@ -943,12 +997,15 @@ test("gravity가 먼저 queue에 등록되어 lock하면 뒤의 move/hard_drop�
         ok: result.ok,
         reason: result.reason,
     })), [
-        { clientSequence: 1, ok: false, reason: "PIECE_INDEX_MISMATCH" },
-        { clientSequence: 2, ok: false, reason: "PIECE_INDEX_MISMATCH" },
+        { clientSequence: 1, ok: true, reason: null },
+        { clientSequence: 2, ok: true, reason: null },
     ])
     assert.deepEqual(
         getBoardCells(fixture.hostPlayer.authoritativeState.board, "square"),
-        getPieceCells(gameCore, groundedPiece),
+        getPieceCells(gameCore, {
+            ...groundedPiece,
+            col: groundedPiece.col - 1,
+        }),
     )
     assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, initialPieceIndex + 1)
     assert.equal(fixture.hostPlayer.lastProcessedClientSequence, 2)
@@ -958,7 +1015,129 @@ test("gravity가 먼저 queue에 등록되어 lock하면 뒤의 move/hard_drop�
     })
     assert.deepEqual(
         snapshots.map(event => event.payload.snapshot.lastProcessedClientSequence),
-        [0, 1, 2],
+        [1, 2],
+    )
+})
+
+test("높은 jagged board의 한 칸 row 차이는 이전 col 자동 lock 전에 divergence snapshot을 보낸다", async () => {
+    const gameCore = await loadGameCore()
+    const mutationQueue = createAuthoritativePlayerMutationQueue()
+    const tickerService = createAuthoritativeTickerService({
+        authoritativePlayerMutationQueue: mutationQueue,
+        setIntervalFn() {
+            return { unref() {} }
+        },
+        clearIntervalFn() {},
+        loadGameCore: async () => gameCore,
+        saveGameEventLog: saveTestLog,
+    })
+    const fixture = await createStartedPvpSocketFixture("jagged-row-divergence", {
+        authoritativePlayerMutationQueue: mutationQueue,
+        authoritativeTickerService: tickerService,
+    })
+    const clientVisiblePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 17,
+        col: 4,
+    }
+    setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, clientVisiblePiece)
+    fixture.hostPlayer.authoritativeState.board[19][3] = "stack"
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
+    assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, 18)
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
+    assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 1)
+    assert.deepEqual(getBoardCells(
+        fixture.hostPlayer.authoritativeState.board,
+        "square",
+    ), [])
+
+    await fixture.hostSocket.triggerAsync("game:input", {
+        roomId: fixture.roomId,
+        playerId: fixture.hostPlayerId,
+        action: "move_left",
+        tick: 1,
+        pieceIndex: 1,
+        clientSequence: 1,
+        expectedTransform: createExpectedTransform(clientVisiblePiece, { col: 3 }),
+    })
+
+    const inputResult = fixture.hostSocket.lastClientEvent("game:input:result")?.payload
+    assert.equal(inputResult.ok, false)
+    assert.equal(inputResult.reason, "PREDICTION_DIVERGED")
+    assert.equal(inputResult.snapshot.activePiece.col, 4)
+    assert.equal(inputResult.snapshot.activePiece.row, 18)
+    assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 1)
+    assert.deepEqual(getBoardCells(
+        fixture.hostPlayer.authoritativeState.board,
+        "square",
+    ), [])
+})
+
+test("grounded piece가 턱을 벗어나 gravity move하면 새 바닥에서 grace를 다시 받는다", async () => {
+    const gameCore = await loadGameCore()
+    const mutationQueue = createAuthoritativePlayerMutationQueue()
+    const tickerService = createAuthoritativeTickerService({
+        authoritativePlayerMutationQueue: mutationQueue,
+        setIntervalFn() {
+            return { unref() {} }
+        },
+        clearIntervalFn() {},
+        loadGameCore: async () => gameCore,
+        saveGameEventLog: saveTestLog,
+    })
+    const fixture = await createStartedPvpSocketFixture("grounded-ledge-release", {
+        authoritativePlayerMutationQueue: mutationQueue,
+        authoritativeTickerService: tickerService,
+    })
+    const ledgePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 17,
+        col: 4,
+    }
+    setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, ledgePiece)
+    fixture.hostPlayer.authoritativeState.board[19][5] = "stack"
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
+    assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 1)
+
+    await fixture.hostSocket.triggerAsync("game:input", {
+        roomId: fixture.roomId,
+        playerId: fixture.hostPlayerId,
+        action: "move_left",
+        tick: 1,
+        pieceIndex: 1,
+        clientSequence: 1,
+        expectedTransform: createExpectedTransform(ledgePiece, { col: 3 }),
+    })
+    assert.equal(fixture.hostSocket.lastClientEvent("game:input:result")?.payload.ok, true)
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
+    assert.deepEqual(fixture.hostPlayer.authoritativeState.activePiece, {
+        ...ledgePiece,
+        row: 18,
+        col: 3,
+    })
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
+    assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 1)
+    assert.deepEqual(getBoardCells(
+        fixture.hostPlayer.authoritativeState.board,
+        "square",
+    ), [])
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
+    assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 2)
+    assert.deepEqual(
+        getBoardCells(fixture.hostPlayer.authoritativeState.board, "square"),
+        getPieceCells(gameCore, {
+            ...ledgePiece,
+            row: 18,
+            col: 3,
+        }),
     )
 })
 
@@ -3463,6 +3642,48 @@ test("game:join은 roomService DTO 결과를 반환하고 성공 시 socket을 r
     assert.equal(joinResult.reason, null)
     assert.equal(joinResult.room.roomId, roomId)
     assert.deepEqual(gameSocket.joinedRooms, [roomId])
+})
+
+test("새 game socket join만 해당 player gravity를 reset하고 같은 socket 반복 join은 reset하지 않는다", async () => {
+    const gameCore = await loadGameCore()
+    const mutationQueue = createAuthoritativePlayerMutationQueue()
+    const tickerService = createAuthoritativeTickerService({
+        authoritativePlayerMutationQueue: mutationQueue,
+        setIntervalFn() {
+            return { unref() {} }
+        },
+        clearIntervalFn() {},
+        loadGameCore: async () => gameCore,
+        saveGameEventLog: saveTestLog,
+    })
+    const fixture = await createStartedPvpSocketFixture("game-join-gravity-phase", {
+        authoritativePlayerMutationQueue: mutationQueue,
+        authoritativeTickerService: tickerService,
+    })
+    const gameSocket = new FakeClientSocket("game-join-gravity-phase-new-socket")
+    fixture.socketServer.connect(gameSocket)
+    const initialRow = fixture.hostPlayer.authoritativeState.activePiece.row
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 400)
+    gameSocket.trigger("game:join", {
+        roomId: fixture.roomId,
+        playerId: fixture.hostPlayerId,
+    })
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 100)
+    assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, initialRow)
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 400)
+    assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, initialRow + 1)
+
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 400)
+    gameSocket.trigger("game:join", {
+        roomId: fixture.roomId,
+        playerId: fixture.hostPlayerId,
+    })
+    await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 100)
+
+    assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, initialRow + 2)
 })
 
 test("game:join은 진행된 server state의 player별 client snapshot과 bag chunks를 반환한다", () => {

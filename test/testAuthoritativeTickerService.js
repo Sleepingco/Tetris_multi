@@ -177,6 +177,228 @@ test("ticker callback은 500ms 누적 후 player별 gravity step과 authoritativ
     assert.equal(socketServer.roomEvents.length, 4);
 });
 
+test("player gravity reset은 해당 player만 새 500ms를 시작하게 한다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const gravityCalls = [];
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-player-timing",
+                players: [
+                    { playerId: "p1" },
+                    { playerId: "p2" },
+                ],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId) {
+            gravityCalls.push(playerId);
+            return {
+                ok: true,
+                gravityResult: { kind: "move" },
+            };
+        },
+        getAuthoritativePlayerSnapshotDto() {
+            return {
+                ok: true,
+                snapshot: {
+                    phase: "playing",
+                    pieceIndex: 1,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-player-timing", socketServer);
+    await tickerService.tickRoom("room-player-timing", socketServer, 400);
+    tickerService.resetPlayerGravity("room-player-timing", "p1");
+    await tickerService.tickRoom("room-player-timing", socketServer, 100);
+
+    assert.deepEqual(gravityCalls, ["p2"]);
+
+    await tickerService.tickRoom("room-player-timing", socketServer, 400);
+
+    assert.deepEqual(gravityCalls, ["p2", "p1"]);
+});
+
+test("line clear reset은 presentation 350ms 뒤에 새 500ms gravity interval을 보장한다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const gravityCalls = [];
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-line-clear-timing",
+                players: [{ playerId: "p1" }],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId) {
+            gravityCalls.push(playerId);
+            return {
+                ok: true,
+                gravityResult: { kind: "move" },
+            };
+        },
+        getAuthoritativePlayerSnapshotDto() {
+            return {
+                ok: true,
+                snapshot: {
+                    phase: "playing",
+                    pieceIndex: 2,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-line-clear-timing", socketServer);
+    tickerService.resetPlayerGravity("room-line-clear-timing", "p1", {
+        lineClear: true,
+    });
+
+    await tickerService.tickRoom("room-line-clear-timing", socketServer, 849);
+    assert.deepEqual(gravityCalls, []);
+
+    await tickerService.tickRoom("room-line-clear-timing", socketServer, 1);
+    assert.deepEqual(gravityCalls, ["p1"]);
+});
+
+test("first grounded gravity는 snapshot 없이 grace를 기록하고 다음 gravity에서 한 번 lock한다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const gravityOptions = [];
+    const player = {
+        playerId: "p1",
+        authoritativeState: {
+            pieceIndex: 7,
+        },
+    };
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-grounded-grace",
+                players: [player],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, options) {
+            gravityOptions.push(options);
+            if (options.lockGroundedPiece !== true) {
+                return {
+                    ok: true,
+                    gravityResult: { kind: "grounded" },
+                };
+            }
+
+            player.authoritativeState.pieceIndex += 1;
+            return {
+                ok: true,
+                gravityResult: { kind: "lock" },
+                placementResult: {
+                    linesCleared: 0,
+                    attackLines: 0,
+                    gameOver: false,
+                },
+            };
+        },
+        getAuthoritativePlayerSnapshotDto() {
+            return {
+                ok: true,
+                snapshot: {
+                    phase: "playing",
+                    pieceIndex: player.authoritativeState.pieceIndex,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-grounded-grace", socketServer);
+    await tickerService.tickRoom("room-grounded-grace", socketServer, 500);
+
+    assert.deepEqual(gravityOptions, [{ lockGroundedPiece: false }]);
+    assert.equal(player.authoritativeState.pieceIndex, 7);
+    assert.equal(socketServer.roomEvents.length, 0);
+
+    await tickerService.tickRoom("room-grounded-grace", socketServer, 500);
+
+    assert.deepEqual(gravityOptions, [
+        { lockGroundedPiece: false },
+        { lockGroundedPiece: true },
+    ]);
+    assert.equal(player.authoritativeState.pieceIndex, 8);
+    assert.equal(socketServer.roomEvents.length, 1);
+});
+
+test("successful gravity move는 grounded marker를 해제해 다음 바닥에서 grace를 다시 준다", async () => {
+    const scheduler = createFakeScheduler();
+    const socketServer = createFakeSocketServer();
+    const lockOptions = [];
+    const gravityKinds = ["grounded", "move", "grounded", "lock"];
+    const player = {
+        playerId: "p1",
+        authoritativeState: {
+            pieceIndex: 4,
+        },
+    };
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        loadGameCore: async () => ({ core: true }),
+        getMatchState: () => ({
+            ok: true,
+            match: {
+                roomId: "room-grounded-release",
+                players: [player],
+            },
+        }),
+        applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, options) {
+            lockOptions.push(options.lockGroundedPiece);
+            const kind = gravityKinds.shift();
+            if (kind === "lock") player.authoritativeState.pieceIndex += 1;
+            return {
+                ok: true,
+                gravityResult: { kind },
+                ...(kind === "lock"
+                    ? {
+                        placementResult: {
+                            linesCleared: 0,
+                            attackLines: 0,
+                            gameOver: false,
+                        },
+                    }
+                    : {}),
+            };
+        },
+        getAuthoritativePlayerSnapshotDto() {
+            return {
+                ok: true,
+                snapshot: {
+                    phase: "playing",
+                    pieceIndex: player.authoritativeState.pieceIndex,
+                },
+            };
+        },
+    });
+
+    tickerService.startRoomTicker("room-grounded-release", socketServer);
+    for (let index = 0; index < 4; index += 1) {
+        await tickerService.tickRoom("room-grounded-release", socketServer, 500);
+    }
+
+    assert.deepEqual(lockOptions, [false, true, false, true]);
+    assert.equal(player.authoritativeState.pieceIndex, 5);
+});
+
 test("한 player gravity reject는 다른 player gravity와 snapshot을 막지 않는다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();

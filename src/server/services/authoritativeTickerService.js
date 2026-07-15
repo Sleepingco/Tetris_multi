@@ -17,6 +17,7 @@ const {
 const AUTHORITATIVE_TICK_MS = 100;
 const AUTHORITATIVE_GRAVITY_INTERVAL_MS = 500;
 const AI_ACTION_INTERVAL_MS = 100;
+const LINE_CLEAR_PRESENTATION_DELAY_MS = 350;
 
 /**
  * room 단위 authoritative ticker를 만든다.
@@ -76,7 +77,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
         tickers.set(roomId, {
             intervalId,
             socketServer,
-            accumulatorMs: 0,
+            playerGravityTimings: new Map(),
             aiAccumulatorMs: 0,
             isProcessing: false,
         });
@@ -110,6 +111,28 @@ function createAuthoritativeTickerService(dependencies = {}) {
         return tickers.has(roomId);
     }
 
+    function resetPlayerGravity(roomId, playerId, options = {}) {
+        const ticker = tickers.get(roomId);
+        if (!ticker || !playerId) {
+            return {
+                ok: false,
+                reason: "TICKER_NOT_FOUND",
+            };
+        }
+
+        const timing = getOrCreatePlayerGravityTiming(ticker, playerId);
+        timing.accumulatorMs = options.lineClear === true
+            ? -LINE_CLEAR_PRESENTATION_DELAY_MS
+            : 0;
+        timing.generation += 1;
+        timing.groundedPieceIndex = null;
+
+        return {
+            ok: true,
+            reason: null,
+        };
+    }
+
     async function tickRoom(roomId, socketServer, elapsedMs = tickMs) {
         const ticker = tickers.get(roomId);
         if (!ticker) return;
@@ -118,13 +141,8 @@ function createAuthoritativeTickerService(dependencies = {}) {
         ticker.isProcessing = true;
 
         try {
-            ticker.accumulatorMs += elapsedMs;
             ticker.aiAccumulatorMs += elapsedMs;
-            const shouldApplyGravity = ticker.accumulatorMs >= gravityIntervalMs;
             const shouldProcessAi = ticker.aiAccumulatorMs >= aiActionIntervalMs;
-            if (!shouldApplyGravity && !shouldProcessAi) return;
-
-            if (shouldApplyGravity) ticker.accumulatorMs -= gravityIntervalMs;
             if (shouldProcessAi) ticker.aiAccumulatorMs -= aiActionIntervalMs;
 
             const matchResult = getMatchState(roomId);
@@ -136,24 +154,43 @@ function createAuthoritativeTickerService(dependencies = {}) {
             const players = Array.isArray(matchResult.match.players)
                 ? matchResult.match.players
                 : [];
-            const hasDuePlayer = players.some(player => {
-                return player.playerType === "heuristic_ai"
-                    ? shouldProcessAi
-                    : shouldApplyGravity;
+            const humanPlayerIds = new Set(players
+                .filter(player => player.playerType !== "heuristic_ai")
+                .map(player => player.playerId));
+            for (const playerId of ticker.playerGravityTimings.keys()) {
+                if (!humanPlayerIds.has(playerId)) {
+                    ticker.playerGravityTimings.delete(playerId);
+                }
+            }
+
+            const duePlayers = [];
+            players.forEach(player => {
+                if (player.playerType === "heuristic_ai") {
+                    if (shouldProcessAi) {
+                        duePlayers.push({ player, gravityGeneration: null });
+                    }
+                    return;
+                }
+
+                const timing = getOrCreatePlayerGravityTiming(ticker, player.playerId);
+                timing.accumulatorMs += elapsedMs;
+                if (timing.accumulatorMs < gravityIntervalMs) return;
+
+                timing.accumulatorMs -= gravityIntervalMs;
+                duePlayers.push({
+                    player,
+                    gravityGeneration: timing.generation,
+                });
             });
-            if (!hasDuePlayer) return;
+            if (duePlayers.length === 0) return;
 
             const gameCore = await loadGameCore();
 
-            const duePlayers = players.filter(player => {
-                return player.playerType === "heuristic_ai"
-                    ? shouldProcessAi
-                    : shouldApplyGravity;
-            });
-            const playerTasks = duePlayers.map(player => {
+            const playerTasks = duePlayers.map(({ player, gravityGeneration }) => {
                 const processPlayer = () => processDuePlayer({
                     roomId,
                     player,
+                    gravityGeneration,
                     gameCore,
                     socketServer,
                     match: matchResult.match,
@@ -176,12 +213,34 @@ function createAuthoritativeTickerService(dependencies = {}) {
         }
     }
 
-    async function processDuePlayer({ roomId, player, gameCore, socketServer, match }) {
+    async function processDuePlayer({
+        roomId,
+        player,
+        gravityGeneration,
+        gameCore,
+        socketServer,
+        match,
+    }) {
         const playerId = player.playerId;
         const isAiPlayer = player.playerType === "heuristic_ai";
+        const ticker = tickers.get(roomId);
+        const gravityTiming = !isAiPlayer
+            ? ticker?.playerGravityTimings.get(playerId)
+            : null;
+        if (
+            !isAiPlayer &&
+            (!gravityTiming || gravityTiming.generation !== gravityGeneration)
+        ) {
+            return;
+        }
+
+        const pieceIndex = player.authoritativeState?.pieceIndex;
         const stepResult = isAiPlayer
             ? await pveAiPlayerService.processAiStep(roomId, playerId, gameCore)
-            : applyGravityStepToMatchPlayerState(roomId, playerId, gameCore);
+            : applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, {
+                lockGroundedPiece: Number.isInteger(pieceIndex)
+                    && gravityTiming.groundedPieceIndex === pieceIndex,
+            });
 
         if (!stepResult.ok && !stepResult.stateChanged) {
             if (stepResult.gameOver) {
@@ -202,7 +261,20 @@ function createAuthoritativeTickerService(dependencies = {}) {
             }
             return;
         }
+        if (!isAiPlayer && stepResult.gravityResult?.kind === "grounded") {
+            gravityTiming.groundedPieceIndex = pieceIndex;
+            return;
+        }
+        if (!isAiPlayer && stepResult.gravityResult?.kind === "move") {
+            gravityTiming.groundedPieceIndex = null;
+        }
         if (stepResult.skipped) return;
+
+        if (!isAiPlayer && stepResult.gravityResult?.kind === "lock") {
+            resetPlayerGravity(roomId, playerId, {
+                lineClear: (stepResult.placementResult?.linesCleared ?? 0) > 0,
+            });
+        }
 
         const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
         const snapshot = emitAuthoritativeSnapshot(
@@ -278,13 +350,28 @@ function createAuthoritativeTickerService(dependencies = {}) {
         startRoomTicker,
         stopRoomTicker,
         hasRoomTicker,
+        resetPlayerGravity,
         tickRoom,
     };
+}
+
+function getOrCreatePlayerGravityTiming(ticker, playerId) {
+    let timing = ticker.playerGravityTimings.get(playerId);
+    if (timing) return timing;
+
+    timing = {
+        accumulatorMs: 0,
+        generation: 0,
+        groundedPieceIndex: null,
+    };
+    ticker.playerGravityTimings.set(playerId, timing);
+    return timing;
 }
 
 module.exports = {
     AI_ACTION_INTERVAL_MS,
     AUTHORITATIVE_GRAVITY_INTERVAL_MS,
     AUTHORITATIVE_TICK_MS,
+    LINE_CLEAR_PRESENTATION_DELAY_MS,
     createAuthoritativeTickerService,
 };
