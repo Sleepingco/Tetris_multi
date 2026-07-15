@@ -10,6 +10,7 @@ const {
 } = require("../services/roomService.js")
 
 const {
+    acknowledgeClientInputSequence,
     appendPendingGarbageToOpponent,
     appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
@@ -18,6 +19,7 @@ const {
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
     recordInput,
+    validateClientInputSequence,
 } = require("../services/matchService.js")
 const { loadGameCore } = require("../services/gameCoreLoader.js")
 const {
@@ -120,6 +122,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     const createGarbageHoleCol = dependencies.createGarbageHoleCol || (() => Math.floor(Math.random() * 10))
     const authoritativeTickerService = dependencies.authoritativeTickerService
         || defaultAuthoritativeTickerService
+    const loadAuthoritativeGameCore = dependencies.loadGameCore || loadGameCore
+    let gameInputProcessingChain = null
 
     clientSocket.on("room:create", (payload) => {
         const createPayload = payload?.player
@@ -225,46 +229,45 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         })
     })
 
-    // 입력은 기존 relay를 유지하면서 match authoritativeState에도 best-effort로 반영한다.
-    clientSocket.on("game:input", async (payload = {}) => {
-        const { roomId, playerId, action, tick, pieceIndex } = payload
+    // 같은 socket의 입력은 record → relay → authoritative apply 순서로 직렬 처리한다.
+    async function processGameInput(payload = {}) {
+        const { roomId, playerId, action, tick, pieceIndex, clientSequence } = payload
+        let hasEmittedInputResult = false
+        const emitInputResult = (ok, reason) => {
+            hasEmittedInputResult = true
+            clientSocket.emit("game:input:result", {
+                ok,
+                reason,
+                clientSequence,
+                pieceIndex,
+            })
+        }
         const result = syncRoom(roomId, playerId)
 
         if (!result.ok) {
-            clientSocket.emit("game:input:result", result)
+            emitInputResult(false, result.reason)
             return
         }
 
         if (!isAuthorizedHumanSocket(result.room, playerId, clientSocket.id)) {
-            clientSocket.emit("game:input:result", createNotAuthorizedResult())
+            emitInputResult(false, "NOT_AUTHORIZED")
             return
         }
 
         if (result.room.status !== "playing") {
-            clientSocket.emit("game:input:result", {
-                ok: false,
-                room: null,
-                reason: "GAME_NOT_PLAYING",
-            })
+            emitInputResult(false, "GAME_NOT_PLAYING")
             return
         }
 
         if (!VALID_GAME_ACTIONS.has(action)) {
-            clientSocket.emit("game:input:result", {
-                ok: false,
-                room: null,
-                reason: "INVALID_ACTION",
-            })
+            emitInputResult(false, "INVALID_ACTION")
             return
         }
 
         if (!Number.isInteger(tick) || tick < 0
-            || !Number.isInteger(pieceIndex) || pieceIndex < 0) {
-            clientSocket.emit("game:input:result", {
-                ok: false,
-                room: null,
-                reason: "INVALID_INPUT",
-            })
+            || !Number.isInteger(pieceIndex) || pieceIndex < 0
+            || !Number.isInteger(clientSequence) || clientSequence < 1) {
+            emitInputResult(false, "INVALID_INPUT")
             return
         }
 
@@ -272,11 +275,20 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             action,
             tick,
             pieceIndex,
+            clientSequence,
+        }
+        const sequenceValidation = validateClientInputSequence(roomId, playerId, clientSequence)
+        if (!sequenceValidation.ok) {
+            if (sequenceValidation.reason === "CLIENT_SEQUENCE_OUT_OF_ORDER") {
+                emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+            }
+            emitInputResult(false, sequenceValidation.reason)
+            return
         }
         const inputResult = recordInput(roomId, playerId, input)
 
         if (!inputResult.ok) {
-            clientSocket.emit("game:input:result", inputResult)
+            emitInputResult(false, inputResult.reason)
             return
         }
 
@@ -287,17 +299,11 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         })
 
         try {
-            const gameCore = await loadGameCore()
+            const gameCore = await loadAuthoritativeGameCore()
             const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, gameCore)
             if (!authoritativeResult.ok) {
-                if (authoritativeResult.reason === "PIECE_INDEX_MISMATCH") {
-                    emitAuthoritativeSnapshot(socketServer, roomId, playerId)
-                    clientSocket.emit("game:input:result", {
-                        ok: false,
-                        room: null,
-                        reason: authoritativeResult.reason,
-                    })
-                }
+                emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+                emitInputResult(false, authoritativeResult.reason)
                 return
             }
             const placementSideEffect = handleServerPlacementResult(
@@ -316,6 +322,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             if (placementSideEffect?.targetPlayerId) {
                 emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
             }
+            emitInputResult(true, null)
             await handleServerGameOverResult(
                 socketServer,
                 roomId,
@@ -325,8 +332,27 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                 saveEventLog,
             )
         } catch {
-            // Authoritative side-effect failure must not block MVP input relay.
+            if (hasEmittedInputResult) return
+
+            acknowledgeClientInputSequence(roomId, playerId, clientSequence)
+            emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+            emitInputResult(false, "AUTHORITATIVE_INPUT_FAILED")
         }
+    }
+
+    clientSocket.on("game:input", (payload = {}) => {
+        const processingResult = gameInputProcessingChain
+            ? gameInputProcessingChain.then(() => processGameInput(payload))
+            : processGameInput(payload)
+        const trackedResult = processingResult
+            .catch(() => {})
+            .finally(() => {
+                if (gameInputProcessingChain === trackedResult) {
+                    gameInputProcessingChain = null
+                }
+            })
+        gameInputProcessingChain = trackedResult
+        return processingResult
     })
 
     clientSocket.on("game:log:placement_decision", async (payload = {}) => {

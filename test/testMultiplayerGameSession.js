@@ -213,6 +213,10 @@ function cleanupSession(session) {
     session.opponentGame.destroy();
 }
 
+function waitForLocalInputTick() {
+    return new Promise(resolve => setTimeout(resolve, 30));
+}
+
 function snapshotWithScore(baseSnapshot, score) {
     return {
         ...baseSnapshot,
@@ -271,6 +275,7 @@ function createAuthoritativeSnapshot(overrides = {}) {
         tick: 0,
         pieceIndex: 1,
         pendingGarbageLines: 0,
+        lastProcessedClientSequence: 0,
         ...overrides,
     };
 }
@@ -380,6 +385,229 @@ test("내 키보드 입력은 game:input으로 서버에 전송된다", async (t
     assert.equal(inputEvent.payload.action, "move_left");
     assert.equal(Number.isInteger(inputEvent.payload.tick), true);
     assert.equal(Number.isInteger(inputEvent.payload.pieceIndex), true);
+    assert.equal(inputEvent.payload.clientSequence, 1);
+});
+
+test("reconnect 초기 snapshot ack 다음 값부터 clientSequence를 재개한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const params = createSessionParams();
+    params.match.players[0].snapshot = createAuthoritativeSnapshot({
+        lastProcessedClientSequence: 7,
+    });
+    const session = startMultiplayerGame(params);
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        repeat: false,
+        preventDefault() {},
+    });
+
+    const inputEvent = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    });
+    assert.equal(inputEvent.payload.clientSequence, 8);
+});
+
+test("local queue가 비어도 server ack 전 stale own snapshot은 prediction을 되감지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+
+    const beforePrediction = session.myGame.getSnapshot();
+    const predictedBoard = beforePrediction.board.map(row => [...row]);
+    predictedBoard[19][0] = "tree";
+    session.myGame.applySnapshot({
+        ...beforePrediction,
+        board: predictedBoard,
+        activePiece: {
+            ...beforePrediction.activePiece,
+            col: beforePrediction.activePiece.col - 1,
+        },
+        inputQueue: [],
+    }, { resumeGravity: true });
+    assert.equal(session.myGame.getPendingInputCount(), 0);
+
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...beforePrediction,
+            board: beforePrediction.board.map(row => [...row]),
+            pendingGarbageLines: 4,
+            lastProcessedClientSequence: 0,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.deepEqual(session.myGame.getSnapshot().board, predictedBoard);
+    assert.equal(session.myGame.getSnapshot().activePiece.col, beforePrediction.activePiece.col - 1);
+    assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 4);
+});
+
+test("최신 ack snapshot은 pending을 해소한 뒤 board 일치 여부에 따라 한 번만 보정한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+    const localSnapshot = session.myGame.getSnapshot();
+    session.myGame.applySnapshot({
+        ...localSnapshot,
+        inputQueue: [],
+    }, { resumeGravity: true });
+
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...session.myGame.getSnapshot(),
+            board: session.myGame.getSnapshot().board.map(row => [...row]),
+            lastProcessedClientSequence: 1,
+        },
+    });
+    assert.equal(applySnapshotCallCount, 0);
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "ArrowRight",
+        code: "ArrowRight",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+    const beforeMismatch = session.myGame.getSnapshot();
+    const authoritativeBoard = beforeMismatch.board.map(row => [...row]);
+    authoritativeBoard[19][2] = "square";
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...beforeMismatch,
+            board: authoritativeBoard,
+            lastProcessedClientSequence: 2,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 1);
+    assert.deepEqual(session.myGame.getSnapshot().board, authoritativeBoard);
+
+    const staleBoard = beforeMismatch.board.map(row => [...row]);
+    staleBoard[19][3] = "bar";
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...beforeMismatch,
+            board: staleBoard,
+            lastProcessedClientSequence: 1,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 1);
+    assert.deepEqual(session.myGame.getSnapshot().board, authoritativeBoard);
+});
+
+test("최신 ack보다 뒤처진 deferred own snapshot은 폐기하고 다음 snapshot을 기다린다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    for (const key of ["ArrowLeft", "ArrowRight"]) {
+        emitDocumentEvent("keydown", {
+            key,
+            code: key,
+            repeat: false,
+            preventDefault() {},
+        });
+    }
+    await waitForLocalInputTick();
+    const localSnapshot = session.myGame.getSnapshot();
+    session.myGame.applySnapshot({
+        ...localSnapshot,
+        inputQueue: [],
+    }, { resumeGravity: true });
+
+    let applySnapshotCallCount = 0;
+    const originalApplySnapshot = session.myGame.applySnapshot;
+    session.myGame.applySnapshot = (snapshot, options) => {
+        applySnapshotCallCount += 1;
+        originalApplySnapshot(snapshot, options);
+    };
+    const newerBoard = localSnapshot.board.map(row => [...row]);
+    newerBoard[19][1] = "square";
+    const olderBoard = localSnapshot.board.map(row => [...row]);
+    olderBoard[19][2] = "bar";
+
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...localSnapshot,
+            board: newerBoard,
+            lastProcessedClientSequence: 1,
+        },
+    });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...localSnapshot,
+            board: olderBoard,
+            lastProcessedClientSequence: 0,
+        },
+    });
+    sharedFakeSocket.emitServer("game:input:result", {
+        ok: true,
+        reason: null,
+        clientSequence: 2,
+        pieceIndex: localSnapshot.pieceIndex,
+    });
+
+    assert.equal(applySnapshotCallCount, 0);
+    assert.deepEqual(session.myGame.getSnapshot().board, localSnapshot.board);
+
+    const latestBoard = localSnapshot.board.map(row => [...row]);
+    latestBoard[19][3] = "tree";
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "player-me",
+        snapshot: {
+            ...localSnapshot,
+            board: latestBoard,
+            lastProcessedClientSequence: 2,
+        },
+    });
+
+    assert.equal(applySnapshotCallCount, 1);
+    assert.deepEqual(session.myGame.getSnapshot().board, latestBoard);
 });
 
 test("legacy game:snapshot은 상대 보드를 덮지 않고 authoritative snapshot만 적용된다", async (t) => {
@@ -798,6 +1026,13 @@ test("내 playerId의 gameOver authoritative snapshot은 myGame에 full apply한
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
     t.after(() => cleanupSession(session));
+
+    emitDocumentEvent("keydown", {
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        repeat: false,
+        preventDefault() {},
+    });
 
     const myBaseSnapshot = session.myGame.getSnapshot();
     let applySnapshotCallCount = 0;

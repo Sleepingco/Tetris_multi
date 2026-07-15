@@ -50,6 +50,11 @@ test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를
     assert.equal(result.match.players[0].playerId, "host-player");
     assert.deepEqual(result.match.players[0].inputLog, []);
     assert.equal(result.match.players[0].nextInputSequence, 1);
+    assert.equal(result.match.players[0].lastProcessedClientSequence, 0);
+    assert.equal(
+        Object.hasOwn(result.match.players[0].authoritativeState, "lastProcessedClientSequence"),
+        false,
+    );
     assert.equal(result.match.players[0].aiPlan, null);
     assert.equal(typeof result.match.createdAt, "number");
 });
@@ -354,13 +359,15 @@ test("appendPendingGarbageToOpponent는 invalid garbage면 상대 state를 변�
     assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, []);
 });
 
-test("matchService public entry는 authoritative input과 gravity wrapper만 노출한다", () => {
+test("matchService public entry는 authoritative input acknowledgment와 gravity 경계를 노출한다", () => {
     const legacyExport = ["apply", "Authoritative", "Placement", "ToMatchPlayerState"].join("");
 
     assert.equal(matchService.applyInputToMatchPlayerState, undefined);
     assert.equal(Object.hasOwn(matchService, legacyExport), false);
+    assert.equal(typeof matchService.acknowledgeClientInputSequence, "function");
     assert.equal(typeof matchService.applyAuthoritativeInputToMatchPlayerState, "function");
     assert.equal(typeof matchService.applyGravityStepToMatchPlayerState, "function");
+    assert.equal(typeof matchService.validateClientInputSequence, "function");
 });
 
 test("applyAuthoritativeInputToMatchPlayerState는 move_left를 player authoritativeState에 적용한다", async () => {
@@ -407,6 +414,7 @@ test("applyAuthoritativeInputToMatchPlayerState는 pieceIndex가 다르면 state
     const result = applyAuthoritativeInputToMatchPlayerState("INPUT_MISMATCH", "host-player", {
         action: "move_left",
         pieceIndex: hostPlayer.authoritativeState.pieceIndex + 1,
+        clientSequence: 1,
     }, gameCore);
 
     assert.equal(result.ok, false);
@@ -415,6 +423,66 @@ test("applyAuthoritativeInputToMatchPlayerState는 pieceIndex가 다르면 state
     assert.deepEqual(hostPlayer.authoritativeState.activePiece, beforeState.activePiece);
     assert.deepEqual(hostPlayer.authoritativeState.pendingPiece, beforeState.pendingPiece);
     assert.deepEqual(hostPlayer.authoritativeState.pieceQueue, beforeState.pieceQueue);
+    assert.equal(hostPlayer.lastProcessedClientSequence, 1);
+});
+
+test("client input acknowledgment는 player metadata와 snapshot DTO에서 단조 증가한다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("INPUT_ACK"));
+    const match = getMatchState("INPUT_ACK").match;
+    const hostPlayer = match.players.find(player => player.playerId === "host-player");
+    const pieceIndex = hostPlayer.authoritativeState.pieceIndex;
+
+    const firstResult = applyAuthoritativeInputToMatchPlayerState("INPUT_ACK", "host-player", {
+        action: "move_left",
+        pieceIndex,
+        clientSequence: 1,
+    }, gameCore);
+    const secondResult = applyAuthoritativeInputToMatchPlayerState("INPUT_ACK", "host-player", {
+        action: "move_right",
+        pieceIndex,
+        clientSequence: 2,
+    }, gameCore);
+    const snapshotResult = getAuthoritativePlayerSnapshotDto("INPUT_ACK", "host-player");
+
+    assert.equal(firstResult.ok, true);
+    assert.equal(secondResult.ok, true);
+    assert.equal(hostPlayer.lastProcessedClientSequence, 2);
+    assert.equal(snapshotResult.snapshot.lastProcessedClientSequence, 2);
+    assert.equal(
+        Object.hasOwn(hostPlayer.authoritativeState, "lastProcessedClientSequence"),
+        false,
+    );
+});
+
+test("처리된 clientSequence 이하 입력은 authoritative state에 다시 적용하지 않는다", async () => {
+    resetMatches();
+
+    const gameCore = await loadGameCore();
+    createMatch(createPlayingRoom("INPUT_ACK_ORDER"));
+    const match = getMatchState("INPUT_ACK_ORDER").match;
+    const hostPlayer = match.players.find(player => player.playerId === "host-player");
+    const pieceIndex = hostPlayer.authoritativeState.pieceIndex;
+
+    const latestResult = applyAuthoritativeInputToMatchPlayerState("INPUT_ACK_ORDER", "host-player", {
+        action: "move_left",
+        pieceIndex,
+        clientSequence: 2,
+    }, gameCore);
+    const stateAfterLatest = structuredClone(hostPlayer.authoritativeState);
+    const staleResult = applyAuthoritativeInputToMatchPlayerState("INPUT_ACK_ORDER", "host-player", {
+        action: "move_left",
+        pieceIndex,
+        clientSequence: 1,
+    }, gameCore);
+
+    assert.equal(latestResult.ok, true);
+    assert.equal(staleResult.ok, false);
+    assert.equal(staleResult.reason, "CLIENT_SEQUENCE_OUT_OF_ORDER");
+    assert.equal(hostPlayer.lastProcessedClientSequence, 2);
+    assert.deepEqual(hostPlayer.authoritativeState, stateAfterLatest);
 });
 
 test("applyAuthoritativeInputToMatchPlayerState는 hard_drop을 player authoritativeState에 적용한다", async () => {

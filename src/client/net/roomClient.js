@@ -94,8 +94,22 @@ export function requestStartGame(roomId, playerId) {
 // 서버 입력/상태 동기화 채널이다.
 // =============================
 
-export function sendGameInput(roomId, playerId, action, tick = null, pieceIndex = null) {
-    serverConnection.emit("game:input", { roomId, playerId, action, tick, pieceIndex })
+export function sendGameInput(
+    roomId,
+    playerId,
+    action,
+    tick = null,
+    pieceIndex = null,
+    clientSequence = null,
+) {
+    serverConnection.emit("game:input", {
+        roomId,
+        playerId,
+        action,
+        tick,
+        pieceIndex,
+        clientSequence,
+    })
 }
 
 export function receiveGameInput(handler) {

@@ -80,6 +80,7 @@ function createMatch(room) {
                 playerType: player.playerType || "human",
                 inputLog: [],
                 nextInputSequence: 1,
+                lastProcessedClientSequence: 0,
                 bagChunks,
                 authoritativeState: createInitialPlayerState(bagChunks),
                 aiPlan: null,
@@ -121,7 +122,7 @@ function deleteMatch(roomId) {
  *
  * @param {string} roomId - match room id
  * @param {string} playerId - 입력을 보낸 player id
- * @param {{action: string, tick?: number|null, pieceIndex?: number|null}} input - 저장할 입력 정보
+ * @param {{action: string, tick?: number|null, pieceIndex?: number|null, clientSequence?: number}} input - 저장할 입력 정보
  * @returns {{ok: boolean, match: Object|null, reason: string|null}} 저장 결과
  */
 function recordInput(roomId, playerId, input) {
@@ -156,6 +157,9 @@ function recordInput(roomId, playerId, input) {
         action: input.action,
         tick: input.tick ?? null,
         pieceIndex: input.pieceIndex ?? null,
+        ...(Number.isInteger(input.clientSequence)
+            ? { clientSequence: input.clientSequence }
+            : {}),
         sequence: player.nextInputSequence,
         receivedAt: Date.now(),
     });
@@ -273,7 +277,17 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
         };
     }
 
+    const clientSequence = Number.isInteger(input?.clientSequence)
+        && input.clientSequence >= 1
+        ? input.clientSequence
+        : null;
+    if (clientSequence !== null) {
+        const sequenceValidation = validateClientInputSequence(roomId, playerId, clientSequence);
+        if (!sequenceValidation.ok) return sequenceValidation;
+    }
+
     if (input?.pieceIndex !== player.authoritativeState.pieceIndex) {
+        markClientInputProcessed(player, clientSequence);
         return {
             ok: false,
             match,
@@ -283,6 +297,7 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
 
     const gameplayResult = applyAuthoritativeInput(player.authoritativeState, input, gameCore);
     if (!gameplayResult.ok) {
+        markClientInputProcessed(player, clientSequence);
         return {
             ok: false,
             match,
@@ -291,8 +306,58 @@ function applyAuthoritativeInputToMatchPlayerState(roomId, playerId, input, game
         };
     }
 
+    markClientInputProcessed(player, clientSequence);
     attachPresentationEffectId(gameplayResult, playerId);
     return createSuccess(match, { gameplayResult });
+}
+
+function markClientInputProcessed(player, clientSequence) {
+    if (!Number.isInteger(clientSequence)) return;
+
+    player.lastProcessedClientSequence = clientSequence;
+}
+
+function validateClientInputSequence(roomId, playerId, clientSequence) {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+
+    const player = match.players.find(matchPlayer => matchPlayer.playerId === playerId);
+    if (!player) return createFailure("PLAYER_NOT_FOUND");
+    if (!Number.isInteger(clientSequence) || clientSequence < 1) {
+        return createFailure("INVALID_CLIENT_SEQUENCE");
+    }
+
+    const lastProcessedClientSequence = Number.isInteger(player.lastProcessedClientSequence)
+        ? player.lastProcessedClientSequence
+        : 0;
+    if (clientSequence <= lastProcessedClientSequence) {
+        return createFailure("CLIENT_SEQUENCE_OUT_OF_ORDER");
+    }
+
+    return createSuccess(match);
+}
+
+function acknowledgeClientInputSequence(roomId, playerId, clientSequence) {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+
+    const player = match.players.find(matchPlayer => matchPlayer.playerId === playerId);
+    if (!player) return createFailure("PLAYER_NOT_FOUND");
+    if (!Number.isInteger(clientSequence) || clientSequence < 1) {
+        return createFailure("INVALID_CLIENT_SEQUENCE");
+    }
+
+    const lastProcessedClientSequence = Number.isInteger(player.lastProcessedClientSequence)
+        ? player.lastProcessedClientSequence
+        : 0;
+    if (clientSequence < lastProcessedClientSequence) {
+        return createFailure("CLIENT_SEQUENCE_OUT_OF_ORDER");
+    }
+
+    if (clientSequence > lastProcessedClientSequence) {
+        player.lastProcessedClientSequence = clientSequence;
+    }
+    return createSuccess(match);
 }
 
 function ensurePlayerBagQueue(roomId, playerId, minimumRemaining = 7) {
@@ -413,8 +478,16 @@ function getAuthoritativePlayerSnapshotDto(roomId, playerId) {
         return result;
     }
 
+    const player = result.match.players.find(matchPlayer => matchPlayer.playerId === playerId);
+    const lastProcessedClientSequence = Number.isInteger(player?.lastProcessedClientSequence)
+        ? player.lastProcessedClientSequence
+        : 0;
+
     return createSuccess(result.match, {
-        snapshot: createClientSnapshotDto(result.snapshot),
+        snapshot: {
+            ...createClientSnapshotDto(result.snapshot),
+            lastProcessedClientSequence,
+        },
     });
 }
 
@@ -538,6 +611,7 @@ function resetMatches() {
 }
 
 module.exports = {
+    acknowledgeClientInputSequence,
     appendPlayerBagChunk,
     appendPendingGarbageToOpponent,
     applyAuthoritativeInputToMatchPlayerState,
@@ -552,4 +626,5 @@ module.exports = {
     MAX_INPUT_LOG_ENTRIES_PER_PLAYER,
     recordInput,
     resetMatches,
+    validateClientInputSequence,
 };
