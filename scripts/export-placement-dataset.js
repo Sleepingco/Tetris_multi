@@ -9,10 +9,14 @@ const DEFAULT_INPUT = "data/logs/game-events.jsonl";
 const DEFAULT_OUTPUT_DIR = "data/datasets/placement-v1";
 const DEFAULT_VALIDATION_RATIO = 0.2;
 const DEFAULT_SEED = "placement-dataset-v1";
-const EXPORT_POLICY_VERSION = 1;
-const WINNER_ONLY = true;
+const EXPORT_POLICY_VERSION = 2;
+const DEFAULT_SELECTION_POLICY = "winner-only";
+const DEFAULT_SOURCE_FILTER = "all";
 const MINIMUM_PIECE_INDEX = 5;
 const REQUIRED_FINISH_TYPE = "normal";
+const SUPPORTED_SELECTION_POLICIES = new Set(["winner-only", "all-completed"]);
+const SUPPORTED_SOURCE_FILTERS = new Set(["all", "human", "heuristic_ai"]);
+const SUPPORTED_AI_DIFFICULTIES = new Set(["normal", "hard"]);
 const SUPPORTED_EVENT_TYPES = new Set([
     "game_start",
     "placement_decision",
@@ -40,6 +44,8 @@ function parseCliArgs(args) {
         validationRatio: DEFAULT_VALIDATION_RATIO,
         seed: DEFAULT_SEED,
         excludePlayerPrefixes: [],
+        selectionPolicy: DEFAULT_SELECTION_POLICY,
+        sourceFilter: DEFAULT_SOURCE_FILTER,
     };
 
     for (let index = 0; index < args.length; index++) {
@@ -72,6 +78,26 @@ function parseCliArgs(args) {
             options.excludePlayerPrefixes.push(
                 requireOptionValue(args, index, optionName),
             );
+            index += 1;
+            continue;
+        }
+        if (optionName === "--selection-policy") {
+            const value = requireOptionValue(args, index, optionName);
+            if (!SUPPORTED_SELECTION_POLICIES.has(value)) {
+                throw new Error(
+                    "--selection-policy must be winner-only or all-completed",
+                );
+            }
+            options.selectionPolicy = value;
+            index += 1;
+            continue;
+        }
+        if (optionName === "--source") {
+            const value = requireOptionValue(args, index, optionName);
+            if (!SUPPORTED_SOURCE_FILTERS.has(value)) {
+                throw new Error("--source must be all, human, or heuristic_ai");
+            }
+            options.sourceFilter = value;
             index += 1;
             continue;
         }
@@ -228,11 +254,62 @@ function hasExcludedPlayerPrefix(playerId, prefixes) {
     });
 }
 
-function selectPlacementLogs(games, excludePlayerPrefixes) {
+function getGameAiDifficulty(game) {
+    const difficulties = new Set();
+    game.placementDecision.forEach(entry => {
+        const log = entry.log;
+        if (
+            log.source === "heuristic_ai" &&
+            SUPPORTED_AI_DIFFICULTIES.has(log.aiDifficulty)
+        ) {
+            difficulties.add(log.aiDifficulty);
+        }
+    });
+
+    return {
+        aiDifficulty: difficulties.size === 1 ? [...difficulties][0] : null,
+        hasConflict: difficulties.size > 1,
+    };
+}
+
+function matchesSourceFilter(source, sourceFilter) {
+    return sourceFilter === DEFAULT_SOURCE_FILTER || source === sourceFilter;
+}
+
+function enrichHumanDifficulty(entry, gameDifficulty) {
+    if (entry.log.source !== "human" || gameDifficulty.aiDifficulty === null) {
+        return { entry, enriched: false };
+    }
+
+    return {
+        entry: {
+            ...entry,
+            log: {
+                ...entry.log,
+                aiDifficulty: gameDifficulty.aiDifficulty,
+            },
+        },
+        enriched: entry.log.aiDifficulty !== gameDifficulty.aiDifficulty,
+    };
+}
+
+function hasHumanDifficultyConflict(log, gameDifficulty) {
+    return log.source === "human" &&
+        SUPPORTED_AI_DIFFICULTIES.has(log.aiDifficulty) &&
+        gameDifficulty.aiDifficulty !== null &&
+        log.aiDifficulty !== gameDifficulty.aiDifficulty;
+}
+
+function selectPlacementLogs(games, {
+    excludePlayerPrefixes,
+    selectionPolicy,
+    sourceFilter,
+}) {
     const eligibleEntries = [];
     const rejected = [];
     let eligibleGameCount = 0;
     let excludedGameCount = 0;
+    let difficultyEnrichmentCount = 0;
 
     [...games.entries()]
         .sort(([left], [right]) => left.localeCompare(right))
@@ -248,9 +325,13 @@ function selectPlacementLogs(games, excludePlayerPrefixes) {
 
             eligibleGameCount += 1;
             const winnerPlayerId = game.gameOver[0].log.winnerPlayerId;
+            const gameDifficulty = getGameAiDifficulty(game);
             game.placementDecision.forEach(entry => {
                 const log = entry.log;
-                if (WINNER_ONLY && log.playerId !== winnerPlayerId) {
+                if (
+                    selectionPolicy === "winner-only" &&
+                    log.playerId !== winnerPlayerId
+                ) {
                     rejected.push(createEventRejection(entry, "LOSER_PLACEMENT"));
                     return;
                 }
@@ -265,7 +346,27 @@ function selectPlacementLogs(games, excludePlayerPrefixes) {
                     rejected.push(createEventRejection(entry, "TEST_PLAYER_EXCLUDED"));
                     return;
                 }
-                eligibleEntries.push(entry);
+                if (!matchesSourceFilter(log.source, sourceFilter)) {
+                    rejected.push(createEventRejection(entry, "SOURCE_FILTERED"));
+                    return;
+                }
+                if (
+                    log.source === "human" &&
+                    (
+                        gameDifficulty.hasConflict ||
+                        hasHumanDifficultyConflict(log, gameDifficulty)
+                    )
+                ) {
+                    rejected.push(createEventRejection(
+                        entry,
+                        "AMBIGUOUS_AI_DIFFICULTY",
+                    ));
+                    return;
+                }
+
+                const enriched = enrichHumanDifficulty(entry, gameDifficulty);
+                if (enriched.enriched) difficultyEnrichmentCount += 1;
+                eligibleEntries.push(enriched.entry);
             });
         });
 
@@ -275,7 +376,24 @@ function selectPlacementLogs(games, excludePlayerPrefixes) {
         rejected,
         eligibleGameCount,
         excludedGameCount,
+        difficultyEnrichmentCount,
     };
+}
+
+function addGameResultMetadata(samples, games) {
+    return samples.map(sample => {
+        const game = games.get(sample.gameId);
+        const gameOver = game?.gameOver?.[0]?.log;
+        return {
+            ...sample,
+            metadata: {
+                ...sample.metadata,
+                isWinner: sample.playerId === gameOver?.winnerPlayerId,
+                winnerPlayerId: gameOver?.winnerPlayerId ?? null,
+                finishType: gameOver?.finishType ?? null,
+            },
+        };
+    });
 }
 
 function serializeJsonLines(rows) {
@@ -336,6 +454,8 @@ async function exportPlacementDataset({
     validationRatio = DEFAULT_VALIDATION_RATIO,
     seed = DEFAULT_SEED,
     excludePlayerPrefixes = [],
+    selectionPolicy = DEFAULT_SELECTION_POLICY,
+    sourceFilter = DEFAULT_SOURCE_FILTER,
 } = {}) {
     if (!Number.isFinite(validationRatio) || validationRatio < 0 || validationRatio > 1) {
         throw new Error("validationRatio must be between 0 and 1");
@@ -343,6 +463,12 @@ async function exportPlacementDataset({
     const normalizedExcludePlayerPrefixes = normalizeExcludePlayerPrefixes(
         excludePlayerPrefixes,
     );
+    if (!SUPPORTED_SELECTION_POLICIES.has(selectionPolicy)) {
+        throw new Error("selectionPolicy must be winner-only or all-completed");
+    }
+    if (!SUPPORTED_SOURCE_FILTERS.has(sourceFilter)) {
+        throw new Error("sourceFilter must be all, human, or heuristic_ai");
+    }
 
     const inputPath = path.resolve(input);
     const resolvedOutputDir = path.resolve(outputDir);
@@ -352,7 +478,11 @@ async function exportPlacementDataset({
     const inputSha256 = createHash("sha256").update(inputBuffer).digest("hex");
     const parsed = parseInput(inputBuffer.toString("utf8"));
     const games = groupEventsByGameId(parsed.entries);
-    const selected = selectPlacementLogs(games, normalizedExcludePlayerPrefixes);
+    const selected = selectPlacementLogs(games, {
+        excludePlayerPrefixes: normalizedExcludePlayerPrefixes,
+        selectionPolicy,
+        sourceFilter,
+    });
     const {
         buildPlacementDataset,
         splitDatasetByGameId,
@@ -366,7 +496,17 @@ async function exportPlacementDataset({
         const entry = selected.eligibleEntries[item.index];
         return createEventRejection(entry, item.reason);
     });
-    const split = splitDatasetByGameId(builderResult.samples, {
+    const rejectedBuilderIndexes = new Set(
+        builderResult.rejected.map(item => item.index),
+    );
+    const acceptedPlacementEntries = selected.eligibleEntries.filter((_, index) => {
+        return !rejectedBuilderIndexes.has(index);
+    });
+    const samplesWithGameMetadata = addGameResultMetadata(
+        builderResult.samples,
+        games,
+    );
+    const split = splitDatasetByGameId(samplesWithGameMetadata, {
         validationRatio,
         seed,
     });
@@ -380,21 +520,33 @@ async function exportPlacementDataset({
         return item.eventType === "placement_decision";
     }).length;
     const sampleCountBySource = countBy(
-        builderResult.samples,
+        samplesWithGameMetadata,
         sample => sample.source,
         ["human", "heuristic_ai"],
     );
     const sampleCountByAiDifficulty = countBy(
-        builderResult.samples,
-        sample => sample.aiDifficulty,
-        ["normal", "hard"],
+        samplesWithGameMetadata,
+        sample => sample.aiDifficulty ?? "unknown",
+        ["normal", "hard", "unknown"],
+    );
+    const acceptedPlacementLogCountBySource = countBy(
+        acceptedPlacementEntries,
+        entry => entry.log.source,
+        ["human", "heuristic_ai"],
+    );
+    const acceptedPlacementLogCountByAiDifficulty = countBy(
+        acceptedPlacementEntries,
+        entry => entry.log.aiDifficulty ?? "unknown",
+        ["normal", "hard", "unknown"],
     );
 
     const manifest = {
         datasetSchemaVersion: PLACEMENT_DATASET_SCHEMA_VERSION,
         exportPolicyVersion: EXPORT_POLICY_VERSION,
         excludePlayerPrefixes: normalizedExcludePlayerPrefixes,
-        winnerOnly: WINNER_ONLY,
+        selectionPolicy,
+        sourceFilter,
+        winnerOnly: selectionPolicy === "winner-only",
         minimumPieceIndex: MINIMUM_PIECE_INDEX,
         requiredFinishType: REQUIRED_FINISH_TYPE,
         inputSha256,
@@ -409,14 +561,17 @@ async function exportPlacementDataset({
         excludedGameCount: selected.excludedGameCount,
         acceptedPlacementLogCount: builderResult.summary.acceptedLogCount,
         rejectedPlacementLogCount,
+        difficultyEnrichmentCount: selected.difficultyEnrichmentCount,
         rejectionReasonCounts: countRejectionReasons(rejected),
+        acceptedPlacementLogCountBySource,
+        acceptedPlacementLogCountByAiDifficulty,
         sampleCountBySource,
         sampleCountByAiDifficulty,
         trainSampleCount: split.train.length,
         validationSampleCount: split.validation.length,
         trainGameCount: split.summary.trainGameIds.length,
         validationGameCount: split.summary.validationGameIds.length,
-        selectedBySourceSampleCount: builderResult.samples.filter(sample => {
+        selectedBySourceSampleCount: samplesWithGameMetadata.filter(sample => {
             return sample.selectedBySource === true;
         }).length,
     };
@@ -461,6 +616,8 @@ module.exports = {
     DEFAULT_OUTPUT_DIR,
     DEFAULT_SEED,
     DEFAULT_VALIDATION_RATIO,
+    DEFAULT_SELECTION_POLICY,
+    DEFAULT_SOURCE_FILTER,
     exportPlacementDataset,
     parseCliArgs,
 };

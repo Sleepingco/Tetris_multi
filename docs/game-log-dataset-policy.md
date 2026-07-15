@@ -45,9 +45,24 @@ feature-ready v2 데이터셋에서는 해당 행을 제외한다.
 ### 포함
 - 정상 종료된 게임
 - game_start, placement_decision, game_over가 모두 존재하는 gameId
-- winnerPlayerId와 playerId가 같은 placement_decision
 - pieceIndex >= 5
 - boardBefore/boardAfter/selectedPlacement가 유효한 로그
+
+Exporter의 기본 선택 정책은 `winner-only`이며 기존처럼 `winnerPlayerId`와
+`playerId`가 같은 placement만 사용한다. Human 행동 데이터처럼 완료된 게임의
+승자와 패자를 모두 분석할 때는 `--selection-policy all-completed`를 사용한다.
+두 정책 모두 `finishType: normal`인 완료 게임만 허용한다.
+
+`--source`는 `all`, `human`, `heuristic_ai` 중 하나를 받으며 기본값은 `all`이다.
+Human 로그의 `aiDifficulty`는 같은 gameId의 heuristic AI 로그에서 추론한다.
+한 gameId에 `normal`과 `hard`가 함께 있으면 해당 human placement는
+`AMBIGUOUS_AI_DIFFICULTY`로 제외한다. Human 로그에 이미 명시된 난이도와
+같은 게임에서 추론한 AI 난이도가 달라도 같은 reason으로 제외한다.
+
+Dataset sample의 `metadata`에는 모델 feature와 분리된 게임 결과 문맥을 둔다.
+- `isWinner`
+- `winnerPlayerId`
+- `finishType`
 
 ### 제외
 - disconnect 또는 leave로 끝난 게임
@@ -58,6 +73,5 @@ feature-ready v2 데이터셋에서는 해당 행을 제외한다.
 - pieceIndex 누락
 
 ### 보류
-- loser의 placement_decision
 - gameOver 직전 placement
 - 비정상적으로 짧은 게임

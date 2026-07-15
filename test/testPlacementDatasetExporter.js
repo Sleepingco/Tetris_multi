@@ -152,8 +152,10 @@ test("정상 complete game을 train dataset과 manifest로 export한다", async 
 
     assert.ok(train.length > 0);
     assert.equal(manifest.datasetSchemaVersion, 1);
-    assert.equal(manifest.exportPolicyVersion, 1);
+    assert.equal(manifest.exportPolicyVersion, 2);
     assert.deepEqual(manifest.excludePlayerPrefixes, []);
+    assert.equal(manifest.selectionPolicy, "winner-only");
+    assert.equal(manifest.sourceFilter, "all");
     assert.equal(manifest.winnerOnly, true);
     assert.equal(manifest.minimumPieceIndex, 5);
     assert.equal(manifest.requiredFinishType, "normal");
@@ -171,9 +173,19 @@ test("정상 complete game을 train dataset과 manifest로 export한다", async 
     assert.equal(manifest.acceptedPlacementLogCount, 1);
     assert.equal(manifest.rejectedPlacementLogCount, 0);
     assert.equal(manifest.sampleCountBySource.human, train.length);
+    assert.equal(manifest.acceptedPlacementLogCountBySource.human, 1);
+    assert.equal(manifest.acceptedPlacementLogCountByAiDifficulty.unknown, 1);
     assert.equal(manifest.selectedBySourceSampleCount, 1);
     assert.equal(manifest.trainGameCount, 1);
     assert.equal(manifest.validationGameCount, 0);
+    assert.ok(train.every(sample => {
+        return sample.metadata.isWinner === true &&
+            sample.metadata.winnerPlayerId === "winner-001" &&
+            sample.metadata.finishType === "normal" &&
+            sample.isWinner === undefined &&
+            sample.winnerPlayerId === undefined &&
+            sample.finishType === undefined;
+    }));
 });
 
 test("malformed JSON line은 격리하고 나머지 game export를 계속한다", async t => {
@@ -234,6 +246,189 @@ test("loser placement와 pieceIndex 5 미만 placement를 정책 reason으로 �
     assert.equal(manifest.rejectedPlacementLogCount, 2);
     assert.equal(manifest.rejectionReasonCounts.LOSER_PLACEMENT, 1);
     assert.equal(manifest.rejectionReasonCounts.EARLY_PIECE_INDEX, 1);
+});
+
+test("all-completed 정책은 loser placement도 결과 metadata와 함께 포함한다", async t => {
+    const paths = await createTestPaths(t);
+    const placements = [
+        createPlacementDecision({ playerId: "winner-001", pieceIndex: 5 }),
+        createPlacementDecision({ playerId: "loser-001", pieceIndex: 6 }),
+    ];
+    await writeJsonLines(paths.input, createCompleteGame({ placements }));
+
+    const { manifest } = await exportPlacementDataset({
+        input: paths.input,
+        outputDir: paths.output,
+        validationRatio: 0,
+        selectionPolicy: "all-completed",
+    });
+    const train = await readJsonLines(path.join(paths.output, "train.jsonl"));
+    const loserSamples = train.filter(sample => sample.playerId === "loser-001");
+
+    assert.equal(manifest.selectionPolicy, "all-completed");
+    assert.equal(manifest.winnerOnly, false);
+    assert.equal(manifest.acceptedPlacementLogCount, 2);
+    assert.equal(manifest.rejectionReasonCounts.LOSER_PLACEMENT, undefined);
+    assert.ok(loserSamples.length > 0);
+    assert.ok(loserSamples.every(sample => {
+        return sample.metadata.isWinner === false &&
+            sample.metadata.winnerPlayerId === "winner-001" &&
+            sample.metadata.finishType === "normal";
+    }));
+});
+
+test("source filter는 요청한 source만 builder에 전달한다", async t => {
+    const paths = await createTestPaths(t);
+    const heuristicOutput = path.join(paths.root, "heuristic-output");
+    const placements = [
+        createPlacementDecision({ playerId: "winner-001", pieceIndex: 5 }),
+        createPlacementDecision({
+            playerId: "loser-001",
+            pieceIndex: 6,
+            source: "heuristic_ai",
+            modelType: "heuristic",
+            aiDifficulty: "normal",
+        }),
+    ];
+    await writeJsonLines(paths.input, createCompleteGame({ placements }));
+
+    const humanResult = await exportPlacementDataset({
+        input: paths.input,
+        outputDir: paths.output,
+        validationRatio: 0,
+        selectionPolicy: "all-completed",
+        sourceFilter: "human",
+    });
+    const heuristicResult = await exportPlacementDataset({
+        input: paths.input,
+        outputDir: heuristicOutput,
+        validationRatio: 0,
+        selectionPolicy: "all-completed",
+        sourceFilter: "heuristic_ai",
+    });
+    const humanRows = await readJsonLines(path.join(paths.output, "train.jsonl"));
+    const heuristicRows = await readJsonLines(
+        path.join(heuristicOutput, "train.jsonl"),
+    );
+
+    assert.ok(humanRows.every(sample => sample.source === "human"));
+    assert.ok(heuristicRows.every(sample => sample.source === "heuristic_ai"));
+    assert.equal(humanResult.manifest.sourceFilter, "human");
+    assert.equal(heuristicResult.manifest.sourceFilter, "heuristic_ai");
+    assert.equal(humanResult.manifest.acceptedPlacementLogCountBySource.human, 1);
+    assert.equal(
+        heuristicResult.manifest.acceptedPlacementLogCountBySource.heuristic_ai,
+        1,
+    );
+    assert.equal(humanResult.manifest.rejectionReasonCounts.SOURCE_FILTERED, 1);
+    assert.equal(heuristicResult.manifest.rejectionReasonCounts.SOURCE_FILTERED, 1);
+});
+
+test("human sample은 같은 gameId의 AI 난이도를 추론해 연결한다", async t => {
+    const paths = await createTestPaths(t);
+    const createDifficultyGame = (gameId, difficulty) => createCompleteGame({
+        gameId,
+        winnerPlayerId: `${gameId}-ai`,
+        loserPlayerId: `${gameId}-human`,
+        placements: [
+            createPlacementDecision({
+                gameId,
+                playerId: `${gameId}-human`,
+                pieceIndex: 5,
+            }),
+            createPlacementDecision({
+                gameId,
+                playerId: `${gameId}-ai`,
+                pieceIndex: 5,
+                source: "heuristic_ai",
+                modelType: "heuristic",
+                aiDifficulty: difficulty,
+            }),
+        ],
+    });
+    await writeJsonLines(paths.input, [
+        ...createDifficultyGame("game-normal", "normal"),
+        ...createDifficultyGame("game-hard", "hard"),
+    ]);
+
+    const { manifest } = await exportPlacementDataset({
+        input: paths.input,
+        outputDir: paths.output,
+        validationRatio: 0,
+        selectionPolicy: "all-completed",
+        sourceFilter: "human",
+    });
+    const train = await readJsonLines(path.join(paths.output, "train.jsonl"));
+
+    assert.equal(manifest.difficultyEnrichmentCount, 2);
+    assert.equal(manifest.acceptedPlacementLogCountByAiDifficulty.normal, 1);
+    assert.equal(manifest.acceptedPlacementLogCountByAiDifficulty.hard, 1);
+    assert.ok(train.some(sample => sample.aiDifficulty === "normal"));
+    assert.ok(train.some(sample => sample.aiDifficulty === "hard"));
+    assert.equal(manifest.sampleCountByAiDifficulty.unknown, 0);
+});
+
+test("한 gameId의 AI 난이도가 충돌하면 human placement를 명시적으로 reject한다", async t => {
+    const paths = await createTestPaths(t);
+    const placements = [
+        createPlacementDecision({ playerId: "winner-001", pieceIndex: 5 }),
+        createPlacementDecision({
+            playerId: "ai-normal",
+            pieceIndex: 5,
+            source: "heuristic_ai",
+            modelType: "heuristic",
+            aiDifficulty: "normal",
+        }),
+        createPlacementDecision({
+            playerId: "ai-hard",
+            pieceIndex: 6,
+            source: "heuristic_ai",
+            modelType: "heuristic",
+            aiDifficulty: "hard",
+        }),
+    ];
+    await writeJsonLines(paths.input, createCompleteGame({ placements }));
+
+    const { manifest } = await exportPlacementDataset({
+        input: paths.input,
+        outputDir: paths.output,
+        selectionPolicy: "all-completed",
+        sourceFilter: "human",
+    });
+
+    assert.equal(manifest.acceptedPlacementLogCount, 0);
+    assert.equal(manifest.difficultyEnrichmentCount, 0);
+    assert.equal(manifest.rejectionReasonCounts.AMBIGUOUS_AI_DIFFICULTY, 1);
+});
+
+test("human 명시 난이도와 game AI 난이도가 다르면 조용히 덮어쓰지 않는다", async t => {
+    const paths = await createTestPaths(t);
+    const placements = [
+        createPlacementDecision({
+            playerId: "winner-001",
+            pieceIndex: 5,
+            aiDifficulty: "hard",
+        }),
+        createPlacementDecision({
+            playerId: "ai-normal",
+            pieceIndex: 5,
+            source: "heuristic_ai",
+            modelType: "heuristic",
+            aiDifficulty: "normal",
+        }),
+    ];
+    await writeJsonLines(paths.input, createCompleteGame({ placements }));
+
+    const { manifest } = await exportPlacementDataset({
+        input: paths.input,
+        outputDir: paths.output,
+        selectionPolicy: "all-completed",
+        sourceFilter: "human",
+    });
+
+    assert.equal(manifest.acceptedPlacementLogCount, 0);
+    assert.equal(manifest.difficultyEnrichmentCount, 0);
+    assert.equal(manifest.rejectionReasonCounts.AMBIGUOUS_AI_DIFFICULTY, 1);
 });
 
 test("schema v1과 builder-invalid placement rejection reason을 전달한다", async t => {
@@ -459,16 +654,22 @@ test("CLI 옵션은 기본 test prefix 없이 repeatable prefix를 명시적으�
         "--output-dir", "custom-output",
         "--validation-ratio", "0.3",
         "--seed", "custom-seed",
+        "--selection-policy", "all-completed",
+        "--source", "human",
         "--exclude-player-prefix", "test-",
         "--exclude-player-prefix", "fixture-",
     ]);
 
     assert.deepEqual(defaults.excludePlayerPrefixes, []);
+    assert.equal(defaults.selectionPolicy, "winner-only");
+    assert.equal(defaults.sourceFilter, "all");
     assert.deepEqual(parsed, {
         input: "custom.jsonl",
         outputDir: "custom-output",
         validationRatio: 0.3,
         seed: "custom-seed",
         excludePlayerPrefixes: ["test-", "fixture-"],
+        selectionPolicy: "all-completed",
+        sourceFilter: "human",
     });
 });
