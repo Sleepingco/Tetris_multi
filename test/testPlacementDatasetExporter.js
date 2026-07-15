@@ -151,7 +151,7 @@ test("정상 complete game을 train dataset과 manifest로 export한다", async 
     const train = await readJsonLines(path.join(paths.output, "train.jsonl"));
 
     assert.ok(train.length > 0);
-    assert.equal(manifest.datasetSchemaVersion, 1);
+    assert.equal(manifest.datasetSchemaVersion, 2);
     assert.equal(manifest.exportPolicyVersion, 2);
     assert.deepEqual(manifest.excludePlayerPrefixes, []);
     assert.equal(manifest.selectionPolicy, "winner-only");

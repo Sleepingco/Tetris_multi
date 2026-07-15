@@ -31,7 +31,7 @@ function createReason(linesCleared, metricsBefore, metricsAfter) {
     };
 }
 
-function compareRankedPlacements(left, right) {
+export function compareHeuristicEvaluations(left, right) {
     if (left.score !== right.score) return right.score - left.score;
     if (left.linesCleared !== right.linesCleared) {
         return right.linesCleared - left.linesCleared;
@@ -132,7 +132,7 @@ export function rankPlacements(board, activePiece) {
             };
         })
         .filter(Boolean)
-        .sort(compareRankedPlacements);
+        .sort(compareHeuristicEvaluations);
 }
 
 /**

@@ -6,7 +6,8 @@
     "start": "node src/app.js",
     "test": "node --test",
     "test:e2e": "playwright test",
-    "dataset:export": "node scripts/export-placement-dataset.js"
+    "dataset:export": "node scripts/export-placement-dataset.js",
+    "dataset:evaluate": "node scripts/evaluate-placement-dataset.js"
   },
   "keywords": [],
   "author": "",

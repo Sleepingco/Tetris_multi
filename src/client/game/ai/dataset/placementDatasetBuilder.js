@@ -1,7 +1,7 @@
 import { evaluatePlacement } from "../heuristic/heuristicEvaluator.js";
 import { generateReachablePlacements } from "../heuristic/reachablePlacementPlanner.js";
 
-export const PLACEMENT_DATASET_SCHEMA_VERSION = 1;
+export const PLACEMENT_DATASET_SCHEMA_VERSION = 2;
 
 export const DATASET_REJECTION_REASONS = Object.freeze({
     LOG_REQUIRED: "LOG_REQUIRED",
@@ -228,6 +228,10 @@ function createSample(log, candidate, evaluation, inputSequence) {
         metricsBefore,
         candidateMetricsAfter,
         metricDelta: calculateMetricDelta(metricsBefore, candidateMetricsAfter),
+        candidateResult: {
+            linesCleared: evaluation.linesCleared,
+            gameOver: evaluation.gameOver,
+        },
         selectedBySource: isSamePlacement(candidate.placement, log.selectedPlacement),
         heuristicBaseline: {
             score: evaluation.score,

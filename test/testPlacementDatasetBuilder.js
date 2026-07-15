@@ -153,6 +153,24 @@ test("원본 selectedPlacement와 일치하는 candidate 하나만 label이 true
     assert.deepEqual(selectedSamples[0].candidatePlacement, log.selectedPlacement);
 });
 
+test("candidateResult는 후보 simulation의 linesCleared와 gameOver를 사용한다", async () => {
+    const { buildPlacementDataset, PLACEMENT_DATASET_SCHEMA_VERSION } = await import(
+        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+    );
+    const result = buildPlacementDataset([await createValidLog()]);
+
+    assert.equal(PLACEMENT_DATASET_SCHEMA_VERSION, 2);
+    assert.ok(result.samples.every(sample => {
+        return Number.isInteger(sample.candidateResult.linesCleared) &&
+            sample.candidateResult.linesCleared >= 0 &&
+            typeof sample.candidateResult.gameOver === "boolean";
+    }));
+    assert.ok(result.samples.every(sample => {
+        return sample.candidateResult.linesCleared ===
+            sample.heuristicBaseline.reason.linesCleared;
+    }));
+});
+
 test("inputSequence와 입력 객체를 변경하지 않고 metadata 복사본을 만든다", async () => {
     const { buildPlacementDataset } = await import(
         "../src/client/game/ai/dataset/placementDatasetBuilder.js"
