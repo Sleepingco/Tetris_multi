@@ -1,5 +1,5 @@
 import { PLACEMENT_DATASET_SCHEMA_VERSION } from "../dataset/placementDatasetBuilder.js";
-import { getCanonicalPlacementKey } from "../dataset/placementDecisionGroups.js";
+import { compareCanonicalStrings, getCanonicalPlacementKey } from "../dataset/placementDecisionGroups.js";
 import {
     extractPlacementFeatures,
     PLACEMENT_FEATURE_NAMES,
@@ -46,10 +46,10 @@ function canonicalizeGroups(groups) {
         decisionKey: group?.decisionKey,
         candidates: Array.isArray(group?.candidates)
             ? group.candidates.slice().sort((left, right) => {
-                return String(getCanonicalPlacementKey(left)).localeCompare(String(getCanonicalPlacementKey(right)));
+                return compareCanonicalStrings(getCanonicalPlacementKey(left), getCanonicalPlacementKey(right));
             })
             : null,
-    })).sort((left, right) => String(left.decisionKey).localeCompare(String(right.decisionKey)));
+    })).sort((left, right) => compareCanonicalStrings(left.decisionKey, right.decisionKey));
 }
 
 function validateGroup(group) {
@@ -139,6 +139,8 @@ export function createPairwiseTrainingPairs(groups, scaler) {
     if (!validateScaler(scaler)) return createFailure(PAIRWISE_RANKER_REASONS.INVALID_SCALER);
     const pairs = [];
     let candidateCount = 0;
+    let selectedFeatureDuplicateDecisionCount = 0;
+    let zeroDifferencePairCount = 0;
     for (const group of canonicalGroups) {
         const groupFailure = validateGroup(group);
         if (groupFailure) return createFailure(groupFailure);
@@ -148,6 +150,7 @@ export function createPairwiseTrainingPairs(groups, scaler) {
         if (!selectedFeatures) return createFailure(PAIRWISE_RANKER_REASONS.INVALID_FEATURE_VECTOR);
         const unselected = group.candidates.filter(candidate => candidate !== selected);
         const pairWeight = 1 / unselected.length;
+        let hasSelectedFeatureDuplicate = false;
         candidateCount += group.candidates.length;
         for (const candidate of unselected) {
             const candidateValues = extractCandidateFeatures(candidate);
@@ -157,8 +160,13 @@ export function createPairwiseTrainingPairs(groups, scaler) {
             if (!featureDifference.every(Number.isFinite) || !Number.isFinite(pairWeight)) {
                 return createFailure(PAIRWISE_RANKER_REASONS.NON_FINITE_TRAINING_STATE);
             }
+            if (featureDifference.every(value => value === 0)) {
+                zeroDifferencePairCount += 1;
+                hasSelectedFeatureDuplicate = true;
+            }
             pairs.push({ decisionKey: group.decisionKey, featureDifference, weight: pairWeight });
         }
+        if (hasSelectedFeatureDuplicate) selectedFeatureDuplicateDecisionCount += 1;
     }
     return {
         ok: true,
@@ -167,6 +175,9 @@ export function createPairwiseTrainingPairs(groups, scaler) {
         decisionCount: canonicalGroups.length,
         candidateCount,
         pairCount: pairs.length,
+        zeroDifferencePairCount,
+        zeroDifferenceDecisionCount: selectedFeatureDuplicateDecisionCount,
+        selectedFeatureDuplicateDecisionCount,
     };
 }
 
@@ -256,6 +267,9 @@ export function trainPairwiseLinearRanker(groups, config = {}) {
             decisionCount: pairResult.decisionCount,
             candidateCount: pairResult.candidateCount,
             pairCount: pairResult.pairCount,
+            zeroDifferencePairCount: pairResult.zeroDifferencePairCount,
+            zeroDifferenceDecisionCount: pairResult.zeroDifferenceDecisionCount,
+            selectedFeatureDuplicateDecisionCount: pairResult.selectedFeatureDuplicateDecisionCount,
             initialLoss: initialState.loss,
             finalLoss: finalState.loss,
             epochCount: trainingConfig.epochs,

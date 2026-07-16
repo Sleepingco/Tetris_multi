@@ -86,3 +86,102 @@ The current Human dataset contains only one winner game. Winner-segment metrics
 are reference values and cannot support a separate performance conclusion.
 Human imitation quality also does not establish that the model plays stronger
 Tetris than the heuristic baseline.
+
+## Python single-fold parity spike
+
+The Python path consumes a JavaScript-exported parity bundle. JavaScript remains
+the source of truth for dataset construction, decision grouping, canonical
+candidate order, and the 16 raw feature values. Python does not reproduce game
+rules, placement simulation, or feature extraction.
+
+```text
+human-behavior-v2 dataset
+-> JavaScript parity bundle for one held-out game
+-> Python full-batch reference
+-> scikit-learn LogisticRegression reference
+-> separate parity report
+```
+
+The default held-out game is the first canonical game ID. It can be overridden
+with `--validation-game-id`. Bundle and report content contain no timestamp,
+PID, or absolute path.
+
+```bash
+npm run model:export-placement-parity -- \
+  --dataset-dir data/datasets/human-behavior-v2 \
+  --output /tmp/placement-parity-bundle.json
+
+conda run -n tetris-ml python scripts/ml/placement_pairwise_parity.py \
+  --bundle /tmp/placement-parity-bundle.json \
+  --output /tmp/placement-parity-report.json
+```
+
+The npm comparison command also pins this environment; it does not invoke a
+bare system Python. The fixed ML verification entry point is:
+
+```bash
+npm run verify:ml
+```
+
+It runs the Node parity contract tests and Python tests through the `tetris-ml`
+Conda environment. The normal `scripts/verify.sh` remains dependency-free and
+does not require Conda.
+
+The JS-equivalent path uses canonical bundle order and scalar float64 loops.
+Its single absolute tolerance is `1e-12`, intended only for JavaScript/Python
+math-library differences. It compares scaler values, every pair difference and
+weight, losses, model weights, validation scores, all candidate ranks, and
+metrics.
+
+The exporter rejects an output that resolves to `manifest.json`, `train.jsonl`,
+`validation.jsonl`, or `rejected.jsonl`, including lexical aliases, symlinked
+parents, symlinked files, and existing hard-link identities. Python applies the
+same rule between its input bundle and output report. Final and staging paths
+are checked against these protected inputs. Both writers create a random temp
+file in the output directory with exclusive-create, write through its open
+handle, flush and close it, recheck its identity, and atomically replace the
+final output. A failed write leaves the protected source and existing output
+bytes unchanged.
+
+Parity export also recalculates the Human-only source contract from the JSONL:
+every candidate selection flag is boolean, each decision has exactly one
+selected candidate, and manifest decision/sample/game/source/difficulty counts
+match the rows being serialized. Python compares selected placement identity,
+each candidate selection flag, and validation decision count in addition to
+score and rank parity.
+
+For scikit-learn, each original pair becomes two symmetric binary samples with
+half the original pair weight. The actual transformed `sample_weight` array is
+validated on both sides of every pair and must sum to one per decision before
+`fit()` is called.
+With `D` training decisions and JS regularization `l2`, the matching
+regularization parameter is:
+
+```text
+C = 1 / (D * l2)
+```
+
+The reference uses `LogisticRegression`, `solver="lbfgs"`, no intercept, no
+class weighting, `tol=1e-12`, and `max_iter=10000`. A convergence warning is a
+hard failure. The report evaluates the sklearn weights again with the JS
+objective and records optimizer, weight, rank, score-margin, and metric
+differences. It remains an offline artifact with `runtimeIntegration: false`.
+
+scikit-learn training pairs and validation scoring use the same Python-fitted
+train-only scaler. The JS scaler is comparison data only. If JS/Python parity
+fails, the sklearn step is skipped and the report does not attribute any
+difference to optimizer behavior.
+
+Canonical strings use locale-independent Unicode code-point order in every JS
+grouping, ranker, evaluator, and parity export path. Python consumes that
+serialized order directly.
+
+Existing canonical Top-1/Top-3/MRR metrics remain unchanged. Reports also
+record selected-feature duplicate decisions, zero-difference training pairs,
+top-score tie decisions, and tie-aware Top-1. Tie-aware Top-1 counts a decision
+as correct when the selected candidate belongs to the maximum-score tie set;
+it is a representation diagnostic, not a replacement model metric.
+
+The isolated environment is defined only in `environment-ml.yml`. Python tests
+use the standard-library `unittest` runner, so no separate test dependency is
+required.

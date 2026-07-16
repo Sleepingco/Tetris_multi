@@ -1,4 +1,4 @@
-import { getCanonicalPlacementKey } from "./placementDecisionGroups.js";
+import { compareCanonicalStrings, getCanonicalPlacementKey } from "./placementDecisionGroups.js";
 import { compareHeuristicEvaluations } from "../heuristic/heuristicEvaluator.js";
 
 export const RANKING_EVALUATION_SCHEMA_VERSION = 1;
@@ -29,6 +29,8 @@ function summarize(entries) {
         decisionCount: count,
         gameCount: new Set(entries.map(entry => entry.gameId)).size,
         top1Accuracy: count ? ranks.filter(rank => rank === 1).length / count : 0,
+        tieAwareTop1Accuracy: count ? entries.filter(entry => entry.tieAwareTop1).length / count : 0,
+        topScoreTieDecisionCount: entries.filter(entry => entry.topScoreTie).length,
         top3Accuracy: count ? ranks.filter(rank => rank <= 3).length / count : 0,
         mrr: count ? sum(ranks.map(rank => 1 / rank)) / count : 0,
         meanSelectedRank: count ? sum(ranks) / count : 0,
@@ -82,7 +84,7 @@ function rankCandidates(group, scorerResult) {
             const comparison = scorerResult.compareCandidates(left, right);
             if (comparison) return comparison;
         }
-        return getCanonicalPlacementKey(left).localeCompare(getCanonicalPlacementKey(right));
+        return compareCanonicalStrings(getCanonicalPlacementKey(left), getCanonicalPlacementKey(right));
     });
 }
 
@@ -99,7 +101,7 @@ function createMetrics(entries) {
         add(byAiDifficulty, entry.aiDifficulty);
         add(byOutcome, entry.outcome);
     });
-    const toBreakdown = map => Object.fromEntries([...map.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([key, values]) => {
+    const toBreakdown = map => Object.fromEntries([...map.entries()].sort(([left], [right]) => compareCanonicalStrings(left, right)).map(([key, values]) => {
         return [key, summarize(values)];
     }));
     return {
@@ -124,7 +126,10 @@ function evaluateRankingDetails(groups, scorer) {
         const scorerResult = normalizeScorerResult(group, rawScorerResult);
         if (!scorerResult.ok) return scorerResult;
         const ranked = rankCandidates(group, scorerResult);
-        const rank = ranked.findIndex(candidate => candidate.selectedBySource) + 1;
+        const selected = ranked.find(candidate => candidate.selectedBySource);
+        const rank = ranked.indexOf(selected) + 1;
+        const topScore = scorerResult.scores.get(ranked[0]);
+        const topScoreTieCount = ranked.filter(candidate => scorerResult.scores.get(candidate) === topScore).length;
         const candidate = group.candidates[0];
         entries.push({
             rank,
@@ -132,6 +137,8 @@ function evaluateRankingDetails(groups, scorer) {
             gameId: candidate.gameId,
             aiDifficulty: candidate.aiDifficulty ?? "unknown",
             outcome: candidate.metadata?.isWinner === true ? "winner" : "loser",
+            topScoreTie: topScoreTieCount > 1,
+            tieAwareTop1: scorerResult.scores.get(selected) === topScore,
         });
     }
     return { ok: true, entries, metrics: createMetrics(entries) };
@@ -167,7 +174,7 @@ export function evaluateRanking(groups, scorer) {
 }
 
 export function createLeaveOneGameOutFolds(groups) {
-    const gameIds = [...new Set(groups.map(group => group.candidates[0].gameId))].sort();
+    const gameIds = [...new Set(groups.map(group => group.candidates[0].gameId))].sort(compareCanonicalStrings);
     return gameIds.map(validationGameId => ({
         validationGameId,
         trainGroups: groups.filter(group => group.candidates[0].gameId !== validationGameId),

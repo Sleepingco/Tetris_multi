@@ -76,6 +76,20 @@ test("pair 생성은 selected 대 모든 unselected pair와 decision별 동일 �
     assert.deepEqual([...weightsByDecision.values()], [1, 1]);
 });
 
+test("pair 생성은 selected feature duplicate와 zero-difference pair를 집계한다", async () => {
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const groups = [createGroup({ selectedFeatures: [1], unselectedFeatures: [[1], [0]] })];
+    const scaler = ranker.fitPlacementFeatureScaler(groups);
+    const pairs = ranker.createPairwiseTrainingPairs(groups, scaler.scaler);
+    const training = ranker.trainPairwiseLinearRanker(groups, { epochs: 5 });
+
+    assert.equal(pairs.zeroDifferencePairCount, 1);
+    assert.equal(pairs.zeroDifferenceDecisionCount, 1);
+    assert.equal(pairs.selectedFeatureDuplicateDecisionCount, 1);
+    assert.equal(training.trainingSummary.zeroDifferencePairCount, 1);
+    assert.equal(training.trainingSummary.selectedFeatureDuplicateDecisionCount, 1);
+});
+
 test("pair 생성은 selected 누락을 거부하고 group과 sample을 변경하지 않는다", async () => {
     const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
     const validGroup = createGroup();
