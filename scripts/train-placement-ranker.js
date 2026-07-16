@@ -85,8 +85,23 @@ function createTrainingConfig(options) {
     };
 }
 
-function evaluatePairwiseLogo(groups, ranking, ranker, config) {
-    const gameIds = [...new Set(groups.map(group => group.candidates[0].gameId))].sort();
+function countSelectedFeatureDuplicateDecisions(groups, features) {
+    return groups.filter(group => {
+        const selected = group.candidates.find(candidate => candidate.selectedBySource === true);
+        const selectedFeatures = features.extractPlacementFeatures(selected);
+        if (!selectedFeatures.ok) throw new Error(`INVALID_FEATURE_VECTOR:${group.decisionKey}`);
+        return group.candidates.some(candidate => {
+            if (candidate === selected) return false;
+            const candidateFeatures = features.extractPlacementFeatures(candidate);
+            if (!candidateFeatures.ok) throw new Error(`INVALID_FEATURE_VECTOR:${group.decisionKey}`);
+            return candidateFeatures.values.every((value, index) => value === selectedFeatures.values[index]);
+        });
+    }).length;
+}
+
+function evaluatePairwiseLogo(groups, ranking, ranker, features, compareCanonicalStrings, config) {
+    const gameIds = [...new Set(groups.map(group => group.candidates[0].gameId))]
+        .sort(compareCanonicalStrings);
     const trainingByValidationGameId = new Map();
     const result = ranking.evaluateLeaveOneGameOut(groups, trainGroups => {
         const trainGameIds = new Set(trainGroups.map(group => group.candidates[0].gameId));
@@ -109,15 +124,31 @@ function evaluatePairwiseLogo(groups, ranking, ranker, config) {
             trainDecisionCount: training.decisionCount,
             validationDecisionCount: fold.metrics.decisionCount,
             pairCount: training.pairCount,
+            zeroDifferencePairCount: training.zeroDifferencePairCount,
+            zeroDifferenceDecisionCount: training.zeroDifferenceDecisionCount,
             initialLoss: training.initialLoss,
             finalLoss: training.finalLoss,
             top1Accuracy: fold.metrics.top1Accuracy,
+            tieAwareTop1Accuracy: fold.metrics.tieAwareTop1Accuracy,
+            topScoreTieDecisionCount: fold.metrics.topScoreTieDecisionCount,
+            selectedFeatureDuplicateDecisionCount: countSelectedFeatureDuplicateDecisions(
+                groups.filter(group => group.candidates[0].gameId === fold.validationGameId),
+                features,
+            ),
             top3Accuracy: fold.metrics.top3Accuracy,
             mrr: fold.metrics.mrr,
             meanSelectedRank: fold.metrics.meanSelectedRank,
         };
     });
-    return { aggregate: result.aggregate, folds };
+    return {
+        aggregate: {
+            ...result.aggregate,
+            selectedFeatureDuplicateDecisionCount: folds.reduce((total, fold) => {
+                return total + fold.selectedFeatureDuplicateDecisionCount;
+            }, 0),
+        },
+        folds,
+    };
 }
 
 async function loadModules() {
@@ -163,7 +194,14 @@ async function buildArtifacts(options) {
         const failure = !heuristic.ok ? heuristic : random;
         throw new Error(`BASELINE_EVALUATION_FAILED:${failure.error.reason}`);
     }
-    const pairwiseLogo = evaluatePairwiseLogo(grouped.groups, modules.ranking, modules.ranker, config);
+    const pairwiseLogo = evaluatePairwiseLogo(
+        grouped.groups,
+        modules.ranking,
+        modules.ranker,
+        modules.features,
+        modules.groups.compareCanonicalStrings,
+        config,
+    );
     const finalTraining = modules.ranker.trainPairwiseLinearRanker(grouped.groups, config);
     if (!finalTraining.ok) throw new Error(`FINAL_TRAINING_FAILED:${finalTraining.reason}`);
     const pipelineSourceNames = [
@@ -203,6 +241,9 @@ async function buildArtifacts(options) {
             decisionCount: grouped.groups.length,
             candidateCount: finalTraining.trainingSummary.candidateCount,
             pairCount: finalTraining.trainingSummary.pairCount,
+            zeroDifferencePairCount: finalTraining.trainingSummary.zeroDifferencePairCount,
+            zeroDifferenceDecisionCount: finalTraining.trainingSummary.zeroDifferenceDecisionCount,
+            selectedFeatureDuplicateDecisionCount: finalTraining.trainingSummary.selectedFeatureDuplicateDecisionCount,
         },
         baselines: {
             heuristic: heuristic.aggregate,

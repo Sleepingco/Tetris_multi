@@ -129,6 +129,26 @@ test("ranking evaluator는 fixture Top-1/Top-3/MRR와 seeded random 결정성을
     assert.equal(randomOne.ok, true);
 });
 
+test("ranking evaluator는 canonical Top-1을 유지하며 top-score tie와 tie-aware Top-1을 함께 기록한다", async () => {
+    const { groupPlacementDecisions } = await import(
+        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+    );
+    const { evaluateRanking } = await import(
+        "../src/client/game/ai/dataset/placementRankingEvaluator.js"
+    );
+    const samples = createGroupSamples();
+    const groups = groupPlacementDecisions(samples).groups;
+    const selected = groups[0].candidates.find(candidate => candidate.selectedBySource);
+    const canonicalFirst = groups[0].candidates[0];
+    const result = evaluateRanking(groups, group => new Map(group.candidates.map(candidate => {
+        return [candidate, candidate === selected || candidate === canonicalFirst ? 1 : 0];
+    })));
+
+    assert.equal(result.top1Accuracy, 0);
+    assert.equal(result.tieAwareTop1Accuracy, 1);
+    assert.equal(result.topScoreTieDecisionCount, 1);
+});
+
 test("seeded random은 각 candidate를 독립 점수로 결정론적으로 순위화한다", async () => {
     const { groupPlacementDecisions } = await import(
         "../src/client/game/ai/dataset/placementDecisionGroups.js"

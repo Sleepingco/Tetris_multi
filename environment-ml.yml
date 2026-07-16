@@ -1,0 +1,7 @@
+name: tetris-ml
+channels:
+  - defaults
+dependencies:
+  - python=3.12.13
+  - numpy=2.5.1
+  - scikit-learn=1.9.0
