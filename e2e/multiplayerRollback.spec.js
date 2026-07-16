@@ -49,6 +49,7 @@ async function runPlacementSequence({
     playerNumber,
     playerId,
     snapshotMonitor,
+    inputMonitor,
     inputHistory,
     diagnosticContext,
 }) {
@@ -80,7 +81,7 @@ async function runPlacementSequence({
                     inputIndex: inputIndex + 1,
                     key,
                 });
-            });
+            }, inputMonitor);
 
             const committedFingerprint = await waitForBoardConvergence({
                 sourcePage,
@@ -155,6 +156,7 @@ test("Host와 Guest의 연속 placement가 양방향 수렴하고 rollback되지
             playerNumber: 1,
             playerId: hostPlayerId,
             snapshotMonitor: guestSnapshotMonitor,
+            inputMonitor: hostSnapshotMonitor,
             inputHistory,
             diagnosticContext,
         });
@@ -165,6 +167,7 @@ test("Host와 Guest의 연속 placement가 양방향 수렴하고 rollback되지
             playerNumber: 2,
             playerId: guestPlayerId,
             snapshotMonitor: hostSnapshotMonitor,
+            inputMonitor: guestSnapshotMonitor,
             inputHistory,
             diagnosticContext,
         });

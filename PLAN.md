@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-15 기준. main은 `server authoritative state + authoritative snapshot + server garbage/gameOver` 기반 멀티 MVP 상태다. 현재 최우선 안정화 항목은 간헐적으로 남아 있는 own board rollback 재현과 해결이며, 입력별 full snapshot 전송 최적화는 rollback 안정화 이후로 미룬다.
+- Last update: 2026-07-17 기준. `codex/stabilize-migration-baseline`에서 현재 Vanilla JS + Express + Socket.IO 싱글/PVP/PVE 기준선을 검증했다. migration 기술은 아직 도입하지 않았고, own board rollback gate는 실제 input 송신을 확인하도록 보강한 뒤 5회 반복에서 재현되지 않았다. 최종 `npm test`, `scripts/verify.sh`, 전체 Playwright가 모두 통과해 checkpoint는 migration 전 병합 준비 상태다.
 
 ## Document Role
 
@@ -15,6 +15,72 @@
   - `tick`: 입력과 진행 순서를 맞추기 위한 시간 단위
   - `snapshot`: 직렬화 가능한 게임 상태 복사본
   - `authoritative`: 최종 진실의 원천. 멀티에서는 서버 기준
+
+## Migration Baseline Gate (2026-07-17)
+
+### 범위 고정
+
+- 현재 기준 기술은 Vanilla JS + Express + Socket.IO + Node 내장 테스트 + Playwright다.
+- Vite, React, TypeScript, PostgreSQL 의존성이나 설정은 이 기준선에 포함하지 않는다.
+- 게임 규칙, 점수, garbage 수치, UI 동작은 이번 안정화에서 변경하지 않는다.
+- migration은 아래 기능 동등성 gate가 모두 통과한 checkpoint 이후에만 시작한다.
+
+### 현재 구현 기준
+
+- 싱글
+  - local runtime이 입력, 중력, hold, next queue, score, line clear, gameOver를 소유한다.
+  - browser E2E는 이동, 회전, soft drop, hard drop, 점수 증가, board 고정을 확인한다.
+- PVP
+  - 서버 `authoritativeState`가 최종 gameplay state다.
+  - own board는 local prediction을 사용하고, 상대 board는 authoritative snapshot만 full apply한다.
+  - `clientSequence` / `lastProcessedClientSequence`가 input acknowledgment 경계를 만든다.
+  - 같은 player의 socket input과 gravity는 authoritative mutation queue에서 직렬화된다.
+  - garbage와 gameOver는 client report가 아니라 server lock/ticker 결과가 원천이다.
+- PVE
+  - `heuristic_ai` player와 normal/hard 난이도가 구현되어 있다.
+  - AI는 reachable planner의 `plannedActions`를 human과 같은 authoritative input 경로로 실행한다.
+  - AI attack, garbage, gameOver, lobby restart는 기존 authoritative match lifecycle을 재사용한다.
+
+### 기능 동등성 체크리스트
+
+- [x] 싱글 페이지가 실제 브라우저에서 준비되고 기본 이동/회전/soft drop/hard drop 후 board와 score가 갱신된다.
+- [x] PVP 두 독립 browser context에서 create -> join -> host start -> play가 동작한다.
+- [x] server gameOver 후 양쪽 결과가 일치하고 두 player가 lobby로 돌아오면 같은 room을 다시 시작할 수 있다.
+- [x] 빠른 좌우 이동, 회전, soft drop, hard drop의 6개 입력이 실제 WebSocket으로 전송된 뒤 source/observer board가 수렴한다.
+- [x] 수렴한 PVP board가 서로 다른 authoritative snapshot tick 2회 동안 이전 fingerprint로 돌아가지 않는다.
+- [x] rollback gate를 5회 반복해 Host/Guest 양방향 총 30 placement에서 known own board rollback이 재현되지 않았다.
+- [x] server garbage attack이 상대 `pendingGarbageQueue`와 `pendingGarbageLines` authoritative snapshot에 반영된다.
+- [x] PVE E2E에서 AI attack이 human pending 표시 후 다음 lock에 실제 board garbage로 적용된다.
+- [x] `game:leave`는 ticker와 match를 정리한다.
+- [x] playing 중 일시 disconnect는 reconnect를 위해 match/ticker를 유지하고, 명시적 leave 또는 정상 gameOver가 cleanup 경계가 된다.
+- [x] PVE normal/hard action cadence, human T-Spin, garbage, gameOver, lobby restart가 browser E2E에서 동작한다.
+- [x] tracked Node test baseline이 509/509 통과한다.
+- [x] Playwright 기존 14개 PVP/PVE test가 통과한다.
+- [x] 싱글 기본 플레이 Playwright characterization test를 추가하고 통과했다.
+- [x] 전체 `npm test`가 최종 연속 2회 519/519 통과한다.
+  - 첫 실행에서는 기존 미커밋 parity 작업의 임시 dataset에 `rejected.jsonl`이 없어 4개가 실패했지만, 후속 두 전체 실행에서는 같은 실패가 재현되지 않았다.
+  - 해당 기존 미커밋 파일은 수정하거나 checkpoint에 포함하지 않았다.
+- [x] `bash scripts/verify.sh`가 전체 519/519 test와 Git diff check를 통과한다.
+- [x] 전체 Playwright 15/15가 통과한다.
+- [x] `npm start`로 서버가 기동되고 `/`가 HTTP 200을 반환한다.
+
+### Rollback 재현 판정
+
+- 최초 3회 반복에서는 1회 실패했지만, artifact상 source/observer canvas는 모든 관찰에서 계속 동일했다.
+- 실패 원인은 세 번째 placement의 첫 4개 입력만 송신된 상태에서 active piece가 하단 canvas 관찰 영역에 들어온 것을 test가 settled board 변화로 오인한 것이었다.
+- 회귀 gate는 첫 burst 4개와 전체 6개 입력이 실제 `game:input` frame으로 송신됐는지 확인한 뒤 수렴/안정성을 판정하도록 보강했다.
+- 보강 후 5회 반복, 양방향 30 placement에서는 rollback이 재현되지 않았다.
+- 남은 위험:
+  - Chromium local 환경과 고정 입력 시나리오 기준이다.
+  - packet loss, 높은 외부 latency, 장시간 soak, 여러 브라우저 엔진은 아직 검증하지 않았다.
+  - 따라서 “known reproduction 없음”이지 일반적인 rollback 가능성이 수학적으로 제거됐다는 의미는 아니다.
+
+### Migration 시작/병합 gate
+
+- 현재 gameplay 기준선 자체는 코드와 browser E2E로 확정됐다.
+- `bash scripts/verify.sh`, `npm test`, `npm run test:e2e`, 서버 기동 gate가 모두 통과해 이 checkpoint를 migration 기능 동등성 비교의 출발점으로 사용할 수 있다.
+- 초기 parity fixture 실패는 최종 실행에서 재현되지 않았지만, 외부 미커밋 작업이 계속 변하는 작업 트리에서는 checkpoint commit과 해당 작업을 분리해 관리한다.
+- checkpoint 병합 후에도 migration 기술 도입은 별도 변경으로 시작하고, 이 체크리스트를 기능 동등성 회귀 기준으로 유지한다.
 
 ## Project Direction
 

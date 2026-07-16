@@ -2048,3 +2048,75 @@ client input
 - production game event log와 source dataset의 checksum과 line count는 학습 전후 동일했다.
 - 현재 Pairwise model은 PVE에 연결하지 않으며 `runtimeIntegration: false`를 유지한다.
 - 다음 단계는 Python 학습 스택 기술 검증이며, Python AI server나 실시간 serving은 아직 도입하지 않는다.
+
+---
+
+# 2026년 7월 17일
+
+## Migration 이전 gameplay 기준선 안정화
+
+- `codex/stabilize-migration-baseline` 브랜치에서 현재 싱글/PVP/PVE 동작을 코드, Node test, Playwright 기준으로 재확인했다.
+- Vite, React, TypeScript, PostgreSQL 의존성이나 설정은 추가하지 않았다.
+- 게임 규칙, UI, correction 조건, lock delay, snapshot timeout은 변경하지 않았다.
+
+## 싱글 characterization test
+
+- `e2e/singlePlayer.spec.js`를 추가했다.
+- 실제 브라우저에서 싱글 페이지 준비, 좌우 이동 경로, 회전, soft drop, hard drop, score 증가, 하단 board 고정을 확인한다.
+- 기존 Node runtime test만으로 남아 있던 “싱글 기본 플레이 browser gate” 공백을 최소 범위로 닫았다.
+
+## PVP rollback gate 진단과 보강
+
+- 기존 두 browser context rollback spec을 3회 반복했을 때 1회 실패를 재현했다.
+- trace와 `rollback-diagnostics.json`을 확인한 결과 source와 observer canvas는 모든 관찰에서 계속 같았다.
+- 세 번째 placement에서 첫 burst 4개만 실제 송신되고 `soft_drop`/`hard_drop`은 아직 runtime queue에서 처리되지 않았는데, 새 active piece가 하단 canvas 관찰 영역으로 이동한 것을 test가 settled board 변화로 오인한 false positive였다.
+- `createAuthoritativeSnapshotMonitor()`가 outgoing `game:input` frame도 기록하도록 확장했다.
+- `pressRapidInputCombination()`은 첫 4개 입력의 실제 송신을 확인한 뒤 다음 2개를 넣고, 전체 6개 송신이 끝난 뒤 board 수렴을 판정한다.
+- production gameplay 코드, rollback correction 조건, snapshot 주기, timeout은 변경하지 않았다.
+- 보강 후 rollback spec 5회 반복이 모두 통과했다.
+  - Host/Guest 양방향
+  - 반복당 6 placement
+  - 총 30 placement
+  - 각 placement 후 서로 다른 authoritative snapshot tick 2회 동안 committed board 유지
+
+## Server authoritative 경계 확인
+
+- input sequence/ack:
+  - client `clientSequence`
+  - server `lastProcessedClientSequence`
+  - pending input 중 own correction 보류
+  - stale deferred snapshot 폐기
+  - divergence forced resync
+- mutation ordering:
+  - 같은 player의 socket input과 gravity가 shared authoritative mutation queue를 사용한다.
+- garbage:
+  - server lock/ticker 결과가 상대 `pendingGarbageQueue`를 갱신한다.
+  - client DTO는 `pendingGarbageLines`만 표시용으로 받는다.
+- gameOver/cleanup:
+  - authoritative gameOver가 match finish, ticker stop, match delete, game_over log를 처리한다.
+  - `game:leave`는 match와 ticker를 정리한다.
+  - playing 중 일시 disconnect는 reconnect를 위해 match와 ticker를 유지한다.
+- PVE:
+  - normal/hard AI action executor, human T-Spin, AI garbage, gameOver, lobby restart E2E가 통과했다.
+
+## 검증 결과
+
+- tracked Node tests: 509/509 통과
+- 기존 Playwright PVP/PVE tests: 14/14 통과
+- 싱글 Playwright characterization test: 1/1 통과
+- 전체 Playwright tests: 15/15 통과
+- 보강한 PVP rollback 반복: 5/5 통과
+- 전체 `npm test`: 최종 연속 2회 519/519 통과
+- `bash scripts/verify.sh`: Git diff check와 전체 519/519 test 통과
+- `npm start`: 서버 기동 후 `/` HTTP 200 확인
+- 첫 전체 test에서는 기존 미커밋 parity 작업의 임시 dataset에 `rejected.jsonl`이 없어 4개가 실패했지만 후속 전체 실행에서는 재현되지 않았다.
+  - 기존 미커밋 parity 파일은 수정하거나 checkpoint에 포함하지 않았다.
+  - 외부 미커밋 작업이 변하는 작업 트리에서는 이 초기 관찰을 간헐성 위험으로 남기고 checkpoint와 별도로 관리한다.
+
+## 현재 판단
+
+- 싱글/PVP/PVE gameplay 기준과 authoritative 경계는 migration 전 비교 대상으로 문서화됐다.
+- 보강된 browser gate에서는 known own board rollback이 재현되지 않았다.
+- 전체 Node test, verify script, Playwright, 서버 기동 gate가 green이므로 checkpoint는 병합 준비 상태다.
+- Chromium local 고정 시나리오 밖의 packet loss, 높은 latency, 장시간 soak, 다른 browser engine은 남은 검증 위험이다.
+- 이 checkpoint를 최종 migration 기준점으로 사용하고 Vite, React, TypeScript, PostgreSQL 도입은 별도 변경으로 분리한다.
