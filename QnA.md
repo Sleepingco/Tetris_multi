@@ -3614,3 +3614,267 @@ PVE AI는 추천 코치가 아니라 실제 상대다. 즉 "사용자에게 어�
 - LLM 코칭 리포트
 
 LLM은 나중에 판단 엔진이 아니라 설명 계층으로 붙인다. 판단은 `boardMetrics`, 배치 시뮬레이션, 휴리스틱 평가 같은 분석 계층이 만들고, LLM은 그 결과를 사람이 읽기 쉽게 풀어주는 역할이다.
+
+---
+
+## Q. `schemaVersion: 1`과 `schemaVersion: 2`는 무엇이 다르고, 왜 나눴어? (2026-07-16)
+
+`schemaVersion`은 JSON 로그의 **형식 계약 버전**이다. 같은 `placement_decision` 이벤트라도, 분석과 학습에 필요한 정보가 늘어나면 예전 로그를 깨지 않고 새 형식을 추가해야 한다.
+
+```txt
+placement_decision schemaVersion: 1
+-> 기본 또는 fallback 게임 로그
+
+placement_decision schemaVersion: 2
+-> 분석과 ML dataset에 사용할 수 있도록 필수 정보 의미를 고정한 로그
+```
+
+v2 placement log에는 `activePiece`, `boardBefore`, `boardAfter`, `nextQueue`, `holdPiece`, `placementResult`, metrics, source/model 정보처럼 후보 재생성과 분석에 필요한 정보가 엄격한 형식으로 들어간다.
+
+runtime은 lock 직전에 v1 형태의 초안을 만든 뒤, lock 후 분석에 필요한 정보가 모두 확보되면 v2로 승격한다.
+
+```txt
+lock 직전
+-> v1 초안 생성
+
+lock/line clear/score/attack 확정
+-> Human 분석 가능
+-> v2로 승격
+
+분석 정보 부족
+-> v1 fallback으로 남음
+```
+
+서버 validator는 v1과 v2를 모두 저장할 수 있게 받는다. 하지만 dataset builder는 v2 `placement_decision`만 학습에 사용한다. v1까지 섞으면 feature 의미와 필수 정보가 보장되지 않기 때문이다.
+
+주의할 점은 `game_start`, `game_over`도 현재 v1이라는 것이다. 이들은 학습 대상이 아니라 game lifecycle 확인용 이벤트다.
+
+```txt
+game_start v1
+-> 게임 참가자와 시작 확인
+
+placement_decision v2
+-> 학습 sample 생성
+
+game_over v1
+-> 정상 종료와 승자 확인
+```
+
+`placement_decision schemaVersion`과 dataset의 `datasetSchemaVersion`은 다른 버전이다.
+
+```txt
+placement_decision schemaVersion
+-> 원본 게임 로그 형식
+
+datasetSchemaVersion
+-> 원본 로그를 변환한 학습용 candidate row 형식
+```
+
+---
+
+## Q. 테스트를 돌리면 옛날 v1 placement log가 실제 학습 로그에 섞이지 않아? (2026-07-16)
+
+테스트는 의도적으로 v1과 v2 fixture를 모두 만든다.
+
+```txt
+v1 placement log fixture
+-> 예전 형식 호환과 exporter rejection 확인
+
+v2 placement log fixture
+-> 정상 학습 변환 확인
+```
+
+테스트의 v1 placement log는 보통 임시 폴더나 mock repository로 저장한다. production `data/logs/game-events.jsonl`에 쌓여서는 안 된다.
+
+또한 exporter는 v1 placement decision을 발견해도 train/validation에 넣지 않는다.
+
+```txt
+v1 placement_decision
+-> rejected.jsonl에 UNSUPPORTED_SCHEMA_VERSION 사유 기록
+-> 학습 sample 생성 안 함
+```
+
+따라서 실제 로그 파일에서 v1 이벤트가 보인다고 바로 데이터 오염이라고 판단하면 안 된다. `game_start`와 `game_over`의 v1은 정상이다. 확인할 대상은 학습에 쓰려는 `placement_decision`이 v2인지다.
+
+---
+
+## Q. 게임 로그는 매번 학습용 dataset으로 전처리해야 해? 기존 dataset에는 append돼? (2026-07-16)
+
+매 게임마다 exporter를 실행할 필요는 없다.
+
+```txt
+게임 플레이
+-> data/logs/game-events.jsonl에 원본 이벤트 누적
+
+원하는 시점 또는 모델 학습 직전
+-> dataset exporter 실행
+-> 원본 로그 전체를 읽어 dataset 재생성
+```
+
+exporter는 기존 `train.jsonl` 뒤에 새 row만 append하지 않는다. 같은 output directory를 지정하면 원본 로그 전체를 기준으로 결과 파일을 안전하게 교체한다.
+
+```txt
+원본 로그: 8게임
+-> dataset 생성
+
+원본 로그: 13게임
+-> exporter 실행
+-> 13게임 전체 기준 train/validation/rejected/manifest 재생성
+```
+
+append 방식은 중복 row, stale rejection, train/validation gameId leakage를 만들기 쉽다. dataset은 원본 로그의 특정 시점 snapshot으로 다시 만드는 편이 안전하다.
+
+이전 결과를 보존해야 하면 output directory를 버전별로 분리한다.
+
+```txt
+data/datasets/placement-v1
+data/datasets/placement-v2
+```
+
+원본 `game-events.jsonl`은 exporter가 수정하지 않는다.
+
+---
+
+## Q. 사람 행동을 모방하는 placement model은 hold도 학습해? (2026-07-16)
+
+현재 첫 placement model은 hold를 학습하지 않는다. 현재 모델이 답하는 질문은 하나다.
+
+```txt
+"현재 activePiece를 어디에 놓을까?"
+```
+
+hold는 다른 질문이다.
+
+```txt
+"현재 조각을 hold slot에 넣거나 교환할까?"
+```
+
+현재 `inputSequence`에는 `hold` action이 metadata로 남을 수 있다. 하지만 dataset builder는 `boardBefore`와 `activePiece`로 현재 조각의 reachable placement 후보만 생성한다. hold 후 조각을 바꾼 경우에도, 모델은 바뀐 조각의 최종 위치를 배치 문제로만 본다.
+
+```txt
+현재 placement model
+-> 현재 조각의 위치/회전 선택
+
+hold decision model
+-> hold 할지 여부와 hold 후 상태 전환 선택
+```
+
+나중에 hold를 학습하려면 hold 직전 상태를 명시적으로 남겨야 한다.
+
+```txt
+board
+activePieceBeforeHold
+holdPieceBefore
+nextQueueBefore
+holdUsedThisDrop
+holdApplied
+```
+
+그 뒤에는 다음 두 가지 전체 후보를 비교할 수 있다.
+
+```txt
+hold 안 함
+-> 현재 조각의 placement 후보
+
+hold 함
+-> hold 교환을 가상 적용
+-> 새 activePiece의 placement 후보
+```
+
+첫 모델에 hold까지 섞으면 label과 상태 전환이 복잡해진다. 따라서 현재는 placement ranker를 먼저 검증하고, hold는 별도 의사결정 문제로 추가하는 것이 맞다.
+
+---
+
+## Q. JavaScript에 특별한 ML 라이브러리 없이도 모델을 만들 수 있어? Python은 왜 다시 필요해? (2026-07-16)
+
+가능하다. 언어와 ML 여부는 별개다. 작은 선형 모델은 배열과 `Math` 연산만으로 구현할 수 있다.
+
+```txt
+feature 준비
+-> weight와 곱해 후보 score 계산
+-> Human 선택과 비교해 loss 계산
+-> gradient로 weight 수정
+-> 반복
+```
+
+현재 첫 모델은 JavaScript로 직접 구현한 Pairwise Linear Ranker다.
+
+```txt
+feature 표준화
+pairwise logistic loss
+gradient 계산
+L2 regularization
+full-batch gradient descent
+model.json 저장
+```
+
+이 모델은 Human 로그를 보고 실제 weight를 학습하므로 실제 ML 모델이다. 신경망이나 외부 라이브러리가 없다는 것은 모델이 아니라는 뜻이 아니다.
+
+다만 JavaScript 구현은 작은 reference baseline에는 적합하고, 여러 모델을 비교하는 장기 실험에는 Python/scikit-learn이 더 편하다.
+
+```txt
+JavaScript
+-> 현재 데이터/게임 코드와 바로 연결
+-> 모델 validation과 Node 추론에 적합
+-> 학습 원리 이해와 기준선 구현에 적합
+
+Python/scikit-learn
+-> 여러 optimizer와 모델 비교에 적합
+-> hyperparameter 탐색, 시각화, feature 분석에 적합
+-> XGBoost, LightGBM, PyTorch 등으로 확장하기 쉬움
+```
+
+권장 구조는 다음과 같다.
+
+```txt
+오프라인 개발 환경
+Python trainer
+-> model.json 생성
+
+게임 실행 환경
+Node.js
+-> model.json 검증/로드
+-> 후보 score 계산
+-> 기존 authoritative executor로 action 실행
+```
+
+Python 서버를 추가하자는 뜻은 아니다. Python은 학습할 때만 사용하고, 실제 PVE 실행은 계속 Node.js가 담당한다.
+
+---
+
+## Q. 그러면 실제 ML 모델까지 이미 만든 거야? 왜 PVE에는 적용하지 않았어? (2026-07-16)
+
+만들었다. 현재는 외부 dependency 없이 구현한 Pairwise Linear Ranker를 Human placement log로 실제 학습하고 `model.json` artifact까지 만든 상태다.
+
+```txt
+Human 로그
+-> candidate feature 생성
+-> 사람이 선택한 candidate를 정답으로 표시
+-> 선택 candidate score가 나머지보다 높아지도록 학습
+-> model.json 저장
+```
+
+하지만 PVE에 연결하지는 않았다. held-out game으로 평가한 LOGO 결과가 기존 heuristic보다 낮았기 때문이다.
+
+```txt
+Heuristic
+Top-1 50.00%
+Top-3 80.87%
+MRR   0.6694
+
+Pairwise Linear Ranker
+Top-1 45.85%
+Top-3 77.44%
+MRR   0.6330
+```
+
+ML ranker는 random보다 훨씬 좋고 학습 파이프라인도 정상이다. 그러나 현재 데이터에서는 heuristic보다 사람의 실제 선택을 덜 맞힌다.
+
+```txt
+모델 파일 생성 O
+오프라인 학습/평가 O
+기존 heuristic 교체 X
+PVE 연결 X
+```
+
+이 판단은 "ML이 실패했다"가 아니라, 아직 데이터가 13게임으로 적고 winner game도 1개뿐이므로 휴리스틱보다 좋다는 근거가 부족하다는 뜻이다. 다음 우선순위는 모델을 바로 연결하는 것이 아니라, 속도를 조정한 PVE에서 더 다양한 완료 게임 데이터를 수집하고 재평가하는 것이다.

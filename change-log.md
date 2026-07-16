@@ -1917,3 +1917,134 @@ client input
 - 수정 JavaScript 파일의 `node --check`와 `git diff --check`가 통과했다.
 - production game event log의 line count와 SHA-256이 테스트 전후 동일함을 확인했다.
 - 실제 브라우저에서는 빠른 좌우 이동, 회전, soft drop, hard drop과 lock 직전 rollback이 사라졌는지 2탭 수동 회귀 확인이 남아 있다.
+
+---
+
+# 2026년 7월 16일
+
+---
+
+## Authoritative rollback과 lock timing 안정화
+
+- local에서 성공한 입력만 server에 전송하도록 runtime input outcome 계약을 추가했다.
+- browser input에 `expectedTransform`을 포함해 이동·회전 후 `soft_drop` 또는 `hard_drop`이 server의 이전 위치에서 실행되는 prediction divergence를 lock 전에 감지한다.
+- divergence는 `PREDICTION_DIVERGED`와 최신 authoritative snapshot으로 응답하고, client는 일반 750ms correction을 기다리지 않고 즉시 재동기화한다.
+- room 전체가 공유하던 gravity 누적 시간을 player별 timing으로 분리했다.
+- spawn, hold, hard drop, soft-drop lock, line clear 이후 해당 player의 gravity timing만 초기화한다.
+- server와 client 모두 첫 blocked automatic gravity에서는 grounded 상태만 기록하고, 같은 조각의 다음 blocked gravity에서 lock하도록 맞췄다.
+- socket input과 ticker gravity는 player별 authoritative mutation queue를 공유해 먼저 등록된 mutation 순서를 보존한다.
+- 한 player의 queue 대기나 gravity 예외가 다른 player의 ticker 진행을 막지 않도록 room ticker를 player별 작업과 `Promise.allSettled()` 경계로 정리했다.
+- 빠른 이동·회전 직후 hard drop, 높은 board, jagged surface, gravity-first 경합을 server/service/socket/runtime 테스트로 고정했다.
+
+## Authoritative placement log 신뢰성
+
+- local lock 직후 로그를 바로 저장하지 않고 server terminal input이 실제 placement를 commit했는지 확인한 뒤 저장한다.
+- runtime과 `game:input:result`에 `placementCommitted` 계약을 추가했다.
+- placement log에 `authoritativeClientSequence`, `authoritativePieceIndex`를 기록해 local 판단과 server commit lineage를 연결한다.
+- terminal input 실패, forced resync, game over, session cleanup에서는 저장 대기 중인 phantom placement log를 폐기한다.
+- server validator가 lineage 필드 쌍과 piece index 일치를 검증한다.
+- test Socket.IO logger는 no-op 또는 spy를 주입해 `npm test`가 production JSONL을 오염시키지 않게 했다.
+
+## PVE AI action executor와 난이도
+
+- reachability planner의 `plannedActions`를 AI plan에 저장하고 ticker cadence마다 authoritative input을 최대 하나씩 실행한다.
+- AI도 human과 같은 `applyAuthoritativeInputToMatchPlayerState()` 경로로 이동, 회전, soft drop, hard drop, lock을 처리한다.
+- 성공한 실제 action만 AI placement log의 `inputSequence`에 기록한다.
+- terminal placement를 즉시 적용하던 direct placement production API와 전용 테스트를 제거했다.
+- Normal AI는 terminal hard drop 전에 최대 5회의 soft drop을 실행해 이동 과정을 화면에 노출한다.
+- Hard AI는 planner의 terminal hard drop을 빠르게 실행한다.
+- hard-drop 점수, line clear, garbage, combo/B2B/T-Spin, game over는 기존 authoritative gameplay side effect를 그대로 사용한다.
+- AI plan 생성, 폐기, stale piece index 재계획, action cadence, snapshot 순서와 최종 placement 일치를 테스트로 고정했다.
+
+## Playwright PVP/PVE 회귀 게이트
+
+- 독립 browser context 2개를 사용하는 Playwright 멀티플레이 E2E를 추가했다.
+- room 생성·참가·host 권한·채팅·게임 session·game over·로비 복귀를 실제 Socket.IO와 canvas 기준으로 검증한다.
+- PVP rollback spec은 양쪽 player의 빠른 이동·회전·soft drop·hard drop 이후 source와 observer board fingerprint가 계속 일치하는지 확인한다.
+- 한 번 rollback된 뒤 다시 수렴하는 경우도 실패하도록 committed board fingerprint를 연속 authoritative snapshot 동안 추적한다.
+- PVE E2E는 Normal/Hard AI action 진행, human 입력, 양쪽 gravity, garbage, top-out, 로비 복귀와 재시작을 검증한다.
+- line clear, garbage, game over와 AI의 T-Spin/B2B 준비 경로를 authoritative snapshot과 canvas 상태로 확인한다.
+- E2E 로그는 `GAME_EVENTS_LOG_PATH`로 `test-results/e2e-game-events.jsonl`에 격리하고 production log를 변경하지 않는다.
+
+## Placement dataset builder와 exporter
+
+- schema v2 placement log에서 모든 reachable candidate를 다시 생성하는 결정론적 dataset builder를 추가했다.
+- candidate마다 board metric 전후 값, delta, 실제 선택 label, planned actions와 heuristic baseline을 기록한다.
+- dataset split은 candidate row가 아니라 `gameId` 단위로 수행해 train/validation leakage를 막는다.
+- Node 전용 exporter가 production JSONL을 읽어 train, validation, rejected JSONL과 manifest를 생성한다.
+- export policy에 `winner-only`, `all-completed`, source filter, minimum piece index, finish type, player prefix 제외를 추가했다.
+- Human 난이도는 같은 game의 AI metadata에서 보강하며, 명시값과 추론값이 충돌하면 `AMBIGUOUS_AI_DIFFICULTY`로 거부한다.
+- test와 E2E 로그를 production 학습 로그에서 분리하고, 실제 export 전후 원본 SHA-256이 동일한지 검증한다.
+
+## Placement ML dataset schema v2와 평가 계약
+
+- dataset schema v2에 candidate simulation 결과인 `candidateResult.linesCleared`, `candidateResult.gameOver`를 추가했다.
+- feature schema v1은 다음 16개 값을 고정 순서로 추출한다.
+  - lines cleared
+  - game over flag
+  - aggregate height, max height, holes, bumpiness delta
+  - column height delta 10개
+- heuristic score, winner 정보, finish type, AI difficulty는 feature에서 제외하고 평가 segmentation metadata로만 유지한다.
+- `(gameId, playerId, pieceIndex)`를 decision group으로 묶고 최소 2개 후보, 정확히 하나의 선택 label, 고유 placement와 동일 context를 검증한다.
+- scorer의 모든 candidate score 존재 여부와 finite 값을 검증해 잘못된 모델 출력을 canonical tie-break로 숨기지 않게 했다.
+- seeded random은 `seed + decisionKey + placementKey`로 전체 후보 순위를 결정적으로 만든다.
+- Leave-One-Game-Out aggregate는 각 held-out fold prediction만 합산해 학습 데이터 재평가 leakage를 제거했다.
+
+### Human dataset v2 결과
+
+- 완료 game: 13개
+- accepted human decision: 554개
+- candidate row: 18,950개
+- decision당 평균 후보: 34.21개
+- decision group rejection: 0개
+- JSON parse failure: 0개
+- train/validation gameId leakage: 0개
+- Human 승리 game은 1개이므로 winner segment는 참고 수치로만 사용한다.
+
+| 모델 | Top-1 | Top-3 | MRR |
+| --- | ---: | ---: | ---: |
+| Heuristic | 0.5000 | 0.8087 | 0.6694 |
+| Seeded random | 0.0379 | 0.0993 | 0.1327 |
+
+## JavaScript Pairwise Linear Ranker 실험
+
+- 외부 ML dependency 없이 16개 feature를 사용하는 결정론적 Pairwise Linear Ranker baseline을 구현했다.
+- 각 decision에서 선택 후보와 모든 미선택 후보의 표준화 feature 차이를 만들고 pairwise logistic loss를 최소화한다.
+- 후보가 많은 decision이 학습을 지배하지 않도록 decision별 pair weight 합을 1로 맞춘다.
+- fold마다 train candidate로만 scaler를 fit하고 validation candidate는 변환과 score 계산에만 사용한다.
+- fixed full-batch gradient descent, L2 regularization, canonical ordering으로 같은 입력과 설정에서 같은 artifact를 생성한다.
+- 전체 데이터 final model은 artifact 생성용으로만 사용하고, 성능은 13-fold held-out LOGO prediction으로만 보고한다.
+- `model.json`과 `evaluation.json`은 source dataset, feature schema, training pipeline hash와 재현 config를 포함한다.
+- 모델은 Human placement 선택 모방 실험이며, 더 강한 gameplay AI임을 의미하지 않는다.
+
+### Pairwise Ranker 결과
+
+| 모델 | Top-1 | Top-3 | MRR | 평균 선택 순위 |
+| --- | ---: | ---: | ---: | ---: |
+| Heuristic | 0.5000 | 0.8087 | 0.6694 | 2.7256 |
+| Pairwise LOGO | 0.4585 | 0.7744 | 0.6330 | 3.0126 |
+| Seeded random | 0.0379 | 0.0993 | 0.1327 | 17.8051 |
+
+- Pairwise model은 random보다 충분히 학습됐지만 heuristic baseline에는 미달했다.
+- 가장 큰 음수 weight는 holes였으며, correlated feature의 선형 계수이므로 개별 weight를 게임 규칙으로 해석하지 않는다.
+- 현재 데이터는 13게임, winner 1게임으로 작고 fold별 편차도 커서 PVE runtime 연결은 보류한다.
+- JavaScript trainer는 이후 Python 구현의 reference baseline과 Node inference 계약으로 유지할 수 있다.
+
+## Python 학습 스택 결정 전 상태
+
+- 초기 장기 방향은 Python에서 오프라인 학습하고 Node.js가 `model.json`을 읽어 추론하는 구조다.
+- 현재 JavaScript ranker는 평가 계약을 빠르게 검증하기 위한 dependency-free baseline이며 Python 학습을 대체하는 최종 선택은 아니다.
+- 현재 로컬 환경은 Apple Silicon macOS와 Miniconda Python 3.13.2다.
+- 공통 라이브러리 호환성을 고려한 다음 검증 후보는 별도 Python 3.12 환경이다.
+- 첫 Python 학습 후보는 작은 tabular dataset과 sample weighting에 적합한 scikit-learn이다.
+- PyTorch는 board tensor나 비선형 ranking model이 필요할 때 후속 후보로 두고, TensorFlow는 현재 범위에서 제외한다.
+- 다음 작업은 Python 3.12 + scikit-learn 격리 환경에서 동일 feature, pair weighting, scaler와 13-fold LOGO를 재현하고 JavaScript baseline과 parity를 비교하는 것이다.
+
+## 검증과 현재 판단
+
+- dataset schema, feature extraction, decision grouping, evaluator와 Pairwise Ranker 테스트가 추가됐다.
+- JavaScript Pairwise Ranker 구현 시 `bash scripts/verify.sh` 기준 전체 507개 테스트가 통과했다.
+- model 및 evaluation artifact를 같은 명령으로 두 번 생성했을 때 각각 동일한 SHA-256을 확인했다.
+- production game event log와 source dataset의 checksum과 line count는 학습 전후 동일했다.
+- 현재 Pairwise model은 PVE에 연결하지 않으며 `runtimeIntegration: false`를 유지한다.
+- 다음 단계는 Python 학습 스택 기술 검증이며, Python AI server나 실시간 serving은 아직 도입하지 않는다.
