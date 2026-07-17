@@ -1,0 +1,59 @@
+# Migration Verification
+
+검증은 기존 동작이 유지됐다는 증거이며, 문서의 완료 체크를 정당화하는 조건이다.
+
+## 공통 검증
+
+현재 Goal에 존재하는 명령만 실행하되, 생략한 항목은 이유를 기록한다.
+
+```bash
+node --version
+npm --version
+git diff --check
+bash scripts/verify.sh
+```
+
+Goal 1에서 Vite/TypeScript 기반이 추가된 이후의 최소 자동 검증은 다음과 같다.
+
+`scripts/verify.sh`는 Goal 1에서 `typecheck`, `build`, unit test를 포함하는 canonical fast gate로 강화한다. 개별 명령은 실패 원인 분석에 사용하고 같은 검증을 불필요하게 두 번 실행하지 않는다.
+
+Playwright, production runtime smoke와 DB 통합 검증은 별도 full gate로 실행할 수 있지만 관련 Goal 완료 전에는 반드시 실행한다.
+
+## 브라우저 검증
+
+- `/`에서 싱글·멀티 링크를 실제 클릭한다.
+- 이동, 회전, soft drop, hard drop을 각각 독립된 관찰값으로 검증한다.
+- PVP는 두 개의 독립 browser context로 검증한다.
+- PVE는 AI spawn, visible descent, authoritative snapshot과 종료 흐름을 검증한다.
+- 재접속 Goal에서는 정상 token, 위조 token, stale socket과 다른 playerId를 검증한다.
+
+href 문자열, 키 입력 호출 또는 HTTP 200만으로 gameplay 동등성을 주장하지 않는다.
+
+Goal 1에서는 build environment에서 산출물을 만든 뒤 devDependencies가 없는 runtime 조건에서도 server가 기동되는지 확인한다. `/`, 네 page, 정적 asset과 `/socket.io/socket.io.js`를 production HTTP smoke로 검증한다.
+
+## 서버와 프로토콜 검증
+
+- 외부 payload가 service 호출 전에 거부되는지 확인한다.
+- authorization 실패와 validation 실패를 구분한다.
+- client/server event 이름과 acknowledgment 결과를 함께 검증한다.
+- authoritative input, ticker, garbage, game over와 lobby 복귀를 확인한다.
+
+## DB와 데이터 검증
+
+- migration empty bootstrap과 재실행 안전성을 확인한다.
+- idempotency와 unique constraint를 검증한다.
+- DB 장애가 gameplay loop를 막지 않는지 확인한다.
+- JSONL과 DB export의 event count, hash, feature schema와 dataset 결과를 비교한다.
+- backfill과 rollback을 테스트한다.
+
+## 완료 판정
+
+다음 중 하나라도 해당하면 완료가 아니다.
+
+- 필수 명령 실패
+- 목표 Node 버전이 아닌 환경에서만 통과
+- 테스트 포트 충돌로 E2E 미실행
+- 관련 수동 검증 미수행
+- 문서의 완료 주장과 실제 검증 범위 불일치
+
+실패한 검증을 숨기지 말고 통과·실패·미실행을 분리해 기록한다.

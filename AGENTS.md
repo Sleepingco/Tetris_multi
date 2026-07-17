@@ -1,22 +1,22 @@
 # agents.md — Tetris Multi & AI Learning Project
 
 ## 🎯 프로젝트 개요
-이 저장소는 **싱글플레이 엔진이 어느 정도 완성된 상태**이며,  
-현재 목표는 **멀티플레이(WebSocket 기반) 모드 구현**입니다.  
-이후에 AI 상대 구현을 계획하고 있습니다.
+이 저장소는 **싱글플레이 엔진과 server authoritative 멀티플레이 MVP가 구현된 상태**입니다.
+PVE 규칙 기반 AI와 placement 로그·평가·Python parity 경로도 존재합니다.
+현재는 기존 gameplay와 데이터 파이프라인을 보존하면서 기술 마이그레이션을 단계적으로 준비합니다.
 LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결과를 사용자에게 설명하는 **보조 코칭 계층**으로 검토합니다.
 
 ## 🛠 기술 스택
 - 백엔드: `Node.js`
-- 프론트엔드: 현재 구조 유지 중, 추후 마이그레이션 예정
-- 현재 학습/구현 단계: Vanilla JS + Express + Socket.IO 중심
-- 실무형 확장 단계: 프론트엔드는 Vite + React, 백엔드는 Express + Socket.IO 구조화 또는 NestJS Gateway 검토 가능
+- 프론트엔드: 현재 Vanilla JS + Canvas 구조, 승인된 Goal에 따라 Vite + React + TypeScript로 점진 전환 예정
+- 현재 실행 구조: Vanilla JS + Express + Socket.IO + server authoritative multiplayer
+- 실무형 확장 단계: Express + Socket.IO 경계를 유지하며 frontend/build/type/data 계층을 단계적으로 마이그레이션
 - 실행: `npm start`
 - 테스트: `npm test` (`node --test`)
 
 - 싱글플레이 엔진 완성  
-- 이제 멀티플레이(WebSocket 기반) 구현이 1차 목표  
-- 이후에 AI 상대 구현 예정  
+- server authoritative PVP/PVE MVP와 AI 분석 기반 구현
+- 현재 마이그레이션 기준선 안정화와 점진 전환 준비
 - LLM은 게임 판단의 원천이 아니라, AI/분석 결과를 자연어로 풀어주는 후순위 기능  
 
 ## 🧰 AI Harness 사용 규칙
@@ -42,6 +42,31 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 - 검증이 실패하면 완료로 보고하지 않고 실패 원인과 미검증 범위를 설명한다.
 - 사용자가 직접 구현하겠다고 하면 코드를 대신 작성하지 않고 설계 순서, 힌트, 검증 기준을 제공한다.
 
+## 🧭 Migration Harness 사용 규칙
+
+사용자가 기술 마이그레이션 Goal 실행을 명시적으로 승인한 경우 `migration-harness/`를 추가 하네스로 사용한다.
+
+읽기 순서:
+
+1. `AGENTS.md`
+2. `migration-harness/README.md`
+3. `migration-harness/constraints.md`
+4. `migration-harness/workflow.md`
+5. `migration-harness/verification.md`
+6. `migration-harness/roadmap.md`
+7. 현재 Goal 파일 하나
+8. 요청에 맞는 `ai-harness/tasks/*.md`
+
+- `migration-harness`는 현재 Goal의 범위, Git 계보, 선행조건과 완료 게이트를 담당한다.
+- `ai-harness`는 현재 Goal 안에서 구현·리팩토링·리뷰 방식과 설명 스타일만 보완한다.
+- 브랜치 이름만으로 migration harness를 활성화하지 않는다.
+- 한 번에 현재 Goal 하나만 수행하고, 미래 Goal 상세 파일을 한꺼번에 읽거나 선행 구현하지 않는다.
+- 사용자가 승인한 Goal에 명시된 Vite, React 등의 도입만 프레임워크 임의 추가 금지의 제한적 예외다.
+- 이 예외는 게임 규칙, 상태 소유권, 보안, 검증 또는 destructive Git operation 제한을 완화하지 않는다.
+- 현재 상태는 Git, 실제 코드·테스트와 `PLAN.md`에서 확인한다. 동적 상태를 하네스에 중복 기록하지 않는다.
+- 작업 지시와 merge 시점은 `migration-harness/operations.md`를 참고한다.
+- 충돌이나 선행조건 실패 시 구현을 멈추고 보고한다. 다음 Goal, push, merge와 브랜치 삭제를 자동 수행하지 않는다.
+
 이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
 현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
 싱글플레이 진입점은 `src/client/pages/tetrisSingle.html`의 module script이며,  
@@ -60,7 +85,8 @@ src/
 │   ├── init.js              # Express / HTTP / Socket.IO server assembly
 │   ├── services/
 │   │   ├── roomService.js   # Room lifecycle / lobby state
-│   │   └── matchService.js  # Match state / input log / server bag chunks
+│   │   ├── matchService.js  # Match state / input log / server bag / authoritative player state
+│   │   └── authoritativeTickerService.js # Room gravity tick / snapshot lifecycle
 │   └── sockets/
 │       ├── index.js             # Socket.IO connection composition
 │       ├── chatHandlers.js      # Chat event handlers
@@ -121,7 +147,7 @@ src/
 ## ⚙️ 코딩 컨벤션
 
 ### JavaScript
-- ES Modules (`import` / `export default`)
+- client는 ES Modules를 사용한다. server/test는 해당 migration Goal 전까지 기존 CommonJS 경계를 유지한다.
 - 들여쓰기 4칸  
 - 코드 끝에 세미콜론 작성
 - 상수는 `const`, 변경 가능 변수는 `let`
@@ -247,8 +273,8 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 
 - `server/services/roomService`는 방 생성, 참가, 퇴장, 시작, 종료, 로비 복귀 같은 room lifecycle을 담당한다.
 
-- `server/services/matchService`는 match 단위 input log와 player별 server bag chunk를 담당한다.
-  아직 서버에서 게임 상태를 직접 계산하는 authoritative loop는 담당하지 않는다.
+- `server/services/matchService`는 match 단위 input log, player별 server bag chunk와 authoritative player state를 담당한다.
+  room별 gravity 진행과 snapshot emit lifecycle은 `authoritativeTickerService`가 조율한다.
 
 - `client/net`은 브라우저 Socket.IO 어댑터를 담당한다.  
   메시지 송수신, 라우팅, 동기화 연결을 맡고, 게임 규칙 자체는 만들지 않는다.
@@ -258,9 +284,9 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 🧭 프레임워크 / 실무형 구조 기준
 
 현재 단계의 기본 원칙:
-- 멀티플레이 MVP는 Vanilla JS + Express + Socket.IO로 먼저 완성한다.
-- Socket.IO 이벤트 흐름, roomService 상태 변화, 클라이언트 통신 어댑터를 직접 이해하는 것을 우선한다.
-- 프레임워크가 없어도 계층은 나눈다: `src/app.js` → `server/init` → `server/sockets` → `server/services` → `client/net` → `client/pages/ui`.
+- Vanilla JS + Express + Socket.IO 기반 server authoritative 멀티플레이 MVP를 기준선으로 보존한다.
+- Socket.IO 이벤트 흐름, roomService/matchService 상태 변화와 클라이언트 통신 어댑터의 책임 경계를 유지한다.
+- 프레임워크가 없어도 계층은 나눈다: `src/app.js` → `server/init` → `server/sockets` → `server/services` → `client/net` → `client/pages` / `client/game/ui`.
 
 실무/유지보수 기준에서 프레임워크 도입을 고려할 조건:
 - 로비, 방 목록, 준비 상태, 채팅, 설정, 결과 화면처럼 화면 상태가 많아진다.
@@ -275,12 +301,8 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 - 백엔드: 당장은 `Express + Socket.IO`를 유지하되 `sockets / services / validators / repositories`로 나누는 방식을 우선한다.
   - 이벤트가 많아지고 인증, DB, 매치메이킹, 세션 관리가 커지면 `NestJS + Socket.IO Gateway`를 검토할 수 있다.
 
-추천 마이그레이션 순서:
-1. Vanilla 구조로 멀티플레이 MVP를 동작시킨다.
-2. room/game 통신 프로토콜과 상태 흐름을 문서화한다.
-3. 프론트엔드가 복잡해지면 Vite + React로 화면 계층만 먼저 옮긴다.
-4. 백엔드는 Express + Socket.IO를 유지하며 서비스/소켓/검증 계층을 정리한다.
-5. 서버 복잡도가 충분히 커졌을 때 NestJS 같은 백엔드 프레임워크를 검토한다.
+마이그레이션 순서와 Goal별 범위는 `migration-harness/roadmap.md`를 따른다.
+현재 Goal의 상세 범위는 `migration-harness/goals/`에서 한 파일만 선택하며, 이전 Goal이 main에 반영되기 전에는 다음 Goal을 시작하지 않는다.
 
 ⸻
 
@@ -317,47 +339,17 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 
 ⸻
 
-🧰 개발 로드맵
+🧰 현재 상태와 로드맵
 
-✅ 현재 단계
-	•	싱글플레이 엔진 완성
-	•	입력 / 이동 / 조각 / 라인클리어 / 렌더 / UI 모듈 분리 진행
-	•	하드 드롭, 회전, 점수, 홀드, 다음 블록 미리보기 작동 중
-	•	캔버스 기반 보드 렌더링 적용
-	•	멀티플레이 roomService 1차 구현 완료
-		- `createRoom`, `joinRoom`, `leaveRoom`, `startGame`, `leaveGame`, `syncRoom`, `finishGame`
-		- `Map` 기반 서버 메모리 room 상태 관리
-		- 성공/실패 반환 형태 `{ ok, room, reason }`로 통일
-	•	멀티플레이 matchService 1차 구현 완료
-		- `createMatch`, `getMatchState`, `recordInput`, `appendPlayerBagChunk`
-		- player별 input log와 server bag chunk 관리
-	•	Socket.IO 기반 room 흐름 1차 연결
-		- `src/server/sockets/index.js`에서 Socket.IO `connection`을 한 번만 등록
-		- `src/server/sockets/chatHandlers.js`와 `multiplayerHandlers.js`에서 같은 `clientSocket`에 기능별 이벤트 등록
-		- `socket.join(roomId)` 기반 room 참가와 room 단위 `room:updated`, `room:message` broadcast 연결
-		- `src/client/net/roomClient.js`에서 `create / join / leave` 요청과 `room:result / room:updated / room:message` 수신 연결
-		- `src/client/pages/multiLobby.html`에서 방 코드, 상태, 현재 player 수 표시 및 방 코드 복사, 입장, 나가기 흐름 연결
-		- `room:start`, `game:join`, `game:input`, `game:snapshot`, `game:bag:request`, `game:over` 1차 연결
-	•	`src/client/pages/tetrisMulti.html`에서 local/remote runtime 생성, input relay, snapshot correction, server bag 소비 흐름 연결
-	•	`pieceQueue.js`로 7-bag/next queue 유틸리티 분리
-	•	`snapshotCorrection.js`로 원격 snapshot 보정 판단 분리
-	•	Node 내장 테스트(`node --test`)로 roomService, matchService, socket handler, runtime, move step, snapshot correction 주요 흐름 검증
-	•	게임 플레이 화면 라이트/다크 테마 적용
+자주 변하는 상세 구현 상태와 바로 다음 작업은 `PLAN.md`, 실제 코드와 테스트를 기준으로 확인한다.
+이 `AGENTS.md`에는 다음과 같은 오래 유지할 현재 경계만 기록한다.
 
-🧩 다음 단계
-	1. 브라우저 2탭 멀티 플레이 회귀 검증
-		- create → join → start → play → game over → lobby 복귀 흐름 확인
-		- 빠른 이동/회전 연타, 블록 안착 직후 입력, 상대 보드 보정 상태 확인
-	2. 현재 input relay + server bag + snapshot correction MVP의 동기화 파라미터 검토
-		- snapshot 주기, input queue 제한, opponent runtime `autoStart` 정책 확인
-	3. 서버 authoritative loop 전환 설계
-		- 서버에서 player별 game state를 어디에 둘지 결정
-		- `step(state, input)`을 서버에서도 호출할 수 있게 core/runtime 경계 정리
-		- 서버가 생성한 authoritative snapshot 형식 정의
-	4. 현재 클라이언트 예측 구조에서 서버 authoritative 구조로 넘어가는 전환 계획 문서화
-	5. AI 상대 구현 (규칙 기반 → 머신러닝)
-	6. 멀티/AI에서 재사용 가능한 상태/렌더 경계 정리
-	7. 플레이 로그/AI 비교/패턴 분석이 준비된 뒤 LLM 코칭 리포트 검토 (계획 반드시 구현 x)
+- 싱글플레이 엔진과 Canvas renderer가 동작한다.
+- 멀티플레이는 server authoritative player state, input/ticker, snapshot, garbage와 game-over 흐름을 사용한다.
+- PVE 규칙 기반 AI와 placement decision log, dataset/export, Python parity 검증 경로가 존재한다.
+- 실시간 room/match 상태는 Node process memory를 사용하고, 분석 로그는 JSONL 경로를 유지한다.
+- 기술 마이그레이션은 `migration-harness/roadmap.md`의 Goal과 merge gate를 따라 진행한다.
+- LLM 코칭은 게임 판단 원천이 아니라 분석 결과 설명 계층으로 계속 후순위 검토한다.
 
 🎯 학습 목표
 	• DOM 탐색과 이벤트 위임 이해  
@@ -405,7 +397,7 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 
 ## 🧱 추가 금지사항
 
-5. ❌ 현재 학습/MVP 단계에서 프레임워크 임의 추가 금지 (React, Vue 등)
+5. ❌ 프레임워크 임의 추가 금지. 단, 사용자가 승인한 현재 migration Goal에 명시된 도입은 그 Goal 범위에서만 허용
 6. ❌ 과도한 단순화 금지 (“그냥 이렇게 하면 돼” 식)
 7. ❌ 논리 단계 건너뛰기 금지
 8. ❌ 학습 의도 무시 금지
