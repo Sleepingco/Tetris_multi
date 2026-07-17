@@ -2048,3 +2048,43 @@ client input
 - production game event log와 source dataset의 checksum과 line count는 학습 전후 동일했다.
 - 현재 Pairwise model은 PVE에 연결하지 않으며 `runtimeIntegration: false`를 유지한다.
 - 다음 단계는 Python 학습 스택 기술 검증이며, Python AI server나 실시간 serving은 아직 도입하지 않는다.
+
+---
+
+# 2026년 7월 17일
+
+## Migration Goal 0 기준선 안정화
+
+- 최신 main `3b1329e84c8269c984e23e10eaf7f11c8b170690`에서 `codex/stabilize-migration-baseline-v2`를 만들었다.
+- 기존 `fe8dabf`의 고유 baseline 테스트 변경만 재적용했다.
+- main에 이미 동등 패치 `bf04a4e`로 반영된 `cbfc882` Python parity는 재적용하지 않았다.
+- Vite, React, TypeScript, Zod, PostgreSQL과 새 package는 추가하지 않았다.
+
+## 싱글과 rollback 관찰력
+
+- `e2e/singlePlayer.spec.js`가 브라우저에서 이동, 회전, soft drop, hard drop 뒤 score와 하단 board 고정을 확인한다.
+- multiplayer WebSocket monitor가 outgoing `game:input`의 `clientSequence`를 기록한다.
+- rollback test는 첫 4개 입력과 전체 6개 입력이 실제 전송된 뒤 board 수렴과 두 authoritative snapshot tick 동안의 안정성을 판정한다.
+- production gameplay 코드, correction 조건, snapshot 주기와 Socket.IO protocol은 변경하지 않았다.
+
+## 승인된 worktree 경로 호환성 예외
+
+- Codex-managed worktree의 절대 경로에 포함된 `.codex`를 Express `send@1.2.1`이 dotfile 경로로 판단해 root `sendFile()`이 404를 반환했다.
+- 사용자 승인에 따라 `src/server/init.js`의 root `sendFile()` 한 줄만 상대 경로와 기존 `STATIC_ROOT`를 사용하도록 변경했다.
+- `dotfiles: "allow"`, redirect, Playwright readiness 우회와 서버 구조 리팩토링은 하지 않았다.
+- 호환성 수정은 baseline E2E 변경과 별도 커밋으로 분리했다.
+
+## 검증 결과
+
+- `.codex` worktree HTTP smoke: `/`, `/pages/index.html`, `/styles/style.css` 모두 200
+- 호환성 수정만 적용한 기존 Playwright: 14/14 통과
+- 싱글과 rollback 5회 반복: 10/10 통과
+- 전체 Playwright: 15/15 통과
+- `bash scripts/verify.sh`: Git diff check와 Node test 519/519 통과
+- Node `v22.18.0`, npm `10.9.3`을 Goal 0 기준선 환경으로 기록했다.
+
+## 남은 위험
+
+- rollback 검증은 local Chromium과 고정 입력 시나리오 기준이다.
+- packet loss, 높은 외부 latency, 장시간 soak와 다른 browser engine은 미검증이다.
+- Goal 0이 main에 반영되고 같은 gate가 재검증되기 전에는 Goal 1을 시작하지 않는다.

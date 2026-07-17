@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-15 기준. main은 `server authoritative state + authoritative snapshot + server garbage/gameOver` 기반 멀티 MVP 상태다. 현재 최우선 안정화 항목은 간헐적으로 남아 있는 own board rollback 재현과 해결이며, 입력별 full snapshot 전송 최적화는 rollback 안정화 이후로 미룬다.
+- Last update: 2026-07-17 기준. `codex/stabilize-migration-baseline-v2`에서 Vanilla JS + Express + Socket.IO 싱글/PVP/PVE 기준선을 검증했다. rollback gate는 실제 `game:input` 송신을 확인하도록 보강했고 5회 반복에서 재현되지 않았다. Vite, React, TypeScript 도입은 Goal 0 병합 이후 별도 Goal로 진행한다.
 
 ## Document Role
 
@@ -15,6 +15,37 @@
   - `tick`: 입력과 진행 순서를 맞추기 위한 시간 단위
   - `snapshot`: 직렬화 가능한 게임 상태 복사본
   - `authoritative`: 최종 진실의 원천. 멀티에서는 서버 기준
+
+## Migration Baseline Gate (2026-07-17)
+
+### 범위와 현재 구조
+
+- 현재 기준 기술은 Vanilla JS + Express + Socket.IO + Node 내장 테스트 + Playwright다.
+- 싱글은 local runtime이 입력, 중력, hold, next queue, score, line clear와 game over를 소유한다.
+- PVP/PVE의 최종 gameplay state는 서버 `authoritativeState`이며, input, ticker, snapshot, garbage와 game over 경로를 공유한다.
+- Python placement parity와 JSONL 분석 경로는 main의 기존 결과를 그대로 보존한다.
+- Goal 0은 게임 규칙, Socket.IO protocol, 로그 schema와 migration dependency를 변경하지 않는다.
+
+### 기준선 관찰력
+
+- 싱글 Playwright characterization은 이동, 회전, soft drop, hard drop 뒤 score 증가와 하단 board 고정을 확인한다.
+- PVP rollback gate는 첫 burst 4개와 전체 6개 입력이 실제 outgoing `game:input` frame으로 송신된 뒤 board 수렴과 안정성을 판정한다.
+- 수렴한 PVP board는 서로 다른 authoritative snapshot tick 2회 동안 이전 fingerprint로 돌아가지 않아야 한다.
+- rollback과 싱글 test를 각각 5회 반복했으며 10/10이 통과했다.
+- 전체 Playwright 15/15와 `bash scripts/verify.sh`의 Node test 519/519가 통과했다.
+
+### Codex-managed worktree 호환성 예외
+
+- `.codex`가 포함된 절대 경로를 Express `send`가 dotfile 경로로 판단해 `/`가 404가 되는 preflight 실패를 확인했다.
+- 사용자 승인에 따라 root `sendFile()`만 상대 경로와 기존 `STATIC_ROOT` 옵션을 사용하도록 변경했다.
+- `dotfiles: "allow"`, redirect, Playwright readiness 우회와 서버 구조 변경은 적용하지 않았다.
+- 동일 `.codex` worktree에서 `/`, `/pages/index.html`, `/styles/style.css`가 모두 HTTP 200을 반환했다.
+
+### 완료 판단과 남은 위험
+
+- Chromium local 고정 시나리오에서는 known own board rollback이 재현되지 않았다.
+- packet loss, 높은 외부 latency, 장시간 soak와 다른 browser engine은 아직 검증하지 않았다.
+- Goal 0 merge 후 main에서 같은 gate를 재검증하기 전에는 Goal 1을 시작하지 않는다.
 
 ## Project Direction
 
