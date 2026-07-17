@@ -12,7 +12,7 @@ const STATIC_ROOT = path.join(__dirname, "..", "client")
 
 app.use(express.static(STATIC_ROOT))
 app.get("/", (_, res) => {
-    res.sendFile(path.join(STATIC_ROOT, "pages", "index.html"))
+    res.sendFile("pages/index.html", { root: STATIC_ROOT })
 })
 
 registerSocketHandlers(socketServer)
