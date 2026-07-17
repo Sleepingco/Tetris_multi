@@ -3,7 +3,7 @@
 마지막 정리: 2026-07-18
 
 실험 상태: **continue_experimenting**
-현재 결론: production 모델을 동결하거나 PVE에 연결할 단계가 아니다.
+현재 결론: **pair_weight_tradeoff_explained** — production 모델을 동결하거나 PVE에 연결할 단계가 아니다.
 
 이 문서는 다음 두 가지를 한곳에 보존한다.
 
@@ -42,8 +42,9 @@ held-out 게임에서 Top-1 / Top-3 / MRR / 평균 순위 평가
 - 그 뒤의 새 실험은 JavaScript로 중복 구현하지 않고 Python Notebook을 단일 실험 경로로 사용한다.
 - 13게임에서 26게임으로 늘리자 일부 지표는 좋아졌지만, 데이터가 겹치므로 독립적인 성능 향상 증거는 아니다.
 - 선택 후보와 같은 occupied-cell placement가 여러 rotation/pivot 표현으로 중복 기록돼 있었다.
-- 물리적으로 같은 placement를 묶으면 zero-difference pair는 제거되지만, pair 수가 달라지면서 작은 metric trade-off가 생겼다.
-- 다음 실험은 feature를 더 추가하기 전에 **pair-weight decomposition**으로 이 차이의 원인을 분해하는 것이다.
+- 물리적으로 같은 placement를 묶을 때 관측된 작은 metric trade-off는 row compression 자체가 아니라 pair-weight 재분배에서 발생했다.
+- Phase 8은 pair_weight_tradeoff_explained로 마감됐고, 프로그램 gate는 continue_experimenting이다.
+- 다음 작업은 새 feature나 모델 실험이 아니라 Phase 0~8 merge-readiness 감사와 목표·weighting 정책 계약의 정리다.
 - 최종 전체 데이터 trainer와 production model은 아직 만들지 않는다.
 
 ---
@@ -60,7 +61,7 @@ held-out 게임에서 Top-1 / Top-3 / MRR / 평균 순위 평가
 | 통합 기준 | /Users/parkseongho/visualstudio-workspace/Tetris_multi | main | 실제 게임 실행과 최종 통합 |
 | 기술 migration | 별도 worktree | 별도 migration branch | Vite/React/TypeScript migration |
 
-작성 시점 AI HEAD는 3b1329e, main HEAD는 53b4831이다. Phase 3 이후 Notebook과 문서는 아직 AI branch에서 커밋되지 않은 변경이므로, commit 또는 merge 전에는 이 문서의 checksum과 실제 Git diff를 다시 확인한다.
+Phase 0~7의 Python 실험 기반은 4cf858575addddf9dcaa624ec607c7503286ed8a에 고정된 historical baseline이다. Phase 8 checkpoint는 이 기준 위에 별도 commit으로 보존한다. 현재 AI HEAD와 main HEAD는 자주 변하므로 이 문서의 고정 사실로 기록하지 않으며, 작업 시작 시 Git에서 확인한다.
 
 AI 실험 명령은 특별한 설명이 없는 한 항상 다음 경로에서 실행한다.
 
@@ -645,6 +646,169 @@ rejection reason:
 - selected candidate unreachable: 1
 
 이 값은 움직이는 live log를 점검한 **임시 감사 결과**다. 아직 46게임 canonical snapshot 이름을 확정하거나 LOGO report를 생성한 완료 실험으로 기록하지 않는다. 실제 새 실험을 시작할 때 서버와 플레이를 멈춘 뒤 아래 절차로 새 snapshot을 다시 생성한다.
+
+---
+
+### 4.9 Phase 8 — Pair-weight controlled decomposition
+
+상태: **pair_weight_tradeoff_explained**
+
+프로그램 gate: **continue_experimenting**
+
+질문:
+
+> Cell grouping의 작은 MRR 하락은 zero-difference 제거,
+> selected-alias dilution 해소, non-selected class multiplicity 제거,
+> 실제 row compression 중 어디에서 발생했는가?
+
+이번 실험은 새 feature, scaler, estimator를 추가하지 않았다. 26게임 snapshot,
+기존 16-feature, raw train candidate에 fit한 fold별 shared StandardScaler,
+26-fold LOGO, pairwise LogisticRegression 설정과 C 계산을 고정했다.
+
+variant:
+
+| Variant | 변경 |
+|---|---|
+| V0 raw_baseline | selected raw candidate 대 모든 unselected raw candidate, decision 총 weight 1 |
+| V1 drop_zero_keep_weight | zero pair만 제거하고 V0 weight 유지 |
+| V2 drop_zero_renormalized | informative raw pair만 남기고 decision 총 weight 1로 재정규화 |
+| V3 class_balanced_expanded | raw alias row는 유지하고 non-selected class별 총 weight를 동일화 |
+| V4 cell_grouped | class 대표 pair 하나만 남기고 V3와 같은 class-level weight 사용 |
+
+source snapshot:
+
+data/datasets/human-behavior-v2-snapshot-26g-20260717
+
+| 파일 | SHA-256 |
+|---|---|
+| manifest.json | 51027be0ebad578f2c38bb8715aa491daa8f13208e3da551a5e4a2dd08bef088 |
+| train.jsonl | 85034a66373add54324a56673cb99ed5854810e4299abcaf9c195ae8cbca631e |
+| validation.jsonl | 23b832d95a2057b7b29e7062286c58c68524fa8db00f00870e6076a0a846f58a |
+| rejected.jsonl | 06ede14119014e2b040f8a4d62e00532ca6eecae9424b93e9cc882394db8a85f |
+
+worked example:
+
+5FBD427F-1784135419893:bb3aa6ad-faa6-4b60-922c-dfe09399f9c3:37
+
+- raw candidate 19
+- occupied-cell class 10
+- selected class multiplicity 2
+- zero pair 1
+- non-selected class multiplicity [1, 2, 2, 2, 2, 2, 2, 2, 2]
+- V0/V1/V2/V3/V4 pair 수: 18 / 17 / 17 / 17 / 9
+- decision weight 합: 1 / 17÷18 / 1 / 1 / 1
+
+전체 pair와 weight:
+
+| Variant | Retained pair | Zero | Pairless | Symmetric sample | Weight total | Weight 1 decision |
+|---|---:|---:|---:|---:|---:|---:|
+| V0 | 38,217 | 1,010 | 0 | 76,434 | 1,158.000000 | 1,158 |
+| V1 | 37,207 | 0 | 2 | 74,414 | 1,126.140848 | 488 |
+| V2 | 37,207 | 0 | 2 | 74,414 | 1,156.000000 | 1,156 |
+| V3 | 37,207 | 0 | 2 | 74,414 | 1,156.000000 | 1,156 |
+| V4 | 25,245 | 0 | 2 | 50,490 | 1,156.000000 | 1,156 |
+
+raw-candidate metric:
+
+| Variant | Top-1 | Top-3 | MRR | Mean rank |
+|---|---:|---:|---:|---:|
+| V0 | 561 | 886 | 0.645290 | 2.961140 |
+| V1 | 561 | 886 | 0.645290 | 2.961140 |
+| V2 | 560 | 885 | 0.644451 | 2.963731 |
+| V3 | 559 | 884 | 0.643760 | 2.967185 |
+| V4 | 559 | 884 | 0.643760 | 2.967185 |
+
+primary physical-class metric:
+
+| Variant | Top-1 | Top-3 | Micro MRR | Macro MRR | Mean rank |
+|---|---:|---:|---:|---:|---:|
+| V0 | 659 | 1,013 | 0.727805 | 0.703260 | 2.082902 |
+| V1 | 659 | 1,013 | 0.727805 | 0.703260 | 2.082902 |
+| V2 | 658 | 1,013 | 0.727084 | 0.702426 | 2.084629 |
+| V3 | 657 | 1,013 | 0.726652 | 0.702139 | 2.085492 |
+| V4 | 657 | 1,013 | 0.726652 | 0.702139 | 2.085492 |
+
+coefficient, score, rank 진단:
+
+| 비교 | Min cosine | Max coefficient diff | Max held-out candidate score diff | Physical rank change |
+|---|---:|---:|---:|---:|
+| V1−V0 | 1.000000000000 | 1.5169e-10 | 2.8565e-9 | 0 |
+| V2−V1 | 0.999992371140 | 0.0108866 | 0.3129449 | 7 |
+| V3−V2 | 0.999999496661 | 0.0014148 | 0.0137789 | 1 |
+| V4−V3 | 1.000000000000 | 2.8708e-11 | 6.2307e-10 | 0 |
+| V4−V0 | 0.999992791985 | 0.0103175 | 0.3046999 | 8 |
+
+fold 분포:
+
+| Effect | Improved | Equal | Worse | Worst fold delta |
+|---|---:|---:|---:|---:|
+| V1−V0 zero sample | 0 | 26 | 0 | 0 |
+| V2−V1 informative mass | 1 | 20 | 5 | -0.0151515 |
+| V3−V2 generator multiplicity | 0 | 25 | 1 | -0.0074627 |
+| V4−V3 row compression | 0 | 26 | 0 | 0 |
+| V4−V0 total | 1 | 19 | 6 | -0.0151515 |
+
+모든 variant는 26/26 fold에서 수렴했다. iteration 범위는 V0/V1/V2가 19~21,
+V3/V4가 20~21이다. gameId leakage는 0이고 모든 variant가 같은 fold scaler를
+사용했다.
+
+ordered attribution:
+
+| Effect | Micro class MRR delta | Macro class MRR delta |
+|---|---:|---:|
+| zero-sample | 0 | 0 |
+| informative-mass renormalization | -0.0007210023 | -0.0008342553 |
+| generator-multiplicity | -0.0004317789 | -0.0002870264 |
+| row-compression | 0 | 0 |
+| total | -0.0011527812 | -0.0011212818 |
+
+이 순서에서 Micro 하락의 약 62.5%는 informative-mass 재정규화, 약 37.5%는
+generator multiplicity 제거로 설명된다. Macro는 약 74.4%와 25.6%다.
+zero sample 자체와 동일 class의 실제 row compression은 held-out rank와 metric을
+바꾸지 않았다. 이것은 순서가 고정된 controlled decomposition이며 Shapley
+attribution이나 완전한 인과 분해가 아니다.
+
+결정성:
+
+- run1 SHA-256:
+  e05a75d578f4d97781b03725eef65c57fee790f27ba9e941c404621386c080bd
+- run2 SHA-256:
+  e05a75d578f4d97781b03725eef65c57fee790f27ba9e941c404621386c080bd
+- report byte-identical: true
+- executed Notebook error/Traceback: 0 / 0
+- canonical result와 run1 bytes: identical
+
+남은 위험:
+
+- 26게임뿐이고 winner game은 3개뿐이다.
+- winner segment는 참고 수치이며 별도 성능 결론을 내릴 수 없다.
+- offline rank metric은 gameplay 성능이나 승률을 증명하지 않는다.
+- 현재 결과는 어떤 weighting policy를 production에 쓸지 자동 결정하지 않는다.
+
+다음 gate:
+
+1. Phase 0~8 merge-readiness 감사를 수행한다.
+2. Human imitation 목표와 gameplay promotion 목표를 분리해 기록한다.
+3. occupied-cell representation과 V4 weighting 정책 계약을 명시한다.
+4. 새 immutable snapshot을 검증한다.
+
+이 순서를 새 feature 구현이나 모델 학습과 섞지 않는다. 상태는
+pair_weight_tradeoff_explained, 프로그램 gate는 continue_experimenting으로
+유지하며, production model, runtime, PVE 연결은 계속 보류한다.
+
+직접 재현:
+
+~~~bash
+PLACEMENT_PAIR_WEIGHT_REPORT=/private/tmp/placement-pair-weight-report-run1.json \
+conda run -n tetris-ml python -m jupyter nbconvert \
+  --to notebook \
+  --execute scripts/ml/notebooks/placement_pair_weight_decomposition_experiment.ipynb \
+  --output placement-pair-weight-executed-run1.ipynb \
+  --output-dir /private/tmp \
+  --ExecutePreprocessor.timeout=1200
+~~~
+
+run2는 report와 output 이름만 run2로 바꾼다.
 
 ---
 
@@ -1623,39 +1787,25 @@ conda run -n tetris-ml python -m jupyter nbconvert ...
 
 ---
 
-## 12. 다음 실험 gate
+## 12. 다음 작업 gate
 
-현재 바로 다음 질문:
+Phase 8은 pair-weight decomposition 질문을 끝냈다. 바로 다음 작업은 새 feature,
+scaler, estimator, trainer 또는 snapshot export가 아니다.
 
-> Occupied-cell grouping의 작은 MRR 하락은 alias 제거 자체 때문인가, 아니면 한 decision 안의 pair weight 분포가 바뀌었기 때문인가?
+1. **Phase 0~8 merge-readiness 감사**: historical baseline, Phase 8 commit,
+   checksum, Notebook 계약, dirty-file 분리를 검토한다.
+2. **Human imitation과 gameplay promotion 목표 분리**: placement ranking metric이
+   gameplay 생존·공격·승률 promotion을 의미하지 않음을 목표와 acceptance criteria에
+   분리해 기록한다.
+3. **Occupied-cell representation과 V4 weighting 정책 계약**: physical class를
+   학습·평가 단위로 채택할지, V4의 class-balanced weight를 어떤 scope에서
+   기본 정책으로 삼을지 명시한다.
+4. **새 immutable snapshot 검증**: 새 dataset을 만들기 전에 provenance, checksum,
+   split leakage, 보관 경로와 재현성을 검증한다.
 
-다음 실험에서 유지할 것:
-
-- 26게임 immutable snapshot
-- 16개 feature
-- LOGO split
-- train-only scaler
-- LogisticRegression 설정
-- canonical tie-break
-- raw metric과 physical-class metric
-
-분해할 것:
-
-- selected alias dilution
-- generator multiplicity
-- pairless decision
-- decision별 sample-weight 합
-- raw pair count와 grouped pair count
-
-아직 하지 않을 것:
-
-- 새 geometry feature 추가
-- scaler 변경
-- neural network 도입
-- full-data final trainer 생성
-- production model.json 교체
-- runtime 또는 PVE 연결
-- JavaScript로 같은 실험 재구현
+이 순서가 끝나기 전에는 새 geometry feature, scaler 변경, neural network,
+full-data trainer, production model.json 교체, runtime/PVE 연결, JavaScript
+실험 재구현을 수행하지 않는다.
 
 ---
 
