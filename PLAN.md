@@ -28,7 +28,8 @@
 
 ### 기준선 관찰력
 
-- 싱글 Playwright characterization은 이동, 회전, soft drop, hard drop 뒤 score 증가와 하단 board 고정을 확인한다.
+- 싱글 Playwright characterization은 테스트 전용 고정 RNG로 비정사각형 T 조각을 준비하고 Playwright clock으로 자동 중력을 분리한다.
+- 이동, 회전과 soft drop은 각각 불투명 T 조각의 Canvas cell 좌표 변화로 검증하며, hard drop은 하단 고정 cell과 화면 score 증가로 검증한다. 키 입력 호출 자체는 성공 증거로 사용하지 않는다.
 - PVP rollback gate는 첫 burst 4개와 전체 6개 입력이 실제 outgoing `game:input` frame으로 송신된 뒤 board 수렴과 안정성을 판정한다.
 - 수렴한 PVP board는 서로 다른 authoritative snapshot tick 2회 동안 이전 fingerprint로 돌아가지 않아야 한다.
 - rollback과 싱글 test를 각각 5회 반복했으며 10/10이 통과했다.

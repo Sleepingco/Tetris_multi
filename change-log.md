@@ -2062,7 +2062,9 @@ client input
 
 ## 싱글과 rollback 관찰력
 
-- `e2e/singlePlayer.spec.js`가 브라우저에서 이동, 회전, soft drop, hard drop 뒤 score와 하단 board 고정을 확인한다.
+- `e2e/singlePlayer.spec.js`가 테스트 전용 고정 RNG로 비정사각형 T 조각을 준비하고 Playwright clock으로 자동 중력을 분리한다.
+- 이동은 동일 Canvas cell 집합의 열 이동, 회전은 T 조각의 cell 배치 변화, soft drop은 행 이동, hard drop은 하단 고정 cell과 화면 score 증가로 각각 독립 검증한다.
+- 키 입력 호출 자체, production debug global과 gameplay API 노출은 assertion 근거로 사용하지 않는다.
 - multiplayer WebSocket monitor가 outgoing `game:input`의 `clientSequence`를 기록한다.
 - rollback test는 첫 4개 입력과 전체 6개 입력이 실제 전송된 뒤 board 수렴과 두 authoritative snapshot tick 동안의 안정성을 판정한다.
 - production gameplay 코드, correction 조건, snapshot 주기와 Socket.IO protocol은 변경하지 않았다.
@@ -2082,6 +2084,7 @@ client input
 - 전체 Playwright: 15/15 통과
 - `bash scripts/verify.sh`: Git diff check와 Node test 519/519 통과
 - Node `v22.18.0`, npm `10.9.3`을 Goal 0 기준선 환경으로 기록했다.
+- single E2E 리뷰 정정 후 반복 검증은 10/10, 전체 Playwright는 15/15, Node test는 519/519가 다시 통과했다.
 
 ## 남은 위험
 
