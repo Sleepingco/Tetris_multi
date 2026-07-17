@@ -36,6 +36,16 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 - 변경 후 코드 리뷰: `ai-harness/tasks/review.md`
 - 규칙 기반 AI, feature, 데이터셋, ML 평가: `ai-harness/tasks/ai-analysis.md`
 
+반복 placement ML 실험:
+
+- 긴 실험 프롬프트를 반복하지 않고 `ai-harness/ml-experiments/`를 사용한다.
+- 먼저 공통 `README.md`, `constraints.md`, `workflow.md`, `verification.md`를 읽고 현재 `experiments/*.md` 하나만 선택한다.
+- 기본 실행은 `MODE=implement-smoke`이며 Notebook·계약 테스트·smoke와 사용자 full 명령 제공에서 멈춘다.
+- 긴 full 평가는 사용자가 실행하거나 `MODE=run-full`을 명시적으로 승인한 경우에만 수행한다.
+- Full report 해석은 `MODE=analyze-result`, 동결 감사는 `MODE=freeze-audit`로 분리한다.
+- 현재 branch, HEAD, dirty 파일, 날짜, game count와 checksum은 하네스에 고정하지 않고 실행 시 실제 상태에서 읽는다.
+- 현재 실험이 끝나도 다음 실험, 누적 재학습, runtime/PVE 또는 migration을 자동으로 시작하지 않는다.
+
 실행 검증:
 - 런타임 코드, 테스트, 빌드/실행 동작을 변경한 뒤에는 완료 전에 `bash scripts/verify.sh`를 실행한다.
 - 문서만 변경한 경우에는 전체 테스트를 생략할 수 있다.
