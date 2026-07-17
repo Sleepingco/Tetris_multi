@@ -4,6 +4,7 @@ const GAME_READY_SELECTOR = '.next-preview[data-player="1"] .next-cell';
 const MULTI_GAME_URL = /\/pages\/tetrisMulti\.html\?roomId=[^&]+$/;
 const MULTI_LOBBY_URL = /\/pages\/multiLobby\.html$/;
 const AUTHORITATIVE_SNAPSHOT_EVENT = "game:authoritative:snapshot";
+const GAME_INPUT_EVENT = "game:input";
 
 function getBoardCanvasSelector(playerNumber) {
     return `.playground[data-player="${playerNumber}"] .tetrisBoardCanvas`;
@@ -156,7 +157,7 @@ async function waitForBoardConvergence({
     return readBottomBoardFingerprint(sourcePage, playerNumber, bottomRows);
 }
 
-function parseAuthoritativeSnapshotFrame(payload) {
+function parseSocketIoFrame(payload) {
     const frame = typeof payload === "string"
         ? payload
         : Buffer.isBuffer(payload)
@@ -166,25 +167,42 @@ function parseAuthoritativeSnapshotFrame(payload) {
     if (jsonStart === -1) return null;
 
     try {
-        const [eventName, eventPayload] = JSON.parse(frame.slice(jsonStart));
-        if (eventName !== AUTHORITATIVE_SNAPSHOT_EVENT) return null;
-
-        const snapshot = eventPayload?.snapshot;
-        if (!eventPayload?.playerId || !Array.isArray(snapshot?.board)) return null;
-
-        return {
-            playerId: eventPayload.playerId,
-            tick: snapshot.tick,
-            pieceIndex: snapshot.pieceIndex,
-            lastProcessedClientSequence: snapshot.lastProcessedClientSequence,
-            boardFingerprint: snapshot.board
-                .flat()
-                .map(cell => cell || "empty")
-                .join("|"),
-        };
+        return JSON.parse(frame.slice(jsonStart));
     } catch {
         return null;
     }
+}
+
+function parseAuthoritativeSnapshotFrame(payload) {
+    const [eventName, eventPayload] = parseSocketIoFrame(payload) || [];
+    if (eventName !== AUTHORITATIVE_SNAPSHOT_EVENT) return null;
+
+    const snapshot = eventPayload?.snapshot;
+    if (!eventPayload?.playerId || !Array.isArray(snapshot?.board)) return null;
+
+    return {
+        playerId: eventPayload.playerId,
+        tick: snapshot.tick,
+        pieceIndex: snapshot.pieceIndex,
+        lastProcessedClientSequence: snapshot.lastProcessedClientSequence,
+        boardFingerprint: snapshot.board
+            .flat()
+            .map(cell => cell || "empty")
+            .join("|"),
+    };
+}
+
+function parseGameInputFrame(payload) {
+    const [eventName, eventPayload] = parseSocketIoFrame(payload) || [];
+    if (eventName !== GAME_INPUT_EVENT) return null;
+    if (!eventPayload?.playerId || !Number.isInteger(eventPayload.clientSequence)) return null;
+
+    return {
+        playerId: eventPayload.playerId,
+        action: eventPayload.action,
+        pieceIndex: eventPayload.pieceIndex,
+        clientSequence: eventPayload.clientSequence,
+    };
 }
 
 /**
@@ -196,6 +214,7 @@ function parseAuthoritativeSnapshotFrame(payload) {
  */
 function createAuthoritativeSnapshotMonitor(page) {
     const events = [];
+    const sentGameInputs = [];
     const socketListeners = new Map();
 
     const onWebSocket = (webSocket) => {
@@ -206,9 +225,17 @@ function createAuthoritativeSnapshotMonitor(page) {
             events.push(snapshotEvent);
             if (events.length > 100) events.shift();
         };
+        const onFrameSent = ({ payload }) => {
+            const inputEvent = parseGameInputFrame(payload);
+            if (!inputEvent) return;
 
-        socketListeners.set(webSocket, onFrameReceived);
+            sentGameInputs.push(inputEvent);
+            if (sentGameInputs.length > 100) sentGameInputs.shift();
+        };
+
+        socketListeners.set(webSocket, { onFrameReceived, onFrameSent });
         webSocket.on("framereceived", onFrameReceived);
+        webSocket.on("framesent", onFrameSent);
     };
 
     page.on("websocket", onWebSocket);
@@ -230,10 +257,14 @@ function createAuthoritativeSnapshotMonitor(page) {
                 .filter(event => !playerId || event.playerId === playerId)
                 .slice(-limit);
         },
+        getSentGameInputCount(playerId) {
+            return sentGameInputs.filter(event => !playerId || event.playerId === playerId).length;
+        },
         dispose() {
             page.off("websocket", onWebSocket);
-            socketListeners.forEach((listener, webSocket) => {
-                webSocket.off("framereceived", listener);
+            socketListeners.forEach((listeners, webSocket) => {
+                webSocket.off("framereceived", listeners.onFrameReceived);
+                webSocket.off("framesent", listeners.onFrameSent);
             });
             socketListeners.clear();
         },
@@ -248,9 +279,10 @@ function createAuthoritativeSnapshotMonitor(page) {
  * @param {Function|null} onInput - key press 완료 직후 호출할 선택 callback
  * @returns {Promise<void>}
  */
-async function pressRapidInputCombination(page, keys, onInput = null) {
+async function pressRapidInputCombination(page, keys, onInput = null, inputMonitor = null) {
     const firstBurst = keys.slice(0, 4);
     const secondBurst = keys.slice(4);
+    const sentInputCountBefore = inputMonitor?.getSentGameInputCount() ?? null;
 
     for (let index = 0; index < firstBurst.length; index += 1) {
         const key = firstBurst[index];
@@ -259,17 +291,29 @@ async function pressRapidInputCombination(page, keys, onInput = null) {
     }
 
     if (secondBurst.length > 0) {
-        await page.evaluate(() => {
-            return new Promise(resolve => {
-                requestAnimationFrame(() => requestAnimationFrame(resolve));
+        if (sentInputCountBefore !== null) {
+            await expect.poll(() => inputMonitor.getSentGameInputCount()).toBe(
+                sentInputCountBefore + firstBurst.length,
+            );
+        } else {
+            await page.evaluate(() => {
+                return new Promise(resolve => {
+                    requestAnimationFrame(() => requestAnimationFrame(resolve));
+                });
             });
-        });
+        }
     }
 
     for (let index = 0; index < secondBurst.length; index += 1) {
         const key = secondBurst[index];
         await page.keyboard.press(key);
         onInput?.(key, firstBurst.length + index);
+    }
+
+    if (sentInputCountBefore !== null) {
+        await expect.poll(() => inputMonitor.getSentGameInputCount()).toBe(
+            sentInputCountBefore + keys.length,
+        );
     }
 }
 
