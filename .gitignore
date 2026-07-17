@@ -7,6 +7,7 @@ dist/
 
 data/logs/*.jsonl
 data/datasets/
+data/ml-experiments/
 data/models/
 
 Obsidian.md
