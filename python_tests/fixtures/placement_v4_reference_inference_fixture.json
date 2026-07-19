@@ -1,0 +1,210 @@
+{
+  "fixtureSchemaVersion": 1,
+  "modelSha256": "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d",
+  "scenarios": [
+    {
+      "scenarioId": "alias-grouping",
+      "candidates": [
+        {
+          "candidatePlacement": {
+            "pieceType": "tee",
+            "rotation": 2,
+            "row": 9,
+            "col": 1,
+            "cells": [
+              {"row": 10, "col": 2},
+              {"row": 11, "col": 1},
+              {"row": 10, "col": 0},
+              {"row": 10, "col": 1}
+            ]
+          },
+          "candidateResult": {"linesCleared": 0, "gameOver": false},
+          "metricDelta": {
+            "aggregateHeight": 0,
+            "maxHeight": 0,
+            "holes": 0,
+            "bumpiness": 0,
+            "columnHeights": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          }
+        },
+        {
+          "candidatePlacement": {
+            "pieceType": "tee",
+            "rotation": 0,
+            "row": 10,
+            "col": 3,
+            "cells": [
+              {"row": 10, "col": 3},
+              {"row": 10, "col": 4},
+              {"row": 10, "col": 5},
+              {"row": 11, "col": 4}
+            ]
+          },
+          "candidateResult": {"linesCleared": 0, "gameOver": false},
+          "metricDelta": {
+            "aggregateHeight": 8,
+            "maxHeight": 2,
+            "holes": 4,
+            "bumpiness": 3,
+            "columnHeights": [0, 0, 0, 3, 3, 3, 0, 0, 0, 0]
+          }
+        },
+        {
+          "candidatePlacement": {
+            "pieceType": "tee",
+            "rotation": 0,
+            "row": 10,
+            "col": 0,
+            "cells": [
+              {"row": 10, "col": 0},
+              {"row": 10, "col": 1},
+              {"row": 10, "col": 2},
+              {"row": 11, "col": 1}
+            ]
+          },
+          "candidateResult": {"linesCleared": 0, "gameOver": false},
+          "metricDelta": {
+            "aggregateHeight": 0,
+            "maxHeight": 0,
+            "holes": 0,
+            "bumpiness": 0,
+            "columnHeights": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          }
+        }
+      ],
+      "expected": {
+        "selectedClassKey": "tee|10,0;10,1;10,2;11,1",
+        "selectedRepresentativeKey": "tee:0:10:0",
+        "safeClassAvailable": true,
+        "filteredGameOverClassCount": 0,
+        "unavoidableGameOver": false,
+        "selectedAliasCount": 2,
+        "classRanks": {
+          "tee|10,0;10,1;10,2;11,1": 1,
+          "tee|10,3;10,4;10,5;11,4": 2
+        }
+      }
+    },
+    {
+      "scenarioId": "game-over-filter",
+      "candidates": [
+        {
+          "candidatePlacement": {
+            "pieceType": "tee",
+            "rotation": 0,
+            "row": 10,
+            "col": 0,
+            "cells": [
+              {"row": 10, "col": 0},
+              {"row": 10, "col": 1},
+              {"row": 10, "col": 2},
+              {"row": 11, "col": 1}
+            ]
+          },
+          "candidateResult": {"linesCleared": 0, "gameOver": true},
+          "metricDelta": {
+            "aggregateHeight": -10,
+            "maxHeight": -5,
+            "holes": -5,
+            "bumpiness": -10,
+            "columnHeights": [-3, -3, -3, -3, -3, -3, -3, -3, -3, -3]
+          }
+        },
+        {
+          "candidatePlacement": {
+            "pieceType": "tee",
+            "rotation": 0,
+            "row": 10,
+            "col": 4,
+            "cells": [
+              {"row": 10, "col": 4},
+              {"row": 10, "col": 5},
+              {"row": 10, "col": 6},
+              {"row": 11, "col": 5}
+            ]
+          },
+          "candidateResult": {"linesCleared": 0, "gameOver": false},
+          "metricDelta": {
+            "aggregateHeight": 10,
+            "maxHeight": 5,
+            "holes": 6,
+            "bumpiness": 8,
+            "columnHeights": [3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+          }
+        }
+      ],
+      "expected": {
+        "selectedClassKey": "tee|10,4;10,5;10,6;11,5",
+        "selectedRepresentativeKey": "tee:0:10:4",
+        "safeClassAvailable": true,
+        "filteredGameOverClassCount": 1,
+        "unavoidableGameOver": false,
+        "highestLinearScoreClassKey": "tee|10,0;10,1;10,2;11,1",
+        "classRanks": {
+          "tee|10,0;10,1;10,2;11,1": null,
+          "tee|10,4;10,5;10,6;11,5": 1
+        }
+      }
+    },
+    {
+      "scenarioId": "all-game-over-fallback",
+      "candidates": [
+        {
+          "candidatePlacement": {
+            "pieceType": "tee",
+            "rotation": 0,
+            "row": 10,
+            "col": 4,
+            "cells": [
+              {"row": 10, "col": 4},
+              {"row": 10, "col": 5},
+              {"row": 10, "col": 6},
+              {"row": 11, "col": 5}
+            ]
+          },
+          "candidateResult": {"linesCleared": 0, "gameOver": true},
+          "metricDelta": {
+            "aggregateHeight": 0,
+            "maxHeight": 0,
+            "holes": 0,
+            "bumpiness": 0,
+            "columnHeights": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          }
+        },
+        {
+          "candidatePlacement": {
+            "pieceType": "tee",
+            "rotation": 0,
+            "row": 10,
+            "col": 0,
+            "cells": [
+              {"row": 10, "col": 0},
+              {"row": 10, "col": 1},
+              {"row": 10, "col": 2},
+              {"row": 11, "col": 1}
+            ]
+          },
+          "candidateResult": {"linesCleared": 0, "gameOver": true},
+          "metricDelta": {
+            "aggregateHeight": 0,
+            "maxHeight": 0,
+            "holes": 0,
+            "bumpiness": 0,
+            "columnHeights": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+          }
+        }
+      ],
+      "expected": {
+        "selectedClassKey": "tee|10,0;10,1;10,2;11,1",
+        "selectedRepresentativeKey": "tee:0:10:0",
+        "safeClassAvailable": false,
+        "filteredGameOverClassCount": 0,
+        "unavoidableGameOver": true,
+        "classRanks": {
+          "tee|10,0;10,1;10,2;11,1": 1,
+          "tee|10,4;10,5;10,6;11,5": 2
+        }
+      }
+    }
+  ]
+}
