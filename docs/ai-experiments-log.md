@@ -332,7 +332,7 @@ Python-native Notebook으로 완전히 전환하기 전, JavaScript가 feature t
 관련 파일:
 
 - [Python LOGO baseline Notebook](../scripts/ml/notebooks/placement_pairwise_logo_experiment.ipynb)
-- [Notebook 설명](placement-python-experiment-notebook.md)
+- [Archived Notebook 설명](archive/ai-ml/experiments/placement-python-experiment-notebook.md)
 - [Notebook 계약 테스트](../python_tests/test_placement_experiment_notebook.py)
 - [Conda 환경](../environment-ml.yml)
 
@@ -496,7 +496,7 @@ e75293adf8cdbc5689dceb6c1efa9857fd8cf1440e4acc33ec77052f11c0878c
 관련 파일:
 
 - [Collision 분석 Notebook](../scripts/ml/notebooks/placement_feature_collision_analysis.ipynb)
-- [Collision 분석 결과 문서](placement-feature-collision-analysis.md)
+- [Archived collision 분석 결과 문서](archive/ai-ml/experiments/placement-feature-collision-analysis.md)
 - [Collision Notebook 계약 테스트](../python_tests/test_placement_feature_collision_notebook.py)
 
 결과:

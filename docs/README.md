@@ -1,7 +1,8 @@
 # AI/ML 문서와 파일 안내
 
-이 문서는 placement AI 관련 파일을 찾는 단일 진입점이다. 파일을 이동하거나
-역할을 바꾸지 않고, 현재 재사용할 경로와 과거 실험 근거를 구분한다.
+이 문서는 placement AI 관련 파일을 찾는 단일 진입점이다. 실행 코드와 Notebook
+경로는 유지하면서 현재 재사용할 경로와 과거 실험 근거를 구분한다. 종료되거나
+대체되어 이동한 문서는 [AI/ML archive](archive/ai-ml/README.md)에서 찾는다.
 
 현재 프로그램 상태는 `imitation_only_not_gameplay_ready`다. V4는 Human
 placement imitation과 offline 분석에만 유지하며, PVE/production 기본 정책은
@@ -52,8 +53,8 @@ production 보류 결론을 설명하는 근거다. 새 실험은 같은 질문�
 
 | 근거 | 입력 | 출력 | 현재 재사용 | 실제 경로 |
 |---|---|---|---|---|
-| 초기 Python LOGO | 13/26-game Human snapshot | baseline LOGO metric과 Python-native notebook 계약 | 역사적 baseline | [placement_pairwise_logo_experiment.ipynb](../scripts/ml/notebooks/placement_pairwise_logo_experiment.ipynb), [placement-python-experiment-notebook.md](placement-python-experiment-notebook.md) |
-| Feature collision | 26-game snapshot | zero-difference/feature collision 원인 | 진단 근거 | [placement_feature_collision_analysis.ipynb](../scripts/ml/notebooks/placement_feature_collision_analysis.ipynb), [placement-feature-collision-analysis.md](placement-feature-collision-analysis.md) |
+| 초기 Python LOGO | 13/26-game Human snapshot | baseline LOGO metric과 Python-native notebook 계약 | 역사적 baseline | [placement_pairwise_logo_experiment.ipynb](../scripts/ml/notebooks/placement_pairwise_logo_experiment.ipynb), [archived Notebook 안내](archive/ai-ml/experiments/placement-python-experiment-notebook.md) |
+| Feature collision | 26-game snapshot | zero-difference/feature collision 원인 | 진단 근거 | [placement_feature_collision_analysis.ipynb](../scripts/ml/notebooks/placement_feature_collision_analysis.ipynb), [archived 분석 문서](archive/ai-ml/experiments/placement-feature-collision-analysis.md) |
 | Cell equivalence | 26-game snapshot | occupied-cell physical class 계약과 canonical result | representation 근거 | [placement_cell_equivalence_logo_experiment.ipynb](../scripts/ml/notebooks/placement_cell_equivalence_logo_experiment.ipynb), [placement-cell-equivalence-logo.md](placement-cell-equivalence-logo.md), [result JSON](placement-cell-equivalence-logo-result.json) |
 | Pair-weight decomposition | 26-game snapshot | V0–V4 controlled decomposition과 V4 선택 근거 | weighting 근거 | [placement_pair_weight_decomposition_experiment.ipynb](../scripts/ml/notebooks/placement_pair_weight_decomposition_experiment.ipynb), [placement-pair-weight-decomposition.md](placement-pair-weight-decomposition.md), [result JSON](placement-pair-weight-decomposition-result.json) |
 | V0/V4 temporal holdout | time-ordered 75-game cohort | V4 adoption evidence for imitation | historical evaluation | [temporal notebook](../scripts/ml/notebooks/placement_temporal_holdout_v0_v4_experiment.ipynb), [spec](../ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md), [run record](../ai-harness/runs/placement-temporal-holdout-v0-v4-analyze-result-2026-07-18.md) |

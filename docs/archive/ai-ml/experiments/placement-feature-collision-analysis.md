@@ -20,7 +20,7 @@ LogisticRegression에 geometry feature를 추가하거나 새 모델을 학습�
 
 - Notebook: `scripts/ml/notebooks/placement_feature_collision_analysis.ipynb`
 - 계약 테스트: `python_tests/test_placement_feature_collision_notebook.py`
-- 분석 문서: `docs/placement-feature-collision-analysis.md`
+- 분석 문서: `docs/archive/ai-ml/experiments/placement-feature-collision-analysis.md`
 
 Notebook은 snapshot JSONL을 pandas로 직접 읽는다. 실행본과 report는 저장소 밖에
 둔다.

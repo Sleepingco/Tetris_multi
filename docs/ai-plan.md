@@ -24,12 +24,14 @@ Artifact 상태: `canonicalArtifact=false`, `productionIntegration=false`
 | [ai-experiments-log.md](ai-experiments-log.md) | 각 실험의 데이터, metric, checksum, 명령과 상세 근거 |
 | [placement-pair-weight-decomposition.md](placement-pair-weight-decomposition.md) | 최신 pair-weight 실험의 학습용 walkthrough |
 | [PLAN.md](../PLAN.md) | 전체 게임·멀티플레이 프로젝트의 현재 상태와 우선순위 |
-| [ai-pve-plan.md](ai-pve-plan.md) | PVE AI의 장기적인 구조와 책임 경계 |
+| [archived ai-pve-plan.md](archive/ai-ml/plans/ai-pve-plan.md) | 현재 구현으로 대체된 초기 PVE AI 구조 계획 |
 | [README.md](README.md) | 현재 재사용 파일, historical evidence, local ignored evidence의 단일 진입점 |
 
 실제 상태가 문서와 다르면 Git, 실제 코드, 테스트 결과를 우선한다.
 
-ai-pve-plan.md의 초기 Current State 일부는 ML 실험 이전에 작성된 역사적 설명이다. 최신 placement ML 진행 상태는 이 문서와 ai-experiments-log.md를 기준으로 본다.
+[archived ai-pve-plan.md](archive/ai-ml/plans/ai-pve-plan.md)의 Current State는
+ML 실험 이전의 역사적 설명이다. 최신 placement ML 진행 상태는 이 문서와
+ai-experiments-log.md를 기준으로 본다.
 
 ---
 
