@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const { createHash } = require("node:crypto");
-const { mkdir, readFile, writeFile } = require("node:fs/promises");
+const { mkdir, open, readFile, writeFile } = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 
@@ -396,9 +396,17 @@ function addGameResultMetadata(samples, games) {
     });
 }
 
-function serializeJsonLines(rows) {
-    if (rows.length === 0) return "";
-    return `${rows.map(row => JSON.stringify(row)).join("\n")}\n`;
+async function writeJsonLines(filePath, rows) {
+    const handle = await open(filePath, "w");
+    try {
+        const batchSize = 1000;
+        for (let index = 0; index < rows.length; index += batchSize) {
+            const batch = rows.slice(index, index + batchSize);
+            await handle.write(batch.map(row => `${JSON.stringify(row)}\n`).join(""));
+        }
+    } finally {
+        await handle.close();
+    }
 }
 
 function countBy(rows, valueSelector, initialKeys) {
@@ -581,13 +589,9 @@ async function exportPlacementDataset({
     }));
     await mkdir(resolvedOutputDir, { recursive: true });
     await Promise.all([
-        writeFile(outputPaths["train.jsonl"], serializeJsonLines(split.train), "utf8"),
-        writeFile(
-            outputPaths["validation.jsonl"],
-            serializeJsonLines(split.validation),
-            "utf8",
-        ),
-        writeFile(outputPaths["rejected.jsonl"], serializeJsonLines(rejected), "utf8"),
+        writeJsonLines(outputPaths["train.jsonl"], split.train),
+        writeJsonLines(outputPaths["validation.jsonl"], split.validation),
+        writeJsonLines(outputPaths["rejected.jsonl"], rejected),
     ]);
     await writeFile(
         outputPaths["manifest.json"],
