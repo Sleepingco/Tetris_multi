@@ -99,7 +99,6 @@ test("applyAuthoritativeGravityStep은 조각을 아래로 1칸 내리고 curren
     assert.deepEqual(playerState.pendingPiece, playerState.activePiece);
     assert.equal(playerState.currentTick, 1);
     assert.equal(playerState.pieceIndex, 1);
-    assert.equal(Object.hasOwn(playerState, "inputLog"), false);
 });
 
 test("applyAuthoritativeGravityStep은 첫 blocked gravity에서 state를 변경하지 않고 grounded를 반환한다", async () => {

@@ -18,7 +18,6 @@ const {
     deleteMatch,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
-    recordInput,
     validateClientInputSequence,
 } = require("../services/matchService.js")
 const { loadGameCore } = require("../services/gameCoreLoader.js")
@@ -119,8 +118,8 @@ function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
 
 /**
  * 멀티플레이 Socket.IO 이벤트를 등록한다.
- * - 서버는 room/match 상태, 입력 로그, bag chunk, authoritative snapshot 송신을 담당한다.
- * - 클라이언트 입력 relay는 유지하되 garbage/game over는 서버 lock 결과를 기준으로 처리한다.
+ * - 서버는 room/match 상태, bag chunk, authoritative snapshot 송신을 담당한다.
+ * - garbage/game over는 서버 authoritative lock 결과를 기준으로 처리한다.
  *
  * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
  * @param {import("socket.io").Socket} clientSocket - 연결된 클라이언트 socket
@@ -248,7 +247,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         })
     })
 
-    // 같은 socket의 입력은 record → relay → authoritative apply 순서로 직렬 처리한다.
+    // 같은 socket의 입력은 validation → authoritative apply 순서로 직렬 처리한다.
     async function processGameInput(payload = {}) {
         const {
             roomId,
@@ -324,19 +323,6 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             emitInputResult(false, sequenceValidation.reason)
             return
         }
-        const inputResult = recordInput(roomId, playerId, input)
-
-        if (!inputResult.ok) {
-            emitInputResult(false, inputResult.reason)
-            return
-        }
-
-        clientSocket.to(roomId).emit("game:input", {
-            roomId,
-            playerId,
-            ...input,
-        })
-
         try {
             await authoritativePlayerMutationQueue.enqueueAuthoritativePlayerMutation(
                 roomId,

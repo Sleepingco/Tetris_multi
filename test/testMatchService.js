@@ -10,9 +10,7 @@ const {
     createMatch,
     deleteMatch,
     getAuthoritativePlayerSnapshotDto,
-    recordInput,
     getMatchState,
-    MAX_INPUT_LOG_ENTRIES_PER_PLAYER,
     resetMatches,
 } = matchService;
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
@@ -36,7 +34,7 @@ function createPlayingRoom(roomId = "ROOM001") {
     };
 }
 
-test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를 만든다", () => {
+test("createMatch는 room 정보를 기준으로 authoritative match를 만든다", () => {
     resetMatches();
 
     const result = createMatch(createPlayingRoom());
@@ -48,8 +46,6 @@ test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를
     assert.equal(result.match.status, "playing");
     assert.equal(result.match.players.length, 2);
     assert.equal(result.match.players[0].playerId, "host-player");
-    assert.deepEqual(result.match.players[0].inputLog, []);
-    assert.equal(result.match.players[0].nextInputSequence, 1);
     assert.equal(result.match.players[0].lastProcessedClientSequence, 0);
     assert.equal(
         Object.hasOwn(result.match.players[0].authoritativeState, "lastProcessedClientSequence"),
@@ -197,111 +193,6 @@ test("deleteMatch는 없는 match면 MATCH_NOT_FOUND를 반환한다", () => {
         match: null,
         reason: "MATCH_NOT_FOUND",
     });
-});
-
-test("recordInput은 player의 inputLog에 action과 tick을 저장한다", () => {
-    resetMatches();
-
-    createMatch(createPlayingRoom("ROOM003"));
-    const result = recordInput("ROOM003", "host-player", {
-        action: "move_left",
-        tick: 10,
-        pieceIndex: 3,
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.reason, null);
-    assert.equal(result.match.players[0].inputLog.length, 1);
-    assert.equal(result.match.players[0].inputLog[0].action, "move_left");
-    assert.equal(result.match.players[0].inputLog[0].tick, 10);
-    assert.equal(result.match.players[0].inputLog[0].pieceIndex, 3);
-    assert.equal(typeof result.match.players[0].inputLog[0].receivedAt, "number");
-});
-
-test("recordInput은 replay를 위해 playerId와 sequence를 함께 저장한다", () => {
-    resetMatches();
-
-    createMatch(createPlayingRoom("REPLAY001"));
-    const result = recordInput("REPLAY001", "host-player", {
-        action: "rotate",
-        tick: 12,
-        pieceIndex: 4,
-    });
-    const replayInput = result.match.players[0].inputLog[0];
-
-    assert.equal(result.ok, true);
-    assert.equal(replayInput.playerId, "host-player");
-    assert.equal(replayInput.action, "rotate");
-    assert.equal(replayInput.tick, 12);
-    assert.equal(replayInput.pieceIndex, 4);
-    assert.equal(replayInput.sequence, 1);
-    assert.equal(typeof replayInput.receivedAt, "number");
-});
-
-test("recordInput은 player별 inputLog sequence를 독립적으로 증가시킨다", () => {
-    resetMatches();
-
-    createMatch(createPlayingRoom("REPLAY002"));
-    recordInput("REPLAY002", "host-player", {
-        action: "move_left",
-        tick: 20,
-        pieceIndex: 5,
-    });
-    recordInput("REPLAY002", "host-player", {
-        action: "move_right",
-        tick: 20,
-        pieceIndex: 5,
-    });
-    const result = recordInput("REPLAY002", "guest-player", {
-        action: "soft_drop",
-        tick: 20,
-        pieceIndex: 5,
-    });
-
-    const hostPlayer = result.match.players.find(player => player.playerId === "host-player");
-    const guestPlayer = result.match.players.find(player => player.playerId === "guest-player");
-
-    assert.deepEqual(hostPlayer.inputLog.map(input => input.sequence), [1, 2]);
-    assert.deepEqual(hostPlayer.inputLog.map(input => input.playerId), ["host-player", "host-player"]);
-    assert.deepEqual(guestPlayer.inputLog.map(input => input.sequence), [1]);
-    assert.deepEqual(guestPlayer.inputLog.map(input => input.playerId), ["guest-player"]);
-});
-
-test("recordInput은 player별 inputLog를 상한 안에서 유지하고 sequence는 전체 순서를 유지한다", () => {
-    resetMatches();
-
-    assert.equal(MAX_INPUT_LOG_ENTRIES_PER_PLAYER, 1000);
-
-    createMatch(createPlayingRoom("REPLAY_BOUNDED"));
-    for (let index = 1; index <= MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 2; index += 1) {
-        recordInput("REPLAY_BOUNDED", "host-player", {
-            action: "move_left",
-            tick: index,
-            pieceIndex: 1,
-        });
-    }
-    recordInput("REPLAY_BOUNDED", "guest-player", {
-        action: "move_right",
-        tick: 1,
-        pieceIndex: 1,
-    });
-    const result = recordInput("REPLAY_BOUNDED", "host-player", {
-        action: "soft_drop",
-        tick: MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 3,
-        pieceIndex: 1,
-    });
-
-    const hostPlayer = result.match.players.find(player => player.playerId === "host-player");
-    const guestPlayer = result.match.players.find(player => player.playerId === "guest-player");
-
-    assert.equal(hostPlayer.inputLog.length, MAX_INPUT_LOG_ENTRIES_PER_PLAYER);
-    assert.equal(hostPlayer.inputLog[0].sequence, 4);
-    assert.equal(hostPlayer.inputLog[0].tick, 4);
-    assert.equal(hostPlayer.inputLog.at(-1).sequence, MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 3);
-    assert.equal(hostPlayer.inputLog.at(-1).action, "soft_drop");
-    assert.equal(hostPlayer.nextInputSequence, MAX_INPUT_LOG_ENTRIES_PER_PLAYER + 4);
-    assert.deepEqual(guestPlayer.inputLog.map(input => input.sequence), [1]);
-    assert.equal(guestPlayer.nextInputSequence, 2);
 });
 
 test("appendPlayerBagChunk는 player의 bagChunks에 새 server bag chunk를 추가한다", () => {
@@ -518,7 +409,6 @@ test("applyAuthoritativeInputToMatchPlayerState는 hard_drop을 player authorita
         row: -1,
         col: 3,
     });
-    assert.deepEqual(hostPlayer.inputLog, []);
 });
 
 test("internal soft_drop은 expectedTransform 없이 기존 authoritative 규칙을 사용한다", async () => {
@@ -620,7 +510,6 @@ test("applyGravityStepToMatchPlayerState는 player authoritativeState에 gravity
         col: 3,
     });
     assert.equal(hostPlayer.authoritativeState.currentTick, 1);
-    assert.deepEqual(hostPlayer.inputLog, []);
     assert.equal(snapshotResult.ok, true);
     assert.equal(snapshotResult.snapshot.tick, 1);
     assert.deepEqual(snapshotResult.snapshot.activePiece, hostPlayer.authoritativeState.activePiece);
@@ -688,50 +577,4 @@ test("applyGravityStepToMatchPlayerState는 player authoritativeState가 없으�
     assert.equal(result.ok, false);
     assert.equal(result.match.roomId, "GRAVITY003");
     assert.equal(result.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
-});
-
-test("recordInput은 없는 match면 실패 결과를 반환한다", () => {
-    resetMatches();
-
-    const result = recordInput("MISSING", "host-player", {
-        action: "move_left",
-        tick: 10,
-    });
-
-    assert.deepEqual(result, {
-        ok: false,
-        match: null,
-        reason: "MATCH_NOT_FOUND",
-    });
-});
-
-test("recordInput은 match에 없는 player면 실패 결과를 반환한다", () => {
-    resetMatches();
-
-    createMatch(createPlayingRoom("ROOM004"));
-    const result = recordInput("ROOM004", "unknown-player", {
-        action: "move_left",
-        tick: 10,
-    });
-
-    assert.deepEqual(result, {
-        ok: false,
-        match: null,
-        reason: "PLAYER_NOT_FOUND",
-    });
-});
-
-test("recordInput은 action이 없으면 실패 결과를 반환한다", () => {
-    resetMatches();
-
-    createMatch(createPlayingRoom("ROOM005"));
-    const result = recordInput("ROOM005", "host-player", {
-        tick: 10,
-    });
-
-    assert.deepEqual(result, {
-        ok: false,
-        match: null,
-        reason: "INVALID_INPUT",
-    });
 });

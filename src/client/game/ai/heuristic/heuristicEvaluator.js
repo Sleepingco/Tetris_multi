@@ -136,17 +136,6 @@ export function rankPlacements(board, activePiece) {
 }
 
 /**
- * 현재 상태에서 가장 높은 점수를 받은 표준 placement를 반환한다.
- *
- * @param {Array<Array<string|null>>} board - 현재 보드
- * @param {{pieceType: string, rotation: number, row: number, col: number}} activePiece - 현재 활성 조각
- * @returns {Object|null} 최적 placement 또는 null
- */
-export function getBestPlacement(board, activePiece) {
-    return rankPlacements(board, activePiece)[0]?.placement ?? null;
-}
-
-/**
  * 직렬화 가능한 gameState를 휴리스틱 AI decision schema로 변환한다.
  *
  * @param {{
