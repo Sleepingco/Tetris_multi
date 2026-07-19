@@ -1,12 +1,14 @@
 # Tetris placement AI 전체 계획
 
-마지막 정리: 2026-07-18
+마지막 정리: 2026-07-20
 
-현재 프로그램 상태: **continue_experimenting**
+현재 프로그램 상태: **imitation_only_not_gameplay_ready**
 
-현재 실험 결론: **pair_weight_tradeoff_explained**
+현재 production 결정: **keep_heuristic_default**
 
-Production 연결: **보류**
+현재 활성 실험: **없음**
+
+Artifact 상태: `canonicalArtifact=false`, `productionIntegration=false`
 
 ---
 
@@ -23,6 +25,7 @@ Production 연결: **보류**
 | [placement-pair-weight-decomposition.md](placement-pair-weight-decomposition.md) | 최신 pair-weight 실험의 학습용 walkthrough |
 | [PLAN.md](../PLAN.md) | 전체 게임·멀티플레이 프로젝트의 현재 상태와 우선순위 |
 | [ai-pve-plan.md](ai-pve-plan.md) | PVE AI의 장기적인 구조와 책임 경계 |
+| [README.md](README.md) | 현재 재사용 파일, historical evidence, local ignored evidence의 단일 진입점 |
 
 실제 상태가 문서와 다르면 Git, 실제 코드, 테스트 결과를 우선한다.
 
@@ -37,12 +40,11 @@ ai-pve-plan.md의 초기 Current State 일부는 ML 실험 이전에 작성된 �
 ~~~text
 Human gameplay log
 → game 단위 immutable dataset
-→ JavaScript와 Python 수치 parity
-→ Python-native LOGO baseline
-→ 13게임에서 26게임으로 확대
-→ zero-difference 원인 분석
-→ occupied-cell equivalence 정의
-→ pair-weight trade-off 원인 분해
+→ Human placement imitation 평가와 V4 선택
+→ 125-game candidate artifact
+→ reference inference·game-over safety 검증
+→ dev-only PVE integration
+→ deterministic gameplay evaluation 종료
 ~~~
 
 현재 알게 된 사실:
@@ -54,20 +56,21 @@ Human gameplay log
 - 동일 물리 placement를 묶는 row compression 자체는 metric을 떨어뜨리지 않는다.
 - 관측된 Micro MRR 하락 약 0.001153은 pair-weight 재분배로 설명된다.
 - V4 cell-grouped 방식은 물리적 선택지 하나를 하나의 pair 단위로 표현하며 V3보다 계산량이 작다.
-- V4는 다음 확장 실험의 기본 후보지만 아직 최종 동결된 production 정책은 아니다.
+- V4 125-game candidate artifact는 생성됐지만 `canonicalArtifact=false`다.
+- Reference inference와 game-over safety 계약, dev-only PVE integration은 검증됐다.
 - Human 선택 모방 metric은 실제 생존, 공격, 승률 또는 강한 gameplay AI를 의미하지 않는다.
+- 30-stream gameplay screening은 pass 경계에서 종료됐지만 V4-only game-over와 board diagnostics 때문에 gameplay replacement 근거가 부족하다.
+- Production/PVE 기본 정책은 heuristic이며, V4는 Human imitation·offline analysis 범위에만 유지한다.
 
 현재 위치:
 
 ~~~text
 데이터·평가 파이프라인 검증 완료
-→ 표현 중복 원인 규명 완료
-→ pair-weight trade-off 원인 규명 완료
-→ weighting policy 확대 검증 필요
-→ feature/model freeze 미완료
-→ final trainer 미생성
-→ gameplay benchmark 미실행
-→ production/PVE 연결 보류
+→ V4 candidate trainer·reference safety·dev-only integration 완료
+→ gameplay evaluation 종료
+→ Human imitation 용도 유지
+→ gameplay replacement 보류
+→ heuristic production 기본 정책 유지
 ~~~
 
 ---
@@ -80,27 +83,20 @@ Human gameplay log
 |---|---|
 | AI worktree | /Users/parkseongho/visualstudio-workspace/Tetris_multi-ai |
 | AI branch | codex/python-sklearn-logo-evaluation |
-| 작성 시점 HEAD | 4cf858575addddf9dcaa624ec607c7503286ed8a |
-| AI branch와 main의 merge-base | 3b1329e84c8269c984e23e10eaf7f11c8b170690 |
 | main worktree | /Users/parkseongho/visualstudio-workspace/Tetris_multi |
-| 작성 시점 main | 53b4831e7f383edb0a78ed34763751621d9461cb |
 | main 역할 | 실제 게임 실행과 최종 통합 |
 
 작성 시점 Git 상태:
 
-- Phase 0~7과 기존 Python 실험 기반은 4cf8585에 커밋돼 있다.
-- Phase 8 pair-weight decomposition은 구현과 검증이 끝났지만 아직 커밋되지 않았다.
-- AI branch와 main은 merge-base 3b1329e 이후 서로 진행됐으므로 다음 main 통합 전에 동기화와 재검증이 필요하다.
-- 기존 dirty .DS_Store는 AI 작업과 무관하므로 stage하거나 수정하지 않는다.
-- Dataset snapshot은 Git ignore 대상이다. 현재 확인된 26게임 snapshot은 AI worktree에만 있으므로 외부 영구 archive와 복구 절차가 아직 gate로 남아 있다.
+- Git branch, HEAD, main과의 계보, dirty/untracked 파일은 작업 시작 시 실제 Git으로 확인한다.
+- V4 125-game candidate artifact와 dev-only PVE 경계는 완료됐지만 production artifact가 아니다.
+- Gameplay evaluation의 상세 근거와 ignored report SHA는 [gameplay analyze-result record](../ai-harness/runs/placement-v4-pve-gameplay-benchmark-analyze-result-2026-07-20.md)에 보존한다.
 
 ### 3.2 현재 바로 다음 작업
 
-다음 작업은 새로운 실험이 아니다.
+현재 활성 실험이나 자동 다음 작업은 없다.
 
-> Phase 8의 stale 문서 설명까지 바로잡고 변경 범위와 검증 결과를 최종 확인한 뒤 AI branch에 커밋한다.
-
-이 작업이 끝나기 전에는 새 snapshot 실험을 같은 working tree 변경에 섞지 않는다.
+새 작업은 Human imitation 목적과 gameplay promotion 목적을 먼저 분리하고, 별도 승인된 질문·입력 cohort·성공 기준으로 시작한다. 현재 결정만으로 feature 추가, hybrid, 재학습, 100-stream 확장, production/PVE 기본값 변경을 시작하지 않는다.
 
 ---
 
@@ -456,6 +452,9 @@ Attribution:
 - 동일 occupied-cell alias는 서로 다른 물리 placement가 아니다.
 - Row compression은 정보 손실 원인이 아니다.
 - GPU 전환은 현재 16-feature 선형 모델의 우선 과제가 아니다.
+- V4 125-game candidate artifact, reference inference와 game-over safety 계약은 완료됐다.
+- dev-only PVE integration은 검증됐지만 production 기본 정책을 바꾸지 않는다.
+- gameplay evaluation은 `imitation_only_not_gameplay_ready`로 종료했고 production 결정은 `keep_heuristic_default`다.
 
 ### 아직 확정하지 않음
 
@@ -466,9 +465,20 @@ Attribution:
 - heuristic보다 gameplay가 강한지
 - production runtime 연결
 
+### 현재 보류 또는 종료
+
+- V4를 gameplay replacement로 승격하는 일
+- 100-stream gameplay 확장, hybrid policy, 추가 재학습
+- production/PVE 기본 정책 변경
+
 ---
 
-## 7. 전체 향후 흐름
+## 7. 역사적 roadmap (현재 실행 계획 아님)
+
+이후 Stage 1~10은 Phase 8 시점에 작성된 historical planning record다.
+Stage 7의 trainer, Stage 8의 reference inference, Stage 9의 dev-only PVE와
+gameplay evaluation은 완료됐다. 최신 상태와 제한은 이 문서의 앞부분,
+[ai-experiments-log.md](ai-experiments-log.md), 그리고 [gameplay analyze-result record](../ai-harness/runs/placement-v4-pve-gameplay-benchmark-analyze-result-2026-07-20.md)를 우선한다.
 
 앞으로의 계획은 **10개 milestone**과 이를 실제 프롬프트 크기로 나눈 **20개 작업 단위**로 관리한다.
 
@@ -567,7 +577,7 @@ feature 반복: 위 수치 + 가설당 최대 2개
 
 ---
 
-## 9. 앞으로 할 계획
+## 9. 역사적 작업 분해 (현재 자동 실행 금지)
 
 ### 9.1 프롬프트 단위 작업 목록
 
@@ -1378,34 +1388,20 @@ Weighting freeze
 
 ---
 
-## 18. 현재 다음 한 단계
+## 18. 현재 상태와 새 작업 gate
 
 ~~~text
-Stage 1
-Phase 8 pair-weight decomposition 변경만 검토·commit
+현재 활성 실험은 없다.
 
-포함:
-- Notebook
-- 계약 테스트
-- 설명 문서
-- canonical result
-- ai-experiments-log.md Phase 8와 stale HEAD/next-gate 정리
-
-제외:
-- .DS_Store
-- Dataset snapshot
-- 새 snapshot 실험
-- Runtime/PVE
-- Migration
+V4는 Human placement imitation과 offline analysis에만 유지한다.
+Gameplay replacement와 production/PVE 기본 정책은 heuristic으로 유지한다.
 ~~~
 
-Stage 1이 끝난 뒤에만 Stage 2의 계약·snapshot 작업을 새 프롬프트로 시작한다.
+새 작업은 다음을 먼저 문서화한 별도 승인으로만 시작한다.
 
-정확한 다음 순서는 다음과 같다.
+1. Human imitation인지 gameplay promotion인지 한 가지 목표
+2. immutable input cohort 또는 game simulation 조건
+3. 사전 고정된 metric, safety rule, production 영향 범위
+4. 결과를 보관할 run record와 ignored evidence 경로
 
-1. Phase 8을 닫는다.
-2. Phase 0~8 merge-readiness와 26게임 snapshot 외부 archive를 감사한다.
-3. Python 연구에서는 목표·representation·weight 계약을 먼저 작성한다.
-4. AI milestone의 main merge는 진행 중 migration Goal의 merge window를 기다린다.
-
-현재 다음 작업의 권장 모델은 **GPT-5.6 Terra / high**다. 이후 weighting 계약과 평가 설계는 **GPT-5.6 Sol / xhigh**, freeze 또는 production-candidate 최종 감사는 **GPT-5.6 Sol / max**를 권장한다.
+상세 historical metric과 실행 명령은 [ai-experiments-log.md](ai-experiments-log.md)와 각 run record를 사용한다.
