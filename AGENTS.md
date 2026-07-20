@@ -95,7 +95,7 @@ src/
 │   ├── init.js              # Express / HTTP / Socket.IO server assembly
 │   ├── services/
 │   │   ├── roomService.js   # Room lifecycle / lobby state
-│   │   ├── matchService.js  # Match state / input log / server bag / authoritative player state
+│   │   ├── matchService.js  # Match state / server bag / authoritative player state
 │   │   └── authoritativeTickerService.js # Room gravity tick / snapshot lifecycle
 │   └── sockets/
 │       ├── index.js             # Socket.IO connection composition
@@ -112,7 +112,6 @@ src/
     │   ├── state/
     │   └── ui/
     ├── net/
-    │   ├── chat.js          # Browser Socket.IO chat adapter
     │   └── roomClient.js    # Browser Socket.IO room adapter
     ├── pages/
     │   ├── index.html
@@ -283,7 +282,7 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 
 - `server/services/roomService`는 방 생성, 참가, 퇴장, 시작, 종료, 로비 복귀 같은 room lifecycle을 담당한다.
 
-- `server/services/matchService`는 match 단위 input log, player별 server bag chunk와 authoritative player state를 담당한다.
+- `server/services/matchService`는 player별 server bag chunk와 authoritative player state를 담당한다.
   room별 gravity 진행과 snapshot emit lifecycle은 `authoritativeTickerService`가 조율한다.
 
 - `client/net`은 브라우저 Socket.IO 어댑터를 담당한다.  

@@ -31,7 +31,6 @@
             background: var(--initial-game-bg);
         }
     </style>
-    <link rel="stylesheet" href="../styles/style.css">
     <link rel="stylesheet" href="../styles/tetris.css">
 </head>
 
@@ -69,10 +68,9 @@
                             <span class="label">Lines</span>
                             <span class="lines">0</span>
                         </div>
-                        <div class="stat stat--incoming">
+                        <div class="stat stat--incoming" aria-live="polite" aria-atomic="true">
                             <span class="label">Incoming</span>
                             <span class="pending-garbage" data-player="1">0</span>
-                            <span class="garbage-log" data-player="1" aria-live="polite"></span>
                         </div>
                     </div>
                 </div>
@@ -117,10 +115,9 @@
                             <span class="label">Lines</span>
                             <span class="lines">0</span>
                         </div>
-                        <div class="stat stat--incoming">
+                        <div class="stat stat--incoming" aria-live="polite" aria-atomic="true">
                             <span class="label">Incoming</span>
                             <span class="pending-garbage" data-player="2">0</span>
-                            <span class="garbage-log" data-player="2" aria-live="polite"></span>
                         </div>
                     </div>
                 </div>
@@ -298,8 +295,6 @@
             const player2HoldPreview = queryElement(document, '.hold-preview[data-player="2"]')
             const player1PendingGarbage = queryElement(document, '.pending-garbage[data-player="1"]')
             const player2PendingGarbage = queryElement(document, '.pending-garbage[data-player="2"]')
-            const player1GarbageLog = queryElement(document, '.garbage-log[data-player="1"]')
-            const player2GarbageLog = queryElement(document, '.garbage-log[data-player="2"]')
             const myCanvas = myRole === "host" ? player1Canvas : player2Canvas
             const opponentCanvas = myRole === "host" ? player2Canvas : player1Canvas
             const myScoreEl = myRole === "host" ? player1Score : player2Score
@@ -307,13 +302,11 @@
             const myNextPreviewEl = myRole === "host" ? player1NextPreview : player2NextPreview
             const myHoldPreviewEl = myRole === "host" ? player1HoldPreview : player2HoldPreview
             const myPendingGarbageEl = myRole === "host" ? player1PendingGarbage : player2PendingGarbage
-            const myGarbageLogEl = myRole === "host" ? player1GarbageLog : player2GarbageLog
             const opponentScoreEl = myRole === "host" ? player2Score : player1Score
             const opponentLinesEl = myRole === "host" ? player2Lines : player1Lines
             const opponentNextPreviewEl = myRole === "host" ? player2NextPreview : player1NextPreview
             const opponentHoldPreviewEl = myRole === "host" ? player2HoldPreview : player1HoldPreview
             const opponentPendingGarbageEl = myRole === "host" ? player2PendingGarbage : player1PendingGarbage
-            const opponentGarbageLogEl = myRole === "host" ? player2GarbageLog : player1GarbageLog
 
             console.log("myCanvas : ", myCanvas)
             console.log("opponentCanvas : ", opponentCanvas)
@@ -445,13 +438,11 @@
                     myScoreEl,
                     myLinesEl,
                     myPendingGarbageEl,
-                    myGarbageLogEl,
                     opponentNextPreviewEl,
                     opponentHoldPreviewEl,
                     opponentScoreEl,
                     opponentLinesEl,
                     opponentPendingGarbageEl,
-                    opponentGarbageLogEl,
                     onUserInteract: tryPlayMusic,
                 })
             })

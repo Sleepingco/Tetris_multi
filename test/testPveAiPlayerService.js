@@ -811,23 +811,6 @@ test("selectedPlacement까지 거리가 5보다 짧으면 필요한 soft_drop만
     assert.equal(aiPlayer.authoritativeState.score, 0);
     assert.equal(aiPlayer.aiPlan, null);
 });
-
-test("AI player는 human input log를 기록할 수 없다", () => {
-    resetMatches();
-    createPveMatch("PVE-AI-4");
-    const { recordInput } = require("../src/server/services/matchService.js");
-
-    const result = recordInput("PVE-AI-4", "ai", {
-        action: "hard_drop",
-        tick: 1,
-        pieceIndex: 1,
-    });
-
-    assert.equal(result.ok, false);
-    assert.equal(result.reason, "PLAYER_INPUT_NOT_ALLOWED");
-    assert.deepEqual(getMatchState("PVE-AI-4").match.players[1].inputLog, []);
-});
-
 test("heuristic policy는 model 설정과 무관하게 V4 loader를 호출하지 않는다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();

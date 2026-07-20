@@ -1,6 +1,6 @@
 // =============================
 // In-memory Match Store
-// match는 player별 input log, server bag chunk, authoritativeState 초안을 저장한다.
+// match는 player별 server bag chunk와 authoritativeState를 저장한다.
 // =============================
 const {
     applyAuthoritativeInput,
@@ -16,7 +16,6 @@ const {
 const matches = new Map();
 const BAG_PIECES = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
 const INITIAL_BAG_CHUNK_COUNT = 3;
-const MAX_INPUT_LOG_ENTRIES_PER_PLAYER = 1000;
 const BOARD_ROWS = 20;
 const BOARD_COLS = 10;
 const SPAWN_ROW = -1;
@@ -42,7 +41,7 @@ function createFailure(reason) {
 }
 
 /**
- * room 상태를 기준으로 match를 시작하고 player별 input log와 초기 server bag을 만든다.
+ * room 상태를 기준으로 match를 시작하고 player별 초기 server bag과 authoritative state를 만든다.
  *
  * @param {{roomId: string, status?: string, players: Array<{playerId: string}>}} room - 시작할 room 상태
  * @returns {{ok: boolean, match: Object|null, reason: string|null}} match 생성 결과
@@ -92,8 +91,6 @@ function createMatch(room) {
             return {
                 playerId: player.playerId,
                 playerType: player.playerType || "human",
-                inputLog: [],
-                nextInputSequence: 1,
                 lastProcessedClientSequence: 0,
                 bagChunks,
                 authoritativeState: createInitialPlayerState(bagChunks),
@@ -126,62 +123,6 @@ function deleteMatch(roomId) {
     }
 
     matches.delete(roomId);
-
-    return createSuccess(match);
-}
-
-/**
- * player 입력을 match input log에 append-only로 저장한다.
- * - action/tick/pieceIndex의 강한 검증은 socket handler에서 먼저 수행한다.
- *
- * @param {string} roomId - match room id
- * @param {string} playerId - 입력을 보낸 player id
- * @param {{action: string, tick?: number|null, pieceIndex?: number|null, clientSequence?: number}} input - 저장할 입력 정보
- * @returns {{ok: boolean, match: Object|null, reason: string|null}} 저장 결과
- */
-function recordInput(roomId, playerId, input) {
-    const match = matches.get(roomId);
-
-    if (!match) {
-        return createFailure("MATCH_NOT_FOUND");
-    }
-
-    const player = match.players.find((matchPlayer) => {
-        return matchPlayer.playerId === playerId;
-    });
-
-    if (!player) {
-        return createFailure("PLAYER_NOT_FOUND");
-    }
-
-    if (player.playerType !== "human") {
-        return createFailure("PLAYER_INPUT_NOT_ALLOWED");
-    }
-
-    if (!input || typeof input.action !== "string") {
-        return createFailure("INVALID_INPUT");
-    }
-
-    if (!Number.isInteger(player.nextInputSequence)) {
-        player.nextInputSequence = player.inputLog.length + 1;
-    }
-
-    player.inputLog.push({
-        playerId,
-        action: input.action,
-        tick: input.tick ?? null,
-        pieceIndex: input.pieceIndex ?? null,
-        ...(Number.isInteger(input.clientSequence)
-            ? { clientSequence: input.clientSequence }
-            : {}),
-        sequence: player.nextInputSequence,
-        receivedAt: Date.now(),
-    });
-    player.nextInputSequence += 1;
-
-    if (player.inputLog.length > MAX_INPUT_LOG_ENTRIES_PER_PLAYER) {
-        player.inputLog.splice(0, player.inputLog.length - MAX_INPUT_LOG_ENTRIES_PER_PLAYER);
-    }
 
     return createSuccess(match);
 }
@@ -677,8 +618,6 @@ module.exports = {
     getMatchState,
     ensurePlayerBagQueue,
     markAuthoritativePlayerGameOver,
-    MAX_INPUT_LOG_ENTRIES_PER_PLAYER,
-    recordInput,
     resetMatches,
     validateClientInputSequence,
 };

@@ -95,7 +95,7 @@ DOM 없이 판정                   브라우저에서 조율                   
   - 방 생성·입장·퇴장·시작·종료·로비 복귀를 `Map` 기반 메모리 상태로 관리한다.
   - 현재 PVP와 PVE mode, human과 `heuristic_ai` player type을 구분한다. PVE 방은 인간 1명과 AI 1명을 자동 구성하고, 다른 인간의 입장은 막는다.
 - `src/server/services/matchService.js`
-  - 실제 경기 단위 상태를 관리한다. 플레이어마다 `authoritativeState`, input log, server bag chunk를 보관한다.
+  - 실제 경기 단위 상태를 관리한다. 플레이어마다 `authoritativeState`, client sequence acknowledgment, server bag chunk를 보관한다.
   - authoritative state에는 board, active/pending piece, queue, hold, score, lines, combo, back-to-back, piece index, pending garbage가 들어간다.
 - `src/server/services/playerGameplayStep.js`
   - 서버 상태에 human과 AI 모두의 authoritative input을 적용한다. lock 이후 line clear, T-Spin, 공격 상쇄·적용, top-out, 다음 조각 spawn까지 같은 경로에서 처리한다.
@@ -107,7 +107,7 @@ DOM 없이 판정                   브라우저에서 조율                   
 ### 3.3 클라이언트의 멀티 역할
 
 - `src/client/net/roomClient.js`는 브라우저 Socket.IO 어댑터다. 방/게임 요청과 server event 구독을 제공하며, 게임 규칙을 담지 않는다.
-- `src/client/game/entry/multiplayerGameSession.js`는 local runtime, opponent runtime, input relay, snapshot listener, server bag 보충을 묶는다.
+- `src/client/game/entry/multiplayerGameSession.js`는 local runtime, opponent runtime, local input 전송, snapshot listener, server bag 보충을 묶는다.
 - 내 보드는 입력 지연을 줄이기 위해 local runtime에서 prediction한다. 반면 상대 보드는 독립 gravity나 input replay를 하지 않고 서버 snapshot을 그대로 적용한다.
 - 내 snapshot도 무조건 덮어쓰지 않는다. line clear 효과 중이거나 빠른 조작 중인 임시 active piece 차이는 보존하고, game over·garbage 반영·settled board 불일치·지속적인 piece index 차이처럼 의미 있는 drift에서만 correction한다.
 
@@ -166,7 +166,7 @@ ML이 들어와도 placement generator는 규칙 기반으로 유지하고, 모�
 2. ticker를 통해 중력도 서버가 진행
 3. garbage와 game over를 서버 lock 결과에서만 확정
 4. own prediction correction을 제한해 입력 반응성을 보존
-5. 종료 공통 helper, match cleanup, room ID 재시도, input log 상한으로 장시간 운영 위험을 줄임
+5. 종료 공통 helper, match cleanup, room ID 재시도, client sequence acknowledgment로 장시간 운영 위험을 줄임
 
 따라서 이후 변경을 할 때 “왜 snapshot을 바로 적용하지 않는가?”, “왜 AI도 placement 검증을 거치는가?” 같은 질문은 코드만이 아니라 이 결정 이력으로 답할 수 있다.
 
@@ -210,9 +210,9 @@ change log에 남은 핵심 결정은 다음과 같이 연결된다.
 | 서버 snapshot을 매번 적용하면 빠른 조작이 되돌아가고, 무시하면 오래된 보드가 남음 | pending input 보호, tick 단조 증가, persistent drift correction | 내 보드는 prediction 우선, 상대 보드는 full authoritative apply | 입력 반응성과 최종 수렴을 동시에 얻기 위해 |
 | 상대의 line clear가 최종 보드만 바뀌어 보이고, 효과를 재생하려고 state를 건드리면 동기화가 깨질 수 있음 | `presentationEffect`를 snapshot과 분리 | effect는 복제 board로만 재생하고 gameplay state는 변경 금지 | 표시용 시간 효과와 게임 규칙 상태를 분리해 화면 효과가 권위 상태를 오염시키지 않기 위해 |
 | 페이지 이동·재입장 후 socket id가 바뀌면 권한 오류, 임의 payload는 이벤트 위조 위험 | room sync, socket 갱신, action/payload/player 권한 검증 | socket handler는 입구·검증, room/match service는 상태 전이 | 실제 브라우저 수명 주기와 권한 경계를 서버가 일관되게 관리하기 위해 |
-| 입력 로그를 그대로 분석 데이터로 쓰면 조각별 판단의 전후 맥락과 결과가 부족함 | `placement_decision`, JSONL 저장, schema v2 validator | lock 단위를 분석 이벤트로 하고 동기화 input log와 장기 분석 로그를 분리 | AI 비교·리플레이·ML feature를 작은 의미 단위로 안정적으로 축적하기 위해 |
+| raw 입력 스트림은 조각별 판단의 전후 맥락과 결과가 부족함 | `placement_decision`, JSONL 저장, schema v2 validator | lock 단위를 장기 분석 이벤트로 저장 | AI 비교·리플레이·ML feature를 작은 의미 단위로 안정적으로 축적하기 위해 |
 | 이론상 가능한 배치가 실제 키 입력으로는 닿지 않을 수 있음 | reachability planner와 BFS 최단 계획 | existing move/SRS core를 재사용하여 reachable 후보만 평가 | AI의 “선택”이 실제 플레이로 재현되고 로그의 선택과 실행이 일치하게 하기 위해 |
-| AI가 최종 좌표를 직접 적용하면 사람과 다른 규칙 경로를 타고, input log가 비어 있음 | direct placement 제거, AI action executor 추가 | AI도 authoritative input을 하나씩 실행하고 성공한 입력만 기록 | PVE의 공정성, AI 이동의 가시성, replay/학습 데이터의 신뢰성을 확보하기 위해 |
+| AI가 최종 좌표를 직접 적용하면 사람과 다른 규칙 경로를 타고 실행 과정이 보이지 않음 | direct placement 제거, AI action executor 추가 | AI도 authoritative input을 하나씩 실행하고 placement log에 실행 `inputSequence`를 기록 | PVE의 공정성, AI 이동의 가시성, replay/학습 데이터의 신뢰성을 확보하기 위해 |
 | AI 행동이 너무 즉시 끝나거나 난이도 차이가 판단 규칙 복제로 번질 수 있음 | normal/hard execution profile 도입 | 평가기는 공유하고 실행 cadence만 분리 | AI 지능과 연출·난이도를 독립적으로 조절하기 위해 |
 
 ## 7. 현재 상태와 다음 검증 기준

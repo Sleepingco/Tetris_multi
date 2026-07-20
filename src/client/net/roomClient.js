@@ -128,14 +128,6 @@ export function sendGameInput(
     serverConnection.emit("game:input", payload)
 }
 
-export function receiveGameInput(handler) {
-    serverConnection.on("game:input", handler)
-
-    return () => {
-        serverConnection.off("game:input", handler)
-    }
-}
-
 export function onGameInputResult(handler) {
     serverConnection.on("game:input:result", handler)
 

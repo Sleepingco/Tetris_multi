@@ -48,10 +48,17 @@ ul {
         list-style: none;
 }
 
+html,
+body {
+        height: 100%;
+}
+
 body {
         min-height: 100vh;
         overflow: hidden;
         font-family: 'Inter', "Segoe UI", system-ui, -apple-system, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
         color: var(--game-text);
         background: var(--game-bg);
         display: flex;
@@ -461,101 +468,11 @@ kbd {
         text-shadow: 0 0 14px rgba(248, 113, 113, 0.35);
 }
 
-.player-stats .stat--incoming.is-receiving .pending-garbage {
-        animation: incomingPulse 0.42s ease-out;
-}
-
-.garbage-log {
-        min-height: 0.95rem;
-        font-size: 0.72rem;
-        line-height: 0.95rem;
-        color: var(--game-muted);
-        opacity: 0;
-        transform: translateY(-2px);
-        transition: opacity 0.16s ease, transform 0.16s ease, color 0.16s ease;
-        white-space: nowrap;
-}
-
-.garbage-log.is-visible {
-        opacity: 1;
-        transform: translateY(0);
-}
-
-.garbage-log.is-cancel {
-        color: #0f766e;
-}
-
-:root[data-theme="dark"] .garbage-log.is-cancel {
-        color: #2dd4bf;
-}
-
-@keyframes incomingPulse {
-        0% {
-                transform: scale(1);
-                filter: brightness(1);
-        }
-
-        35% {
-                transform: scale(1.16);
-                filter: brightness(1.25);
-        }
-
-        100% {
-                transform: scale(1);
-                filter: brightness(1);
-        }
-}
-
-@media (prefers-reduced-motion: reduce) {
-        .player-stats .stat--incoming.is-receiving .pending-garbage {
-                animation: none;
-        }
-
-        .garbage-log {
-                transition: none;
-        }
-}
-
 .player-panels {
         display: grid;
         grid-template-columns: auto 1fr;
         gap: 1.5rem;
         align-items: flex-start;
-}
-
-/* -----------------------------
-  * Line Clear Animation
-  * ----------------------------- */
-.line-clear {
-        animation: lineClearFlash 0.35s ease-out forwards;
-        background: #ffffff !important;
-        box-shadow: 0 0 22px rgba(255, 255, 255, 0.85);
-}
-
-@keyframes lineClearFlash {
-        0% {
-                transform: scale(1) translateY(0);
-                opacity: 1;
-        }
-        15% {
-                opacity: 0.5;
-                box-shadow: 0 0 30px rgba(255, 255, 255, 0.9);
-        }
-        35% {
-                opacity: 1;
-                transform: scale(1.04);
-        }
-        60% {
-                opacity: 0.8;
-                transform: scale(1.08);
-                filter: blur(1px);
-        }
-        100% {
-                transform: scale(0.8) translateY(-12px);
-                opacity: 0;
-                filter: blur(2px);
-                box-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
-        }
 }
 
 /* -----------------------------

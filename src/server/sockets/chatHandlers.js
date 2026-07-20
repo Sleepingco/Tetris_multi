@@ -66,15 +66,6 @@ function validateChat(socketId, text) {
 }
 
 function registerChatHandlers(socketServer, clientSocket) {
-    clientSocket.on("chatting", (data) => {
-        console.log("server received data: ", data)
-        const { name, msg } = data
-        socketServer.emit("chatting", {
-            name,
-            msg,
-        })
-    })
-
     clientSocket.on("global:chat", (payload = {}) => {
         const { playerId, nickname, text } = payload
         const result = validateChat(clientSocket.id, text)
