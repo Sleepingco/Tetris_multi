@@ -13,7 +13,7 @@
     "test:artifact": "node --test test-artifact/serverBuildArtifact.js",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
-    "test:e2e:vite-dev": "PLAYWRIGHT_VITE_DEV=1 playwright test e2e/reactShellLifecycle.spec.js",
+    "test:e2e:vite-dev": "PLAYWRIGHT_VITE_DEV=1 playwright test e2e/reactShellLifecycle.spec.js e2e/singleReactLifecycle.spec.js",
     "dataset:export": "node scripts/export-placement-dataset.js",
     "dataset:evaluate": "node scripts/evaluate-placement-dataset.js",
     "model:train-placement-ranker": "node scripts/train-placement-ranker.js",

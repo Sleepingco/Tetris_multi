@@ -72,7 +72,7 @@ function SingleHud({
 
     return (
         <>
-            {createPortal(snapshot.score, scoreRoot)}
+            {createPortal(String(snapshot.score), scoreRoot, "score")}
             {createPortal(
                 snapshot.nextPieceTypes.map((pieceType, index) => (
                     <div className="next-slot" key={index}>
@@ -81,8 +81,13 @@ function SingleHud({
                     </div>
                 )),
                 nextRoot,
+                "next",
             )}
-            {createPortal(<PiecePreview pieceType={snapshot.holdPieceType} />, holdRoot)}
+            {createPortal(
+                <PiecePreview pieceType={snapshot.holdPieceType} />,
+                holdRoot,
+                "hold",
+            )}
             {createPortal(
                 <div
                     className="game-text"
@@ -92,6 +97,7 @@ function SingleHud({
                     <button type="button" onClick={onRestart}>다시 시작</button>
                 </div>,
                 gameOverRoot,
+                "game-over",
             )}
         </>
     );

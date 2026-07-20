@@ -1854,3 +1854,22 @@ test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playin
     assert.deepEqual(phases, ["lineClearing", "playing"]);
     assert.equal(game.getDisplaySnapshot().lines, 1);
 });
+
+test("runtime destroy는 중복 호출과 이후 display 변경을 무시한다", async () => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    game.init({ autoStart: false });
+    let calls = 0;
+    game.subscribeDisplay(() => {
+        calls += 1;
+    });
+
+    game.destroy();
+    game.destroy();
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        score: 100,
+        phase: "gameOver",
+    });
+    assert.equal(calls, 0);
+});
