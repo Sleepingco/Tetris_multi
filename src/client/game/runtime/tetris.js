@@ -860,6 +860,7 @@ export function createTetrisRuntime({
         clearInterval(runtime.inputTimer)
         runtime.lastTickAt = performance.now()
         runtime.inputTimer = setInterval(() => {
+            if (runtime.inputTimer === undefined) return
             const now = performance.now()
             const deltaMs = now - runtime.lastTickAt
             runtime.lastTickAt = now

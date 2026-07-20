@@ -70,6 +70,7 @@ export function startMultiplayerGame({
     const settledPlacementAttemptKeys = new Set()
     let placementLogBufferClosed = false
     let hasAuthoritativeGameOver = false
+    let destroyed = false
 
     const myGame = createTetrisRuntime({
         boardCanvasEl: myCanvas,
@@ -83,6 +84,7 @@ export function startMultiplayerGame({
         roomId,
         playerId,
         placementDecisionRecorder(log) {
+            if (destroyed) return
             bufferLocalPlacementLog(log)
         },
         inputOutcomeRecorder: handleLocalInputOutcome,
@@ -223,6 +225,7 @@ export function startMultiplayerGame({
     }
 
     function handleLocalInputOutcome(outcome) {
+        if (destroyed) return
         if (!outcome?.applied || !outcome.input) return
 
         const expectedTransform = createExpectedTransform(outcome)
@@ -254,9 +257,12 @@ export function startMultiplayerGame({
 
     myGame.runtime.detachKeyboard = attachKeyboardInput({
         enqueueAction: (action) => {
+            if (destroyed) return
             myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
         },
-        onUserInteract,
+        onUserInteract: () => {
+            if (!destroyed) onUserInteract?.()
+        },
     })
 
     const opponentGame = createTetrisRuntime({
@@ -422,6 +428,7 @@ export function startMultiplayerGame({
 
     // 주기적으로 server bag 보충을 처리한다. game over 확정은 server authoritative 결과가 맡는다.
     const heartbeatTimer = setInterval(() => {
+        if (destroyed) return
         requestBagIfNeeded()
     }, 500)
 
@@ -430,6 +437,7 @@ export function startMultiplayerGame({
         snapshot,
         presentationEffect,
     }) => {
+        if (destroyed) return
         if (!snapshot || !Array.isArray(snapshot.board)) return
 
         if (remotePlayerId === opponentPlayerId) {
@@ -463,6 +471,7 @@ export function startMultiplayerGame({
         return true
     }
     const detachGameInputResultListener = onGameInputResult((result) => {
+        if (destroyed) return
         handlePlacementInputResult(result)
         if (Number.isInteger(result?.clientSequence)) {
             acknowledgeServerInputs(result.clientSequence)
@@ -486,6 +495,7 @@ export function startMultiplayerGame({
         deferredOwnSnapshot = null
     }
     const detachGameBagAppend = receiveGameBagAppend(({ playerId: bagPlayerId, bagChunk }) => {
+        if (destroyed) return
         if (!Array.isArray(bagChunk)) return
 
         if (bagPlayerId === playerId) {
@@ -499,17 +509,38 @@ export function startMultiplayerGame({
         }
     })
     const detachGameBagResult = onGameBagResult((result) => {
+        if (destroyed) return
         if (result.ok) return
         hasPendingBagRequest = false
         console.warn("game:bag failed:", result.reason)
     })
     const detachSessionDisconnected = onSessionDisconnected(() => {
+        if (destroyed) return
         pendingServerInputs.clear()
         discardPlacementLogBuffer()
         deferredOwnSnapshot = null
         pendingOwnDriftState = null
         hasPendingBagRequest = false
     })
+
+    function destroy() {
+        if (destroyed) return
+        destroyed = true
+        clearInterval(heartbeatTimer)
+        detachAuthoritativeSnapshot()
+        detachGameInputResult()
+        detachGameBagAppend()
+        detachGameBagResult()
+        detachSessionDisconnected()
+        pendingServerInputs.clear()
+        deferredOwnSnapshot = null
+        pendingOwnDriftState = null
+        discardPlacementLogBuffer({ close: true })
+        settledPlacementAttemptKeys.clear()
+        hasPendingBagRequest = false
+        myGame.destroy()
+        opponentGame.destroy()
+    }
 
     return {
         myGame,
@@ -520,5 +551,6 @@ export function startMultiplayerGame({
         detachGameBagAppend,
         detachGameBagResult,
         detachSessionDisconnected,
+        destroy,
     }
 }

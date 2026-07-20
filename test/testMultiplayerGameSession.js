@@ -280,13 +280,7 @@ function createSessionParams(overrides = {}) {
 }
 
 function cleanupSession(session) {
-    clearInterval(session.heartbeatTimer ?? session.snapshotTimer);
-    session.detachAuthoritativeSnapshot?.();
-    session.detachGameInputResult?.();
-    session.detachGameBagAppend?.();
-    session.detachGameBagResult?.();
-    session.myGame.destroy();
-    session.opponentGame.destroy();
+    session.destroy();
 }
 
 function waitForLocalInputTick() {
@@ -486,6 +480,90 @@ test("heartbeatTimer는 game:snapshot과 game:over 없이 bag 요청만 유지�
 
     assert.equal(sharedFakeSocket.emitted.some(event => event.eventName === "game:snapshot"), false);
     assert.equal(sharedFakeSocket.emitted.some(event => event.eventName === "game:over"), false);
+});
+
+test("game session destroy는 timer와 handler를 한 번만 정리하고 stale callback을 무시한다", async (t) => {
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const intervals = new Map();
+    const animationCallbacks = new Map();
+    let nextTimerId = 1;
+    let nextAnimationFrameId = 1;
+    globalThis.setInterval = (callback, delayMs) => {
+        const id = nextTimerId++;
+        intervals.set(id, { callback, delayMs });
+        return id;
+    };
+    globalThis.clearInterval = id => intervals.delete(id);
+    t.after(() => {
+        globalThis.setInterval = originalSetInterval;
+        globalThis.clearInterval = originalClearInterval;
+        globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+        globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+    });
+
+    const { startMultiplayerGame } = await loadSession();
+    globalThis.requestAnimationFrame = callback => {
+        const id = nextAnimationFrameId++;
+        animationCallbacks.set(id, callback);
+        return id;
+    };
+    globalThis.cancelAnimationFrame = id => animationCallbacks.delete(id);
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => session.destroy());
+    const heartbeat = [...intervals.values()].find(timer => timer.delayMs === 500);
+    const inputTimer = [...intervals.values()].find(timer => timer.delayMs === 16);
+    const keyboardHandler = [...globalThis.__documentHandlers.get("keydown")][0];
+    const authoritativeHandler = [
+        ...sharedFakeSocket.handlers.get("game:authoritative:snapshot"),
+    ][0];
+    const opponentSnapshot = session.opponentGame.getSnapshot();
+    assert.equal(session.opponentGame.playLineClearPresentation({
+        rows: [19],
+        board: opponentSnapshot.board,
+    }), true);
+    const animationCallback = [...animationCallbacks.values()][0];
+    assert.equal([...intervals.values()].filter(timer => timer.delayMs === 500).length, 1);
+    assert.equal(typeof heartbeat?.callback, "function");
+    assert.equal(typeof inputTimer?.callback, "function");
+    assert.equal(typeof keyboardHandler, "function");
+    assert.equal(typeof authoritativeHandler, "function");
+    assert.equal(typeof animationCallback, "function");
+
+    let displayCalls = 0;
+    session.myGame.subscribeDisplay(() => {
+        displayCalls += 1;
+    });
+    sharedFakeSocket.emitted = [];
+    session.destroy();
+    session.destroy();
+    const snapshotAfterDestroy = JSON.stringify(session.myGame.getSnapshot());
+    const logCountAfterDestroy = session.myGame.getPlacementDecisionLog().length;
+
+    keyboardHandler({
+        key: "ArrowLeft",
+        code: "ArrowLeft",
+        repeat: false,
+        preventDefault() {},
+    });
+    inputTimer.callback();
+    heartbeat.callback();
+    animationCallback(performance.now() + 400);
+    authoritativeHandler(createServerWirePayload("game:authoritative:snapshot", {
+        playerId: "00000000-0000-4000-8000-000000000001",
+        snapshot: createAuthoritativeSnapshot({ score: 100, pendingGarbageLines: 4 }),
+    }));
+
+    assert.equal(intervals.size, 0);
+    assert.equal(globalThis.__documentHandlers.get("keydown")?.size ?? 0, 0);
+    assert.equal(sharedFakeSocket.handlers.get("game:authoritative:snapshot")?.size ?? 0, 0);
+    assert.equal(JSON.stringify(session.myGame.getSnapshot()), snapshotAfterDestroy);
+    assert.equal(session.myGame.getPendingInputCount(), 0);
+    assert.equal(session.myGame.getPlacementDecisionLog().length, logCountAfterDestroy);
+    assert.equal(sharedFakeSocket.emitted.length, 0);
+    assert.equal(displayCalls, 0);
 });
 
 test("내 키보드 입력은 game:input으로 서버에 전송된다", async (t) => {
