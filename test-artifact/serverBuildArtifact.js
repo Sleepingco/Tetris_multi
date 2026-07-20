@@ -30,7 +30,7 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
         [],
     );
     assert.deepEqual(
-        allFiles.filter(file => /(?:\.d)?\.ts$|\.map$|(?:^|\/)\.env(?:\.|$)/i.test(file)),
+        allFiles.filter(file => /(?:\.d)?\.tsx?$|\.map$|(?:^|\/)\.env(?:\.|$)/i.test(file)),
         [],
     );
 

@@ -1,7 +1,8 @@
 const { defineConfig, devices } = require("@playwright/test");
 const path = require("node:path");
 
-const baseURL = "http://127.0.0.1:5510";
+const viteDev = process.env.PLAYWRIGHT_VITE_DEV === "1";
+const baseURL = viteDev ? "http://127.0.0.1:5173" : "http://127.0.0.1:5510";
 const gameEventsLogPath = path.join(
     __dirname,
     "test-results",
@@ -30,18 +31,43 @@ module.exports = defineConfig({
             },
         },
     ],
-    webServer: {
-        command: "npm start",
-        url: baseURL,
-        env: {
-            ...process.env,
-            PORT: "5510",
-            GAME_EVENTS_LOG_PATH: gameEventsLogPath,
-            SOCKET_RATE_LIMIT_PROFILE: "test",
+    webServer: viteDev
+        ? [
+            {
+                command: "npm run dev:server",
+                url: "http://127.0.0.1:5500/socket.io/socket.io.js",
+                env: {
+                    ...process.env,
+                    PORT: "5500",
+                    GAME_EVENTS_LOG_PATH: gameEventsLogPath,
+                    SOCKET_RATE_LIMIT_PROFILE: "test",
+                },
+                reuseExistingServer: false,
+                timeout: 15_000,
+                stdout: "ignore",
+                stderr: "pipe",
+            },
+            {
+                command: "npm run dev",
+                url: baseURL,
+                reuseExistingServer: false,
+                timeout: 15_000,
+                stdout: "ignore",
+                stderr: "pipe",
+            },
+        ]
+        : {
+            command: "npm start",
+            url: baseURL,
+            env: {
+                ...process.env,
+                PORT: "5510",
+                GAME_EVENTS_LOG_PATH: gameEventsLogPath,
+                SOCKET_RATE_LIMIT_PROFILE: "test",
+            },
+            reuseExistingServer: false,
+            timeout: 15_000,
+            stdout: "ignore",
+            stderr: "pipe",
         },
-        reuseExistingServer: false,
-        timeout: 15_000,
-        stdout: "ignore",
-        stderr: "pipe",
-    },
 });

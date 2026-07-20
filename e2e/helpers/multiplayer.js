@@ -498,6 +498,7 @@ module.exports = {
     createWaitingRoom,
     enterTwoPlayerMatch,
     hardDropUntilMatchFinishes,
+    parseSocketIoFrame,
     pressRapidInputCombination,
     readPlayerSession,
     readBottomBoardFingerprint,
