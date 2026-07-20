@@ -21,14 +21,14 @@ nvm use
 npm ci
 ```
 
-개발 환경은 Express/Socket.IO와 Vite를 별도 터미널에서 실행한다. 브라우저 진입점은 `http://127.0.0.1:5173`이며 Vite가 `/socket.io`를 기본적으로 `http://127.0.0.1:5500`에 proxy한다.
+개발 환경은 compiled Express/Socket.IO server와 Vite를 별도 터미널에서 실행한다. `dev:server`는 server artifact를 먼저 다시 만들고 실행한다. 브라우저 진입점은 `http://127.0.0.1:5173`이며 Vite가 `/socket.io`를 기본적으로 `http://127.0.0.1:5500`에 proxy한다.
 
 ```bash
 npm run dev:server
 npm run dev
 ```
 
-production은 먼저 client output을 만들고 Express를 실행한다. `npm start`는 build를 암묵적으로 수행하지 않으며, 실행 시 Vite 같은 devDependency를 요구하지 않는다.
+production은 먼저 hashed client output과 compiled server/shared core output을 함께 만든다. `npm start`는 `dist/server/app.js`만 실행하며 build를 암묵적으로 수행하거나 Vite, TypeScript 같은 devDependency를 요구하지 않는다.
 
 ```bash
 npm run build
@@ -42,7 +42,7 @@ bash scripts/verify.sh
 npm run test:e2e
 ```
 
-`scripts/verify.sh`는 Git whitespace, client/server/test TypeScript 경계, Vite build와 Node test를 확인한다. 기존 JavaScript는 `allowJs`로 공존하지만 strict 검사 완료로 간주하지 않으며, 새 TypeScript만 strict 설정을 적용한다.
+`scripts/verify.sh`는 Git whitespace, client/server/test TypeScript 경계, clean client/server build, production artifact whitelist와 Node test를 확인한다. 기존 JavaScript는 `allowJs`로 공존하지만 strict 검사 완료로 간주하지 않으며, 새 TypeScript만 strict 설정을 적용한다. production source map은 만들지 않으므로 운영 stack trace는 compiled JavaScript 파일과 줄 위치를 기록한다.
 
 브라우저 회귀에서는 `/`에서 single과 lobby로 실제 click 이동한 뒤 single의 이동·회전·soft drop·hard drop, lobby의 PVP/PVE 시작, Canvas, CSS, theme와 sound asset을 확인한다.
 

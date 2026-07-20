@@ -4,7 +4,8 @@
 멀티플레이 MVP가 깨지지 않았는지 브라우저 2탭으로 확인한다.
 
 ## 준비
-- 서버 실행: node src/app.js   
+- build: `npm run build`
+- 서버 실행: `npm start` (`src/app.ts` source entry → `dist/server/app.js` production entry)
 - 브라우저 탭 2개
 - 탭 A: host
 - 탭 B: guest

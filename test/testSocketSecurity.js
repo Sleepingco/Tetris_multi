@@ -4,7 +4,7 @@ const assert = require("node:assert/strict")
 const {
     createSocketServerOptions,
     readAllowedOrigins,
-} = require("../src/server/socketSecurity.js")
+} = require("../src/server/socketSecurity.ts")
 const {
     createRoomPublicDto,
 } = require("../src/server/services/roomPublicDto.js")
