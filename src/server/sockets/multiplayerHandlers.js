@@ -1,7 +1,7 @@
 const {
     createRoom,
+    findRoomByPlayerId,
     joinRoom,
-    removePlayerBySocketId,
     startGame,
     leaveGame,
     syncRoom,
@@ -28,6 +28,20 @@ const {
 const {
     finishAuthoritativeMatch,
 } = require("../services/authoritativeMatchFinish.js")
+const {
+    createPublicRoomResult,
+    createRoomPublicDto,
+} = require("../services/roomPublicDto.js")
+
+const DISCONNECT_GRACE_MS = 30_000
+const PRIVATE_FIELD_NAMES = new Set([
+    "token",
+    "tokenDigest",
+    "reconnectToken",
+    "generation",
+    "socketId",
+    "expiresAt",
+])
 
 const VALID_GAME_ACTIONS = new Set([
     "move_left",
@@ -92,7 +106,7 @@ function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickna
 
     if (!result.room) return
 
-    socketServer.to(roomId).emit("room:updated", result.room)
+    socketServer.to(roomId).emit("room:updated", createRoomPublicDto(result.room))
     socketServer.to(roomId).emit("room:message", {
         type: "system",
         text: `${nickname}님이 퇴장하였습니다.`,
@@ -102,17 +116,26 @@ function handlePlayerLeftRoom(socketServer, clientSocket, roomId, result, nickna
 
 function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
     if (!result.ok || !result.room) {
-        clientSocket.emit("room:result", result)
+        clientSocket.emit("room:result", createPublicRoomResult(result))
         return
     }
 
     clientSocket.join(result.room.roomId)
-    clientSocket.emit("room:result", result)
-    socketServer.to(result.room.roomId).emit("room:updated", result.room)
+    clientSocket.emit("room:result", createPublicRoomResult(result))
+    socketServer.to(result.room.roomId).emit("room:updated", createRoomPublicDto(result.room))
     socketServer.to(result.room.roomId).emit("room:message", {
         type: "system",
         text: `${nickname}님이 입장하였습니다.`,
         roomId: result.room.roomId,
+    })
+}
+
+function containsPrivateField(value) {
+    if (!value || typeof value !== "object") return false
+    if (Array.isArray(value)) return value.some(containsPrivateField)
+
+    return Object.entries(value).some(([key, child]) => {
+        return PRIVATE_FIELD_NAMES.has(key) || containsPrivateField(child)
     })
 }
 
@@ -133,17 +156,51 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     const authoritativeTickerService = dependencies.authoritativeTickerService
     const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
     const loadAuthoritativeGameCore = dependencies.loadGameCore || loadGameCore
+    const playerSessionService = dependencies.playerSessionService
+    const socketRateLimitService = dependencies.socketRateLimitService
+    const disconnectGraceContexts = dependencies.disconnectGraceContexts
+    const now = dependencies.now || Date.now
+    const setTimeoutFn = dependencies.setTimeoutFn || setTimeout
+    const disconnectGraceMs = dependencies.disconnectGraceMs || DISCONNECT_GRACE_MS
+    const sessionContext = clientSocket.data?.playerSession
+    const playerIdentity = clientSocket.data?.playerIdentity
+    const getPlayerId = () => playerIdentity?.playerId
     let gameInputProcessingChain = null
+    let hasJoinedGame = false
+
+    function isActiveSession() {
+        return playerSessionService?.isActiveSocket(sessionContext, clientSocket.id) === true
+    }
+
+    function consumeRateLimit(bucket) {
+        return socketRateLimitService?.consume(bucket, getPlayerId()) !== false
+    }
+
+    function isAuthorizedRoom(roomId) {
+        if (!isActiveSession()) return createNotAuthorizedResult()
+
+        const result = syncRoom(roomId, getPlayerId())
+        return result.ok && isHumanPlayer(result.room, getPlayerId())
+            ? result
+            : createNotAuthorizedResult()
+    }
+
+    function emitRoomResult(result) {
+        clientSocket.emit("room:result", createPublicRoomResult(result))
+    }
 
     clientSocket.on("room:create", (payload) => {
-        const createPayload = payload?.player
-            ? payload
-            : { player: payload, mode: "pvp" }
-        const hostPlayer = createPayload.player
-            ? { ...createPayload.player, socketId: clientSocket.id }
-            : null
+        if (!isActiveSession() || !consumeRateLimit("lifecycle")) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        const createPayload = payload?.player ? payload : payload || {}
+        const hostPlayer = {
+            playerId: getPlayerId(),
+            nickname: playerIdentity.nickname,
+        }
         const result = createRoom(hostPlayer, {
-            mode: createPayload.mode,
+            mode: createPayload.mode || "pvp",
             aiDifficulty: createPayload.aiDifficulty,
             aiPolicy: createPayload.aiPolicy,
         })
@@ -151,19 +208,29 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         if (result.ok) {
             clientSocket.join(result.room.roomId);
         }
-        clientSocket.emit("room:result", result)
+        emitRoomResult(result)
     })
 
-    clientSocket.on("room:join", ({ roomId, player }) => {
-        const guestPlayer = player
-            ? { ...player, socketId: clientSocket.id }
-            : null
+    clientSocket.on("room:join", ({ roomId } = {}) => {
+        if (!isActiveSession() || !consumeRateLimit("lifecycle")) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        const guestPlayer = {
+            playerId: getPlayerId(),
+            nickname: playerIdentity.nickname,
+        }
         const result = joinRoom(roomId, guestPlayer)
-        handlePlayerJoinedRoom(socketServer, clientSocket, result, guestPlayer?.nickname || "Player")
+        handlePlayerJoinedRoom(socketServer, clientSocket, result, guestPlayer.nickname)
     })
 
-    clientSocket.on("room:leave", ({ roomId, playerId }) => {
-        const result = leaveRoom(roomId, playerId)
+    clientSocket.on("room:leave", ({ roomId } = {}) => {
+        const roomResult = isActiveSession() && consumeRateLimit("lifecycle")
+            ? isAuthorizedRoom(roomId)
+            : createNotAuthorizedResult()
+        const result = roomResult.ok
+            ? leaveRoom(roomId, getPlayerId())
+            : roomResult
         if (result.ok) {
             authoritativeTickerService.stopRoomTicker(result.roomId)
         }
@@ -175,34 +242,56 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             result.player?.nickname || "Player",
         )
 
-        clientSocket.emit("room:result", result)
+        emitRoomResult(result)
     })
 
     clientSocket.on("disconnect", () => {
-        const result = removePlayerBySocketId(clientSocket.id)
-        if (result.ok && result.roomId) {
-            authoritativeTickerService.stopRoomTicker(result.roomId)
-        }
+        gameInputProcessingChain = null
+        if (!playerSessionService?.markDisconnected(sessionContext, clientSocket.id)) return
 
-        handlePlayerLeftRoom(
-            socketServer,
-            clientSocket,
-            result.roomId,
-            result,
-            result.player?.nickname || "Player",
-        )
+        const disconnectedAt = now()
+        const graceContext = {
+            generation: sessionContext.generation,
+            disconnectedAt,
+            timer: null,
+        }
+        graceContext.timer = setTimeoutFn(async () => {
+            const current = disconnectGraceContexts.get(getPlayerId())
+            if (
+                current?.generation !== sessionContext.generation
+                || current?.disconnectedAt !== disconnectedAt
+                || !playerSessionService.isDisconnectedSession(sessionContext)
+            ) {
+                return
+            }
+
+            disconnectGraceContexts.delete(getPlayerId())
+            await handleDisconnectGraceExpired({
+                socketServer,
+                playerId: getPlayerId(),
+                authoritativeTickerService,
+                saveEventLog,
+            })
+        }, disconnectGraceMs)
+        graceContext.timer?.unref?.()
+        disconnectGraceContexts.set(getPlayerId(), graceContext)
     })
 
     // room 상태를 playing으로 바꾸고 matchService에 player별 input log/server bag을 만든다.
     clientSocket.on("room:start", async (payload = {}) => {
-        const { roomId, playerId } = payload
-        const result = startGame(roomId, playerId, clientSocket.id)
+        const { roomId } = payload
+        const roomResult = isActiveSession() && consumeRateLimit("lifecycle")
+            ? isAuthorizedRoom(roomId)
+            : createNotAuthorizedResult()
+        const result = roomResult.ok
+            ? startGame(roomId, getPlayerId())
+            : roomResult
 
         if (result.ok && result.room) {
-            const hostPlayer = result.room.players.find(player => player.playerId === playerId)
+            const hostPlayer = result.room.players.find(player => player.playerId === getPlayerId())
 
-            clientSocket.emit("room:result", result)
-            socketServer.to(result.room.roomId).emit("room:updated", result.room);
+            emitRoomResult(result)
+            socketServer.to(result.room.roomId).emit("room:updated", createRoomPublicDto(result.room));
             socketServer.to(result.room.roomId).emit("room:message", {
                 type: "system",
                 text: `${hostPlayer?.nickname || "Host"}님이 게임을 시작했습니다.`,
@@ -214,25 +303,18 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                 await persistGameEventLog(saveEventLog, createGameStartLog(result.room, matchResult.match))
             }
         } else {
-            clientSocket.emit("room:result", result)
+            emitRoomResult(result)
         }
     })
 
     clientSocket.on("game:join", (payload = {}) => {
-        const { roomId, playerId } = payload
-        let result = syncRoom(roomId, playerId)
-        let shouldResetPlayerGravity = false
-        if (result.ok && !isHumanPlayer(result.room, playerId)) {
-            result = createNotAuthorizedResult()
-        } else if (result.ok) {
-            const roomPlayer = result.room.players.find(player => {
-                return player.playerId === playerId
-            })
-            shouldResetPlayerGravity = roomPlayer?.socketId !== clientSocket.id
-            result = syncRoom(roomId, playerId, clientSocket.id)
-            if (result.ok && shouldResetPlayerGravity) {
-                authoritativeTickerService?.resetPlayerGravity?.(roomId, playerId)
-            }
+        const { roomId } = payload
+        const result = isActiveSession() && consumeRateLimit("lifecycle")
+            ? isAuthorizedRoom(roomId)
+            : createNotAuthorizedResult()
+        if (result.ok && !hasJoinedGame) {
+            authoritativeTickerService?.resetPlayerGravity?.(roomId, getPlayerId())
+            hasJoinedGame = true
         }
         const matchResult = result.ok
             ? getMatchState(roomId)
@@ -243,7 +325,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         }
 
         clientSocket.emit("game:join:result", {
-            ...result,
+            ...createPublicRoomResult(result),
             match: createGameJoinMatchDto(matchResult.match),
         })
     })
@@ -252,7 +334,6 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     async function processGameInput(payload = {}) {
         const {
             roomId,
-            playerId,
             action,
             tick,
             pieceIndex,
@@ -272,15 +353,14 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             if (snapshot) resultPayload.snapshot = snapshot
             clientSocket.emit("game:input:result", resultPayload)
         }
-        const result = syncRoom(roomId, playerId)
+        if (!isActiveSession()) {
+            emitInputResult(false, "NOT_AUTHORIZED")
+            return
+        }
+        const result = isAuthorizedRoom(roomId)
 
         if (!result.ok) {
             emitInputResult(false, result.reason)
-            return
-        }
-
-        if (!isAuthorizedHumanSocket(result.room, playerId, clientSocket.id)) {
-            emitInputResult(false, "NOT_AUTHORIZED")
             return
         }
 
@@ -316,10 +396,10 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             clientSequence,
             ...(expectedTransform ? { expectedTransform: { ...expectedTransform } } : {}),
         }
-        const sequenceValidation = validateClientInputSequence(roomId, playerId, clientSequence)
+        const sequenceValidation = validateClientInputSequence(roomId, getPlayerId(), clientSequence)
         if (!sequenceValidation.ok) {
             if (sequenceValidation.reason === "CLIENT_SEQUENCE_OUT_OF_ORDER") {
-                emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+                emitAuthoritativeSnapshot(socketServer, roomId, getPlayerId())
             }
             emitInputResult(false, sequenceValidation.reason)
             return
@@ -327,17 +407,25 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         try {
             await authoritativePlayerMutationQueue.enqueueAuthoritativePlayerMutation(
                 roomId,
-                playerId,
+                getPlayerId(),
                 async () => {
+                    if (!isActiveSession()) {
+                        emitInputResult(false, "NOT_AUTHORIZED")
+                        return
+                    }
                     const gameCore = await loadAuthoritativeGameCore()
+                    if (!isActiveSession()) {
+                        emitInputResult(false, "NOT_AUTHORIZED")
+                        return
+                    }
                     const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(
                         roomId,
-                        playerId,
+                        getPlayerId(),
                         input,
                         gameCore,
                     )
                     if (!authoritativeResult.ok) {
-                        const snapshot = emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+                        const snapshot = emitAuthoritativeSnapshot(socketServer, roomId, getPlayerId())
                         emitInputResult(
                             false,
                             authoritativeResult.reason,
@@ -351,7 +439,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                     if (gameplayResult?.holdResult || gameplayResult?.placementResult) {
                         authoritativeTickerService?.resetPlayerGravity?.(
                             roomId,
-                            playerId,
+                            getPlayerId(),
                             {
                                 lineClear: (gameplayResult.placementResult?.linesCleared ?? 0) > 0,
                             },
@@ -359,7 +447,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                     }
                     const placementSideEffect = handleServerPlacementResult(
                         roomId,
-                        playerId,
+                        getPlayerId(),
                         gameplayResult?.placementResult,
                         createGarbageHoleCol,
                     )
@@ -367,7 +455,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                     const snapshot = emitAuthoritativeSnapshot(
                         socketServer,
                         roomId,
-                        playerId,
+                        getPlayerId(),
                         gameplayResult?.presentationEffect,
                     )
                     if (placementSideEffect?.targetPlayerId) {
@@ -382,7 +470,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                     await handleServerGameOverResult(
                         socketServer,
                         roomId,
-                        playerId,
+                        getPlayerId(),
                         gameplayResult?.placementResult || gameplayResult?.holdResult,
                         snapshot,
                         authoritativeTickerService,
@@ -393,13 +481,25 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         } catch {
             if (hasEmittedInputResult) return
 
-            acknowledgeClientInputSequence(roomId, playerId, clientSequence)
-            emitAuthoritativeSnapshot(socketServer, roomId, playerId)
+            if (isActiveSession()) {
+                acknowledgeClientInputSequence(roomId, getPlayerId(), clientSequence)
+                emitAuthoritativeSnapshot(socketServer, roomId, getPlayerId())
+            }
             emitInputResult(false, "AUTHORITATIVE_INPUT_FAILED")
         }
     }
 
     clientSocket.on("game:input", (payload = {}) => {
+        if (!isActiveSession() || !consumeRateLimit("input")) {
+            clientSocket.emit("game:input:result", {
+                ok: false,
+                reason: isActiveSession() ? "RATE_LIMITED" : "NOT_AUTHORIZED",
+                clientSequence: payload.clientSequence,
+                pieceIndex: payload.pieceIndex,
+                placementCommitted: false,
+            })
+            return null
+        }
         const processingResult = gameInputProcessingChain
             ? gameInputProcessingChain.then(() => processGameInput(payload))
             : processGameInput(payload)
@@ -415,20 +515,19 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     })
 
     clientSocket.on("game:log:placement_decision", async (payload = {}) => {
-        const { roomId, playerId, log } = payload
-        const result = syncRoom(roomId, playerId)
-
-        if (!result.ok) {
-            clientSocket.emit("game:log:result", result)
-            return
-        }
-
-        if (!isAuthorizedHumanSocket(result.room, playerId, clientSocket.id)) {
+        const { roomId, log } = payload
+        if (!isActiveSession() || !consumeRateLimit("placementLog")) {
             clientSocket.emit("game:log:result", {
                 ok: false,
                 log: null,
-                reason: "NOT_AUTHORIZED",
+                reason: isActiveSession() ? "RATE_LIMITED" : "NOT_AUTHORIZED",
             })
+            return
+        }
+        const result = isAuthorizedRoom(roomId)
+
+        if (!result.ok) {
+            clientSocket.emit("game:log:result", result)
             return
         }
 
@@ -460,14 +559,13 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         const hasValidPlacementDecisionLog = log
             && typeof log === "object"
             && !Array.isArray(log)
-            && log.playerId === playerId
-            && log.roomId === roomId
             && log.eventType === "placement_decision"
             && (
                 (log.schemaVersion === 1 && (log.source === undefined || log.source === "human"))
                 || (log.schemaVersion === 2 && log.source === "human")
             )
             && hasValidPlacementResultScalars
+            && !containsPrivateField(log)
 
         if (!hasValidPlacementDecisionLog) {
             clientSocket.emit("game:log:result", {
@@ -478,22 +576,39 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        const logResult = await saveLog(log)
+        const authenticatedLog = {
+            ...log,
+            roomId,
+            playerId: getPlayerId(),
+        }
+        if (!isActiveSession()) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: "NOT_AUTHORIZED",
+            })
+            return
+        }
+        const logResult = await saveLog(authenticatedLog)
+        if (!isActiveSession()) return
         clientSocket.emit("game:log:result", logResult)
     })
 
     // server bag chunk를 player별로 추가해 로컬/상대 런타임의 다음 조각 공급을 맞춘다.
     clientSocket.on("game:bag:request", (payload = {}) => {
-        const { roomId, playerId } = payload
-        const result = syncRoom(roomId, playerId)
+        const { roomId } = payload
+        if (!isActiveSession() || !consumeRateLimit("bag")) {
+            clientSocket.emit("game:bag:result", {
+                ok: false,
+                room: null,
+                reason: isActiveSession() ? "RATE_LIMITED" : "NOT_AUTHORIZED",
+            })
+            return
+        }
+        const result = isAuthorizedRoom(roomId)
 
         if (!result.ok) {
             clientSocket.emit("game:bag:result", result)
-            return
-        }
-
-        if (!isAuthorizedHumanSocket(result.room, playerId, clientSocket.id)) {
-            clientSocket.emit("game:bag:result", createNotAuthorizedResult())
             return
         }
 
@@ -506,7 +621,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        const bagResult = appendPlayerBagChunk(roomId, playerId)
+        const bagResult = appendPlayerBagChunk(roomId, getPlayerId())
 
         if (!bagResult.ok) {
             clientSocket.emit("game:bag:result", bagResult)
@@ -515,51 +630,51 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         socketServer.to(roomId).emit("game:bag:append", {
             roomId,
-            playerId,
+            playerId: getPlayerId(),
             bagChunk: bagResult.bagChunk,
         })
     })
 
     clientSocket.on("game:leave", (payload = {}) => {
-        const { roomId, playerId } = payload
-        const roomResult = syncRoom(roomId, playerId)
-        const result = roomResult.ok && isAuthorizedHumanSocket(
-            roomResult.room,
-            playerId,
-            clientSocket.id,
-        )
-            ? leaveGame(roomId, playerId)
+        const { roomId } = payload
+        const roomResult = isActiveSession() && consumeRateLimit("lifecycle")
+            ? isAuthorizedRoom(roomId)
+            : createNotAuthorizedResult()
+        const result = roomResult.ok
+            ? leaveGame(roomId, getPlayerId())
             : createNotAuthorizedResult()
         if (result.ok) {
             authoritativeTickerService.stopRoomTicker(roomId)
             deleteMatch(roomId)
             clientSocket.leave(roomId)
             clientSocket.to(roomId).emit("game:opponent-left", {
-                room: result.room,
-                playerId
+                room: createRoomPublicDto(result.room),
+                playerId: getPlayerId()
             })
         }
 
-        clientSocket.emit("game:leave:result", result)
+        clientSocket.emit("game:leave:result", createPublicRoomResult(result))
 
     })
 
-    // 로비 복귀 시 최신 socketId를 room player에 다시 연결하고 finished room 복귀 조건을 확인한다.
+    // 로비 복귀 시 membership과 finished room 복귀 조건을 확인한다.
     clientSocket.on("room:sync", (payload = {}) => {
-        const { roomId, playerId } = payload
-        const currentResult = syncRoom(roomId, playerId)
-        const result = currentResult.ok && isHumanPlayer(currentResult.room, playerId)
-            ? syncRoom(roomId, playerId, clientSocket.id, {
+        const { roomId } = payload
+        const currentResult = isActiveSession() && consumeRateLimit("lifecycle")
+            ? isAuthorizedRoom(roomId)
+            : createNotAuthorizedResult()
+        const result = currentResult.ok
+            ? syncRoom(roomId, getPlayerId(), {
                 location: "lobby",
             })
             : createNotAuthorizedResult()
 
         if (result.ok && result.room) {
             clientSocket.join(result.room.roomId)
-            socketServer.to(result.room.roomId).emit("room:updated", result.room)
+            socketServer.to(result.room.roomId).emit("room:updated", createRoomPublicDto(result.room))
         }
 
-        clientSocket.emit("room:result", result)
+        emitRoomResult(result)
     })
 
 }
@@ -699,14 +814,6 @@ function isHumanPlayer(room, playerId) {
     })
 }
 
-function isAuthorizedHumanSocket(room, playerId, socketId) {
-    return room?.players?.some(player => {
-        return player.playerId === playerId &&
-            player.playerType !== "heuristic_ai" &&
-            player.socketId === socketId
-    })
-}
-
 function createNotAuthorizedResult() {
     return {
         ok: false,
@@ -715,6 +822,45 @@ function createNotAuthorizedResult() {
     }
 }
 
+async function handleDisconnectGraceExpired({
+    socketServer,
+    playerId,
+    authoritativeTickerService,
+    saveEventLog,
+}) {
+    const context = findRoomByPlayerId(playerId)
+    if (!context) return
+
+    const { room, player } = context
+    if (room.status === "playing") {
+        await finishAuthoritativeMatch({
+            roomId: room.roomId,
+            loserPlayerId: playerId,
+            finishReason: "disconnect_timeout",
+            finishGame,
+            stopRoomTicker: authoritativeTickerService.stopRoomTicker,
+            emitMatchFinish(payload) {
+                socketServer.to(room.roomId).emit("match:finish", payload)
+            },
+            saveGameEventLog: saveEventLog || saveGameEventLog,
+            getMatchState,
+            deleteMatch,
+        })
+        return
+    }
+
+    const result = leaveRoom(room.roomId, playerId)
+    if (result.room) {
+        socketServer.to(room.roomId).emit("room:updated", createRoomPublicDto(result.room))
+        socketServer.to(room.roomId).emit("room:message", {
+            type: "system",
+            text: `${player.nickname || "Player"}님의 연결이 종료되었습니다.`,
+            roomId: room.roomId,
+        })
+    }
+}
+
 module.exports = {
+    handleDisconnectGraceExpired,
     registerMultiplayerHandlers,
 }

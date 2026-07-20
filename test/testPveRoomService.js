@@ -148,7 +148,7 @@ test("PVE match 종료 후 human이 로비로 돌아오면 room을 다시 시작
     assert.equal(startGame(roomId, human.playerId, human.socketId).ok, true);
     assert.equal(finishGame(roomId, aiPlayer.playerId, "ai_no_legal_placement").ok, true);
 
-    const syncResult = syncRoom(roomId, human.playerId, human.socketId, {
+    const syncResult = syncRoom(roomId, human.playerId, {
         location: "lobby",
     });
 

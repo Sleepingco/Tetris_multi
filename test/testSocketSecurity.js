@@ -1,0 +1,109 @@
+const test = require("node:test")
+const assert = require("node:assert/strict")
+
+const {
+    createSocketServerOptions,
+    readAllowedOrigins,
+} = require("../src/server/socketSecurity.js")
+const {
+    createRoomPublicDto,
+} = require("../src/server/services/roomPublicDto.js")
+const {
+    createSocketRateLimitService,
+} = require("../src/server/services/socketRateLimitService.js")
+
+test("production은 exact origin allowlist가 없으면 fail closed한다", () => {
+    assert.throws(
+        () => readAllowedOrigins({ NODE_ENV: "production" }),
+        /SOCKET_ALLOWED_ORIGINS/,
+    )
+})
+
+test("cors.origin과 allowRequest는 같은 exact allowlist를 적용한다", () => {
+    const options = createSocketServerOptions({
+        NODE_ENV: "production",
+        SOCKET_ALLOWED_ORIGINS: "https://game.example.com",
+    })
+
+    let corsAllowed = null
+    options.cors.origin("https://game.example.com", (error, allowed) => {
+        corsAllowed = !error && allowed
+    })
+    assert.equal(corsAllowed, true)
+
+    options.cors.origin("https://evil.example.com", (error) => {
+        corsAllowed = !error
+    })
+    assert.equal(corsAllowed, false)
+
+    let requestAllowed = null
+    options.allowRequest({ headers: { origin: "https://game.example.com" } }, (_, allowed) => {
+        requestAllowed = allowed
+    })
+    assert.equal(requestAllowed, true)
+    options.allowRequest({ headers: {} }, (_, allowed) => {
+        requestAllowed = allowed
+    })
+    assert.equal(requestAllowed, false)
+    assert.equal(options.maxHttpBufferSize, 512 * 1024)
+})
+
+test("roomPublicDto는 whitelist 외 private 식별자를 재귀적으로 제외한다", () => {
+    const dto = createRoomPublicDto({
+        roomId: "ROOM1234",
+        mode: "pvp",
+        aiDifficulty: null,
+        aiPolicy: null,
+        hostPlayerId: "player-1",
+        status: "waiting",
+        createdAt: 1,
+        token: "secret",
+        generation: 7,
+        expiresAt: 999,
+        players: [{
+            playerId: "player-1",
+            nickname: "Player",
+            playerType: "human",
+            socketId: "socket-1",
+            tokenDigest: "digest",
+        }],
+    })
+    const serialized = JSON.stringify(dto)
+
+    assert.deepEqual(Object.keys(dto), [
+        "roomId",
+        "mode",
+        "aiDifficulty",
+        "aiPolicy",
+        "hostPlayerId",
+        "status",
+        "createdAt",
+        "players",
+    ])
+    assert.equal(serialized.includes("socket-1"), false)
+    assert.equal(serialized.includes("secret"), false)
+    assert.equal(serialized.includes("digest"), false)
+    assert.deepEqual(Object.keys(dto.players[0]), ["playerId", "nickname", "playerType"])
+})
+
+test("독립 rate bucket은 window 종료 후 만료 항목을 재사용한다", () => {
+    let currentTime = 0
+    const limiter = createSocketRateLimitService({
+        now: () => currentTime,
+        limits: {
+            input: { limit: 2, windowMs: 1_000 },
+            chat: { limit: 1, windowMs: 1_000 },
+        },
+    })
+
+    assert.equal(limiter.consume("input", "player"), true)
+    assert.equal(limiter.consume("input", "player"), true)
+    assert.equal(limiter.consume("input", "player"), false)
+    assert.equal(limiter.consume("chat", "player"), true)
+    assert.equal(limiter.consume("chat", "player"), false)
+
+    currentTime = 1_000
+    limiter.cleanupExpired()
+    assert.equal(limiter.consume("input", "player"), true)
+    assert.equal(limiter.consume("chat", "player"), true)
+})

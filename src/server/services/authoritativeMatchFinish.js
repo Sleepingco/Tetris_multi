@@ -75,7 +75,7 @@ async function finishAuthoritativeMatch({
 
     stopRoomTicker?.(roomId);
     emitMatchFinish?.({
-        room: finishResult.room,
+        room: createRoomPublicDto(finishResult.room),
         winnerPlayerId: finishResult.winnerPlayerId,
         loserPlayerId: finishResult.loserPlayerId,
         reason: finishResult.finishReason,
@@ -97,3 +97,4 @@ async function finishAuthoritativeMatch({
 module.exports = {
     finishAuthoritativeMatch,
 };
+const { createRoomPublicDto } = require("./roomPublicDto.js");

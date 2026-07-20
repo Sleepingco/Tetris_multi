@@ -1,8 +1,6 @@
 const { syncRoom } = require("../services/roomService.js")
 
 const CHAT_MAX_LENGTH = 200
-const CHAT_COOLDOWN_MS = 1000
-const lastChatAtBySocketId = new Map()
 
 function success(meta = {}) {
     return {
@@ -37,38 +35,31 @@ function normalizeChatText(text) {
     return success({ text: normalizedText })
 }
 
-/**
- * socketId 기준 채팅 쿨다운을 검사하고, 통과한 시점에는 마지막 전송 시간을 갱신한다.
- *
- * @param {string} socketId - 채팅을 보낸 socket id
- * @returns {{ok: boolean, reason: string|null}} 전송 가능 여부
- */
-function checkChatRateLimit(socketId) {
-    const now = Date.now()
-    const lastSentAt = lastChatAtBySocketId.get(socketId) || 0
-
-    if (now - lastSentAt < CHAT_COOLDOWN_MS) {
-        return failure("CHAT_RATE_LIMITED")
-    }
-
-    lastChatAtBySocketId.set(socketId, now)
-    return success()
-}
-
-function validateChat(socketId, text) {
+function validateChat(text) {
     const textResult = normalizeChatText(text)
     if (!textResult.ok) return textResult
-
-    const rateLimitResult = checkChatRateLimit(socketId)
-    if (!rateLimitResult.ok) return rateLimitResult
-
     return success({ text: textResult.text })
 }
 
-function registerChatHandlers(socketServer, clientSocket) {
+function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
+    const playerSessionService = dependencies.playerSessionService
+    const socketRateLimitService = dependencies.socketRateLimitService
+    const sessionContext = clientSocket.data?.playerSession
+    const playerIdentity = clientSocket.data?.playerIdentity
+
+    function authorizeChat(text) {
+        if (!playerSessionService?.isActiveSocket(sessionContext, clientSocket.id)) {
+            return failure("NOT_AUTHORIZED")
+        }
+        if (!socketRateLimitService?.consume("chat", playerIdentity?.playerId)) {
+            return failure("CHAT_RATE_LIMITED")
+        }
+        return validateChat(text)
+    }
+
     clientSocket.on("global:chat", (payload = {}) => {
-        const { playerId, nickname, text } = payload
-        const result = validateChat(clientSocket.id, text)
+        const { text } = payload
+        const result = authorizeChat(text)
 
         if (!result.ok) {
             clientSocket.emit("chat:result", result)
@@ -78,14 +69,19 @@ function registerChatHandlers(socketServer, clientSocket) {
         socketServer.emit("global:message", {
             type: "chat",
             scope: "global",
-            playerId: playerId || null,
-            nickname: nickname || "Guest",
+            playerId: playerIdentity.playerId,
+            nickname: playerIdentity.nickname,
             text: result.text,
         })
     })
 
     clientSocket.on("room:chat", (payload = {}) => {
-        const { roomId, playerId, text } = payload
+        const { roomId, text } = payload
+        const playerId = playerIdentity?.playerId
+        if (!playerSessionService?.isActiveSocket(sessionContext, clientSocket.id)) {
+            clientSocket.emit("chat:result", failure("NOT_AUTHORIZED"))
+            return
+        }
         // 채팅 전송 전에 room/player 소속만 검증한다. 게임 판정이나 room 상태 전이는 하지 않는다.
         const roomResult = syncRoom(roomId, playerId)
         if (!roomResult.ok) {
@@ -93,7 +89,7 @@ function registerChatHandlers(socketServer, clientSocket) {
             return
         }
 
-        const chatResult = validateChat(clientSocket.id, text)
+        const chatResult = authorizeChat(text)
         if (!chatResult.ok) {
             clientSocket.emit("chat:result", chatResult)
             return
@@ -110,9 +106,6 @@ function registerChatHandlers(socketServer, clientSocket) {
         })
     })
 
-    clientSocket.on("disconnect", () => {
-        lastChatAtBySocketId.delete(clientSocket.id)
-    })
 }
 
 module.exports = {

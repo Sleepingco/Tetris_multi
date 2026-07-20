@@ -53,6 +53,16 @@ class FakeSocketServer {
 class FakeClientSocket {
     constructor(id) {
         this.id = id
+        this.data = {
+            playerSession: {
+                playerId: null,
+                generation: 1,
+            },
+            playerIdentity: {
+                playerId: null,
+                nickname: null,
+            },
+        }
         this.handlers = new Map()
         this.clientEvents = []
         this.socketRoomEvents = []
@@ -92,17 +102,31 @@ class FakeClientSocket {
     }
 
     trigger(eventName, payload) {
+        this.setInitialIdentity(payload)
         const handlers = this.handlers.get(eventName) || []
         handlers.forEach(handler => handler(payload))
     }
 
     async triggerAsync(eventName, payload) {
+        this.setInitialIdentity(payload)
         const handlers = this.handlers.get(eventName) || []
         await Promise.all(handlers.map(handler => handler(payload)))
     }
 
     lastClientEvent(eventName) {
         return this.clientEvents.findLast(event => event.eventName === eventName)
+    }
+
+    setInitialIdentity(payload) {
+        if (this.data.playerIdentity.playerId) return
+
+        const player = payload?.player || payload
+        const playerId = player?.playerId || payload?.log?.playerId
+        if (!playerId) return
+
+        this.data.playerSession.playerId = playerId
+        this.data.playerIdentity.playerId = playerId
+        this.data.playerIdentity.nickname = player?.nickname || "Player"
     }
 }
 
@@ -141,6 +165,24 @@ function registerTestSocketHandlers(socketServer, dependencies = {}) {
         authoritativeTickerService: createNoopAuthoritativeTickerService(),
         saveGameEventLog: saveTestLog,
         savePlacementDecisionLog: saveTestLog,
+        playerSessionService: {
+            cleanupExpired() {},
+            isActiveSocket() {
+                return true
+            },
+            isDisconnectedSession() {
+                return false
+            },
+            markDisconnected() {
+                return false
+            },
+        },
+        socketRateLimitService: {
+            cleanupExpired() {},
+            consume() {
+                return true
+            },
+        },
         ...dependencies,
     })
 }
@@ -1206,7 +1248,7 @@ test("room:leave는 마지막 player가 나가면 room null 결과를 요청자�
     assert.deepEqual(hostSocket.leftRooms, [roomId])
 })
 
-test("disconnect는 끊어진 socket의 player를 room에서 제거하고 남은 참가자에게 알린다", () => {
+test("disconnect는 grace가 끝나기 전 player를 room에서 제거하지 않는다", () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("disconnect-host-socket")
     const guestSocket = new FakeClientSocket("disconnect-guest-socket")
@@ -1234,12 +1276,8 @@ test("disconnect는 끊어진 socket의 player를 room에서 제거하고 남은
         guestSocket.trigger("disconnect")
     })
 
-    assert.deepEqual(guestSocket.leftRooms, [roomId])
-    assert.equal(socketServer.roomEvents.at(-2).eventName, "room:updated")
-    assert.equal(socketServer.roomEvents.at(-2).payload.players.length, 1)
-    assert.equal(socketServer.roomEvents.at(-2).payload.players[0].playerId, "disconnect-p1")
-    assert.equal(socketServer.roomEvents.at(-1).eventName, "room:message")
-    assert.equal(socketServer.roomEvents.at(-1).payload.text, "Guest님이 퇴장하였습니다.")
+    assert.deepEqual(guestSocket.leftRooms, [])
+    assert.equal(getRoomState(roomId).players.length, 2)
 })
 
 test("game:leave 이후 old game socket disconnect와 lobby sync 순서와 무관하게 남은 player를 보존한다", () => {
@@ -1299,7 +1337,7 @@ test("game:leave 이후 old game socket disconnect와 lobby sync 순서와 무�
     assert.equal(room.status, "waiting")
     assert.equal(room.players.length, 1)
     assert.equal(room.players[0].playerId, disconnectFirst.hostPlayerId)
-    assert.equal(room.players[0].socketId, disconnectFirst.hostLobbySocket.id)
+    assert.equal(room.players[0].socketId, undefined)
 
     const syncFirst = createStartedRoom("leave-race-sync-first")
     syncFirst.hostLobbySocket.trigger("room:sync", {
@@ -1313,7 +1351,7 @@ test("game:leave 이후 old game socket disconnect와 lobby sync 순서와 무�
     assert.equal(room.status, "waiting")
     assert.equal(room.players.length, 1)
     assert.equal(room.players[0].playerId, syncFirst.hostPlayerId)
-    assert.equal(room.players[0].socketId, syncFirst.hostLobbySocket.id)
+    assert.equal(room.players[0].socketId, undefined)
 })
 
 test("finished game socket disconnect와 lobby sync 순서는 player와 room을 보존하고 재시작할 수 있다", () => {
@@ -1375,7 +1413,7 @@ test("finished game socket disconnect와 lobby sync 순서는 player와 room을 
     })
     room = getRoomState(roomId)
     assert.equal(room.status, "finished")
-    assert.equal(room.players.find(player => player.playerId === "finished-race-host").socketId, hostLobbySocket.id)
+    assert.equal(room.players.find(player => player.playerId === "finished-race-host").socketId, undefined)
 
     // B: new lobby socket sync -> old game socket disconnect
     guestLobbySocket.trigger("room:sync", {
@@ -1387,7 +1425,7 @@ test("finished game socket disconnect와 lobby sync 순서는 player와 room을 
     assert.equal(room.status, "waiting")
     assert.equal(room.players.length, 2)
     assert.equal(room.hostPlayerId, "finished-race-host")
-    assert.equal(room.players.find(player => player.playerId === "finished-race-guest").socketId, guestLobbySocket.id)
+    assert.equal(room.players.find(player => player.playerId === "finished-race-guest").socketId, undefined)
     assert.deepEqual(stoppedRoomIds, [])
 
     hostLobbySocket.trigger("room:start", {
@@ -1436,7 +1474,7 @@ test("PVE finished room은 human lobby sync로 waiting이 되고 명시적 room:
     assert.equal(room.status, "waiting")
     assert.equal(room.players.length, 2)
     assert.equal(room.hostPlayerId, "pve-finished-host")
-    assert.equal(room.players.find(player => player.playerId === "pve-finished-host").socketId, lobbySocket.id)
+    assert.equal(room.players.find(player => player.playerId === "pve-finished-host").socketId, undefined)
 
     lobbySocket.trigger("room:start", {
         roomId,
@@ -1811,7 +1849,17 @@ test("chat은 같은 socket의 1초 내 연속 전송을 CHAT_RATE_LIMITED로 �
         let now = 100000
         Date.now = () => now
 
-        registerTestSocketHandlers(socketServer)
+        let chatCount = 0
+        registerTestSocketHandlers(socketServer, {
+            socketRateLimitService: {
+                cleanupExpired() {},
+                consume(bucket) {
+                    if (bucket !== "chat") return true
+                    chatCount += 1
+                    return chatCount === 1
+                },
+            },
+        })
         socketServer.connect(chatClientSocket)
 
         chatClientSocket.trigger("global:chat", {
@@ -3278,7 +3326,7 @@ test("game:join은 서버에 없는 room이면 실패 결과를 돌려준다", (
 
     assert.equal(joinResult.payload.ok, false)
     assert.equal(joinResult.payload.room, null)
-    assert.equal(joinResult.payload.reason, "ROOM_NOT_FOUND")
+    assert.equal(joinResult.payload.reason, "NOT_AUTHORIZED")
     assert.deepEqual(gameSocket.joinedRooms, [])
 })
 
@@ -3808,7 +3856,7 @@ test("PVE room:create는 invalid AI 정책을 거부하고 room을 만들지 않
     assert.deepEqual(invalidSocket.joinedRooms, [])
 })
 
-test("human socket은 heuristic AI playerId로 game input을 보낼 수 없다", async () => {
+test("game input은 payload playerId를 무시하고 socket session player로 처리한다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("pve-input-host-socket")
 
@@ -3839,13 +3887,159 @@ test("human socket은 heuristic AI playerId로 game input을 보낼 수 없다",
     await hostSocket.triggerAsync("game:input", {
         roomId,
         playerId: aiPlayer.playerId,
-        action: "hard_drop",
+        action: "hold",
         tick: 1,
         pieceIndex: 1,
         clientSequence: 1,
     })
 
     const inputResult = hostSocket.lastClientEvent("game:input:result").payload
-    assert.equal(inputResult.ok, false)
-    assert.equal(inputResult.reason, "NOT_AUTHORIZED")
+    assert.equal(inputResult.ok, true)
+    assert.equal(inputResult.reason, null)
+})
+
+test("모든 mutation event는 inactive socket session을 거부한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const socket = new FakeClientSocket("inactive-session-socket")
+    socket.setInitialIdentity({ playerId: "inactive-player", nickname: "Player" })
+    registerTestSocketHandlers(socketServer, {
+        playerSessionService: {
+            cleanupExpired() {},
+            isActiveSocket() {
+                return false
+            },
+            isDisconnectedSession() {
+                return false
+            },
+            markDisconnected() {
+                return false
+            },
+        },
+    })
+    socketServer.connect(socket)
+
+    socket.trigger("room:create", { playerId: "victim", nickname: "Victim" })
+    assert.equal(socket.lastClientEvent("room:result").payload.reason, "NOT_AUTHORIZED")
+
+    const cases = [
+        ["room:join", "room:result", { roomId: "ROOM1234", playerId: "victim" }],
+        ["room:sync", "room:result", { roomId: "ROOM1234", playerId: "victim" }],
+        ["room:start", "room:result", { roomId: "ROOM1234", playerId: "victim" }],
+        ["room:leave", "room:result", { roomId: "ROOM1234", playerId: "victim" }],
+        ["game:join", "game:join:result", { roomId: "ROOM1234", playerId: "victim" }],
+        ["game:input", "game:input:result", {
+            roomId: "ROOM1234",
+            playerId: "victim",
+            action: "hold",
+            tick: 1,
+            pieceIndex: 1,
+            clientSequence: 1,
+        }],
+        ["game:bag:request", "game:bag:result", { roomId: "ROOM1234", playerId: "victim" }],
+        ["game:leave", "game:leave:result", { roomId: "ROOM1234", playerId: "victim" }],
+    ]
+    for (const [eventName, resultName, payload] of cases) {
+        socket.trigger(eventName, payload)
+        assert.equal(socket.lastClientEvent(resultName).payload.reason, "NOT_AUTHORIZED", eventName)
+    }
+
+    await socket.triggerAsync("game:log:placement_decision", {
+        roomId: "ROOM1234",
+        playerId: "victim",
+        log: {},
+    })
+    assert.equal(socket.lastClientEvent("game:log:result").payload.reason, "NOT_AUTHORIZED")
+
+    socket.trigger("global:chat", { playerId: "victim", nickname: "Victim", text: "hello" })
+    assert.equal(socket.lastClientEvent("chat:result").payload.reason, "NOT_AUTHORIZED")
+    socket.trigger("room:chat", { roomId: "ROOM1234", playerId: "victim", text: "hello" })
+    assert.equal(socket.lastClientEvent("chat:result").payload.reason, "NOT_AUTHORIZED")
+})
+
+test("queued game input은 session generation이 stale이면 side effect 직전에 중단한다", async () => {
+    let active = true
+    const queueGate = createDeferred()
+    const mutationQueue = {
+        enqueueAuthoritativePlayerMutation(roomId, playerId, task) {
+            return queueGate.promise.then(task)
+        },
+    }
+    const fixture = await createStartedPvpSocketFixture("stale-input", {
+        authoritativePlayerMutationQueue: mutationQueue,
+        playerSessionService: {
+            cleanupExpired() {},
+            isActiveSocket() {
+                return active
+            },
+            isDisconnectedSession() {
+                return !active
+            },
+            markDisconnected() {
+                active = false
+                return true
+            },
+        },
+    })
+    const pieceIndexBefore = fixture.hostPlayer.authoritativeState.pieceIndex
+    const inputPromise = fixture.hostSocket.triggerAsync("game:input", {
+        roomId: fixture.roomId,
+        playerId: fixture.hostPlayerId,
+        action: "hold",
+        tick: 1,
+        pieceIndex: pieceIndexBefore,
+        clientSequence: 1,
+    })
+
+    active = false
+    queueGate.resolve()
+    await inputPromise
+
+    assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, pieceIndexBefore)
+    assert.equal(
+        fixture.hostSocket.lastClientEvent("game:input:result").payload.reason,
+        "NOT_AUTHORIZED",
+    )
+})
+
+test("disconnect grace timer는 captured generation을 재검증한 뒤 waiting player를 제거한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("grace-host-socket")
+    const guestSocket = new FakeClientSocket("grace-guest-socket")
+    const disconnectedPlayers = new Set()
+    let scheduledTask = null
+    registerTestSocketHandlers(socketServer, {
+        playerSessionService: {
+            cleanupExpired() {},
+            isActiveSocket(context) {
+                return !disconnectedPlayers.has(context.playerId)
+            },
+            isDisconnectedSession(context) {
+                return disconnectedPlayers.has(context.playerId)
+            },
+            markDisconnected(context) {
+                disconnectedPlayers.add(context.playerId)
+                return true
+            },
+        },
+        setTimeoutFn(task, delay) {
+            assert.equal(delay, 30_000)
+            scheduledTask = task
+            return { unref() {} }
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+    hostSocket.trigger("room:create", { playerId: "grace-host", nickname: "Host" })
+    const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: { playerId: "grace-guest", nickname: "Guest" },
+    })
+
+    guestSocket.trigger("disconnect")
+    assert.equal(getRoomState(roomId).players.length, 2)
+    await scheduledTask()
+
+    assert.equal(getRoomState(roomId).players.length, 1)
+    assert.equal(getRoomState(roomId).players[0].playerId, "grace-host")
 })

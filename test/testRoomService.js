@@ -6,7 +6,6 @@ const {
     getRoomState,
     joinRoom,
     removePlayer,
-    removePlayerBySocketId,
     leaveRoom,
     startGame,
     leaveGame,
@@ -324,95 +323,6 @@ test("removePlayer는 없는 playerId면 PLAYER_NOT_FOUND를 반환한다", () =
     assert.equal(getRoomState(createResult.room.roomId).players.length, 1)
 })
 
-test("removePlayerBySocketId는 socketId로 player를 찾아 waiting room에서 제거한다", () => {
-    const hostPlayer = {
-        playerId: "remove-socket-host",
-        nickname: "Host",
-        socketId: "remove-socket-host-socket",
-    }
-    const guestPlayer = {
-        playerId: "remove-socket-guest",
-        nickname: "Guest",
-        socketId: "remove-socket-guest-socket",
-    }
-
-    const createResult = createRoom(hostPlayer)
-    joinRoom(createResult.room.roomId, guestPlayer)
-    const result = removePlayerBySocketId(guestPlayer.socketId)
-
-    assert.equal(result.ok, true)
-    assert.equal(result.reason, null)
-    assert.equal(result.roomId, createResult.room.roomId)
-    assert.equal(result.player.playerId, guestPlayer.playerId)
-    assert.equal(result.room.players.length, 1)
-    assert.equal(result.room.players[0].playerId, hostPlayer.playerId)
-})
-
-test("removePlayerBySocketId는 playing room의 player를 제거하지 않는다", () => {
-    const hostPlayer = {
-        playerId: "playing-socket-host",
-        nickname: "Host",
-        socketId: "playing-socket-host-socket",
-    }
-    const guestPlayer = {
-        playerId: "playing-socket-guest",
-        nickname: "Guest",
-        socketId: "playing-socket-guest-socket",
-    }
-
-    const createResult = createRoom(hostPlayer)
-    joinRoom(createResult.room.roomId, guestPlayer)
-    startGame(createResult.room.roomId, hostPlayer.playerId)
-    const result = removePlayerBySocketId(guestPlayer.socketId)
-
-    assert.equal(result.ok, false)
-    assert.equal(result.room, null)
-    assert.equal(result.reason, "GAME_PLAYING")
-    assert.equal(result.roomId, createResult.room.roomId)
-    assert.equal(result.player.playerId, guestPlayer.playerId)
-    assert.equal(getRoomState(createResult.room.roomId).players.length, 2)
-})
-
-test("removePlayerBySocketId는 finished room의 player를 disconnect로 제거하지 않는다", () => {
-    const hostPlayer = {
-        playerId: "finished-socket-host",
-        nickname: "Host",
-        socketId: "finished-socket-host-socket",
-    }
-    const guestPlayer = {
-        playerId: "finished-socket-guest",
-        nickname: "Guest",
-        socketId: "finished-socket-guest-socket",
-    }
-
-    const createResult = createRoom(hostPlayer)
-    joinRoom(createResult.room.roomId, guestPlayer)
-    startGame(createResult.room.roomId, hostPlayer.playerId)
-    finishGame(createResult.room.roomId, guestPlayer.playerId)
-
-    const result = removePlayerBySocketId(guestPlayer.socketId)
-    const room = getRoomState(createResult.room.roomId)
-
-    assert.equal(result.ok, false)
-    assert.equal(result.room, null)
-    assert.equal(result.reason, "GAME_FINISHED")
-    assert.equal(result.roomId, createResult.room.roomId)
-    assert.equal(result.player.playerId, guestPlayer.playerId)
-    assert.equal(room.status, "finished")
-    assert.equal(room.players.length, 2)
-    assert.equal(room.hostPlayerId, hostPlayer.playerId)
-})
-
-test("removePlayerBySocketId는 없는 socketId면 SOCKET_NOT_FOUND를 반환한다", () => {
-    const result = removePlayerBySocketId("missing-socket")
-
-    assert.equal(result.ok, false)
-    assert.equal(result.room, null)
-    assert.equal(result.reason, "SOCKET_NOT_FOUND")
-    assert.equal(result.roomId, null)
-    assert.equal(result.player, null)
-})
-
 test("leaveRoom은 player context와 함께 room leave 결과를 반환한다", () => {
     const hostPlayer = {
         playerId: "leave-room-host",
@@ -523,28 +433,7 @@ test("startGame는 방장이 아닌 player가 요청하면 NOT_AUTHORIZED를 반
     assert.equal(result.reason, "NOT_AUTHORIZED")
 })
 
-test("startGame는 playerId가 host여도 socketId가 다르면 NOT_AUTHORIZED를 반환한다", () => {
-    const hostPlayer = {
-        playerId: "socket-host",
-        nickname: "Host",
-        socketId: "host-socket",
-    }
-    const guestPlayer = {
-        playerId: "socket-guest",
-        nickname: "Guest",
-        socketId: "guest-socket",
-    }
-
-    const createResult = createRoom(hostPlayer)
-    joinRoom(createResult.room.roomId, guestPlayer)
-    const result = startGame(createResult.room.roomId, hostPlayer.playerId, guestPlayer.socketId)
-
-    assert.equal(result.ok, false)
-    assert.equal(result.room, null)
-    assert.equal(result.reason, "NOT_AUTHORIZED")
-})
-
-test("startGame는 socketId가 일치하면 host player가 게임을 시작할 수 있다", () => {
+test("startGame는 room host membership으로 게임을 시작할 수 있다", () => {
     const hostPlayer = {
         playerId: "socket-valid-host",
         nickname: "Host",
@@ -558,7 +447,7 @@ test("startGame는 socketId가 일치하면 host player가 게임을 시작할 �
 
     const createResult = createRoom(hostPlayer)
     joinRoom(createResult.room.roomId, guestPlayer)
-    const result = startGame(createResult.room.roomId, hostPlayer.playerId, hostPlayer.socketId)
+    const result = startGame(createResult.room.roomId, hostPlayer.playerId)
 
     assert.equal(result.ok, true)
     assert.equal(result.reason, null)
@@ -625,73 +514,6 @@ test("leaveGame은 playing room에서 guest도 나갈 수 있고 room을 waiting
     assert.equal(result.room.status, "waiting")
     assert.equal(result.room.players.length, 1)
     assert.equal(result.room.players[0].playerId, hostPlayer.playerId)
-})
-
-test("leaveGame 이후 old game socket disconnect가 먼저 와도 남은 player를 보존한다", () => {
-    const hostPlayer = {
-        playerId: "leave-disconnect-first-host",
-        nickname: "Host",
-        socketId: "leave-disconnect-first-old-socket",
-    }
-    const guestPlayer = {
-        playerId: "leave-disconnect-first-guest",
-        nickname: "Guest",
-        socketId: "leave-disconnect-first-guest-socket",
-    }
-
-    const createResult = createRoom(hostPlayer)
-    const roomId = createResult.room.roomId
-    joinRoom(roomId, guestPlayer)
-    startGame(roomId, hostPlayer.playerId)
-    leaveGame(roomId, guestPlayer.playerId)
-
-    const disconnectResult = removePlayerBySocketId(hostPlayer.socketId)
-    let room = getRoomState(roomId)
-
-    assert.equal(disconnectResult.ok, false)
-    assert.equal(disconnectResult.reason, "LOBBY_TRANSITION")
-    assert.equal(room.players.length, 1)
-    assert.equal(room.players[0].playerId, hostPlayer.playerId)
-
-    syncRoom(roomId, hostPlayer.playerId, "leave-disconnect-first-new-socket", {
-        location: "lobby",
-    })
-    const lobbyDisconnectResult = removePlayerBySocketId("leave-disconnect-first-new-socket")
-
-    assert.equal(lobbyDisconnectResult.ok, true)
-    assert.equal(getRoomState(roomId), null)
-})
-
-test("leaveGame 이후 lobby sync가 먼저 오면 old game socket disconnect가 player를 제거하지 않는다", () => {
-    const hostPlayer = {
-        playerId: "leave-sync-first-host",
-        nickname: "Host",
-        socketId: "leave-sync-first-old-socket",
-    }
-    const guestPlayer = {
-        playerId: "leave-sync-first-guest",
-        nickname: "Guest",
-        socketId: "leave-sync-first-guest-socket",
-    }
-
-    const createResult = createRoom(hostPlayer)
-    const roomId = createResult.room.roomId
-    joinRoom(roomId, guestPlayer)
-    startGame(roomId, hostPlayer.playerId)
-    leaveGame(roomId, guestPlayer.playerId)
-
-    const syncResult = syncRoom(roomId, hostPlayer.playerId, "leave-sync-first-new-socket", {
-        location: "lobby",
-    })
-    const disconnectResult = removePlayerBySocketId(hostPlayer.socketId)
-    const room = getRoomState(roomId)
-
-    assert.equal(syncResult.ok, true)
-    assert.equal(disconnectResult.ok, false)
-    assert.equal(disconnectResult.reason, "SOCKET_NOT_FOUND")
-    assert.equal(room.players.length, 1)
-    assert.equal(room.players[0].playerId, hostPlayer.playerId)
-    assert.equal(room.players[0].socketId, "leave-sync-first-new-socket")
 })
 
 test("leaveGame은 없는 roomId면 ROOM_NOT_FOUND를 반환하고 예외를 던지지 않는다", () => {
@@ -775,7 +597,7 @@ test("finishGame 이후 한 명만 로비에 돌아오면 다시 게임을 시�
     startGame(createResult.room.roomId, hostPlayer.playerId)
     finishGame(createResult.room.roomId, guestPlayer.playerId, "top_out")
 
-    const syncResult = syncRoom(createResult.room.roomId, hostPlayer.playerId, "finish-lobby-new-host-socket", {
+    const syncResult = syncRoom(createResult.room.roomId, hostPlayer.playerId, {
         location: "lobby",
     })
     const startResult = startGame(createResult.room.roomId, hostPlayer.playerId, "finish-lobby-new-host-socket")
@@ -803,10 +625,10 @@ test("finishGame 이후 두 명이 모두 로비에 돌아오면 다시 waiting 
     startGame(createResult.room.roomId, hostPlayer.playerId)
     finishGame(createResult.room.roomId, guestPlayer.playerId, "top_out")
 
-    syncRoom(createResult.room.roomId, hostPlayer.playerId, "finish-ready-new-host-socket", {
+    syncRoom(createResult.room.roomId, hostPlayer.playerId, {
         location: "lobby",
     })
-    const syncResult = syncRoom(createResult.room.roomId, guestPlayer.playerId, "finish-ready-new-guest-socket", {
+    const syncResult = syncRoom(createResult.room.roomId, guestPlayer.playerId, {
         location: "lobby",
     })
 
@@ -909,7 +731,7 @@ test("syncRoom은 room에 속한 player에게 현재 room 상태를 DTO로 반�
     assert.equal(result.room.players.length, 2)
 })
 
-test("syncRoom은 socketId를 받으면 해당 player의 socketId를 최신 연결로 갱신한다", () => {
+test("syncRoom은 room membership만 반환하고 socketId를 저장하지 않는다", () => {
     const hostPlayer = {
         playerId: "sync-refresh-host",
         nickname: "Host",
@@ -923,11 +745,11 @@ test("syncRoom은 socketId를 받으면 해당 player의 socketId를 최신 연�
 
     const createResult = createRoom(hostPlayer)
     joinRoom(createResult.room.roomId, guestPlayer)
-    const syncResult = syncRoom(createResult.room.roomId, hostPlayer.playerId, "new-host-socket")
-    const startResult = startGame(createResult.room.roomId, hostPlayer.playerId, "new-host-socket")
+    const syncResult = syncRoom(createResult.room.roomId, hostPlayer.playerId)
+    const startResult = startGame(createResult.room.roomId, hostPlayer.playerId)
 
     assert.equal(syncResult.ok, true)
-    assert.equal(syncResult.room.players[0].socketId, "new-host-socket")
+    assert.equal(syncResult.room.players[0].socketId, undefined)
     assert.equal(startResult.ok, true)
     assert.equal(startResult.reason, null)
     assert.equal(startResult.room.status, "playing")

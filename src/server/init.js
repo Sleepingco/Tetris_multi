@@ -3,10 +3,11 @@ const http = require("http")
 const path = require("path")
 const socketIO = require("socket.io")
 const { registerSocketHandlers } = require("./sockets/index.js")
+const { createSocketServerOptions } = require("./socketSecurity.js")
 
 const app = express()
 const server = http.createServer(app)
-const socketServer = socketIO(server)
+const socketServer = socketIO(server, createSocketServerOptions())
 const PORT = process.env.PORT || 5500
 const STATIC_ROOT = path.join(__dirname, "..", "..", "dist", "client")
 
