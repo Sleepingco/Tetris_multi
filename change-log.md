@@ -2091,3 +2091,148 @@ client input
 - rollback 검증은 local Chromium과 고정 입력 시나리오 기준이다.
 - packet loss, 높은 외부 latency, 장시간 soak와 다른 browser engine은 미검증이다.
 - Goal 0이 main에 반영되고 같은 gate가 재검증되기 전에는 Goal 1을 시작하지 않는다.
+
+---
+
+# 2026년 7월 18일
+
+---
+
+## Python-native placement ML 실험 경로 확정
+
+- 기존 JavaScript 학습 실험을 계속 복제하지 않고 Python Notebook을 새 실험의 단일 경로로 정했다.
+- JavaScript는 authoritative 게임 규칙, candidate 생성과 최종 Node inference 경계만 담당한다.
+- Python은 dataset JSONL을 직접 읽어 feature, V4 pair, scaler, 학습과 평가를 수행한다.
+- 단일 fold parity에서 feature, scaler, pair, weight, rank와 metric이 허용오차 `1e-12` 이내로 일치했다.
+- sklearn과 기존 JavaScript 결과 차이는 데이터 계약이 아니라 optimizer 종료점 차이임을 확인했다.
+
+## 13게임과 26게임 LOGO 평가
+
+| Dataset | Decision | Candidate | Top-1 | MRR |
+| --- | ---: | ---: | ---: | ---: |
+| 13게임 | 554 | 18,950 | 0.463899 | 0.636154 |
+| 26게임 | 1,158 | 39,375 | 0.484456 | 0.645290 |
+
+- 모든 fold에서 validation game을 train과 scaler fit에서 제외했다.
+- 13게임은 `13 / 13`, 26게임은 `26 / 26` fold가 수렴했다.
+- 데이터 확대 후에도 selected-feature 중복과 fold 편차가 커서 이 결과만으로 모델을 동결하지 않았다.
+- 이 metric은 Human placement 선택 모방 성능이며 생존, 공격과 승률을 의미하지 않는다.
+
+## Occupied-cell alias 원인 분석
+
+- 26게임 dataset의 zero-difference pair `1,010`개와 영향 decision `670`개를 조사했다.
+- `1,010`개 모두 occupied-cell 집합이 같았고, rotation과 pivot 표현만 다른 동일 물리 placement였다.
+- geometry feature를 더 넣어 해결할 문제가 아니므로 새 feature 추가를 중단했다.
+- 같은 occupied-cell candidate를 하나의 physical class로 묶는 representation을 정의했다.
+
+## V0~V4 pair-weight 분해
+
+- V0 raw candidate부터 V4 physical-class 대표 row까지 한 변수씩 분리해 비교했다.
+- zero-difference pair 제거 자체는 metric을 바꾸지 않았다.
+- physical-class Micro MRR 하락 약 `0.001153`은 row compression이 아니라 pair-weight 재분배로 설명됐다.
+- V3와 V4의 rank와 metric은 같았고 V4가 더 적은 row와 pair로 같은 의미를 표현했다.
+- 이 결과로 V4를 다음 확장 평가의 representation 후보로 선택했다.
+
+## 26게임 학습과 신규 49게임 temporal holdout
+
+- 기존 26게임만 학습에 사용하고 이후 수집된 신규 49게임은 평가에만 사용했다.
+- choice-required physical-class decision `2,320`개에서 V4는 V0보다 Top-1이 `1`개 많았다.
+- MRR은 `0.7263681329`에서 `0.7265167713`으로 `0.0001486385` 증가했다.
+- 49게임 중 V4 개선 3게임, 동일 43게임, 악화 3게임으로 metric 차이는 사실상 매우 작았다.
+- 성능 우월성이 아니라 generator alias 수와 무관한 physical-class 의미를 근거로 `adopt_v4`를 결정했다.
+
+## 반복 실험 하네스
+
+- Notebook 구현·smoke, 사용자 full 실행, 결과 분석과 동결 감사를 서로 다른 MODE로 분리했다.
+- 긴 실험 프롬프트 대신 `ai-harness/ml-experiments/`의 공통 계약과 실험 명세 하나를 사용한다.
+- source checksum, gameId leakage, train-only scaler, 결정성, ignored evidence 보존을 공통 gate로 고정했다.
+- 상세 실험 과정과 재현 명령은 [AI 실험 로그](docs/ai-experiments-log.md)에 정리했다.
+
+## 현재 의미
+
+- Python 실험 파이프라인과 V4 representation의 기술 계약은 검증됐다.
+- 아직 강한 gameplay AI나 production 모델을 만든 단계는 아니었다.
+- 다음 검증은 과거 dataset을 반복 평가하는 대신 이후 수집된 시간 순서 cohort에서 진행하기로 했다.
+
+---
+
+# 2026년 7월 20일
+
+---
+
+## 대용량 dataset streaming export
+
+- 누적 125게임 export에서 JSONL 전체를 한 문자열로 합쳐 Node 최대 문자열 길이를 넘는 문제를 확인했다.
+- dataset 형식은 JSONL로 유지하고 exporter만 row 단위 streaming write로 변경했다.
+- CSV 전환이나 날짜별 logger 분할 없이 기존 schema와 downstream 코드를 보존했다.
+- live log와 기존 immutable dataset checksum은 실행 전후 동일했다.
+
+## 고정 75게임 모델의 신규 50게임 평가
+
+- 75게임으로 학습한 scaler와 coefficient를 고정하고 이후 신규 50게임을 재학습 없이 평가했다.
+- 신규 cohort는 `2,202` decision과 `74,324` candidate이며 base/new gameId leakage는 0이었다.
+
+| Metric | 결과 |
+| --- | ---: |
+| Top-1 | 60.31% |
+| Top-3 | 89.65% |
+| MRR | 0.756290 |
+| 평균 선택 순위 | 1.9387 |
+
+- Normal과 Hard의 Top-1과 MRR이 비슷해 난이도별 temporal 안정성을 확인했다.
+- Line-clear 선택지가 있던 decision의 Top-1은 `66.36%`, MRR은 `0.788960`이었다.
+- accepted candidate에 `gameOver=true` 사례가 없어 game-over 회피는 별도 안전성 계약으로 검증하기로 했다.
+- 결과를 `temporal_holdout_passed`, `keep_v4`, `ready_to_freeze`로 마감했다.
+
+## 125게임 V4 candidate trainer
+
+- 동결된 16-feature, V4 weighting, StandardScaler와 Logistic Regression 계약을 Python CLI trainer로 추출했다.
+- 누적 125게임에서 `5,682` decision, `192,129` candidate, `123,130` V4 pair를 사용했다.
+- physical alternative가 없는 pairless decision은 4개였고 `5,678`개 decision이 학습에 기여했다.
+- 두 번 학습한 model과 training report가 각각 byte-identical했다.
+- model SHA-256은 `ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d`다.
+- 이 artifact는 `canonicalArtifact=false`, `productionIntegration=false`이며 training loss는 held-out 성능 증거로 사용하지 않았다.
+
+## Reference inference와 game-over safety
+
+- Python reference scorer가 artifact schema, 16-feature 순서, scaler와 coefficient를 검증하도록 했다.
+- 동일 occupied-cell alias를 하나의 physical class로 묶고 Unicode code-point 순으로 대표와 tie-break를 결정했다.
+- 안전한 class가 있으면 score와 관계없이 `gameOver=true` class를 ranking에서 제외한다.
+- 모든 class가 game-over이면 결정적 fallback과 `unavoidableGameOver=true`를 반환한다.
+- JavaScript offline scorer가 Python과 최대 절대오차 `8.88e-16`으로 일치했다.
+
+## Dev-only PVE 연결과 사용자 체험 기능
+
+- 기존 heuristic candidate generator, planner와 authoritative action executor를 그대로 재사용했다.
+- 사용자가 `내 선택 모방 AI (실험)`을 명시적으로 고른 경우에만 V4를 요청한다.
+- 모델 누락, JSON 오류, SHA·schema 불일치와 scorer 실패는 기존 heuristic으로 fallback한다.
+- 화면에 `실험 AI · 동작 중` 또는 fallback 상태를 표시하고 game lifecycle log에 실제 policy와 model SHA를 남긴다.
+- V4가 선택한 placement는 Human 또는 heuristic training log로 저장하지 않아 provenance를 보호한다.
+- 기본 PVE 정책은 계속 heuristic이며 별도 AI server, DB와 model manager는 추가하지 않았다.
+
+## 30×500 gameplay screening
+
+- heuristic과 V4를 같은 30개 seed stream, 최대 500 placement로 비교했다.
+- safety event, invalid decision과 model fallback은 모두 0이었다.
+- heuristic은 `30 / 30`, V4는 `27 / 30` stream에서 500 placement horizon에 도달했다.
+- 사전 기준이 horizon 차이 3개까지 pass였으므로 `gameplay_screening_passed`였지만 정확히 경계값이었다.
+- V4는 stream `004`, `009`, `025`에서만 game-over됐고 holes와 max height가 더 높았으며 attack/100도 낮았다.
+- 상세 수치와 종료 판단은 [gameplay benchmark 결과](ai-harness/runs/placement-v4-pve-gameplay-benchmark-analyze-result-2026-07-20.md)에 보존했다.
+
+## 최종 판단과 main 통합
+
+- 프로그램 상태는 `imitation_only_not_gameplay_ready`로 종료했다.
+- production 결정은 `keep_heuristic_default`다.
+- V4는 Human placement imitation, offline ranking과 opt-in Experimental PVE 체험 기능으로만 유지한다.
+- “나를 완전히 모방한다” 또는 “heuristic보다 강하다”는 표현은 사용하지 않는다.
+- 추가 100-stream, hybrid, 재학습과 production 기본값 변경은 새 질문과 성공 기준 없이 진행하지 않는다.
+- Experimental PVE 기능 commit `231d217`과 AI 작업 이력을 merge commit `76ade21`을 통해 main에 통합했다.
+- 향후 개선 방향은 [AI 전체 계획](docs/ai-plan.md)의 Human imitation Track과 Gameplay policy Track으로 분리했다.
+
+## 검증
+
+- main 병합 상태에서 `npm run verify:ml`: Node 34개, Python 115개 통과
+- `bash scripts/verify.sh`: 537개 중 536개 통과, skip 1, 실패 0
+- 실제 브라우저에서 `My Imitation AI (Experimental)`과 `실험 AI · 동작 중` 표시 확인
+- 브라우저 console error 0
+- bundled experimental model SHA-256 일치
