@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-20 기준. main `2d4d66e` 위 Goal 1 후보 branch는 Node 24, Vite multi-page build와 TypeScript 공존 기반을 준비해 merge gate에 있다. 기존 server authoritative gameplay와 Socket.IO 의미는 유지하며, Goal 2 범위는 시작하지 않았다.
+- Last update: 2026-07-20 기준. main `21d191f` 위 Goal 2 후보 branch는 server-issued player session, reconnect rotation, Socket mutation ownership, public room DTO와 origin/rate 제한을 준비해 merge gate에 있다. Goal 3의 typed contract, React와 server TypeScript 전환은 시작하지 않았다.
 
 ## Document Role
 
@@ -72,6 +72,37 @@
 - production build를 실제 브라우저 세 탭에서 수동 검증했다. root→single과 root→lobby, 두 탭 PVP 생성·참가·시작·입력, heuristic PVE 시작·종료·로비 복귀가 통과했다.
 - theme/sound 토글, Canvas 렌더, hashed CSS와 세 MP3 resource를 확인했고 세 탭의 browser console error는 0개였다.
 - Goal 1은 merge gate에서 멈추며 push, main merge와 Goal 2는 별도 승인 전 수행하지 않는다.
+
+## Migration Goal 2 Gate (2026-07-20)
+
+### Player session과 reconnect 계약
+
+- 기준은 `main@21d191f`이며 Goal 1 main 반영을 포함한다.
+- 서버는 256-bit CSPRNG opaque token과 UUID playerId를 발급하고 token은 SHA-256 digest만 memory session에 저장한다.
+- session record는 token digest, generation, active socket, canonical nickname과 최초 발급 기준 8시간 절대 만료만 소유한다. room membership은 계속 `roomService`가 단일 진실 원천이다.
+- client는 versioned JSON credential 하나를 sessionStorage에 원자 저장한다. Socket.IO auth callback은 연결할 때마다 최신 값을 읽고 `session:ready`가 된 active socket만 회전 credential을 기록한다.
+- reconnect는 token과 generation을 동기적으로 회전하고 newest socket wins로 이전 socket 권한을 즉시 폐기한다. active socket이 없을 때만 직전 token을 60초 안에 한 번 recovery할 수 있다.
+- disconnect는 30초 grace를 적용한다. lobby는 reconnect마다 `room:sync`, game은 `game:join`을 다시 실행하며 grace가 끝나면 waiting membership 제거 또는 playing match의 `disconnect_timeout` 종료를 수행한다.
+- partial, malformed, invalid, expired와 replayed credential은 신규 identity로 조용히 대체하지 않는다. client는 terminal credential 오류에서 identity와 저장 room을 지우고 무자격 신규 연결을 최대 한 번만 시도한다.
+
+### Socket mutation과 공개 경계
+
+- create/join/sync/start/leave, game join/input/bag/placement log/leave와 global/room chat의 identity는 모두 active socket session에서 파생한다. client payload의 playerId와 nickname은 인증 근거로 사용하지 않는다.
+- queued game input과 async placement log는 실제 state/log side effect 직전에 active socket과 generation을 다시 확인한다. disconnect 시 client pending input/log와 server socket input chain 참조를 정리한다.
+- public room mapper는 room/player 허용 필드만 내보내며 room result, updated, game join/leave, opponent-left와 match-finish 중첩 room에 공통 적용한다.
+- token 원문/digest, generation, socketId와 expiry 내부 정보는 public DTO, log, error와 console에 남기지 않는다. public playerId와 roomId는 표시·분석 식별자로 유지한다.
+- production은 exact `SOCKET_ALLOWED_ORIGINS`가 없으면 시작하지 않으며 CORS와 Engine.IO `allowRequest`가 같은 allowlist를 사용한다. local Vite/Playwright origin만 development allowlist에 명시했고 `maxHttpBufferSize`는 512 KiB다.
+- 신규 session, invalid resume, lifecycle, input, bag, chat과 placement log는 서로 독립된 in-memory bucket을 사용하며 만료 bucket과 session을 주기적으로 정리한다. trusted proxy 설정 없이 `X-Forwarded-For`는 rate key로 사용하지 않는다.
+- pagehide 자동 `game:leave`는 제거했고 명시적 Leave/Home만 즉시 membership을 변경한다.
+
+### 검증과 남은 위험
+
+- Node 24에서 `bash scripts/verify.sh`가 typecheck, 44-module build와 Node test 550개 중 549개 통과, 기존 조건부 1개 skip으로 통과했다.
+- 전체 Chromium Playwright는 session 발급·rotation·replay·reload·transport reconnect·30초 grace·Origin·DTO와 기존 PVP/PVE/single을 포함해 22/22 통과했다.
+- production HTTP smoke에서 `/`, index/lobby/game pages, Socket.IO client와 대표 built JS가 모두 200을 반환했다.
+- session과 limiter는 단일 Node process memory에 있으므로 process restart 후 기존 credential은 terminal invalid 처리되고 room/match 상태도 함께 사라진다. 다중 instance/Redis 공유는 이번 Goal 범위가 아니다.
+- sessionStorage token은 XSS에 노출될 수 있으므로 CSP와 broader input validation은 별도 hardening 대상이다. 외부 TLS termination, multi-browser engine, 장시간 abuse/soak는 이번 local gate에서 검증하지 않았다.
+- Goal 2는 merge gate에서 멈추며 push, main merge, branch 삭제와 Goal 3은 별도 승인 전 수행하지 않는다.
 
 ## Project Direction
 
