@@ -3,6 +3,7 @@ const assert = require("node:assert/strict")
 
 const {
     clientToServerSchemas,
+    connectErrorDataSchema,
     handshakeAuthSchema,
     serverToClientSchemas,
 } = require("../src/shared/socketContracts.mjs")
@@ -216,6 +217,15 @@ test("handshake, 문자열, 숫자와 고정 배열 상한을 검증한다", () 
     assert.equal(handshakeAuthSchema.safeParse({ nickname: " Host " }).success, true)
     assert.equal(handshakeAuthSchema.safeParse({ nickname: "Host", unknown: true }).success, false)
     assert.equal(handshakeAuthSchema.safeParse({ nickname: "x".repeat(25) }).success, false)
+    assert.equal(connectErrorDataSchema.safeParse({
+        code: "SESSION_INVALID",
+        terminal: true,
+    }).success, true)
+    assert.equal(connectErrorDataSchema.safeParse({
+        code: "SESSION_INVALID",
+        terminal: true,
+        unknown: true,
+    }).success, false)
     assert.equal(clientToServerSchemas["global:chat"].safeParse({ text: "x".repeat(201) }).success, false)
     assert.equal(clientToServerSchemas["game:input"].safeParse({
         ...clientFixtures["game:input"],

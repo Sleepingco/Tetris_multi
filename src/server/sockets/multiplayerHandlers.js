@@ -47,6 +47,17 @@ const PRIVATE_FIELD_NAMES = new Set([
     "socketId",
     "expiresAt",
 ])
+const PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS = [
+    "linesCleared",
+    "combo",
+    "rawAttackLines",
+    "attackLines",
+    "canceledGarbageLines",
+    "incomingGarbageLines",
+    "appliedGarbageLines",
+]
+const PLACEMENT_RESULT_NON_NEGATIVE_NUMBER_FIELDS = ["scoreBefore", "scoreAfter"]
+const PLACEMENT_RESULT_BOOLEAN_FIELDS = ["isTSpin", "backToBack", "gameOver"]
 
 /**
  * room 퇴장 결과를 Socket.IO room leave와 남은 참가자 broadcast로 연결한다.
@@ -91,12 +102,35 @@ function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
 }
 
 function containsPrivateField(value) {
-    if (!value || typeof value !== "object") return false
-    if (Array.isArray(value)) return value.some(containsPrivateField)
+    const pending = [value]
+    const visited = new WeakSet()
 
-    return Object.entries(value).some(([key, child]) => {
-        return PRIVATE_FIELD_NAMES.has(key) || containsPrivateField(child)
-    })
+    while (pending.length > 0) {
+        const current = pending.pop()
+        if (!current || typeof current !== "object" || visited.has(current)) continue
+        visited.add(current)
+
+        for (const [key, child] of Object.entries(current)) {
+            if (PRIVATE_FIELD_NAMES.has(key)) return true
+            pending.push(child)
+        }
+    }
+
+    return false
+}
+
+function hasValidPlacementResultScalars(result) {
+    return result
+        && typeof result === "object"
+        && !Array.isArray(result)
+        && PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS.every(field => (
+            Number.isInteger(result[field]) && result[field] >= 0
+        ))
+        && PLACEMENT_RESULT_NON_NEGATIVE_NUMBER_FIELDS.every(field => (
+            Number.isFinite(result[field]) && result[field] >= 0
+        ))
+        && Number.isFinite(result.scoreDelta)
+        && PLACEMENT_RESULT_BOOLEAN_FIELDS.every(field => typeof result[field] === "boolean")
 }
 
 /**
@@ -610,6 +644,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                 (log.schemaVersion === 1 && (log.source === undefined || log.source === "human"))
                 || (log.schemaVersion === 2 && log.source === "human")
             )
+            && hasValidPlacementResultScalars(log.placementResult)
 
         if (!isHumanPlacementDecisionLog || containsPrivateField(log)) {
             clientSocket.emit("game:log:result", {

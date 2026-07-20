@@ -12,10 +12,27 @@ const bagResult: ServerToClientWirePayload<"game:bag:result"> = {
     room: null,
     reason: "BAG_QUEUE_SUFFICIENT",
 };
+const holdInput: ClientToServerWirePayload<"game:input"> = {
+    roomId,
+    action: "hold",
+    tick: 1,
+    pieceIndex: 1,
+    clientSequence: 1,
+};
+const moveInput: ClientToServerWirePayload<"game:input"> = {
+    roomId,
+    action: "move_left",
+    tick: 1,
+    pieceIndex: 1,
+    clientSequence: 1,
+    expectedTransform: { pieceType: "bar", rotation: 0, col: 2 },
+};
 
 void roomRequest;
 void parsedChat;
 void bagResult;
+void holdInput;
+void moveInput;
 
 // @ts-expect-error room:join requires roomId.
 const invalidRoomRequest: ClientToServerWirePayload<"room:join"> = {};
@@ -30,3 +47,14 @@ const invalidAction: ClientToServerWirePayload<"game:input"> = {
 
 void invalidRoomRequest;
 void invalidAction;
+
+// @ts-expect-error non-hold input requires expectedTransform.
+const invalidMoveInput: ClientToServerWirePayload<"game:input"> = {
+    roomId,
+    action: "move_left",
+    tick: 1,
+    pieceIndex: 1,
+    clientSequence: 1,
+};
+
+void invalidMoveInput;

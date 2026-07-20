@@ -117,21 +117,22 @@
 - production runtime parse는 server의 handshake/C2S 수신과 browser의 S2C 수신에서 한 번만 수행한다. client outbound와 server outbound에는 parse wrapper를 추가하지 않고 실제 fake socket/server emission을 계약 테스트로 검증한다.
 - server app event 순서는 active session 확인, server-derived rate key, Zod parse, room/host/status authorization, input queue, service/domain 호출로 고정했다. stale socket은 정상 player rate bucket을 소모하지 않는다.
 - strict control envelope, UUID/room/token 형식, nickname/chat 길이, transform/board/DTO 중첩 구조와 숫자·enum 범위를 검증한다. authoritative board의 기존 `garbage` cell은 허용하되 active piece와 piece queue는 7개 tetromino enum을 유지한다.
+- `game:input`은 hold/non-hold discriminated union으로 정의해 non-hold의 `expectedTransform` 필수 조건이 runtime뿐 아니라 `z.input`/`z.output` 타입에도 반영된다.
 - invalid payload는 기존 event별 result channel에서 `INVALID_PAYLOAD`만 반환한다. raw payload, unknown key, Zod issue와 stack은 응답·로그에 포함하지 않으며 game input의 안전한 정수 sequence/piece metadata만 보존한다.
 
 ### 기존 domain과 browser 호환성
 
-- placement log 외부 `{roomId, log}`만 strict 처리하고 256 KiB 제한, private-field scan과 기존 `validatePlacementDecisionLog`를 유지한다. server가 roomId/playerId를 인증된 socket 값으로 덮어쓴 뒤 human v1/v2 domain validation과 저장을 수행한다.
+- placement log 외부 `{roomId, log}`만 strict 처리하고 256 KiB 제한, 순환 안전한 iterative private-field scan과 기존 `validatePlacementDecisionLog`를 유지한다. human v1/v2의 placementResult 전체 scalar를 socket 경계에서 검사하고 server가 roomId/playerId를 인증된 값으로 덮어쓴 뒤 domain validation과 저장을 수행한다.
 - `game:bag:request`는 기존 `ensurePlayerBagQueue` low-water 경계를 사용한다. queue가 충분하면 mutation 없이 `BAG_QUEUE_SUFFICIENT`를 반환하고 client pending을 해제하며, 부족할 때만 정확히 7개 chunk를 broadcast한다. 장시간 queue/bagChunks에 schema-only hard cap은 추가하지 않았다.
-- `roomClient`의 모든 S2C application listener가 shared schema를 통과한다. `logClient`의 raw socket 우회를 제거했고 invalid S2C는 handler를 호출하지 않는다. invalid `session:ready`는 credential을 지우지 않고 terminal protocol 오류로 연결을 중단한다.
+- `roomClient`의 모든 S2C application listener가 shared schema를 통과한다. `logClient`의 raw socket 우회를 제거했고 invalid S2C는 handler를 호출하지 않는다. invalid `session:ready`와 malformed `connect_error.data`는 credential을 지우지 않는 terminal protocol 오류이며 그 disconnect도 `terminal:true`를 유지한다. data 없는 transport 오류는 nonterminal이다.
 - 정상 PVP/PVE payload 의미와 Goal 2의 session/token, reconnect, origin/rate 정책은 유지했다. 존재하지 않는 방 E2E는 실제 8자리 방 코드 형식의 미존재 값으로 fixture를 바로잡았다.
 
 ### 검증, bundle과 남은 위험
 
-- Node 24.18.0/npm 11.16.0에서 `bash scripts/verify.sh`가 diff check, typecheck, 124-module build와 Node test 570개 중 569개 통과, 기존 조건부 1개 skip으로 통과했다.
+- Node 24.18.0/npm 11.16.0에서 `bash scripts/verify.sh`가 diff check, typecheck, 124-module build와 Node test 571개 중 570개 통과, 기존 조건부 1개 skip으로 통과했다.
 - 전체 Chromium Playwright는 PVP/PVE/session/reconnect/rollback/single을 포함해 24/24 통과했다. 첫 실행의 2건 실패는 invalid 7자리 room fixture와 정상 garbage snapshot schema 누락을 드러냈고, 계약/fixture 수정 후 전체를 다시 통과했다.
 - production dependency-only 임시 설치에서 Express, Socket.IO와 Zod만으로 server를 기동했다. `/`, 네 page, Socket.IO client와 대표 built JS/CSS가 모두 HTTP 200을 반환했다.
-- 기준 build의 `roomClient` chunk는 4.10 kB(gzip 1.59 kB)였고 Zod 기반 S2C runtime 검증 후 75.41 kB(gzip 20.78 kB)로 증가했다. 증가는 raw 71.31 kB, gzip 19.19 kB이며 향후 bundle 최적화는 정상 계약을 바꾸지 않는 별도 판단 대상이다.
+- 기준 build의 `roomClient` chunk는 4.10 kB(gzip 1.59 kB)였고 리뷰 수정 후 76.79 kB(gzip 21.17 kB)다. 증가는 raw 72.69 kB, gzip 19.58 kB이며 향후 bundle 최적화는 정상 계약을 바꾸지 않는 별도 판단 대상이다.
 - strict schema에 정상 protocol variant가 새로 발견되면 해당 event group의 schema와 parity fixture를 함께 보완해야 한다. 외부 TLS/reverse proxy, WebKit/Firefox, 장시간 malformed traffic/soak와 실제 TypeScript Socket.IO generic은 이번 Goal에서 검증하지 않았다.
 - Goal 3는 merge gate에서 멈추며 push, PR, main merge, branch 삭제와 Goal 4는 별도 승인 전 수행하지 않는다.
 

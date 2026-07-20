@@ -116,6 +116,10 @@ export const handshakeAuthSchema = z.strictObject({
     token: sessionTokenSchema.optional(),
     credentialError: z.literal("MALFORMED").optional(),
 });
+export const connectErrorDataSchema = z.strictObject({
+    code: reasonSchema,
+    terminal: z.boolean(),
+});
 
 const roomIdRequestSchema = z.strictObject({ roomId: roomIdSchema });
 const expectedTransformSchema = z.strictObject({
@@ -123,29 +127,30 @@ const expectedTransformSchema = z.strictObject({
     rotation: z.number().int().min(0).max(3),
     col: z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
 });
-const gameInputSchema = z.strictObject({
+const gameInputBaseShape = {
     roomId: roomIdSchema,
-    action: z.enum([
-        "move_left",
-        "move_right",
-        "soft_drop",
-        "rotate",
-        "hard_drop",
-        "hold",
-    ]),
     tick: safeNonNegativeIntegerSchema,
     pieceIndex: safeNonNegativeIntegerSchema,
     clientSequence: safePositiveIntegerSchema,
-    expectedTransform: expectedTransformSchema.optional(),
-}).superRefine((input, context) => {
-    if (input.action !== "hold" && !input.expectedTransform) {
-        context.addIssue({
-            code: "custom",
-            path: ["expectedTransform"],
-            message: "expected transform required",
-        });
-    }
-});
+};
+const gameInputSchema = z.discriminatedUnion("action", [
+    z.strictObject({
+        ...gameInputBaseShape,
+        action: z.literal("hold"),
+        expectedTransform: expectedTransformSchema.optional(),
+    }),
+    z.strictObject({
+        ...gameInputBaseShape,
+        action: z.enum([
+            "move_left",
+            "move_right",
+            "soft_drop",
+            "rotate",
+            "hard_drop",
+        ]),
+        expectedTransform: expectedTransformSchema,
+    }),
+]);
 
 export const clientToServerSchemas = Object.freeze({
     "global:chat": z.strictObject({ text: z.string().trim().min(1).max(200) }),

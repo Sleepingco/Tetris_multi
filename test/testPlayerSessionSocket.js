@@ -238,9 +238,10 @@ test("실제 socket handlers의 PVP emit payload가 S2C 계약을 통과한다",
         ...guestSocket.roomEvents,
         ...socketServer.globalEvents,
         ...socketServer.roomEvents,
-    ].filter(event => serverToClientSchemas[event.eventName])
+    ]
     const names = new Set(emitted.map(event => event.eventName))
     for (const event of emitted) {
+        assert.ok(serverToClientSchemas[event.eventName], `missing schema: ${event.eventName}`)
         assert.equal(
             serverToClientSchemas[event.eventName].safeParse(event.payload).success,
             true,

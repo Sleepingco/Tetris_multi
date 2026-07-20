@@ -1,4 +1,7 @@
-import { parseServerEvent } from "../../shared/socketContracts.mjs"
+import {
+    connectErrorDataSchema,
+    parseServerEvent,
+} from "../../shared/socketContracts.mjs"
 
 if (typeof io !== "function") {
     throw new Error("Socket.IO client script must be loaded before client/net/roomClient.js")
@@ -21,6 +24,7 @@ let activeSession = null
 let activeSocketId = null
 let terminalRetryUsed = false
 let recoveringWithNewSession = false
+let terminalDisconnectPending = false
 
 function readNickname() {
     return sessionStorage.getItem("tetris:nickname")?.trim() || "Guest"
@@ -76,19 +80,24 @@ const serverConnection = io({
 })
 let lastRoomRequestType = null
 
+function stopForProtocolError() {
+    activeSession = null
+    terminalDisconnectPending = serverConnection.connected
+    serverConnection.io?.reconnection?.(false)
+    sessionErrorHandlers.forEach(handler => handler({
+        code: "SESSION_PROTOCOL_ERROR",
+        terminal: true,
+    }))
+    serverConnection.disconnect?.()
+}
+
 function onValidatedServerEvent(eventName, handler) {
     const validatedHandler = (payload) => {
         const validation = parseServerEvent(eventName, payload)
         if (!validation.success) {
             console.warn(`[socket-protocol] ${eventName}: INVALID_SERVER_PAYLOAD`)
             if (eventName === "session:ready") {
-                activeSession = null
-                serverConnection.io?.reconnection?.(false)
-                sessionErrorHandlers.forEach(sessionHandler => sessionHandler({
-                    code: "SESSION_PROTOCOL_ERROR",
-                    terminal: true,
-                }))
-                serverConnection.disconnect?.()
+                stopForProtocolError()
             }
             return
         }
@@ -122,8 +131,22 @@ onValidatedServerEvent("session:ready", (session) => {
 })
 
 serverConnection.on("connect_error", (error) => {
-    const code = error?.data?.code || "SESSION_CONNECTION_FAILED"
-    sessionErrorHandlers.forEach(handler => handler({ code, terminal: error?.data?.terminal === true }))
+    if (error?.data === undefined) {
+        sessionErrorHandlers.forEach(handler => handler({
+            code: "SESSION_CONNECTION_FAILED",
+            terminal: false,
+        }))
+        return
+    }
+
+    const validation = connectErrorDataSchema.safeParse(error.data)
+    if (!validation.success) {
+        stopForProtocolError()
+        return
+    }
+
+    const { code, terminal } = validation.data
+    sessionErrorHandlers.forEach(handler => handler({ code, terminal }))
 
     if (recoveringWithNewSession) {
         recoveringWithNewSession = false
@@ -145,9 +168,11 @@ serverConnection.on("disconnect", (reason) => {
     if (Array.isArray(serverConnection.sendBuffer)) {
         serverConnection.sendBuffer.length = 0
     }
+    const terminal = terminalDisconnectPending || reason === "io server disconnect"
+    terminalDisconnectPending = false
     sessionDisconnectedHandlers.forEach(handler => handler({
         reason,
-        terminal: reason === "io server disconnect",
+        terminal,
     }))
 })
 

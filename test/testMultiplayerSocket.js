@@ -342,6 +342,44 @@ function createExpectedTransform(piece, overrides = {}) {
     }
 }
 
+function createPlacementResult(overrides = {}) {
+    return {
+        linesCleared: 0,
+        isTSpin: false,
+        combo: 0,
+        backToBack: false,
+        rawAttackLines: 0,
+        attackLines: 0,
+        canceledGarbageLines: 0,
+        incomingGarbageLines: 0,
+        appliedGarbageLines: 0,
+        scoreBefore: 100,
+        scoreAfter: 100,
+        scoreDelta: 0,
+        gameOver: false,
+        ...overrides,
+    }
+}
+
+function createHumanPlacementLogV1(roomId, overrides = {}) {
+    return {
+        eventType: "placement_decision",
+        schemaVersion: 1,
+        gameId: `${roomId}-game`,
+        pieceIndex: 2,
+        boardBefore: [[null]],
+        boardAfter: [["square"]],
+        selectedPlacement: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        placementResult: createPlacementResult(),
+        ...overrides,
+    }
+}
+
 function createHumanPlacementLogV2(roomId, overrides = {}) {
     const cells = [
         { row: 0, col: 0, x: 0, y: 0 },
@@ -385,7 +423,12 @@ function createHumanPlacementLogV2(roomId, overrides = {}) {
         nextQueue: ["bar", "tree"],
         holdPiece: null,
         selectedPlacement: placement,
-        placementResult: { linesCleared: 2, scoreDelta: 300, gameOver: false },
+        placementResult: createPlacementResult({
+            linesCleared: 2,
+            scoreBefore: 0,
+            scoreAfter: 300,
+            scoreDelta: 300,
+        }),
         metricsBefore,
         metricsAfter: {
             ...metricsBefore,
@@ -2827,9 +2870,7 @@ test("game:log:placement_decision은 invalid schema이면 저장하지 않는다
             schemaVersion: 1,
             roomId: "different-room",
             playerId: "log-schema-host",
-            placementResult: {
-                linesCleared: 0,
-            },
+            placementResult: createPlacementResult(),
         },
     })
 
@@ -2840,7 +2881,7 @@ test("game:log:placement_decision은 invalid schema이면 저장하지 않는다
     assert.equal(logResult.reason, "GAME_ID_REQUIRED")
 })
 
-test("game:log:placement_decision은 placementResult scalar가 invalid이면 저장하지 않는다", async () => {
+test("game:log:placement_decision은 v1/v2 placementResult scalar 하나가 invalid이면 저장하지 않는다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("log-result-schema-host-socket")
     const guestSocket = new FakeClientSocket("log-result-schema-guest-socket")
@@ -2878,37 +2919,59 @@ test("game:log:placement_decision은 placementResult scalar가 invalid이면 저
         playerId: "log-result-schema-host",
     })
 
-    await hostSocket.triggerAsync("game:log:placement_decision", {
-        roomId,
-        playerId: "log-result-schema-host",
-        log: {
-            eventType: "placement_decision",
-            schemaVersion: 1,
-            roomId,
-            playerId: "log-result-schema-host",
-            placementResult: {
-                linesCleared: 0,
-                isTSpin: false,
-                combo: 0,
-                backToBack: false,
-                rawAttackLines: -1,
-                attackLines: 0,
-                canceledGarbageLines: 0,
-                incomingGarbageLines: 0,
-                appliedGarbageLines: 0,
-                scoreBefore: 100,
-                scoreAfter: 100,
-                scoreDelta: 0,
-                gameOver: false,
-            },
-        },
-    })
-
-    const logResult = hostSocket.lastClientEvent("game:log:result")?.payload
+    const invalidPlacementResult = createPlacementResult({ rawAttackLines: -1 })
+    for (const log of [
+        createHumanPlacementLogV1(roomId, { placementResult: invalidPlacementResult }),
+        createHumanPlacementLogV2(roomId, { placementResult: invalidPlacementResult }),
+    ]) {
+        await hostSocket.triggerAsync("game:log:placement_decision", { roomId, log })
+        assert.equal(hostSocket.lastClientEvent("game:log:result")?.payload.reason, "INVALID_PLACEMENT_DECISION_LOG")
+    }
 
     assert.equal(savedLogs.length, 0)
-    assert.equal(logResult.ok, false)
-    assert.equal(logResult.reason, "GAME_ID_REQUIRED")
+})
+
+test("game:log:placement_decision은 순환 및 512 KiB 미만 깊은 payload를 예외 없이 거부한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("log-deep-host-socket")
+    const savedLogs = []
+    registerTestSocketHandlers(socketServer, {
+        savePlacementDecisionLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({ ok: true, log, reason: null })
+        },
+    })
+    socketServer.connect(hostSocket)
+    hostSocket.trigger("room:create", {
+        mode: "pve",
+        playerId: "log-deep-host",
+        nickname: "Host",
+    })
+    const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
+    hostSocket.trigger("room:start", { roomId })
+
+    const cyclicLog = createHumanPlacementLogV1(roomId)
+    cyclicLog.diagnostics = cyclicLog
+    await assert.doesNotReject(() => hostSocket.triggerAsync(
+        "game:log:placement_decision",
+        { roomId, log: cyclicLog },
+    ))
+    assert.equal(hostSocket.lastClientEvent("game:log:result").payload.reason, "INVALID_LOG_PAYLOAD")
+
+    const depth = 12_000
+    const deepLog = createHumanPlacementLogV1(roomId, { diagnostics: {} })
+    let cursor = deepLog.diagnostics
+    for (let index = 0; index < depth; index += 1) {
+        cursor.next = {}
+        cursor = cursor.next
+    }
+    assert.equal((depth * 9) + 2 < 512 * 1024, true)
+    await assert.doesNotReject(() => hostSocket.triggerAsync(
+        "game:log:placement_decision",
+        { roomId, log: deepLog },
+    ))
+    assert.equal(hostSocket.lastClientEvent("game:log:result").payload.reason, "INVALID_LOG_PAYLOAD")
+    assert.equal(savedLogs.length, 0)
 })
 
 test("game:log:placement_decision은 finished 상태의 늦은 로그 저장을 허용한다", async () => {

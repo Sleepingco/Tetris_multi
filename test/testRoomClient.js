@@ -32,8 +32,9 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
             });
         },
         disconnect(reason = "io client disconnect") {
+            const wasConnected = this.connected;
             this.connected = false;
-            handlers.get("disconnect")?.(reason);
+            if (wasConnected) handlers.get("disconnect")?.(reason);
         },
     };
     global.io = () => fakeSocket;
@@ -111,6 +112,13 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     assert.equal(sessionStorage.getItem("tetris:playerSession"), storedSession);
 
     fakeSocket.connected = false;
+    handlers.get("connect_error")?.({});
+    assert.deepEqual(sessionErrors.at(-1), {
+        code: "SESSION_CONNECTION_FAILED",
+        terminal: false,
+    });
+    assert.equal(connectCount, 2);
+
     handlers.get("connect_error")?.({
         data: { code: "SESSION_INVALID", terminal: true },
     });
@@ -141,6 +149,19 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
 
     const credentialBeforeProtocolError = sessionStorage.getItem("tetris:playerSession");
     handlers.get("session:ready")?.({ version: 1 });
+    assert.deepEqual(sessionErrors.at(-1), {
+        code: "SESSION_PROTOCOL_ERROR",
+        terminal: true,
+    });
+    assert.deepEqual(disconnects.at(-1), {
+        reason: "io client disconnect",
+        terminal: true,
+    });
+    assert.equal(sessionStorage.getItem("tetris:playerSession"), credentialBeforeProtocolError);
+
+    handlers.get("connect_error")?.({
+        data: { code: "SESSION_INVALID", terminal: true, unknown: true },
+    });
     assert.deepEqual(sessionErrors.at(-1), {
         code: "SESSION_PROTOCOL_ERROR",
         terminal: true,
