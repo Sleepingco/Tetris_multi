@@ -237,6 +237,12 @@ export function onSessionDisconnected(handler) {
     return () => sessionDisconnectedHandlers.delete(wrappedHandler)
 }
 
+/**
+ * @param {{playerId: string|null, nickname: string}} player
+ * @param {"pvp"|"pve"} mode
+ * @param {"normal"|"hard"|null} aiDifficulty
+ * @param {"heuristic"|"placement_v4"|null} aiPolicy
+ */
 export function requestCreateRoom(player, mode = "pvp", aiDifficulty = null, aiPolicy = null) {
     lastRoomRequestType = "create"
     const payload = { mode }
