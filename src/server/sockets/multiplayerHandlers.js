@@ -146,6 +146,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         const result = createRoom(hostPlayer, {
             mode: createPayload.mode,
             aiDifficulty: createPayload.aiDifficulty,
+            aiPolicy: createPayload.aiPolicy,
         })
 
         if (result.ok) {
@@ -625,6 +626,10 @@ function createGameJoinMatchDto(match) {
     return {
         roomId: match.roomId,
         mode: match.mode || "pvp",
+        aiPolicy: match.aiPolicy ?? null,
+        aiPolicyRuntime: match.aiPolicyRuntime
+            ? { ...match.aiPolicyRuntime }
+            : null,
         status: match.status,
         createdAt: match.createdAt,
         players: match.players.map(player => {
@@ -687,6 +692,8 @@ function createGameStartLog(room, match) {
         gameId: createGameId(room.roomId, match),
         roomId: room.roomId,
         mode: room.mode === "pve" ? "pve" : "multi",
+        aiDifficulty: match.aiDifficulty,
+        aiPolicyRequested: match.aiPolicy,
         startedAt: match.createdAt || Date.now(),
         players: room.players.map(player => ({
             playerId: player.playerId,

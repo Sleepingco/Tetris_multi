@@ -10,6 +10,7 @@ const {
 } = require("./logService.js");
 const {
     AI_EXECUTION_PROFILES,
+    AI_POLICY,
     DEFAULT_AI_DIFFICULTY,
 } = require("./aiDifficulty.js");
 const crypto = require("node:crypto");
@@ -24,6 +25,12 @@ const AI_ACTIONS = new Set([
     "hard_drop",
 ]);
 const PLACEMENT_V4_MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d";
+const DEFAULT_PLACEMENT_V4_MODEL_PATH = path.join(
+    __dirname,
+    "..",
+    "assets",
+    "placement-v4-125g-experimental-model.json",
+);
 let heuristicAiPromise = null;
 let placementV4AiPromise = null;
 
@@ -121,7 +128,9 @@ function createPveAiPlayerService(dependencies = {}) {
     const modelPathValue = typeof (dependencies.env || process.env).PVE_PLACEMENT_V4_MODEL_PATH === "string"
         ? (dependencies.env || process.env).PVE_PLACEMENT_V4_MODEL_PATH.trim()
         : "";
-    const modelPath = modelPathValue ? path.resolve(process.cwd(), modelPathValue) : null;
+    const modelPath = modelPathValue
+        ? path.resolve(process.cwd(), modelPathValue)
+        : DEFAULT_PLACEMENT_V4_MODEL_PATH;
     let modelPromise = null;
 
     function getPlacementV4Model(ai) {
@@ -147,8 +156,10 @@ function createPveAiPlayerService(dependencies = {}) {
         };
     }
 
-    async function getPolicyDecision(ai, decisionState) {
-        if (!modelPath) return ai.getHeuristicDecision(decisionState);
+    async function getPolicyDecision(ai, decisionState, aiPolicy) {
+        if (aiPolicy !== AI_POLICY.PLACEMENT_V4) {
+            return ai.getHeuristicDecision(decisionState);
+        }
 
         let v4Ai;
         try {
@@ -187,7 +198,7 @@ function createPveAiPlayerService(dependencies = {}) {
     }
 
     function recordPolicyEvidence(roomId, playerId, pieceIndex, decision) {
-        if (!modelPath) return;
+        if (decision.policyRequested !== AI_POLICY.PLACEMENT_V4) return;
         try {
             void Promise.resolve(recordAiPolicyEvidence({
                 roomId,
@@ -248,7 +259,11 @@ function createPveAiPlayerService(dependencies = {}) {
                     return createFailure(snapshotResult.reason || "AUTHORITATIVE_STATE_NOT_FOUND");
                 }
                 const stateBefore = snapshotResult.snapshot;
-                const decision = await getPolicyDecision(ai, createDecisionState(stateBefore));
+                const decision = await getPolicyDecision(
+                    ai,
+                    createDecisionState(stateBefore),
+                    matchResult.match.aiPolicy,
+                );
                 recordPolicyEvidence(roomId, playerId, stateBefore.pieceIndex, decision);
                 if (!decision.ok) {
                     markPlayerGameOver(roomId, playerId, decision.errorCode || "AI_DECISION_FAILED");

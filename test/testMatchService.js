@@ -45,6 +45,8 @@ test("createMatch는 room 정보를 기준으로 빈 inputLog를 가진 match를
     assert.equal(result.reason, null);
     assert.equal(result.match.roomId, "ROOM001");
     assert.equal(result.match.aiDifficulty, null);
+    assert.equal(result.match.aiPolicy, null);
+    assert.equal(result.match.aiPolicyRuntime, null);
     assert.equal(result.match.status, "playing");
     assert.equal(result.match.players.length, 2);
     assert.equal(result.match.players[0].playerId, "host-player");
@@ -66,6 +68,7 @@ test("createMatch는 PVE room 난이도를 match 단일 실행 설정으로 복�
         ...createPlayingRoom("PVE_MATCH_HARD"),
         mode: "pve",
         aiDifficulty: "hard",
+        aiPolicy: "placement_v4",
     });
     const defaultResult = createMatch({
         ...createPlayingRoom("PVE_MATCH_DEFAULT"),
@@ -73,12 +76,33 @@ test("createMatch는 PVE room 난이도를 match 단일 실행 설정으로 복�
     });
 
     assert.equal(hardResult.match.aiDifficulty, "hard");
+    assert.equal(hardResult.match.aiPolicy, "placement_v4");
+    assert.equal(hardResult.match.aiPolicyRuntime, null);
     assert.equal(defaultResult.match.aiDifficulty, "normal");
+    assert.equal(defaultResult.match.aiPolicy, "heuristic");
+    assert.equal(defaultResult.match.aiPolicyRuntime, null);
     hardResult.match.players.forEach((player) => {
         assert.equal(Object.hasOwn(player, "aiDifficulty"), false);
+        assert.equal(Object.hasOwn(player, "aiPolicy"), false);
         assert.equal(Object.hasOwn(player.authoritativeState, "aiDifficulty"), false);
+        assert.equal(Object.hasOwn(player.authoritativeState, "aiPolicy"), false);
         assert.equal(Object.hasOwn(player.aiPlan || {}, "aiDifficulty"), false);
+        assert.equal(Object.hasOwn(player.aiPlan || {}, "aiPolicy"), false);
     });
+});
+
+test("createMatch는 invalid PVE 정책을 거부하고 match를 저장하지 않는다", () => {
+    resetMatches();
+
+    const result = createMatch({
+        ...createPlayingRoom("PVE_POLICY_INVALID"),
+        mode: "pve",
+        aiPolicy: "strong_ai",
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.reason, "INVALID_AI_POLICY");
+    assert.equal(getMatchState("PVE_POLICY_INVALID").reason, "MATCH_NOT_FOUND");
 });
 
 test("createMatch는 invalid PVE 난이도를 거부하고 match를 저장하지 않는다", () => {

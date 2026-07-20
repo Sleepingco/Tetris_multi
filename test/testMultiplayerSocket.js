@@ -4089,6 +4089,7 @@ test("PVE room:create는 heuristic AI player를 만들고 human host가 바로 �
     assert.equal(createResult.ok, true)
     assert.equal(createResult.room.mode, "pve")
     assert.equal(createResult.room.aiDifficulty, "normal")
+    assert.equal(createResult.room.aiPolicy, "heuristic")
     assert.ok(aiPlayer)
 
     hostSocket.trigger("room:start", {
@@ -4102,19 +4103,27 @@ test("PVE room:create는 heuristic AI player를 만들고 human host가 바로 �
     assert.equal(startResult.room.status, "playing")
     assert.equal(match.mode, "pve")
     assert.equal(match.aiDifficulty, "normal")
+    assert.equal(match.aiPolicy, "heuristic")
     assert.equal(match.players[1].playerType, "heuristic_ai")
 })
 
-test("PVE room:create hard 난이도는 match까지 전달한다", () => {
+test("PVE room:create는 hard 난이도와 experimental 정책을 match와 log까지 전달한다", async () => {
     const socketServer = new FakeSocketServer()
     const hardSocket = new FakeClientSocket("pve-hard-host-socket")
+    const savedLogs = []
 
-    registerTestSocketHandlers(socketServer)
+    registerTestSocketHandlers(socketServer, {
+        saveGameEventLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({ ok: true, log, reason: null })
+        },
+    })
     socketServer.connect(hardSocket)
 
     hardSocket.trigger("room:create", {
         mode: "pve",
         aiDifficulty: "hard",
+        aiPolicy: "placement_v4",
         player: {
             playerId: "pve-hard-host",
             nickname: "Hard Host",
@@ -4124,13 +4133,42 @@ test("PVE room:create hard 난이도는 match까지 전달한다", () => {
 
     assert.equal(hardCreateResult.ok, true)
     assert.equal(hardCreateResult.room.aiDifficulty, "hard")
+    assert.equal(hardCreateResult.room.aiPolicy, "placement_v4")
+    assert.equal(
+        hardCreateResult.room.players[1].nickname,
+        "My Imitation AI (Experimental)",
+    )
 
-    hardSocket.trigger("room:start", {
+    await hardSocket.triggerAsync("room:start", {
         roomId: hardCreateResult.room.roomId,
         playerId: "pve-hard-host",
     })
 
-    assert.equal(getMatchState(hardCreateResult.room.roomId).match.aiDifficulty, "hard")
+    const match = getMatchState(hardCreateResult.room.roomId).match
+    const startLog = savedLogs.find(log => log.eventType === "game_start")
+
+    assert.equal(match.aiDifficulty, "hard")
+    assert.equal(match.aiPolicy, "placement_v4")
+    assert.equal(startLog.aiDifficulty, "hard")
+    assert.equal(startLog.aiPolicyRequested, "placement_v4")
+
+    match.aiPolicyRuntime = {
+        roomId: hardCreateResult.room.roomId,
+        playerId: match.players[1].playerId,
+        policyRequested: "placement_v4",
+        policyUsed: "heuristic",
+        fallbackReason: "MODEL_NOT_FOUND",
+        modelSha256: null,
+        fallbackCount: 1,
+        lastFallbackReason: "MODEL_NOT_FOUND",
+    }
+    hardSocket.trigger("game:join", {
+        roomId: hardCreateResult.room.roomId,
+        playerId: "pve-hard-host",
+    })
+    const joinResult = hardSocket.lastClientEvent("game:join:result").payload
+
+    assert.deepEqual(joinResult.match.aiPolicyRuntime, match.aiPolicyRuntime)
 })
 
 test("PVE room:create는 invalid 난이도를 거부하고 room을 만들지 않는다", () => {
@@ -4152,6 +4190,29 @@ test("PVE room:create는 invalid 난이도를 거부하고 room을 만들지 않
 
     assert.equal(invalidResult.ok, false)
     assert.equal(invalidResult.reason, "INVALID_AI_DIFFICULTY")
+    assert.equal(invalidResult.room, null)
+    assert.deepEqual(invalidSocket.joinedRooms, [])
+})
+
+test("PVE room:create는 invalid AI 정책을 거부하고 room을 만들지 않는다", () => {
+    const socketServer = new FakeSocketServer()
+    const invalidSocket = new FakeClientSocket("pve-policy-invalid-socket")
+
+    registerTestSocketHandlers(socketServer)
+    socketServer.connect(invalidSocket)
+
+    invalidSocket.trigger("room:create", {
+        mode: "pve",
+        aiPolicy: "strong_ai",
+        player: {
+            playerId: "pve-policy-invalid",
+            nickname: "Invalid Policy Host",
+        },
+    })
+    const invalidResult = invalidSocket.lastClientEvent("room:result").payload
+
+    assert.equal(invalidResult.ok, false)
+    assert.equal(invalidResult.reason, "INVALID_AI_POLICY")
     assert.equal(invalidResult.room, null)
     assert.deepEqual(invalidSocket.joinedRooms, [])
 })

@@ -129,6 +129,7 @@ async function runRollout({
         roomId,
         mode: "pve",
         aiDifficulty: "hard",
+        aiPolicy: policy,
         status: "playing",
         players: [
             { playerId: "human", playerType: "human" },

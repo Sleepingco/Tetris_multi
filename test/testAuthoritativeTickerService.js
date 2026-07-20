@@ -594,7 +594,8 @@ test("AI action cadence는 human gravity와 분리되고 성공 action마다 sna
     assert.equal(aiCalls.length, 4);
     assert.equal(gravityCalls.length, 0);
     const aiSnapshots = socketServer.roomEvents.filter(event => {
-        return event.payload.playerId === "ai";
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === "ai";
     });
     assert.deepEqual(
         aiSnapshots.map(event => event.payload.snapshot.activePiece.action),
@@ -1196,6 +1197,15 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
     const deletedRoomIds = [];
     let matchState = {
         roomId: "room-1",
+        mode: "pve",
+        aiDifficulty: "normal",
+        aiPolicy: "placement_v4",
+        aiPolicyRuntime: {
+            policyUsed: "heuristic",
+            fallbackCount: 2,
+            lastFallbackReason: "MODEL_SHA_MISMATCH",
+            modelSha256: "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d",
+        },
         createdAt: 1000,
     };
 
@@ -1285,6 +1295,14 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
     assert.deepEqual(deletedRoomIds, ["room-1"]);
     assert.equal(savedLogs[0].eventType, "game_over");
     assert.equal(savedLogs[0].gameId, "room-1-1000");
+    assert.equal(savedLogs[0].aiPolicyRequested, "placement_v4");
+    assert.equal(savedLogs[0].aiPolicyLastUsed, "heuristic");
+    assert.equal(savedLogs[0].aiPolicyFallbackCount, 2);
+    assert.equal(savedLogs[0].aiPolicyLastFallbackReason, "MODEL_SHA_MISMATCH");
+    assert.equal(
+        savedLogs[0].aiModelSha256,
+        "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d",
+    );
 });
 
 test("stopRoomTicker 후 다시 start하면 gravity accumulator가 초기화된다", async () => {

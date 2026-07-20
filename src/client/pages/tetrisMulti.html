@@ -106,7 +106,7 @@
                 <div class="player-header">
                     <div class="player-id-wrap">
                         <div class="player-id" id="player2Name">Player 2</div>
-                        <span id="player2RoleBadge">-</span>
+                        <span id="player2RoleBadge" aria-live="polite">-</span>
                     </div>
                     <div class="player-stats">
                         <div class="stat">
@@ -159,7 +159,7 @@
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
         import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.js"
         import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js"
-        import { requestJoinGameRoom, onGameJoinResult, leaveGame, onGameOpponentLeft, onMatchFinish, requestLeaveRoom } from "../net/roomClient.js"
+        import { requestJoinGameRoom, onGameJoinResult, onPveAiPolicy, leaveGame, onGameOpponentLeft, onMatchFinish, requestLeaveRoom } from "../net/roomClient.js"
         import { onPlacementDecisionLogResult } from "../net/logClient.js"
         const soundToggleBtn = queryElement(document, "#soundToggle")
         const themeToggleBtn = queryElement(document, "#themeToggle")
@@ -272,7 +272,11 @@
 
             if (myRole === "host") {
                 player1RoleBadge.textContent = "내 보드"
-                player2RoleBadge.textContent = isPveMode ? "AI 상대" : "상대 보드"
+                player2RoleBadge.textContent = isPveMode
+                    ? room.aiPolicy === "placement_v4"
+                        ? "실험 AI · 준비 중"
+                        : "AI 상대 · 휴리스틱"
+                    : "상대 보드"
             } else {
                 player1RoleBadge.textContent = "상대 보드"
                 player2RoleBadge.textContent = "내 보드"
@@ -322,6 +326,27 @@
             let gameSession = null
             let shouldNotifyGameLeave = true
             let hasMatchFinished = false
+            const updatePveAiPolicyBadge = (policy) => {
+                if (policy.roomId !== roomId || policy.playerId !== guestPlayer?.playerId) return
+
+                if (policy.policyUsed === "placement_v4") {
+                    player2RoleBadge.textContent = "실험 AI · 동작 중"
+                    player2RoleBadge.removeAttribute("title")
+                    return
+                }
+
+                player2RoleBadge.textContent = policy.policyRequested === "placement_v4"
+                    ? "실험 AI · 휴리스틱 전환"
+                    : "AI 상대 · 휴리스틱"
+                if (policy.fallbackReason) {
+                    player2RoleBadge.title = `모델 전환 사유: ${policy.fallbackReason}`
+                } else {
+                    player2RoleBadge.removeAttribute("title")
+                }
+            }
+            const detachPveAiPolicy = isPveMode
+                ? onPveAiPolicy(updatePveAiPolicyBadge)
+                : () => {}
 
             /**
              * 멀티 게임 세션에서 만든 timer, socket listener, runtime을 모두 정리한다.
@@ -397,6 +422,9 @@
                     sessionStorage.setItem("tetris:roomId", result.room.roomId)
                     sessionStorage.setItem("room", JSON.stringify(result.room))
                 }
+                if (isPveMode && result.match?.aiPolicyRuntime) {
+                    updatePveAiPolicyBadge(result.match.aiPolicyRuntime)
+                }
 
                 if (gameSession) return
 
@@ -440,6 +468,7 @@
                 location.replace("./multiLobby.html")
             })
             window.addEventListener("pagehide", () => {
+                detachPveAiPolicy()
                 themeToggleBtn?.removeEventListener("click", onToggleTheme)
                 homeBtn?.removeEventListener("click", handleHomeClick)
                 detachMatchFinish()

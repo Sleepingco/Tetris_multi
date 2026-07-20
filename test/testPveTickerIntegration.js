@@ -71,7 +71,24 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
 
     assert.equal(initialAi.aiPlan.remainingActions.length, 4);
     assert.equal(initialAi.authoritativeState.pieceIndex, 1);
-    assert.equal(emitted.length, 0);
+    assert.deepEqual(emitted, [{
+        roomId: "PVE-TICKER-1",
+        eventName: "pve:ai-policy",
+        payload: {
+            roomId: "PVE-TICKER-1",
+            playerId: "ai",
+            policyRequested: "heuristic",
+            policyUsed: "heuristic",
+            fallbackReason: null,
+            modelSha256: null,
+            fallbackCount: 0,
+            lastFallbackReason: null,
+        },
+    }]);
+    assert.deepEqual(
+        getMatchState("PVE-TICKER-1").match.aiPolicyRuntime,
+        emitted[0].payload,
+    );
 
     await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
     await ticker.tickRoom("PVE-TICKER-1", socketServer, 100);
@@ -138,6 +155,74 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
     );
 
     ticker.stopRoomTicker("PVE-TICKER-1");
+});
+
+test("PVE ticker는 experimental policy의 실제 fallback 상태를 전송한다", async () => {
+    resetMatches();
+    createMatch({
+        roomId: "PVE-TICKER-POLICY",
+        mode: "pve",
+        aiPolicy: "placement_v4",
+        status: "playing",
+        players: [
+            { playerId: "human", playerType: "human" },
+            { playerId: "ai", playerType: "heuristic_ai" },
+        ],
+    });
+    const emitted = [];
+    const socketServer = {
+        to(roomId) {
+            return {
+                emit(eventName, payload) {
+                    emitted.push({ roomId, eventName, payload });
+                },
+            };
+        },
+    };
+    const ticker = createAuthoritativeTickerService({
+        loadGameCore: async () => ({}),
+        pveAiPlayerService: {
+            async processAiStep() {
+                return {
+                    ok: true,
+                    skipped: true,
+                    reason: "AI_PLAN_CREATED",
+                    decision: {
+                        policyRequested: "placement_v4",
+                        policyUsed: "heuristic",
+                        fallbackReason: "MODEL_NOT_FOUND",
+                    },
+                };
+            },
+        },
+        setIntervalFn() {
+            return { unref() {} };
+        },
+        clearIntervalFn() {},
+    });
+    ticker.startRoomTicker("PVE-TICKER-POLICY", socketServer);
+
+    await ticker.tickRoom("PVE-TICKER-POLICY", socketServer, 100);
+
+    assert.deepEqual(emitted, [{
+        roomId: "PVE-TICKER-POLICY",
+        eventName: "pve:ai-policy",
+        payload: {
+            roomId: "PVE-TICKER-POLICY",
+            playerId: "ai",
+            policyRequested: "placement_v4",
+            policyUsed: "heuristic",
+            fallbackReason: "MODEL_NOT_FOUND",
+            modelSha256: null,
+            fallbackCount: 1,
+            lastFallbackReason: "MODEL_NOT_FOUND",
+        },
+    }]);
+    assert.deepEqual(
+        getMatchState("PVE-TICKER-POLICY").match.aiPolicyRuntime,
+        emitted[0].payload,
+    );
+    ticker.stopRoomTicker("PVE-TICKER-POLICY");
 });
 
 test("hard PVE ticker는 terminal soft_drop 없이 action별 snapshot 후 hard_drop한다", async () => {

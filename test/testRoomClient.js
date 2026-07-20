@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-test("requestCreateRoom은 PVE 요청에만 AI 난이도를 포함한다", async () => {
+test("requestCreateRoom은 PVE 요청에만 AI 난이도와 정책을 포함한다", async () => {
     const emitted = [];
     global.io = () => ({
         emit(eventName, payload) {
@@ -14,9 +14,9 @@ test("requestCreateRoom은 PVE 요청에만 AI 난이도를 포함한다", async
     );
     const player = { playerId: "client-player", nickname: "Player" };
 
-    requestCreateRoom(player, "pvp");
+    requestCreateRoom(player, "pvp", "hard", "placement_v4");
     requestCreateRoom(player, "pve");
-    requestCreateRoom(player, "pve", "hard");
+    requestCreateRoom(player, "pve", "hard", "placement_v4");
 
     assert.deepEqual(emitted, [
         {
@@ -29,7 +29,12 @@ test("requestCreateRoom은 PVE 요청에만 AI 난이도를 포함한다", async
         },
         {
             eventName: "room:create",
-            payload: { player, mode: "pve", aiDifficulty: "hard" },
+            payload: {
+                player,
+                mode: "pve",
+                aiDifficulty: "hard",
+                aiPolicy: "placement_v4",
+            },
         },
     ]);
 

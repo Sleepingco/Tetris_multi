@@ -5,9 +5,10 @@
 대체되어 이동한 문서는 [AI/ML archive](archive/ai-ml/README.md)에서 찾는다.
 
 현재 프로그램 상태는 `imitation_only_not_gameplay_ready`다. V4는 Human
-placement imitation과 offline 분석에만 유지하며, PVE/production 기본 정책은
-heuristic이다. 자세한 현재 계획은 [ai-plan.md](ai-plan.md), 실험 수치와
-명령은 [ai-experiments-log.md](ai-experiments-log.md)를 본다.
+placement imitation을 눈으로 확인하는 사용자 선택형 Experimental PVE와 offline
+분석에만 사용하며, PVE/production 기본 정책은 heuristic이다. 자세한 현재 계획은
+[ai-plan.md](ai-plan.md), 실험 수치와 명령은
+[ai-experiments-log.md](ai-experiments-log.md)를 본다.
 
 ## 권장 읽기 순서
 
@@ -37,13 +38,17 @@ heuristic이다. 자세한 현재 계획은 [ai-plan.md](ai-plan.md), 실험 수
 | Heuristic 기본 정책 | board와 active piece | reachable placement ranking과 plan | 예, production 기본 | [heuristicEvaluator.js](../src/client/game/ai/heuristic/heuristicEvaluator.js), [reachablePlacementPlanner.js](../src/client/game/ai/heuristic/reachablePlacementPlanner.js), [simulatePlacement.js](../src/client/game/ai/heuristic/simulatePlacement.js) |
 | V4 trainer | immutable 125-game dataset | non-canonical candidate model과 training report | 예, 재학습은 새 승인 필요 | [train_placement_v4.py](../scripts/ml/train_placement_v4.py), [placement-v4-125g-final-trainer.md](../ai-harness/ml-experiments/experiments/placement-v4-125g-final-trainer.md) |
 | V4 reference inference·safety | frozen model과 candidate fixture | deterministic physical-class ranking, game-over safety diagnostic | 예, Python reference | [placement_v4_reference_inference.py](../scripts/ml/placement_v4_reference_inference.py), [placement-v4-reference-inference-safety.md](../ai-harness/ml-experiments/experiments/placement-v4-reference-inference-safety.md) |
-| Runtime scorer·adapter | existing heuristic evaluations와 optional V4 model | V4 decision 또는 explicit heuristic fallback | 예, dev-only opt-in | [placementV4OfflineScorer.js](../src/client/game/ai/ml/placementV4OfflineScorer.js), [placementV4PveDecisionAdapter.js](../src/client/game/ai/ml/placementV4PveDecisionAdapter.js), [pveAiPlayerService.js](../src/server/services/pveAiPlayerService.js) |
+| Experimental PVE runtime | existing heuristic evaluations와 server-owned V4 model | 사용자 opt-in V4 decision 또는 explicit heuristic fallback | 예, 실험 기능 | [placementV4OfflineScorer.js](../src/client/game/ai/ml/placementV4OfflineScorer.js), [placementV4PveDecisionAdapter.js](../src/client/game/ai/ml/placementV4PveDecisionAdapter.js), [pveAiPlayerService.js](../src/server/services/pveAiPlayerService.js), [experimental model](../src/server/assets/placement-v4-125g-experimental-model.json) |
 | Gameplay benchmark runner | frozen model, deterministic 7-bag stream | canonical gameplay report와 non-canonical timing report | 예, evaluation only | [run-placement-v4-pve-gameplay-benchmark.js](../scripts/run-placement-v4-pve-gameplay-benchmark.js) |
 | 공통 experiment harness | experiment spec과 MODE | smoke/full/analyze-result workflow와 run record | 예 | [ml-experiments README](../ai-harness/ml-experiments/README.md), [constraints](../ai-harness/ml-experiments/constraints.md), [workflow](../ai-harness/ml-experiments/workflow.md), [verification](../ai-harness/ml-experiments/verification.md) |
 
-`PVE_PLACEMENT_V4_MODEL_PATH`가 비어 있으면 [pveAiPlayerService.js](../src/server/services/pveAiPlayerService.js)는
-V4 module을 load하지 않고 heuristic만 사용한다. Gameplay evaluation 종료 결정은
-이 기본값을 바꾸지 않는다.
+사용자가 로비에서 Experimental PVE를 명시적으로 선택했을 때만
+[pveAiPlayerService.js](../src/server/services/pveAiPlayerService.js)가 V4 경로를
+load한다. 모델 경로는 검토된 server-owned asset을 기본으로 사용하며,
+`PVE_PLACEMENT_V4_MODEL_PATH`는 같은 SHA의 검증 artifact 위치만 바꾸는 override다.
+Heuristic을 선택하거나 PVP를 실행하면 V4 module과 model을 load하지 않는다. 실제
+사용 policy는 match에 보존해 게임 페이지 진입 시 다시 전달하며, game-over log에는
+마지막 사용 policy, fallback 횟수·사유와 model SHA를 남긴다.
 
 ## Historical evidence
 
@@ -83,6 +88,7 @@ ignored copy와 SHA-256로 추적한다.
 ## 현재 결정과 다음 작업
 
 - V4 125-game candidate artifact, reference inference safety, dev-only PVE integration은 완료됐다.
+- 사용자 명시 선택형 Experimental PVE demo가 완료됐으며 실제 적용 policy와 fallback을 화면에 표시한다.
 - V4 gameplay evaluation은 종료됐고, `imitation_only_not_gameplay_ready`다.
 - Production 기본 정책은 `keep_heuristic_default`다.
 - `canonicalArtifact=false`, `productionIntegration=false`를 유지한다.

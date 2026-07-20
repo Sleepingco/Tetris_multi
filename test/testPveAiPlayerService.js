@@ -23,17 +23,22 @@ function createPveAiPlayerService(dependencies = {}) {
     return createService({ env: {}, ...dependencies });
 }
 
-function createPveMatch(roomId, aiDifficulty = "normal") {
+function createPveMatch(roomId, aiDifficulty = "normal", aiPolicy = "heuristic") {
     return createMatch({
         roomId,
         mode: "pve",
         aiDifficulty,
+        aiPolicy,
         status: "playing",
         players: [
             { playerId: "human", playerType: "human" },
             { playerId: "ai", playerType: "heuristic_ai" },
         ],
     }).match;
+}
+
+function createV4Match(roomId) {
+    return createPveMatch(roomId, "normal", "placement_v4");
 }
 
 async function processUntilPlacement(service, roomId, gameCore, maxSteps = 100) {
@@ -823,7 +828,7 @@ test("AI player는 human input log를 기록할 수 없다", () => {
     assert.deepEqual(getMatchState("PVE-AI-4").match.players[1].inputLog, []);
 });
 
-test("V4 model path가 없으면 model loader 없이 기존 heuristic decision을 유지한다", async () => {
+test("heuristic policy는 model 설정과 무관하게 V4 loader를 호출하지 않는다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();
     createPveMatch("PVE-V4-DEFAULT");
@@ -908,10 +913,27 @@ test("V4 model path가 없으면 model loader 없이 기존 heuristic decision�
     }
 });
 
+test("placement_v4 policy는 bundled experimental model을 별도 설정 없이 사용한다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    createV4Match("PVE-V4-BUNDLED");
+    const service = createPveAiPlayerService();
+
+    const result = await service.processAiStep("PVE-V4-BUNDLED", "ai", gameCore);
+
+    assert.equal(result.reason, "AI_PLAN_CREATED");
+    assert.equal(result.decision.policyRequested, "placement_v4");
+    assert.equal(result.decision.policyUsed, "placement_v4");
+    assert.equal(
+        result.decision.modelSha256,
+        "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d",
+    );
+});
+
 test("V4 성공은 authoritative plan을 만들고 training log 대신 provenance만 남긴다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();
-    const match = createPveMatch("PVE-V4-SUCCESS");
+    const match = createV4Match("PVE-V4-SUCCESS");
     setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
     const heuristicDecision = createDecision({
         selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
@@ -987,7 +1009,7 @@ test("V4 model loading 실패는 reason을 보존하고 heuristic log 경로로 
         await t.test(name, async () => {
             resetMatches();
             const roomId = `PVE-V4-LOAD-${name}`;
-            const match = createPveMatch(roomId);
+            const match = createV4Match(roomId);
             setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
             const heuristicDecision = createDecision({
                 selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
@@ -1029,8 +1051,8 @@ test("V4 model loading 실패는 reason을 보존하고 heuristic log 경로로 
 test("V4 model 성공과 실패는 service별 최초 요청 Promise를 재사용한다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();
-    createPveMatch("PVE-V4-CACHE-1");
-    createPveMatch("PVE-V4-CACHE-2");
+    createV4Match("PVE-V4-CACHE-1");
+    createV4Match("PVE-V4-CACHE-2");
     const heuristicDecision = createDecision({
         selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
         plannedActions: ["hard_drop"],
@@ -1059,8 +1081,8 @@ test("V4 model 성공과 실패는 service별 최초 요청 Promise를 재사용
     assert.equal(loadedPath, path.resolve(process.cwd(), "cached-model.json"));
 
     resetMatches();
-    createPveMatch("PVE-V4-FAILED-CACHE-1");
-    createPveMatch("PVE-V4-FAILED-CACHE-2");
+    createV4Match("PVE-V4-FAILED-CACHE-1");
+    createV4Match("PVE-V4-FAILED-CACHE-2");
     let failedLoadCount = 0;
     const failedService = createPveAiPlayerService({
         env: { PVE_PLACEMENT_V4_MODEL_PATH: "missing-model.json" },
@@ -1081,7 +1103,7 @@ test("V4 model 성공과 실패는 service별 최초 요청 Promise를 재사용
 test("V4 adapter와 evidence callback 예외는 gameplay를 중단하지 않고 heuristic으로 복구한다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();
-    const match = createPveMatch("PVE-V4-EXCEPTION");
+    const match = createV4Match("PVE-V4-EXCEPTION");
     setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
     const heuristicDecision = createDecision({
         selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
@@ -1127,7 +1149,7 @@ test("pending 또는 rejected evidence Promise는 authoritative gameplay를 기�
 
     await t.test("never resolving", async () => {
         resetMatches();
-        createPveMatch("PVE-V4-EVIDENCE-PENDING");
+        createV4Match("PVE-V4-EVIDENCE-PENDING");
         let evidenceCalled = false;
         const service = createPveAiPlayerService({
             env: { PVE_PLACEMENT_V4_MODEL_PATH: "synthetic-model.json" },
@@ -1162,7 +1184,7 @@ test("pending 또는 rejected evidence Promise는 authoritative gameplay를 기�
 
     await t.test("rejected Promise", async () => {
         resetMatches();
-        const match = createPveMatch("PVE-V4-EVIDENCE-REJECTED");
+        const match = createV4Match("PVE-V4-EVIDENCE-REJECTED");
         setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
         const service = createPveAiPlayerService({
             env: { PVE_PLACEMENT_V4_MODEL_PATH: "synthetic-model.json" },

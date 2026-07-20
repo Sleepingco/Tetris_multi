@@ -8,7 +8,9 @@ const {
 } = require("./playerGameplayStep.js");
 const {
     DEFAULT_AI_DIFFICULTY,
+    DEFAULT_AI_POLICY,
     isValidAiDifficulty,
+    isValidAiPolicy,
 } = require("./aiDifficulty.js");
 
 const matches = new Map();
@@ -60,6 +62,7 @@ function createMatch(room) {
 
     const mode = room.mode || "pvp";
     let aiDifficulty = null;
+    let aiPolicy = null;
     if (mode === "pve") {
         if (room.aiDifficulty === undefined || room.aiDifficulty === null) {
             aiDifficulty = DEFAULT_AI_DIFFICULTY;
@@ -68,11 +71,20 @@ function createMatch(room) {
         } else {
             return createFailure("INVALID_AI_DIFFICULTY");
         }
+        if (room.aiPolicy === undefined || room.aiPolicy === null) {
+            aiPolicy = DEFAULT_AI_POLICY;
+        } else if (isValidAiPolicy(room.aiPolicy)) {
+            aiPolicy = room.aiPolicy;
+        } else {
+            return createFailure("INVALID_AI_POLICY");
+        }
     }
     const match = {
         roomId: room.roomId,
         mode,
         aiDifficulty,
+        aiPolicy,
+        aiPolicyRuntime: null,
         status: room.status || "playing",
         players: room.players.map((player) => {
             const bagChunks = createInitialBagChunks();

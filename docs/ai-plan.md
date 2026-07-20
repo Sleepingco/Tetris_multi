@@ -47,6 +47,7 @@ Human gameplay log
 → reference inference·game-over safety 검증
 → dev-only PVE integration
 → deterministic gameplay evaluation 종료
+→ 사용자 선택형 Experimental PVE demo
 ~~~
 
 현재 알게 된 사실:
@@ -60,6 +61,7 @@ Human gameplay log
 - V4 cell-grouped 방식은 물리적 선택지 하나를 하나의 pair 단위로 표현하며 V3보다 계산량이 작다.
 - V4 125-game candidate artifact는 생성됐지만 `canonicalArtifact=false`다.
 - Reference inference와 game-over safety 계약, dev-only PVE integration은 검증됐다.
+- Experimental PVE는 사용자가 명시적으로 선택할 때만 V4를 요청하고 실제 policy 또는 fallback을 화면에 표시한다.
 - Human 선택 모방 metric은 실제 생존, 공격, 승률 또는 강한 gameplay AI를 의미하지 않는다.
 - 30-stream gameplay screening은 pass 경계에서 종료됐지만 V4-only game-over와 board diagnostics 때문에 gameplay replacement 근거가 부족하다.
 - Production/PVE 기본 정책은 heuristic이며, V4는 Human imitation·offline analysis 범위에만 유지한다.
@@ -462,16 +464,265 @@ Attribution:
 
 - V4 weighting의 최종 production 채택
 - 현재 16-feature의 최종 충분성
-- 최종 estimator와 hyperparameter
-- final full-data model
+- 향후 imitation 개선에 사용할 최종 feature, estimator와 hyperparameter
+- gameplay objective에 사용할 estimator와 policy
+- production 승격 가능한 canonical artifact
 - heuristic보다 gameplay가 강한지
-- production runtime 연결
+- production 기본 runtime 정책으로의 승격
 
 ### 현재 보류 또는 종료
 
 - V4를 gameplay replacement로 승격하는 일
 - 100-stream gameplay 확장, hybrid policy, 추가 재학습
 - production/PVE 기본 정책 변경
+
+---
+
+## 6.1 향후 AI 개선 roadmap
+
+상태: **future_backlog_not_active**
+
+이 roadmap은 현재 V4를 production-ready 모델로 재해석하지 않는다. 남은 프로젝트
+마감과 migration을 우선하고, Experimental PVE demo를 제외한 새 연구는 별도
+질문, 데이터와 성공 기준을 승인한 뒤 시작한다.
+
+향후 작업은 목적이 다른 세 Track으로 나눈다.
+
+| Track | 목적 | 성공 기준 | 현재 허용할 표현 |
+|---|---|---|---|
+| Experimental PVE demo | 현재 V4가 학습한 placement 선택을 사용자가 직접 관찰 | 명시적 opt-in, 실제 policy 표시, 안전한 fallback, provenance 보호 | "내 플레이 로그로 학습한 실험적 AI" |
+| Track A — Human imitation | 사용자의 physical placement 선택을 더 높은 순위로 예측 | 이후 temporal cohort에서 Top-1, Top-3, MRR 개선 | "내 선택 패턴과 유사한 AI" |
+| Track B — Gameplay policy | authoritative gameplay에서 heuristic보다 안정적으로 생존·공격 | matched-seed benchmark의 사전 gate 통과 | gate 전에는 "더 강한 AI"라고 표현하지 않음 |
+
+"나를 완전히 모방한다"와 "heuristic보다 강하다"는 현재 근거로 주장하지 않는다.
+
+### 6.1.1 Experimental PVE demo — 구현 완료
+
+현재 V4는 성능 우월성 증명이 아니라 학습 결과를 눈으로 확인하는 opt-in 실험
+기능으로 제공한다.
+
+~~~text
+내 플레이 기록
+→ Human placement dataset
+→ V4 imitation model
+→ 현재 legal physical class ranking
+→ Experimental PVE의 placement 선택
+~~~
+
+필수 계약:
+
+- 기본 PVE 정책은 계속 heuristic이다.
+- 사용자가 `내 배치 선택을 학습한 AI (실험)`을 명시적으로 선택할 때만 V4를 요청한다.
+- `aiDifficulty`와 `aiPolicy`를 분리한다.
+- room과 match에는 `aiPolicy: "heuristic" | "placement_v4"`만 추가한다.
+- 기존 `playerType: "heuristic_ai"`, candidate generator와 authoritative action executor를 유지한다.
+- 화면에는 요청 policy와 실제 사용 policy 또는 fallback 상태를 구분해 표시한다.
+- 첫 policy event가 페이지 전환 중 지나가도 match의 runtime policy를 game join에서 다시 전달한다.
+- 모델 누락·손상·검증 실패 시 기존 heuristic으로 fallback한다.
+- `gameOver=true` hard safety와 deterministic tie-break를 유지한다.
+- V4가 선택한 placement는 Human 또는 heuristic training log로 저장하지 않는다.
+- game lifecycle log에는 요청 policy와 실제 사용 policy, fallback 횟수·사유, model SHA를 남긴다.
+- model SHA, model schema와 feature 순서를 검증한다.
+- 모델은 `canonicalArtifact=false`, `productionIntegration=false`를 유지한다.
+- 공개 clone에서 demo가 필요하면 검토된 작은 `model.json`만 server-owned
+  experimental asset으로 보존하고, training report·dataset·원본 로그는 포함하지 않는다.
+
+완료된 Demo gate:
+
+- Heuristic Normal/Hard 기본 흐름 불변
+- Experimental Normal/Hard 수동 smoke 통과
+- UI에서 experimental 한계와 현재 policy 확인 가능
+- 정상 모델에서 fallback 0
+- 누락·잘못된 모델 fixture에서 게임 중단 없는 heuristic fallback
+- 기존 Human log와 dataset checksum 불변
+- `npm run verify:ml`과 `bash scripts/verify.sh` 통과
+
+새 model manager, 별도 AI 서버, DB 또는 재학습 없이 기존 runtime 경계와 작은
+server-owned model asset만 사용했다. 기본 heuristic 경로와 fallback 계약은
+그대로 유지한다.
+
+### 6.1.2 Track A — Human imitation 개선
+
+목표:
+
+> 사용자가 같은 상황에서 선택한 physical placement를 더 자주 높은 순위로 예측한다.
+
+현재 16-feature V4 Logistic Regression을 baseline으로 유지하고 한 실험에서 한
+변수만 바꾼다.
+
+1. **새 temporal cohort 확보**
+   - 현재 125게임 이후의 완료 게임을 새 immutable snapshot으로 고정한다.
+   - feature·estimator 선택용 development cohort와 마지막 confirmation cohort를
+     시간 순서로 분리한다.
+   - gameId leakage, source, 난이도, game length와 checksum을 기록한다.
+2. **Imitation failure 분석**
+   - Normal/Hard, line-clear 선택지, hold 가능 상태, 높은 board,
+     selected-feature duplicate, worst selected rank를 나눠 본다.
+   - 결과를 missing-signal 가설 하나로 좁힌 뒤에만 feature 실험을 시작한다.
+3. **Feature family 실험**
+   - hold와 next-piece context
+   - well depth와 covered-hole depth
+   - row/column transition
+   - landing height와 placement path cost
+   - combo, back-to-back, T-Spin 가능 상태
+   - Notebook 하나에서 family 하나만 추가하고 V4 weighting과 estimator는 고정한다.
+4. **Estimator gate**
+   - feature 개선 근거가 생긴 뒤에만 비선형 estimator 하나를 선형 baseline과 비교한다.
+   - 같은 feature, fold, weighting과 metric을 사용하고 holdout에 맞춘 반복 튜닝은 하지 않는다.
+5. **Frozen temporal confirmation**
+   - feature와 estimator를 동결한 뒤 이후 confirmation cohort에서 한 번만 평가한다.
+
+Primary metric은 physical-class Top-1, Top-3와 MRR이다. Game별·난이도별 분포,
+worst-game, duplicate와 tie는 secondary diagnostic으로 유지한다. 이 Track의
+promotion은 imitation 개선만 의미하며 gameplay 강도를 의미하지 않는다.
+
+사전 정의한 feature 가설 두 개가 confirmation에서 개선되지 않으면 현재 V4
+baseline을 유지하고 Track A를 다시 동결한다.
+
+### 6.1.3 Track B — Gameplay policy 개선
+
+목표:
+
+> Human 선택을 모방하는 대신 authoritative gameplay에서 heuristic보다 안정적으로
+> 생존하고 공격한다.
+
+이 Track에서는 `selectedBySource`와 imitation metric을 핵심 학습·promotion 목표로
+사용하지 않는다.
+
+1. **현재 failure 분석**
+   - 기존 30×500 benchmark에서 V4만 game-over된 stream `004`, `009`, `025`를 본다.
+   - 첫 policy divergence, height·hole 누적, 위험 placement score와 장기 위험
+     신호를 조사한다.
+2. **Gameplay objective 계약**
+   - Primary: game-over, survival placement count, fixed-horizon survival rate
+   - Secondary: attack/100, lines/100, holes, max height, invalid decision, fallback
+   - reward와 promotion threshold는 결과를 보기 전에 고정한다.
+3. **Authoritative outcome dataset**
+   - Python에서 Tetris 규칙을 재구현하지 않는다.
+   - 기존 JavaScript authoritative core와 matched-seed runner로 legal class,
+     단기 board result, 제한된 lookahead, survival·attack outcome을 만든다.
+   - seed, policy, artifact SHA와 생성 code revision을 기록한다.
+4. **최소 gameplay model**
+   - hard game-over filter와 heuristic candidate generator를 유지한다.
+   - 먼저 위험 placement 제거 또는 안전 후보 re-ranking을 검토한다.
+   - 제한된 lookahead 필요성이 확인된 뒤에만 추가한다.
+   - 강화학습은 위 방법의 한계가 증명되기 전에는 시작하지 않는다.
+5. **Hybrid policy gate**
+
+~~~text
+authoritative legal placement
+→ hard game-over filter
+→ heuristic safety constraint
+→ learned scorer가 안전 후보만 재정렬
+→ 실패 시 heuristic fallback
+~~~
+
+Gameplay promotion에는 safety event 0, invalid decision 0, 예상하지 못한 fallback 0,
+heuristic 대비 survival 비열등 또는 개선, board-quality·attack의 중대한 회귀 없음,
+여러 seed cohort의 같은 방향, latency budget과 rollback 경로가 모두 필요하다.
+통과하더라도 production 기본값 변경은 별도 사용자 승인 사항이다.
+
+### 6.1.4 제안 실험 — PVP outcome hybrid risk filter V1
+
+상태: **proposed_not_active**
+
+실험 질문:
+
+> PVP에서 수집한 실제 압박 상태와 authoritative 단기 outcome으로 학습한 hybrid
+> policy가 고정 heuristic보다 안전성과 공격력을 함께 개선하는가?
+
+PVP 로그는 다양한 board와 garbage 상황을 제공하지만, Human이 선택했다는 사실을
+강한 수의 label로 사용하지 않는다. Match 승패도 모든 placement에 복사하면
+credit assignment가 틀어지므로 최종 평가와 segmentation에만 사용한다.
+
+#### 입력·분할 계약
+
+- 완료된 PVP match만 사용하고 disconnect, 불완전 match와 rule version 불일치를 제외한다.
+- `matchId`, 시간, player/opponent 구분, visible next queue, hold, incoming garbage,
+  legal physical class와 선택 직전 board를 기록한다.
+- 같은 match의 decision은 train과 holdout에 나누지 않는다.
+- 시간 순서로 development cohort와 untouched confirmation cohort를 분리한다.
+- 먼저 eligible match·decision·고압 상태 수를 감사하고, 최소 표본 수와 평가
+  threshold를 학습 전에 고정한다.
+- 실제 미래 piece, 상대 attack과 match 결과는 model input에 넣지 않는다.
+- incoming garbage 같은 state-only 값은 후보 간 동일하므로 그대로 선형 pair
+  difference에 추가하지 않는다. 필요하면 post-placement 위험과의 interaction을
+  하나의 feature 가설로 검증한다.
+
+#### 실험 순서
+
+1. **PVP log eligibility audit**
+   - 상대·시간·rule version·game length·incoming garbage 분포를 확인한다.
+   - 현재 로그가 decision state 복원에 부족하면 학습하지 않고 logger 계약만 보완한다.
+2. **Authoritative outcome label 생성**
+   - 로그의 decision state를 시작점으로 사용한다.
+   - 각 legal physical class를 기존 JavaScript authoritative core에 적용한다.
+   - 동일 piece stream과 고정 opponent policy로 짧은 horizon을 결정적으로 rollout한다.
+   - `gameOver`, survival, holes, max height, attack과 lines를 candidate outcome으로 기록한다.
+   - Python에서 Tetris 규칙이나 대안 placement 결과를 다시 구현하지 않는다.
+3. **하나의 hybrid 가설 검증**
+
+~~~text
+authoritative legal placement
+→ hard game-over filter
+→ outcome model이 단기 위험 후보 표시
+→ 기존 heuristic이 표시되지 않은 후보 중 최종 선택
+→ model 실패 또는 전부 위험 표시 시 기존 heuristic fallback
+~~~
+
+   - 첫 실험은 model 하나와 feature family 하나로 제한한다.
+   - V4의 physical-class grouping과 검증 코드는 재사용할 수 있지만, imitation
+     weight·artifact와 기존 성공 결론은 gameplay model에 가져오지 않는다.
+   - Neural network, reinforcement learning, online learning은 사용하지 않는다.
+4. **Paired authoritative 평가**
+   - heuristic과 hybrid에 같은 initial state, piece stream, opponent policy와
+     garbage rule을 사용한다.
+   - Development cohort에서 threshold를 한 번 정한 뒤 untouched cohort에서 한 번만 확인한다.
+   - 실제 사용자 상대의 단순 전후 승률은 promotion 근거로 사용하지 않는다.
+
+Primary metric:
+
+- paired match win/loss
+- game-over와 fixed-horizon survival
+- survival placement count
+
+Secondary metric:
+
+- attack/100과 lines/100
+- holes와 max height
+- invalid decision, safety event, fallback과 latency
+
+채택 gate:
+
+- safety event와 invalid decision 0
+- 예상하지 못한 fallback 0
+- heuristic 대비 survival 비열등
+- paired win 또는 attack에서 사전 정의한 개선
+- board quality의 중대한 회귀 없음
+- untouched cohort에서도 같은 방향
+
+Safety 문제가 한 번이라도 발생하거나, 첫 model·feature 가설이 heuristic 대비
+survival을 악화시키거나 사전 개선 기준을 충족하지 못하면 `keep_heuristic`으로
+종료한다. 결과를 본 뒤 reward, horizon 또는 threshold를 바꿔 같은 holdout을 다시
+사용하지 않는다.
+
+가능한 최종 상태는 `adopt_hybrid_candidate`, `keep_heuristic`,
+`needs_new_untouched_cohort`, `blocked_by_data_contract` 네 가지뿐이다.
+
+### 6.1.5 실행 순서
+
+~~~text
+현재 AI 연구 동결
+→ Experimental PVE demo를 작은 opt-in 기능으로 검토
+→ migration·포트폴리오 마감
+→ Track A 또는 Track B 중 하나만 승인
+→ 질문·cohort·threshold 사전 고정
+→ Notebook 실험
+→ untouched confirmation
+→ 필요할 때만 trainer와 runtime 갱신
+~~~
+
+Track A와 Track B의 Dataset, objective, metric과 promotion gate를 섞지 않는다.
 
 ---
 
@@ -1369,6 +1620,9 @@ Weighting freeze
 | Notebook 구현과 일반 ML 실험 | GPT-5.6 Sol | high |
 | Leakage, temporal split, freeze 판단 | GPT-5.6 Sol | xhigh |
 | Python↔JavaScript parity와 production 검토 | GPT-5.6 Sol | xhigh 또는 max |
+| Experimental PVE demo의 작은 통합 | GPT-5.6 Sol | high |
+| Track A imitation 실험 설계·해석 | GPT-5.6 Sol | high 또는 xhigh |
+| Track B gameplay objective·승격 판단 | GPT-5.6 Sol | xhigh 또는 max |
 
 모델을 높이는 것보다 프롬프트 범위를 한 단계로 제한하는 것이 실행시간과 품질에 더 큰 영향을 준다.
 
@@ -1393,13 +1647,19 @@ Weighting freeze
 ## 18. 현재 상태와 새 작업 gate
 
 ~~~text
-현재 활성 실험은 없다.
+현재 활성 ML 실험은 없다.
 
-V4는 Human placement imitation과 offline analysis에만 유지한다.
+V4는 Human placement imitation artifact로 유지한다.
 Gameplay replacement와 production/PVE 기본 정책은 heuristic으로 유지한다.
+사용자 명시 선택형 Experimental PVE demo는 구현됐다.
 ~~~
 
-새 작업은 다음을 먼저 문서화한 별도 승인으로만 시작한다.
+Experimental PVE demo는 새 모델 실험이나 production 승격이 아니다. 이미 검증한
+dev-only inference 경로에 사용자 선택, 실제 적용 policy와 fallback 표시를 붙여
+현재 모델의 동작을 관찰하게 하는 포트폴리오 기능이다. 기본 PVE는 heuristic이며,
+새 ML 실험은 계속 아래 조건을 먼저 문서화한 별도 승인으로만 시작한다.
+
+Gameplay 개선을 승인할 경우 첫 후보는 `6.1.4`의 PVP outcome hybrid 실험이다.
 
 1. Human imitation인지 gameplay promotion인지 한 가지 목표
 2. immutable input cohort 또는 game simulation 조건
