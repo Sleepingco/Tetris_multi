@@ -93,6 +93,15 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     assert.deepEqual(rotatedReadySessions, ["Rotated"]);
     detachRotatedReady();
 
+    let disconnectedReplayCount = 0;
+    const detachDisconnectedReplay = onSessionReady(() => {
+        disconnectedReplayCount += 1;
+    });
+    fakeSocket.disconnect("transport close");
+    await Promise.resolve();
+    assert.equal(disconnectedReplayCount, 0);
+    detachDisconnectedReplay();
+
     let duplicateErrorCount = 0;
     const duplicateErrorHandler = () => {
         duplicateErrorCount += 1;
@@ -124,6 +133,7 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     detachSecondDisconnect();
     handlers.get("disconnect")?.("transport close");
     assert.equal(duplicateDisconnectCount, 3);
+    fakeSocket.connected = true;
     handlers.get("connect")?.();
     handlers.get("session:ready")?.({
         version: 1,

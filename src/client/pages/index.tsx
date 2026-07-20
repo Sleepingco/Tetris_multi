@@ -21,9 +21,14 @@ function IndexPage() {
             disposed = true;
             cleanupSound?.();
         };
+        const onPageShow = (event: PageTransitionEvent) => {
+            if (event.persisted) window.location.reload();
+        };
         window.addEventListener("pagehide", dispose, { once: true });
+        window.addEventListener("pageshow", onPageShow);
         return () => {
             window.removeEventListener("pagehide", dispose);
+            window.removeEventListener("pageshow", onPageShow);
             dispose();
         };
     }, []);

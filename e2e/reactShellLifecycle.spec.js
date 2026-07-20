@@ -66,18 +66,42 @@ test("React lobby lifecycle은 listener와 초기 room sync를 한 세트만 유
             hasText: "react-lifecycle-message",
         })).toHaveCount(1);
 
-        const token = await hostPage.evaluate(() => {
+        const hostToken = await hostPage.evaluate(() => {
             return JSON.parse(sessionStorage.getItem("tetris:playerSession")).token;
         });
-        expect(hostPage.url()).not.toContain(token);
-        expect(await hostPage.content()).not.toContain(token);
-        expect(hostErrors.consoleMessages.join("\n")).not.toContain(token);
-        expect(guestErrors.consoleMessages.join("\n")).not.toContain(token);
+        const guestToken = await guestPage.evaluate(() => {
+            return JSON.parse(sessionStorage.getItem("tetris:playerSession")).token;
+        });
+        expect(hostPage.url()).not.toContain(hostToken);
+        expect(await hostPage.content()).not.toContain(hostToken);
+        expect(hostErrors.consoleMessages.join("\n")).not.toContain(hostToken);
+        expect(guestPage.url()).not.toContain(guestToken);
+        expect(await guestPage.content()).not.toContain(guestToken);
+        expect(guestErrors.consoleMessages.join("\n")).not.toContain(guestToken);
         expect(hostErrors.errors).toEqual([]);
         expect(guestErrors.errors).toEqual([]);
     } finally {
         await Promise.allSettled([hostContext.close(), guestContext.close()]);
     }
+});
+
+test("index BFCache 복귀는 reload 후 sound toggle listener를 복원한다", async ({ page }) => {
+    await page.goto("/pages/index.html");
+    const soundToggle = page.locator("#soundToggle");
+    const initialPressed = await soundToggle.getAttribute("aria-pressed");
+
+    await page.evaluate(() => {
+        window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+    });
+    await Promise.all([
+        page.waitForNavigation(),
+        page.evaluate(() => {
+            window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+        }),
+    ]);
+
+    await soundToggle.click();
+    await expect(soundToggle).not.toHaveAttribute("aria-pressed", initialPressed);
 });
 
 test("production React artifact는 TSX source와 source map을 제공하지 않는다", async ({ page }) => {

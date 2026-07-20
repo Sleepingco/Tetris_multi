@@ -97,6 +97,9 @@ test("lobby reload와 transport reconnect는 token을 회전하고 room을 다�
         await expect(hostPage.locator("#btnLeaveRoom")).toBeEnabled();
 
         const tokenBeforeBfcacheRestore = (await readPlayerSession(hostPage)).token;
+        await hostPage.evaluate(() => {
+            window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+        });
         await Promise.all([
             hostPage.waitForNavigation(),
             hostPage.evaluate(() => {
