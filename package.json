@@ -10,6 +10,7 @@
     "build": "node scripts/build.js",
     "build:server": "node scripts/build.js --server",
     "test": "node --test",
+    "test:artifact": "node --test test-artifact/serverBuildArtifact.js",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "dataset:export": "node scripts/export-placement-dataset.js",
