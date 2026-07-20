@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-test("mutation은 active 연결에서만 전송되고 reconnect buffer에 남지 않는다", async () => {
+test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전달한다", async () => {
     const emitted = [];
     const handlers = new Map();
     let connectCount = 0;
@@ -27,9 +27,9 @@ test("mutation은 active 연결에서만 전송되고 reconnect buffer에 남지
                 expiresAt: Date.now() + 60_000,
             });
         },
-        disconnect() {
+        disconnect(reason = "io client disconnect") {
             this.connected = false;
-            handlers.get("disconnect")?.();
+            handlers.get("disconnect")?.(reason);
         },
     };
     global.io = () => fakeSocket;
@@ -47,12 +47,15 @@ test("mutation은 active 연결에서만 전송되고 reconnect buffer에 남지
     };
     const {
         requestCreateRoom,
+        onSessionDisconnected,
         sendGameInput,
         sendPlacementDecisionLogEvent,
     } = await import(
         "../src/client/net/roomClient.js?test=room-create-difficulty"
     );
     const player = { playerId: "client-player", nickname: "Player" };
+    const disconnects = [];
+    onSessionDisconnected((disconnect) => disconnects.push(disconnect));
 
     requestCreateRoom(player, "pvp", "hard", "placement_v4");
     requestCreateRoom(player, "pve");
@@ -79,13 +82,25 @@ test("mutation은 active 연결에서만 전송되고 reconnect buffer에 남지
 
     const emittedBeforeDisconnect = emitted.length;
     fakeSocket.sendBuffer.push({ eventName: "game:input" });
-    fakeSocket.disconnect();
+    fakeSocket.disconnect("transport close");
     assert.deepEqual(fakeSocket.sendBuffer, []);
+    assert.deepEqual(disconnects.at(-1), {
+        reason: "transport close",
+        terminal: false,
+    });
     assert.equal(sendGameInput("room", "player", "hold", 1, 1, 1), false);
     assert.equal(sendPlacementDecisionLogEvent("room", { eventType: "placement_decision" }), false);
     requestCreateRoom(player, "pvp");
     fakeSocket.connect();
     assert.equal(emitted.length, emittedBeforeDisconnect);
+
+    const storedSession = sessionStorage.getItem("tetris:playerSession");
+    fakeSocket.disconnect("io server disconnect");
+    assert.deepEqual(disconnects.at(-1), {
+        reason: "io server disconnect",
+        terminal: true,
+    });
+    assert.equal(sessionStorage.getItem("tetris:playerSession"), storedSession);
 
     fakeSocket.connected = false;
     handlers.get("connect_error")?.({

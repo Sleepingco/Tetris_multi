@@ -464,12 +464,15 @@
             const detachSessionError = onSessionError(({ terminal }) => {
                 if (terminal) redirectToLobby()
             })
-            const detachSessionDisconnected = onSessionDisconnected(() => {
+            const detachSessionDisconnected = onSessionDisconnected(({ terminal }) => {
                 isSessionReady = false
                 homeBtn?.setAttribute("aria-disabled", "true")
                 cleanupGameSession()
-                setPlayerGameText("1", "재연결 중")
-                setPlayerGameText("2", "재연결 중")
+                const message = terminal
+                    ? "세션이 만료되었거나 다른 탭으로 이동했습니다. 새로고침해 주세요."
+                    : "재연결 중"
+                setPlayerGameText("1", message)
+                setPlayerGameText("2", message)
             })
 
             onGameOpponentLeft(({ room: updatedRoom }) => {

@@ -581,9 +581,11 @@
         detachSessionError = onSessionError(({ terminal }) => {
             if (terminal) clearRoom()
         })
-        detachSessionDisconnected = onSessionDisconnected(() => {
+        detachSessionDisconnected = onSessionDisconnected(({ terminal }) => {
             setMutationUiEnabled(false)
-            appendMessage("system", "서버 연결이 끊겨 재연결 중입니다.")
+            appendMessage("system", terminal
+                ? "세션이 만료되었거나 다른 탭으로 이동했습니다. 새로고침해 주세요."
+                : "서버 연결이 끊겨 재연결 중입니다.")
         })
 
         // requestType은 서버 응답 필드가 아니라 roomClient가 기억한 마지막 요청 종류다.

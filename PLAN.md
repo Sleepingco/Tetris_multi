@@ -82,6 +82,7 @@
 - session record는 token digest, generation, active socket, canonical nickname과 최초 발급 기준 8시간 절대 만료만 소유한다. room membership은 계속 `roomService`가 단일 진실 원천이다.
 - client는 versioned JSON credential 하나를 sessionStorage에 원자 저장한다. Socket.IO auth callback은 연결할 때마다 최신 값을 읽고 `session:ready`가 된 active socket만 회전 credential을 기록한다.
 - reconnect는 token과 generation을 동기적으로 회전하고 newest socket wins로 이전 socket 권한을 즉시 폐기한다. active socket이 없을 때만 직전 token을 60초 안에 한 번 recovery할 수 있다.
+- client는 Socket.IO disconnect reason을 구독자에게 전달한다. `io server disconnect`는 자동 재연결되지 않는 terminal 상태로 안내하고 stale page의 credential은 삭제하지 않으며, transport 단절만 기존 재연결 UI를 사용한다.
 - disconnect는 30초 grace를 적용한다. lobby는 reconnect마다 `room:sync`, game은 `game:join`을 다시 실행하며 최신 authoritative match로 runtime을 재생성한다. grace가 끝나면 waiting membership을 제거하고, playing match는 `disconnect_timeout` 결과를 먼저 전송한 뒤 loser를 제거해 승자가 waiting room을 재사용할 수 있게 한다.
 - partial, malformed, invalid, expired와 replayed credential은 신규 identity로 조용히 대체하지 않는다. client는 terminal credential 오류에서 identity와 저장 room을 지우고 무자격 신규 연결을 최대 한 번만 시도한다.
 
@@ -100,7 +101,7 @@
 ### 검증과 남은 위험
 
 - Node 24.18.0에서 `bash scripts/verify.sh`가 typecheck, 44-module build와 Node test 556개 중 555개 통과, 기존 조건부 1개 skip으로 통과했다.
-- 전체 Chromium Playwright는 session 발급·rotation·replay·reload, game transport reconnect의 board/sequence/bag 복구, 30초 grace 뒤 loser 정리·room 재사용, Origin·DTO와 기존 PVP/PVE/single을 포함해 23/23 통과했다.
+- 전체 Chromium Playwright는 current-token 중복 연결의 이전 탭 terminal 전환, session 발급·rotation·replay·reload, game transport reconnect의 board/sequence/bag 복구, 30초 grace 뒤 loser 정리·room 재사용, Origin·DTO와 기존 PVP/PVE/single을 포함해 24/24 통과했다.
 - production HTTP smoke에서 `/`, index/lobby/game pages, Socket.IO client와 대표 built JS가 모두 200을 반환했다.
 - session과 limiter는 단일 Node process memory에 있으므로 process restart 후 기존 credential은 terminal invalid 처리되고 room/match 상태도 함께 사라진다. 다중 instance/Redis 공유는 이번 Goal 범위가 아니다.
 - sessionStorage token은 XSS에 노출될 수 있으므로 CSP와 broader input validation은 별도 hardening 대상이다. 외부 TLS termination, multi-browser engine, 장시간 abuse/soak는 이번 local gate에서 검증하지 않았다.

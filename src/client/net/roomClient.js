@@ -120,12 +120,15 @@ serverConnection.on("connect_error", (error) => {
     serverConnection.connect()
 })
 
-serverConnection.on("disconnect", () => {
+serverConnection.on("disconnect", (reason) => {
     activeSession = null
     if (Array.isArray(serverConnection.sendBuffer)) {
         serverConnection.sendBuffer.length = 0
     }
-    sessionDisconnectedHandlers.forEach(handler => handler())
+    sessionDisconnectedHandlers.forEach(handler => handler({
+        reason,
+        terminal: reason === "io server disconnect",
+    }))
 })
 
 serverConnection.connect()

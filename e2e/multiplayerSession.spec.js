@@ -46,6 +46,32 @@ test("Host와 Guest의 sessionStorage와 게임 역할이 서로 격리된다", 
     }
 });
 
+test("current token 중복 연결은 이전 로비 탭을 terminal 상태로 남긴다", async ({ page }) => {
+    const terminalMessage = "세션이 만료되었거나 다른 탭으로 이동했습니다. 새로고침해 주세요.";
+    await page.goto("/pages/multiLobby.html");
+    const currentSession = await readPlayerSession(page);
+
+    await page.evaluate((session) => new Promise((resolve, reject) => {
+        const duplicateSocket = io({
+            autoConnect: false,
+            forceNew: true,
+            reconnection: false,
+            auth: {
+                playerId: session.playerId,
+                token: session.token,
+                nickname: session.nickname,
+            },
+        });
+        duplicateSocket.on("session:ready", resolve);
+        duplicateSocket.on("connect_error", reject);
+        duplicateSocket.connect();
+    }), currentSession);
+
+    await expect(page.locator("#chatMessages")).toContainText(terminalMessage);
+    await expect(page.locator("#btnJoinCode")).toBeDisabled();
+    expect(await readPlayerSession(page)).toEqual(currentSession);
+});
+
 test("lobby reload와 transport reconnect는 token을 회전하고 room을 다시 sync한다", async ({ browser }) => {
     const players = await createPlayerPages(browser);
     const { hostContext, hostPage, guestPage } = players;
