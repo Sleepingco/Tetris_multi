@@ -1,11 +1,11 @@
 {
   "name": "tetris_multi",
   "version": "1.0.0",
-  "main": "src/app.js",
+  "main": "dist/server/app.js",
   "scripts": {
     "dev": "vite",
-    "dev:server": "node src/app.js",
-    "start": "node src/app.js",
+    "dev:server": "npm run build:server && node dist/server/app.js",
+    "start": "node dist/server/app.js",
     "typecheck": "tsc -p tsconfig.client.json && tsc -p tsconfig.server.json && tsc -p tsconfig.test.json",
     "build": "node scripts/build.js",
     "build:server": "node scripts/build.js --server",

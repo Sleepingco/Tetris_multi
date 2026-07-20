@@ -9,7 +9,7 @@ const app = express()
 const server = http.createServer(app)
 const socketServer = socketIO(server, createSocketServerOptions())
 const PORT = process.env.PORT || 5500
-const STATIC_ROOT = path.join(__dirname, "..", "..", "dist", "client")
+const STATIC_ROOT = path.join(__dirname, "..", "..", "client")
 
 app.use(express.static(STATIC_ROOT))
 app.get("/", (_, res) => {
