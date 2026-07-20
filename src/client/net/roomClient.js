@@ -208,20 +208,33 @@ export function getPlayerSession() {
 }
 
 export function onSessionReady(handler) {
-    sessionReadyHandlers.add(handler)
-    if (activeSession) queueMicrotask(() => handler({ ...activeSession }))
+    const wrappedHandler = (session) => handler(session)
+    sessionReadyHandlers.add(wrappedHandler)
+    const capturedSession = activeSession
+    if (capturedSession) {
+        queueMicrotask(() => {
+            if (
+                sessionReadyHandlers.has(wrappedHandler)
+                && activeSession === capturedSession
+            ) {
+                wrappedHandler({ ...capturedSession })
+            }
+        })
+    }
 
-    return () => sessionReadyHandlers.delete(handler)
+    return () => sessionReadyHandlers.delete(wrappedHandler)
 }
 
 export function onSessionError(handler) {
-    sessionErrorHandlers.add(handler)
-    return () => sessionErrorHandlers.delete(handler)
+    const wrappedHandler = (error) => handler(error)
+    sessionErrorHandlers.add(wrappedHandler)
+    return () => sessionErrorHandlers.delete(wrappedHandler)
 }
 
 export function onSessionDisconnected(handler) {
-    sessionDisconnectedHandlers.add(handler)
-    return () => sessionDisconnectedHandlers.delete(handler)
+    const wrappedHandler = (disconnect) => handler(disconnect)
+    sessionDisconnectedHandlers.add(wrappedHandler)
+    return () => sessionDisconnectedHandlers.delete(wrappedHandler)
 }
 
 export function requestCreateRoom(player, mode = "pvp", aiDifficulty = null, aiPolicy = null) {

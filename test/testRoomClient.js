@@ -53,6 +53,7 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     const {
         requestCreateRoom,
         onGameBagResult,
+        onSessionReady,
         onSessionError,
         onSessionDisconnected,
         sendGameInput,
@@ -65,6 +66,73 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     const sessionErrors = [];
     onSessionDisconnected((disconnect) => disconnects.push(disconnect));
     onSessionError((error) => sessionErrors.push(error));
+
+    let disposedReplayCount = 0;
+    const detachDisposedReplay = onSessionReady(() => {
+        disposedReplayCount += 1;
+    });
+    detachDisposedReplay();
+    detachDisposedReplay();
+    await Promise.resolve();
+    assert.equal(disposedReplayCount, 0);
+
+    const rotatedReadySessions = [];
+    const detachRotatedReady = onSessionReady((session) => {
+        rotatedReadySessions.push(session.nickname);
+    });
+    handlers.get("connect")?.();
+    handlers.get("session:ready")?.({
+        version: 1,
+        playerId: "00000000-0000-4000-8000-000000000001",
+        token: "b".repeat(43),
+        nickname: "Rotated",
+        expiresAt: Date.now() + 60_000,
+        resumed: true,
+    });
+    await Promise.resolve();
+    assert.deepEqual(rotatedReadySessions, ["Rotated"]);
+    detachRotatedReady();
+
+    let duplicateErrorCount = 0;
+    const duplicateErrorHandler = () => {
+        duplicateErrorCount += 1;
+    };
+    const detachFirstError = onSessionError(duplicateErrorHandler);
+    const detachSecondError = onSessionError(duplicateErrorHandler);
+    handlers.get("connect_error")?.({});
+    assert.equal(duplicateErrorCount, 2);
+    detachFirstError();
+    detachFirstError();
+    handlers.get("connect_error")?.({});
+    assert.equal(duplicateErrorCount, 3);
+    detachSecondError();
+    handlers.get("connect_error")?.({});
+    assert.equal(duplicateErrorCount, 3);
+
+    let duplicateDisconnectCount = 0;
+    const duplicateDisconnectHandler = () => {
+        duplicateDisconnectCount += 1;
+    };
+    const detachFirstDisconnect = onSessionDisconnected(duplicateDisconnectHandler);
+    const detachSecondDisconnect = onSessionDisconnected(duplicateDisconnectHandler);
+    handlers.get("disconnect")?.("transport close");
+    assert.equal(duplicateDisconnectCount, 2);
+    detachFirstDisconnect();
+    detachFirstDisconnect();
+    handlers.get("disconnect")?.("transport close");
+    assert.equal(duplicateDisconnectCount, 3);
+    detachSecondDisconnect();
+    handlers.get("disconnect")?.("transport close");
+    assert.equal(duplicateDisconnectCount, 3);
+    handlers.get("connect")?.();
+    handlers.get("session:ready")?.({
+        version: 1,
+        playerId: "00000000-0000-4000-8000-000000000001",
+        token: "c".repeat(43),
+        nickname: "Player",
+        expiresAt: Date.now() + 60_000,
+        resumed: true,
+    });
 
     requestCreateRoom(player, "pvp", "hard", "placement_v4");
     requestCreateRoom(player, "pve");
