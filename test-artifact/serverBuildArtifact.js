@@ -63,4 +63,32 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
     const core = await loadGameCore();
     assert.equal(core.BLOCKS.default, undefined);
     assert.equal(core.BLOCKS.tree.length, 4);
+
+    const {
+        createMatch,
+        resetMatches,
+    } = require(path.join(SERVER_ROOT, "server", "services", "matchService.js"));
+    const { createPveAiPlayerService } = require(
+        path.join(SERVER_ROOT, "server", "services", "pveAiPlayerService.js")
+    );
+    resetMatches();
+    createMatch({
+        roomId: "V4ARTF01",
+        mode: "pve",
+        aiDifficulty: "normal",
+        aiPolicy: "placement_v4",
+        status: "playing",
+        players: [
+            { playerId: "human", playerType: "human" },
+            { playerId: "ai", playerType: "heuristic_ai" },
+        ],
+    });
+    const decision = await createPveAiPlayerService().processAiStep(
+        "V4ARTF01",
+        "ai",
+        core,
+    );
+    assert.equal(decision.reason, "AI_PLAN_CREATED");
+    assert.equal(decision.decision.policyUsed, "placement_v4");
+    assert.equal(decision.decision.fallbackReason, null);
 });
