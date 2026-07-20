@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <base href="/pages/">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tetris Multi</title>
     <script>
@@ -104,7 +105,7 @@
     <script type="module">
         import { initLobbySound } from "../game/runtime/sound.js"
         import { queryElement } from "../game/entry/dom.js"
-        import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
+        import { applySavedTheme, toggleTheme } from "../game/entry/theme.ts"
 
         const themeToggleBtn = queryElement(document, "#themeToggle")
         const soundToggleBtn = queryElement(document, "#soundToggle")

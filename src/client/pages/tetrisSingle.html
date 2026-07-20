@@ -88,7 +88,7 @@
         import { attachKeyboardInput } from "../game/runtime/input.js"
         import { createTetrisRuntime } from "../game/runtime/tetris.js"
         import { queryElement, requireElement } from "../game/entry/dom.js"
-        import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
+        import { applySavedTheme, toggleTheme } from "../game/entry/theme.ts"
 
         const boardCanvasEl = requireElement(document, "canvas#tetrisBoardCanvas", "single game")
         const gameOverEl = requireElement(document, ".game-text", "single game")

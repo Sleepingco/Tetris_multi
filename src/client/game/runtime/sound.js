@@ -1,8 +1,8 @@
 const SOUND_KEY = "tetrisSoundEnabled"
 
-const lobbyMusic = createAudio("../assets/sound/tetris_lobby_music.mp3", { loop: true, volume: 0.1 })
-const gameMusic = createAudio("../assets/sound/tetris_game_music.mp3", { loop: true, volume: 0.1 })
-const lineClearSfx = createAudio("../assets/sound/tetris_lineclear_sfx.mp3", { loop: false, volume: 0.2 })
+const lobbyMusic = createAudio(new URL("../../assets/sound/tetris_lobby_music.mp3", import.meta.url).href, { loop: true, volume: 0.1 })
+const gameMusic = createAudio(new URL("../../assets/sound/tetris_game_music.mp3", import.meta.url).href, { loop: true, volume: 0.1 })
+const lineClearSfx = createAudio(new URL("../../assets/sound/tetris_lineclear_sfx.mp3", import.meta.url).href, { loop: false, volume: 0.2 })
 
 let soundEnabled = loadSoundPref()
 let currentMusic = null

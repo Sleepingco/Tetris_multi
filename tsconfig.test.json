@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"]
+  },
+  "include": ["e2e/**/*.js", "playwright.config.cjs", "scripts/**/*.js", "test/**/*.js"]
+}
