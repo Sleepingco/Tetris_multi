@@ -18,7 +18,6 @@ const {
     deleteMatch,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
-    recordInput,
     validateClientInputSequence,
 } = require("../services/matchService.js")
 const { loadGameCore } = require("../services/gameCoreLoader.js")
@@ -119,8 +118,8 @@ function handlePlayerJoinedRoom(socketServer, clientSocket, result, nickname) {
 
 /**
  * 멀티플레이 Socket.IO 이벤트를 등록한다.
- * - 서버는 room/match 상태, 입력 로그, bag chunk, authoritative snapshot 송신을 담당한다.
- * - 클라이언트 입력 relay는 유지하되 garbage/game over는 서버 lock 결과를 기준으로 처리한다.
+ * - 서버는 room/match 상태, bag chunk, authoritative snapshot 송신을 담당한다.
+ * - garbage/game over는 서버 authoritative lock 결과를 기준으로 처리한다.
  *
  * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
  * @param {import("socket.io").Socket} clientSocket - 연결된 클라이언트 socket
@@ -146,6 +145,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         const result = createRoom(hostPlayer, {
             mode: createPayload.mode,
             aiDifficulty: createPayload.aiDifficulty,
+            aiPolicy: createPayload.aiPolicy,
         })
 
         if (result.ok) {
@@ -248,7 +248,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         })
     })
 
-    // 같은 socket의 입력은 record → relay → authoritative apply 순서로 직렬 처리한다.
+    // 같은 socket의 입력은 validation → authoritative apply 순서로 직렬 처리한다.
     async function processGameInput(payload = {}) {
         const {
             roomId,
@@ -324,19 +324,6 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             emitInputResult(false, sequenceValidation.reason)
             return
         }
-        const inputResult = recordInput(roomId, playerId, input)
-
-        if (!inputResult.ok) {
-            emitInputResult(false, inputResult.reason)
-            return
-        }
-
-        clientSocket.to(roomId).emit("game:input", {
-            roomId,
-            playerId,
-            ...input,
-        })
-
         try {
             await authoritativePlayerMutationQueue.enqueueAuthoritativePlayerMutation(
                 roomId,
@@ -377,7 +364,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                         createGarbageHoleCol,
                     )
 
-                    emitAuthoritativeSnapshot(
+                    const snapshot = emitAuthoritativeSnapshot(
                         socketServer,
                         roomId,
                         playerId,
@@ -396,7 +383,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                         socketServer,
                         roomId,
                         playerId,
-                        gameplayResult?.placementResult,
+                        gameplayResult?.placementResult || gameplayResult?.holdResult,
+                        snapshot,
                         authoritativeTickerService,
                         saveEventLog,
                     )
@@ -625,6 +613,10 @@ function createGameJoinMatchDto(match) {
     return {
         roomId: match.roomId,
         mode: match.mode || "pvp",
+        aiPolicy: match.aiPolicy ?? null,
+        aiPolicyRuntime: match.aiPolicyRuntime
+            ? { ...match.aiPolicyRuntime }
+            : null,
         status: match.status,
         createdAt: match.createdAt,
         players: match.players.map(player => {
@@ -646,15 +638,17 @@ async function handleServerGameOverResult(
     socketServer,
     roomId,
     loserPlayerId,
-    placementResult,
+    gameOverResult,
+    snapshot,
     authoritativeTickerService,
     saveEventLog,
 ) {
-    if (!placementResult?.gameOver) return
+    if (!gameOverResult?.gameOver && snapshot?.phase !== "gameOver") return
 
     await finishAuthoritativeMatch({
         roomId,
         loserPlayerId,
+        finishReason: gameOverResult?.gameOverReason,
         finishGame,
         stopRoomTicker: authoritativeTickerService.stopRoomTicker,
         emitMatchFinish(payload) {
@@ -687,6 +681,8 @@ function createGameStartLog(room, match) {
         gameId: createGameId(room.roomId, match),
         roomId: room.roomId,
         mode: room.mode === "pve" ? "pve" : "multi",
+        aiDifficulty: match.aiDifficulty,
+        aiPolicyRequested: match.aiPolicy,
         startedAt: match.createdAt || Date.now(),
         players: room.players.map(player => ({
             playerId: player.playerId,

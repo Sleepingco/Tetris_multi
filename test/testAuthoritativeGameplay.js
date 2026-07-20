@@ -83,11 +83,9 @@ test("authoritative gameplay은 연속 input으로 state를 갱신하고 stale p
     assert.equal(staleResult.ok, false);
     assert.equal(staleResult.reason, "PIECE_INDEX_MISMATCH");
     assert.deepEqual(hostPlayer.authoritativeState, beforeStaleInputState);
-    assert.deepEqual(hostPlayer.inputLog, []);
 
     const matchResult = getMatchState(roomId);
     assert.equal(matchResult.ok, true);
-    assert.deepEqual(matchResult.match.players[0].inputLog, []);
 });
 
 test("authoritative line clear는 정확한 row와 player별 presentation effect id를 만든다", async () => {

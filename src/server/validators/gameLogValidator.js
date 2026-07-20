@@ -1,5 +1,8 @@
 const DEFAULT_MAX_LOG_BYTES = 256 * 1024;
-const { isValidAiDifficulty } = require("../services/aiDifficulty.js");
+const {
+    isValidAiDifficulty,
+    isValidAiPolicy,
+} = require("../services/aiDifficulty.js");
 
 function createSuccess(log) {
     return {
@@ -174,6 +177,10 @@ function validateGameStartLog(log, options = {}) {
         return createFailure("PLAYERS_REQUIRED");
     }
 
+    if (log.aiPolicyRequested != null && !isValidAiPolicy(log.aiPolicyRequested)) {
+        return createFailure("INVALID_AI_POLICY_REQUESTED");
+    }
+
     const hasInvalidPlayer = log.players.some(player => {
         return !player || !isNonEmptyString(player.playerId);
     });
@@ -223,6 +230,31 @@ function validateGameOverLog(log, options = {}) {
 
     if (!isNonEmptyString(log.finishType)) {
         return createFailure("FINISH_TYPE_REQUIRED");
+    }
+
+    if (log.aiPolicyRequested != null && !isValidAiPolicy(log.aiPolicyRequested)) {
+        return createFailure("INVALID_AI_POLICY_REQUESTED");
+    }
+    if (log.aiPolicyLastUsed != null && !isValidAiPolicy(log.aiPolicyLastUsed)) {
+        return createFailure("INVALID_AI_POLICY_USED");
+    }
+    if (
+        log.aiPolicyFallbackCount !== undefined
+        && (!Number.isInteger(log.aiPolicyFallbackCount) || log.aiPolicyFallbackCount < 0)
+    ) {
+        return createFailure("INVALID_AI_POLICY_FALLBACK_COUNT");
+    }
+    if (
+        log.aiPolicyLastFallbackReason != null
+        && !isNonEmptyString(log.aiPolicyLastFallbackReason)
+    ) {
+        return createFailure("INVALID_AI_POLICY_FALLBACK_REASON");
+    }
+    if (
+        log.aiModelSha256 != null
+        && !/^[0-9a-f]{64}$/.test(log.aiModelSha256)
+    ) {
+        return createFailure("INVALID_AI_MODEL_SHA256");
     }
 
     return createSuccess(log);

@@ -1867,7 +1867,7 @@ client input
 
 - 프로젝트 진입용 `README.md`를 추가했다.
 - `docs/current-project-architecture-report.md`에 현재 client/server authoritative/PVE/로그 구조를 정리했다.
-- `PLAN.md`, `QnA.md`, `docs/heuristic-ai-design.md`, `docs/game-log-dataset-policy.md`, `docs/ml-dataset-plan.md`를 현재 구현 상태에 맞춰 갱신했다.
+- `PLAN.md`, `QnA.md`, `docs/heuristic-ai-design.md`, `docs/game-log-dataset-policy.md`, `docs/archive/ai-ml/plans/ml-dataset-plan.md`를 당시 구현 상태에 맞춰 갱신했다.
 - LLM은 게임 판단 원천이 아니라 분석 결과를 설명하는 후순위 코칭 계층으로 유지한다.
 
 ## 테스트와 검증

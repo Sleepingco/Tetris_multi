@@ -6,11 +6,7 @@ import {
     clearFilledLines,
     isPieceAboveTop,
 } from "../core/board.js"
-import {
-    applyGarbageLines as applyGarbageLinesToBoard,
-    calculateGarbageAttack,
-    resolveGarbageCancel as resolveGarbageCancelPure,
-} from "../core/garbage.js"
+import { calculateGarbageAttack } from "../core/garbage.js"
 import { resolveAttackState } from "../core/attackState.js"
 import {
     resolveInputMoveIntent,
@@ -81,12 +77,10 @@ const GAME_PHASE = {
   */
 export function createTetrisRuntime({
     boardCanvasEl = null,
-    multiCanvasEls = [],
     gameOverEl = null,
     scoreEl = null,
     linesEl = null,
     pendingGarbageEl = null,
-    garbageLogEl = null,
     nextPreviewEl = null,
     holdPreviewEl = null,
     rng = Math.random,
@@ -124,7 +118,6 @@ export function createTetrisRuntime({
         placementDecisionLog: [],
         decisionStartPiece: null,
         pendingLockScoreBefore: null,
-        pendingGarbageQueue: [],
         authoritativePendingGarbageLines: 0,
         mode,
         gameId,
@@ -137,7 +130,6 @@ export function createTetrisRuntime({
         scoreEl,
         linesEl,
         pendingGarbageEl,
-        garbageLogEl,
         gameOverEl,
         nextPreviewEl,
         holdPreviewEl,
@@ -209,7 +201,6 @@ export function createTetrisRuntime({
         runtime.decisionStartPiece = null
         runtime.pendingLockScoreBefore = null
         runtime.automaticGroundedPieceIndex = null
-        runtime.pendingGarbageQueue = []
         runtime.authoritativePendingGarbageLines = 0
         ui.renderPendingGarbage(0)
     }
@@ -613,6 +604,7 @@ export function createTetrisRuntime({
         if (intent.kind === "gameOver") {
             runtime.automaticGroundedPieceIndex = null
             gameState.phase = GAME_PHASE.GAME_OVER
+            gameState.pendingPiece = null
             gameState.inputQueue = []
             runtime.decisionStartPiece = null
             stopGameLoops()
@@ -888,7 +880,6 @@ export function createTetrisRuntime({
         stopGameLoops()
         runtime.detachKeyboard?.()
         runtime.detachKeyboard = null
-        ui.dispose()
         ui.hideGameOver()
         gameState.inputQueue = []
         runtime.decisionStartPiece = null
@@ -909,14 +900,12 @@ export function createTetrisRuntime({
     // 화면에 그릴 데이터와 애니메이션 처리를 담당한다.
     // =============================
     /**
-      * 렌더링에 사용할 캔버스를 정하고, 그리기 컨텍스트를 runtime에 저장한다.
-      * - 싱글 플레이 캔버스가 없으면 첫 번째 멀티 플레이 캔버스를 대신 사용한다.
+      * 렌더링에 사용할 캔버스 컨텍스트를 runtime에 저장한다.
       *
       * @returns {void}
       */
     function initBoardContext() {
-        const targetCanvas = boardCanvasEl || multiCanvasEls[0];
-        runtime.boardCtx = getBoardContext(targetCanvas);
+        runtime.boardCtx = getBoardContext(boardCanvasEl);
     }
 
     /**
@@ -1121,12 +1110,12 @@ export function createTetrisRuntime({
 
     /**
       * lock 후 보드와 결과값을 채워 placement_decision 로그를 확정한다.
-      * - 공격 줄 계산, pending garbage 상쇄, 대기 garbage 적용까지 한 번에 확정한다.
+      * - 클라이언트는 공격량만 계산하고 garbage 상쇄·적용은 authoritative server가 결정한다.
       * - 멀티플레이에서는 placementDecisionRecorder를 통해 서버 로그와 공격 이벤트로 이어진다.
       *
       * @param {Object|null} placementContext - lock 직전 생성한 로그 문맥
       * @param {{linesCleared: number, isTSpin: boolean, gameOver: boolean}} result - lock 처리 결과
-      * @returns {{gameOver: boolean}} garbage 적용까지 포함한 최종 game over 여부
+      * @returns {{gameOver: boolean}} lock 결과의 game over 여부
       */
     function finalizePlacementDecision(placementContext, result) {
         if (!placementContext) return { gameOver: false }
@@ -1138,13 +1127,6 @@ export function createTetrisRuntime({
             isTSpin: result.isTSpin,
         })
         const rawAttackLines = calculateGarbageAttack(attackState)
-        const garbageResolution = resolveGarbageCancel(rawAttackLines)
-        if (garbageResolution.canceledGarbageLines > 0) {
-            ui.renderGarbageEvent({
-                type: "cancel",
-                lines: garbageResolution.canceledGarbageLines,
-            })
-        }
         const log = {
             ...logBase,
             boardAfter: serializeGameState(gameState).board,
@@ -1154,9 +1136,9 @@ export function createTetrisRuntime({
                 combo: attackState.combo,
                 backToBack: attackState.backToBack,
                 rawAttackLines,
-                attackLines: garbageResolution.attackLines,
-                canceledGarbageLines: garbageResolution.canceledGarbageLines,
-                incomingGarbageLines: garbageResolution.incomingGarbageLines,
+                attackLines: rawAttackLines,
+                canceledGarbageLines: 0,
+                incomingGarbageLines: 0,
                 appliedGarbageLines: 0,
                 scoreBefore,
                 scoreAfter,
@@ -1164,10 +1146,6 @@ export function createTetrisRuntime({
                 gameOver: result.gameOver,
             },
         }
-
-        const appliedGarbage = applyPendingGarbageQueue()
-        log.placementResult.appliedGarbageLines = appliedGarbage.appliedLines
-        log.placementResult.gameOver = log.placementResult.gameOver || appliedGarbage.overflow
 
         const analysis = createHumanPlacementLogAnalysis({
             boardBefore: log.boardBefore,
@@ -1201,115 +1179,14 @@ export function createTetrisRuntime({
         }
     }
 
-    /**
-      * 외부에서 받은 garbage line을 현재 board 아래에 적용한다.
-      *
-      * @param {{lines: number, holeCol: number}} garbage - 적용할 garbage 정보
-      * @returns {{appliedLines: number, overflow: boolean}} 적용 결과
-      */
-    function applyGarbageLines(garbage) {
-        const result = applyGarbageLinesToBoard(gameState.board, garbage)
-
-        if (result.appliedLines > 0) {
-            renderBoard()
-        }
-
-        if (result.overflow) {
-            gameState.phase = GAME_PHASE.GAME_OVER
-            gameState.inputQueue = []
-            stopGameLoops()
-            ui.showGameOver()
-        }
-
-        return result
-    }
-
-    /**
-      * 외부에서 받은 garbage를 즉시 올리지 않고 다음 lock까지 대기시킨다.
-      *
-      * @param {{lines: number, holeCol: number}} garbage - 대기열에 넣을 garbage 정보
-      * @returns {number} 현재 pending garbage 총 줄 수
-      */
-    function queueGarbageLines(garbage = {}) {
-        const lines = Number.isInteger(garbage.lines) && garbage.lines > 0
-            ? garbage.lines
-            : 0
-        if (lines === 0) return getPendingGarbageLines()
-
-        runtime.pendingGarbageQueue.push({
-            lines,
-            holeCol: garbage.holeCol,
-        })
-
-        setAuthoritativePendingGarbageLines(getPendingGarbageLines(), { pulse: true })
-
-        return getPendingGarbageLines()
-    }
-
-    /**
-      * 현재 대기 중인 garbage queue의 총 줄 수를 계산한다.
-      *
-      * @returns {number} 아직 보드에 적용되지 않은 garbage 총 줄 수
-      */
-    function getPendingGarbageLines() {
-        return runtime.pendingGarbageQueue.reduce((total, garbage) => {
-            return total + garbage.lines
-        }, 0)
-    }
-
     function normalizePendingGarbageLines(lines) {
         return Number.isInteger(lines) && lines > 0 ? lines : 0
     }
 
-    function setAuthoritativePendingGarbageLines(lines, options = {}) {
+    function setAuthoritativePendingGarbageLines(lines) {
         runtime.authoritativePendingGarbageLines = normalizePendingGarbageLines(lines)
-        ui.renderPendingGarbage(runtime.authoritativePendingGarbageLines, options)
+        ui.renderPendingGarbage(runtime.authoritativePendingGarbageLines)
         return runtime.authoritativePendingGarbageLines
-    }
-
-    /**
-      * 이번 공격 줄로 대기 garbage를 상쇄하고, 남은 pending queue를 runtime에 반영한다.
-      *
-      * @param {number} rawAttackLines - 라인 클리어 결과로 계산된 상쇄 전 공격 줄 수
-      * @returns {{incomingGarbageLines: number, canceledGarbageLines: number, attackLines: number}} 상쇄 결과
-      */
-    function resolveGarbageCancel(rawAttackLines) {
-        const garbageCancelResult = resolveGarbageCancelPure({
-            pendingGarbageQueue: runtime.pendingGarbageQueue,
-            rawAttackLines,
-        })
-        runtime.pendingGarbageQueue = garbageCancelResult.pendingGarbageQueue
-
-        return {
-            incomingGarbageLines: garbageCancelResult.incomingGarbageLines,
-            canceledGarbageLines: garbageCancelResult.canceledGarbageLines,
-            attackLines: garbageCancelResult.attackLines,
-        }
-    }
-
-    /**
-      * 다음 조각으로 넘어가기 전에 대기 중인 garbage를 모두 보드에 적용한다.
-      * - overflow가 발생하면 game over 상태까지 함께 확정한다.
-      *
-      * @returns {{appliedLines: number, overflow: boolean}} 적용된 줄 수와 overflow 여부
-      */
-    function applyPendingGarbageQueue() {
-        let appliedLines = 0
-        let overflow = false
-
-        while (runtime.pendingGarbageQueue.length > 0) {
-            const garbage = runtime.pendingGarbageQueue.shift()
-            const result = applyGarbageLines(garbage)
-            appliedLines += result.appliedLines
-            overflow = overflow || result.overflow
-        }
-
-        setAuthoritativePendingGarbageLines(getPendingGarbageLines())
-
-        return {
-            appliedLines,
-            overflow,
-        }
     }
 
     /**
@@ -1549,21 +1426,6 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 서버에서 받은 초기 bag chunk들을 런타임 대기열에 저장한다.
-      * - 멀티플레이 MVP에서는 스폰 조각 공급을 서버가 결정한다.
-      *
-      * @param {string[][]} chunks - 서버가 보낸 7-bag chunk 목록
-      * @returns {void}
-      */
-    function applyServerBag(chunks) {
-        setServerBagQueue(chunks)
-        gameState.bag = []
-        gameState.pieceQueue = []
-        refillSpawnQueue()
-        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
-    }
-
-    /**
       * 서버가 내려준 bag chunks를 런타임의 조각 공급원으로 설정한다.
       *
       * @param {string[][]} chunks - 서버가 보낸 7-bag chunk 목록
@@ -1645,12 +1507,8 @@ export function createTetrisRuntime({
         getSnapshot,
         applySnapshot,
         playLineClearPresentation,
-        applyGarbageLines,
-        queueGarbageLines,
-        getPendingGarbageLines,
         getPendingInputCount,
         setAuthoritativePendingGarbageLines,
-        applyServerBag,
         appendServerBag,
         getServerBagRemainingCount,
         hideGameOver: ui.hideGameOver,

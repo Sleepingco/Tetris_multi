@@ -10,8 +10,12 @@ const {
 } = require("./logService.js");
 const {
     AI_EXECUTION_PROFILES,
+    AI_POLICY,
     DEFAULT_AI_DIFFICULTY,
 } = require("./aiDifficulty.js");
+const crypto = require("node:crypto");
+const fs = require("node:fs/promises");
+const path = require("node:path");
 
 const AI_ACTIONS = new Set([
     "move_left",
@@ -20,7 +24,15 @@ const AI_ACTIONS = new Set([
     "soft_drop",
     "hard_drop",
 ]);
+const PLACEMENT_V4_MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d";
+const DEFAULT_PLACEMENT_V4_MODEL_PATH = path.join(
+    __dirname,
+    "..",
+    "assets",
+    "placement-v4-125g-experimental-model.json",
+);
 let heuristicAiPromise = null;
+let placementV4AiPromise = null;
 
 function loadHeuristicAi() {
     if (!heuristicAiPromise) {
@@ -35,8 +47,74 @@ function loadHeuristicAi() {
     return heuristicAiPromise;
 }
 
+function loadPlacementV4Ai() {
+    if (!placementV4AiPromise) {
+        placementV4AiPromise = Promise.all([
+            import("../../client/game/ai/ml/placementV4PveDecisionAdapter.js"),
+            import("../../client/game/ai/ml/placementV4OfflineScorer.js"),
+        ]).then(([pveAdapter, offlineScorer]) => ({
+            getPlacementV4PveDecision: pveAdapter.getPlacementV4PveDecision,
+            validatePlacementV4Model: offlineScorer.validatePlacementV4Model,
+        }));
+    }
+    return placementV4AiPromise;
+}
+
+async function loadPlacementV4Model(modelPath, validateModel) {
+    let bytes;
+    try {
+        bytes = await fs.readFile(modelPath);
+    } catch {
+        return {
+            ok: false,
+            reason: "MODEL_NOT_FOUND",
+            modelSha256: null,
+        };
+    }
+
+    const modelSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
+    let model;
+    try {
+        model = JSON.parse(bytes.toString("utf8"));
+    } catch {
+        return {
+            ok: false,
+            reason: "MODEL_JSON_INVALID",
+            modelSha256,
+        };
+    }
+    if (modelSha256 !== PLACEMENT_V4_MODEL_SHA256) {
+        return {
+            ok: false,
+            reason: "MODEL_SHA_MISMATCH",
+            modelSha256,
+        };
+    }
+
+    let validation;
+    try {
+        validation = validateModel(model);
+    } catch (error) {
+        validation = { ok: false, reason: error.message || "UNEXPECTED_ERROR" };
+    }
+    if (!validation?.ok) {
+        return {
+            ok: false,
+            reason: `MODEL_VALIDATION_FAILED:${validation?.reason || "UNKNOWN"}`,
+            modelSha256,
+        };
+    }
+    return {
+        ok: true,
+        model,
+        modelSha256,
+        reason: null,
+    };
+}
+
 function createPveAiPlayerService(dependencies = {}) {
     const loadAi = dependencies.loadHeuristicAi || loadHeuristicAi;
+    const loadV4Ai = dependencies.loadPlacementV4Ai || loadPlacementV4Ai;
     const getMatchState = dependencies.getMatchState || defaultGetMatchState;
     const getPlayerSnapshot = dependencies.getPlayerSnapshot || defaultGetPlayerSnapshot;
     const applyInput = dependencies.applyInput || defaultApplyInput;
@@ -44,7 +122,99 @@ function createPveAiPlayerService(dependencies = {}) {
     const markPlayerGameOver = dependencies.markPlayerGameOver || defaultMarkPlayerGameOver;
     const savePlacementDecisionLog = dependencies.savePlacementDecisionLog
         || defaultSavePlacementDecisionLog;
+    const loadV4Model = dependencies.loadPlacementV4Model || loadPlacementV4Model;
+    const recordAiPolicyEvidence = dependencies.recordAiPolicyEvidence || (() => {});
     const now = dependencies.now || Date.now;
+    const modelPathValue = typeof (dependencies.env || process.env).PVE_PLACEMENT_V4_MODEL_PATH === "string"
+        ? (dependencies.env || process.env).PVE_PLACEMENT_V4_MODEL_PATH.trim()
+        : "";
+    const modelPath = modelPathValue
+        ? path.resolve(process.cwd(), modelPathValue)
+        : DEFAULT_PLACEMENT_V4_MODEL_PATH;
+    let modelPromise = null;
+
+    function getPlacementV4Model(ai) {
+        if (!modelPromise) {
+            modelPromise = Promise.resolve()
+                .then(() => loadV4Model(modelPath, ai.validatePlacementV4Model))
+                .catch(() => ({
+                    ok: false,
+                    reason: "MODEL_VALIDATION_FAILED:LOAD_ERROR",
+                    modelSha256: null,
+                }));
+        }
+        return modelPromise;
+    }
+
+    function getHeuristicFallbackDecision(ai, decisionState, fallbackReason, modelSha256) {
+        return {
+            ...ai.getHeuristicDecision(decisionState),
+            policyRequested: "placement_v4",
+            policyUsed: "heuristic",
+            fallbackReason,
+            modelSha256,
+        };
+    }
+
+    async function getPolicyDecision(ai, decisionState, aiPolicy) {
+        if (aiPolicy !== AI_POLICY.PLACEMENT_V4) {
+            return ai.getHeuristicDecision(decisionState);
+        }
+
+        let v4Ai;
+        try {
+            v4Ai = await loadV4Ai();
+        } catch {
+            return getHeuristicFallbackDecision(
+                ai,
+                decisionState,
+                "V4_SCORER_FAILED:IMPORT_FAILED",
+                null,
+            );
+        }
+        const modelResult = await getPlacementV4Model(v4Ai);
+        if (!modelResult.ok) {
+            return getHeuristicFallbackDecision(
+                ai,
+                decisionState,
+                modelResult.reason,
+                modelResult.modelSha256,
+            );
+        }
+
+        try {
+            return {
+                ...v4Ai.getPlacementV4PveDecision(modelResult.model, decisionState),
+                modelSha256: modelResult.modelSha256,
+            };
+        } catch {
+            return getHeuristicFallbackDecision(
+                ai,
+                decisionState,
+                "V4_SCORER_FAILED:UNEXPECTED_ERROR",
+                modelResult.modelSha256,
+            );
+        }
+    }
+
+    function recordPolicyEvidence(roomId, playerId, pieceIndex, decision) {
+        if (decision.policyRequested !== AI_POLICY.PLACEMENT_V4) return;
+        try {
+            void Promise.resolve(recordAiPolicyEvidence({
+                roomId,
+                playerId,
+                pieceIndex,
+                policyRequested: decision.policyRequested,
+                policyUsed: decision.policyUsed,
+                fallbackReason: decision.fallbackReason ?? null,
+                modelSha256: decision.modelSha256 ?? null,
+                selectedClassKey: decision.selectedClassKey ?? null,
+                selectedRepresentativeKey: decision.selectedRepresentativeKey ?? null,
+            })).catch(() => {});
+        } catch {
+            // Dev evidence must never affect authoritative gameplay.
+        }
+    }
 
     /**
      * AI plan 생성 또는 authoritative action 하나만 처리한다.
@@ -89,7 +259,12 @@ function createPveAiPlayerService(dependencies = {}) {
                     return createFailure(snapshotResult.reason || "AUTHORITATIVE_STATE_NOT_FOUND");
                 }
                 const stateBefore = snapshotResult.snapshot;
-                const decision = ai.getHeuristicDecision(createDecisionState(stateBefore));
+                const decision = await getPolicyDecision(
+                    ai,
+                    createDecisionState(stateBefore),
+                    matchResult.match.aiPolicy,
+                );
+                recordPolicyEvidence(roomId, playerId, stateBefore.pieceIndex, decision);
                 if (!decision.ok) {
                     markPlayerGameOver(roomId, playerId, decision.errorCode || "AI_DECISION_FAILED");
                     return {
@@ -215,7 +390,14 @@ function createPveAiPlayerService(dependencies = {}) {
 
             let log = null;
             let logResult;
-            try {
+            if (plan.decision.policyUsed === "placement_v4") {
+                logResult = {
+                    ok: true,
+                    log: null,
+                    reason: "V4_TRAINING_LOG_EXCLUDED",
+                    skipped: true,
+                };
+            } else try {
                 const ai = await loadAi();
                 log = createPlacementDecisionLog({
                     match: matchResult.match,

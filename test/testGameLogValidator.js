@@ -301,6 +301,47 @@ test("validateGameOverLog는 최소 game_over 로그를 허용한다", () => {
     assert.equal(result.reason, null);
 });
 
+test("game lifecycle log는 experimental AI 요청과 실제 fallback provenance를 검증한다", () => {
+    const startResult = validateGameStartLog({
+        eventType: "game_start",
+        schemaVersion: 1,
+        gameId: "game-pve-001",
+        roomId: "room-pve-001",
+        mode: "pve",
+        aiPolicyRequested: "placement_v4",
+        startedAt: 1780000000000,
+        players: [{ playerId: "p1" }, { playerId: "ai" }],
+    });
+    const overLog = {
+        eventType: "game_over",
+        schemaVersion: 1,
+        gameId: "game-pve-001",
+        roomId: "room-pve-001",
+        mode: "pve",
+        aiPolicyRequested: "placement_v4",
+        aiPolicyLastUsed: "heuristic",
+        aiPolicyFallbackCount: 1,
+        aiPolicyLastFallbackReason: "MODEL_NOT_FOUND",
+        aiModelSha256: null,
+        endedAt: 1780000000100,
+        winnerPlayerId: "p1",
+        loserPlayerId: "ai",
+        reason: "top_out",
+        finishType: "normal",
+    };
+
+    assert.equal(startResult.ok, true);
+    assert.equal(validateGameOverLog(overLog).ok, true);
+    assert.equal(
+        validateGameOverLog({ ...overLog, aiPolicyLastUsed: "strong_ai" }).reason,
+        "INVALID_AI_POLICY_USED",
+    );
+    assert.equal(
+        validateGameOverLog({ ...overLog, aiPolicyFallbackCount: -1 }).reason,
+        "INVALID_AI_POLICY_FALLBACK_COUNT",
+    );
+});
+
 test("validateGameEventLog는 eventType별 검증으로 위임한다", () => {
     const result = validateGameEventLog({
         eventType: "game_over",

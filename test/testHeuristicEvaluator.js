@@ -176,11 +176,10 @@ test("maxHeight는 높이마다 1점씩 차감된다", async () => {
     assert.ok(evaluation.score < scoreWithoutMaxHeight);
 });
 
-test("rankPlacements와 getBestPlacement는 최고 점수 후보를 결정적으로 선택한다", async () => {
-    const {
-        getBestPlacement,
-        rankPlacements,
-    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+test("rankPlacements는 최고 점수 후보를 결정적으로 선택한다", async () => {
+    const { rankPlacements } = await import(
+        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+    );
     const board = createBoard();
     board[19] = [null, null, null, null, ...Array(6).fill("tree")];
     const activePiece = createGameState(board).activePiece;
@@ -193,7 +192,6 @@ test("rankPlacements와 getBestPlacement는 최고 점수 후보를 결정적으
         return index === 0 || firstRanking[index - 1].score >= evaluation.score;
     }));
     assert.deepEqual(firstRanking, secondRanking);
-    assert.deepEqual(getBestPlacement(board, activePiece), firstRanking[0].placement);
     assert.deepEqual(firstRanking[0].plannedActions, [
         "move_left",
         "move_left",
@@ -270,7 +268,7 @@ test("heuristicEvaluator는 도달 불가능한 고득점 placement를 선택하
         evaluatePlacement,
         getHeuristicDecision,
     } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
-    const { generatePlacements } = await import(
+    const { normalizePlacement } = await import(
         "../src/client/game/ai/heuristic/placementGenerator.js"
     );
     const board = createBoard();
@@ -292,8 +290,11 @@ test("heuristicEvaluator는 도달 불가능한 고득점 placement를 선택하
             col: 4,
         },
     };
-    const unreachablePlacement = generatePlacements(board, gameState.activePiece).find(placement => {
-        return placement.rotation === 0 && placement.row === 18 && placement.col === 0;
+    const unreachablePlacement = normalizePlacement({
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 0,
     });
     const unreachableEvaluation = evaluatePlacement(board, unreachablePlacement);
     const decision = getHeuristicDecision(gameState);

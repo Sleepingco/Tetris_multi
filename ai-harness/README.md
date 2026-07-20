@@ -6,6 +6,7 @@
 - `tasks/`: 이번 요청이 어떤 작업인지에 따라 고르는 작업 모드
 - `guides/`: 여러 작업에 공통으로 덧붙이는 설명 스타일 가이드
 - `runs/`: 필요하면 작업 기록을 남기는 폴더
+- `ml-experiments/`: 반복 ML 실험의 공통 계약, 실행 단계와 현재 실험 명세
 
 ## 언제 쓰는가
 
@@ -16,6 +17,7 @@
 - 큰 파일을 작은 책임 단위로 나누는 제안을 받고 싶을 때
 - 멀티플레이 구조를 단계적으로 설계하고 싶을 때
 - 규칙 기반 AI, feature, 데이터셋, ML 평가 기준을 정리하고 싶을 때
+- Notebook 구현, smoke, 사용자 full 실행과 결과 분석을 분리하고 싶을 때
 - 코드 변경 후 회귀 위험을 검토하고 싶을 때
 
 ## 기본 원칙
@@ -54,6 +56,8 @@ bash scripts/verify.sh
   - 회귀 위험, 설계 위반, 테스트 누락 검토
 - `tasks/ai-analysis.md`
   - AI 목표, state/data 계약, baseline, 평가 지표, 재현성 검토
+- `ml-experiments/`
+  - placement ML 반복 실험에서 긴 프롬프트 대신 공통 workflow와 현재 experiment 파일 사용
 
 ## 공통 가이드
 
@@ -91,5 +95,18 @@ placementGenerator를 내가 직접 구현할 수 있게 입력/출력 계약과
   - `documentation.md + ai-analysis.md + implementation.md + teaching-style.md`
 - AI 변경 후 확인
   - `ai-analysis.md + review.md`
+- Placement ML 실험
+  - `ml-experiments 공통 계약 + experiments/<현재 실험>.md + ai-analysis.md`
 - 코드 변경 후 확인
   - `review.md`
+
+## 반복 ML 실험 호출
+
+현재 실험 파일과 MODE만 전달한다.
+
+```text
+ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md를
+MODE=implement-smoke로 실행해. 사용자 full-run gate에서 멈춰.
+```
+
+세부 읽기 순서와 MODE 책임은 `ai-harness/ml-experiments/README.md`를 따른다.

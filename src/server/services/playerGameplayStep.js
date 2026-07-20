@@ -200,12 +200,9 @@ function applyHold(authoritativeState, gameCore) {
     }
 
     authoritativeState.holdPieceType = activePieceType;
-    const spawnedPiece = createSpawnedPiece(incomingType, gameCore);
-    authoritativeState.activePiece = { ...spawnedPiece };
-    authoritativeState.pendingPiece = { ...spawnedPiece };
+    const spawnedPiece = spawnPiece(authoritativeState, incomingType, gameCore);
     authoritativeState.holdUsedThisDrop = true;
     authoritativeState.lastActionWasRotation = false;
-    authoritativeState.phase = "playing";
 
     return {
         ok: true,
@@ -213,6 +210,10 @@ function applyHold(authoritativeState, gameCore) {
         holdResult: {
             holdPieceType: authoritativeState.holdPieceType,
             activePiece: { ...authoritativeState.activePiece },
+            ...(!spawnedPiece ? {
+                gameOver: true,
+                gameOverReason: "block_out",
+            } : {}),
         },
     };
 }
@@ -301,6 +302,7 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
     const nextPiece = gameOver
         ? null
         : spawnNextPiece(authoritativeState, gameCore);
+    const finalGameOver = Boolean(authoritativeState.gameOver);
 
     return {
         ok: true,
@@ -322,7 +324,10 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
             scoreBefore,
             scoreAfter,
             scoreDelta: scoreAfter - scoreBefore,
-            gameOver,
+            gameOver: finalGameOver,
+            ...(authoritativeState.gameOverReason ? {
+                gameOverReason: authoritativeState.gameOverReason,
+            } : {}),
             nextPiece,
         },
     };
@@ -366,15 +371,38 @@ function spawnNextPiece(authoritativeState, gameCore) {
     }
 
     const pieceType = authoritativeState.pieceQueue.shift();
-    const spawnedPiece = createSpawnedPiece(pieceType, gameCore);
 
     authoritativeState.pieceIndex = normalizeInteger(authoritativeState.pieceIndex) + 1;
-    authoritativeState.activePiece = { ...spawnedPiece };
-    authoritativeState.pendingPiece = { ...spawnedPiece };
     authoritativeState.holdUsedThisDrop = false;
     authoritativeState.lastActionWasRotation = false;
-    authoritativeState.phase = "playing";
 
+    return spawnPiece(authoritativeState, pieceType, gameCore);
+}
+
+function spawnPiece(authoritativeState, pieceType, gameCore) {
+    const spawnedPiece = createSpawnedPiece(pieceType, gameCore);
+    const canSpawn = gameCore.canPlacePiece(
+        authoritativeState.board,
+        spawnedPiece,
+        gameCore.BLOCKS,
+    );
+
+    if (!canSpawn) {
+        authoritativeState.activePiece = {
+            ...spawnedPiece,
+            pieceType: "",
+        };
+        authoritativeState.pendingPiece = null;
+        authoritativeState.phase = "gameOver";
+        authoritativeState.gameOver = true;
+        authoritativeState.gameOverReason = "block_out";
+        return null;
+    }
+
+    authoritativeState.activePiece = { ...spawnedPiece };
+    authoritativeState.pendingPiece = { ...spawnedPiece };
+    authoritativeState.phase = "playing";
+    authoritativeState.gameOver = false;
     return spawnedPiece;
 }
 

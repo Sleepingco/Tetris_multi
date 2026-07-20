@@ -3878,3 +3878,409 @@ PVE 연결 X
 ```
 
 이 판단은 "ML이 실패했다"가 아니라, 아직 데이터가 13게임으로 적고 winner game도 1개뿐이므로 휴리스틱보다 좋다는 근거가 부족하다는 뜻이다. 다음 우선순위는 모델을 바로 연결하는 것이 아니라, 속도를 조정한 PVE에서 더 다양한 완료 게임 데이터를 수집하고 재평가하는 것이다.
+
+---
+
+## Q. 지금까지의 실험 흐름을 쉽게 설명해줘. (2026-07-17)
+
+목표는 "강한 AI를 바로 만들기"가 아니라, 먼저 **사람이 테트리스에서 어떤 배치를 선택하는지 따라 하는 모델**을 만들고 그 평가가 믿을 만한지 확인하는 것이다.
+
+전체 흐름은 다음과 같다.
+
+```txt
+게임 플레이
+-> JSONL 게임 로그 저장
+-> 완료된 v2 placement 로그만 추림
+-> 각 조각의 가능한 배치 후보 생성
+-> 사람이 고른 후보와 나머지 후보를 비교
+-> Python 모델 학습
+-> 게임 단위 평가(LOGO)
+-> 후보 표현이 충분한지 분석
+```
+
+### 1. 게임 로그를 학습 데이터로 바꾼다
+
+게임을 하면 `placement_decision` 로그가 남는다. 여기에는 당시 보드, 현재 조각, 사람이 실제로 고른 배치가 들어 있다.
+
+```txt
+현재 보드 + I 조각
+-> 가능한 후보 A, B, C, D 생성
+-> 사람이 C를 선택
+```
+
+데이터셋에는 C만 저장하는 것이 아니라, A~D 각각을 후보 행으로 저장한다. 그리고 C에만 `selectedBySource: true`를 붙인다.
+
+학습에는 최신 형식인 schema v2 placement 로그를 사용한다. v1은 이전 로그 형식이라 현재 placement 학습의 기준 데이터로 사용하지 않는다.
+
+### 2. Pairwise는 "선택한 후보가 더 높아야 한다"는 학습 방식이다
+
+모델은 키 입력 자체를 예측하지 않는다. 후보 배치의 점수를 매긴다.
+
+```txt
+사람이 C를 선택했다면
+
+C vs A: C 점수가 더 높아야 함
+C vs B: C 점수가 더 높아야 함
+C vs D: C 점수가 더 높아야 함
+```
+
+이처럼 선택한 후보와 선택하지 않은 후보를 한 쌍(pair)씩 비교하므로 `pairwise ranking`이라고 한다. 후보 수가 많은 조각이 학습에 과도한 영향을 주지 않도록, 한 decision에서 만들어진 pair들의 가중치 합은 1이 되게 한다.
+
+### 3. 처음에는 JavaScript와 Python이 같은 계산을 하는지 확인했다
+
+처음 JavaScript로 만든 선형 ranker의 계산을 Python/NumPy와 scikit-learn으로 다시 실행했다.
+
+```txt
+같은 데이터
+-> feature 값
+-> scaler 평균/표준화 값
+-> pair와 가중치
+-> score와 순위
+```
+
+이 값들이 허용 오차 안에서 일치하는지 확인했다. 이것은 "Python 모델이 더 강하다"는 실험이 아니라, **학습 계산을 Python으로 옮겨도 데이터 의미와 수학식이 바뀌지 않았는지** 검증하는 작업이다.
+
+이후 역할은 다음처럼 정리했다.
+
+```txt
+JavaScript
+-> 게임 규칙으로 candidate JSONL 생성
+-> 나중에 Node.js에서 model artifact를 읽어 추론
+
+Python + pandas + scikit-learn
+-> feature 실험
+-> 학습
+-> 평가
+-> 모델 비교
+```
+
+### 4. 모델이 보는 feature는 16개다
+
+각 후보 배치 후 보드가 어떻게 달라지는지를 숫자로 표현한다.
+
+```txt
+linesCleared
+gameOver
+aggregateHeight 변화
+maxHeight 변화
+holes 변화
+bumpiness 변화
+각 열 높이 변화 10개
+```
+
+반대로 정답을 미리 알려 주거나 미래 결과를 암시하는 값은 feature에서 제외한다.
+
+```txt
+selectedBySource      -> 정답 label이므로 제외
+isWinner              -> 게임 종료 뒤에만 아는 정보라 제외
+heuristic score       -> 비교 기준일 뿐 기본 feature에서는 제외
+inputSequence         -> 행동 모방 실험 전까지 제외
+```
+
+### 5. LOGO는 게임 하나를 통째로 숨기고 시험하는 평가다
+
+`LOGO(Leave-One-Game-Out)`는 게임 단위 교차 검증이다.
+
+```txt
+26게임이 있다면
+
+1번 평가: 25게임 학습 -> 남은 1게임 평가
+2번 평가: 다른 25게임 학습 -> 다른 1게임 평가
+...
+26번 반복
+```
+
+같은 게임의 초반과 후반을 학습과 평가에 섞으면 모델이 그 게임의 패턴을 외울 수 있다. 그래서 게임 전체를 분리한다. scaler도 매 fold마다 학습 게임 데이터로만 계산해 데이터 누수를 막는다.
+
+### 6. 현재 26게임 평가 결과
+
+현재 Human 데이터는 26게임, 1,158개 decision, 39,375개 candidate로 평가했다.
+
+```txt
+Top-1           48.45%
+Top-3           76.51%
+MRR             0.645
+평균 선택 순위  2.96
+Tie-aware Top-1 56.91%
+```
+
+의미는 다음과 같다.
+
+```txt
+Top-1: 모델 1위 후보가 사람 선택과 같은 비율
+Top-3: 사람 선택이 모델 상위 3개 안에 든 비율
+MRR: 사람이 고른 후보의 순위를 점수화해 평균낸 값
+```
+
+예를 들어 사람이 고른 후보가 1위면 reciprocal rank는 `1`, 2위면 `1/2`, 4위면 `1/4`다. MRR은 이 값을 전체 decision에 대해 평균낸 지표다.
+
+이 수치는 "사람의 배치를 어느 정도 따라 한다"는 뜻일 뿐, 더 오래 생존하거나 휴리스틱보다 강한 게임 AI라는 뜻은 아니다. 승리 게임도 아직 3개뿐이라 gameplay 성능을 주장하기에는 데이터가 부족하다.
+
+### 7. 가장 중요한 발견: 모델보다 후보 표현에 중복이 있었다
+
+처음에는 모델이 같은 feature를 가진 후보를 구분하지 못하는 이유가 회전이나 위치 정보가 없기 때문이라고 의심했다.
+
+하지만 조사 결과, 충돌한 후보들은 회전 표기만 다를 뿐 **실제로 보드에서 차지하는 칸이 완전히 같은 배치**였다.
+
+```txt
+후보 A: 회전 표현 1
+후보 B: 회전 표현 3
+
+최종 occupied cells: 동일
+최종 보드: 동일
+```
+
+따라서 rotation 같은 값을 feature로 추가하면 더 좋은 배치를 구분하는 것이 아니라, candidate generator가 붙인 표현 이름만 외우게 될 수 있다.
+
+현재 발견된 중복은 다음과 같다.
+
+```txt
+선택 후보와 같은 16-feature를 가진 decision: 670 / 1,158
+0 차이 pair: 1,010 / 38,217
+최고 score 동점 decision: 672
+```
+
+### 8. 다음 실험은 feature 추가가 아니라 같은 실제 배치 묶기다
+
+다음에는 같은 occupied cells를 만드는 후보들을 하나의 동등 클래스(equivalence class)로 묶는다.
+
+```txt
+기존: 회전 표현이 다르면 별도 candidate
+다음: 최종 occupied cells가 같으면 하나의 physical placement
+```
+
+그 뒤 같은 26게임, 같은 모델, 같은 LOGO 평가로 기존 방식과 비교한다. 이 실험은 모델을 복잡하게 만들기 전에 데이터 표현 자체의 중복을 제거하는 작업이다.
+
+### 현재 상태 요약
+
+```txt
+게임 로그 수집                O
+dataset export                 O
+JavaScript-Python 계산 일치 검증 O
+Python/scikit-learn 학습/LOGO 평가 O
+Human 배치 모방 baseline       O
+PVE에 ML 모델 연결             X
+휴리스틱보다 강한 AI 입증       X
+동일 실제 배치 후보 묶기 실험   다음 단계
+```
+
+## Q. 최근 AI/ML 실험에서 나온 용어와 파일은 무엇을 뜻해? (2026-07-20)
+
+### 1. 현재 모델은 무엇을 하는가?
+
+현재 모델은 사람이 누를 키를 바로 예측하지 않는다. 먼저 게임 규칙으로 가능한 배치 후보를 만들고, 그중 사람이 선택할 법한 후보의 순위를 매긴다.
+
+```txt
+board + activePiece
+  -> reachable placement 후보 생성
+  -> 모델이 후보별 점수 계산
+  -> 가장 높은 후보 선택
+  -> 기존 planner가 move / rotate / hard_drop 행동열 생성
+  -> 기존 authoritative executor가 실제 입력으로 실행
+```
+
+따라서 현재 모델은 "배치 선택 모델"이다. `hold`, 연속 입력 타이밍, 키를 누르고 있는 시간까지 모방하는 행동 모델은 아직 아니다.
+
+### 2. 왜 pairwise 학습을 사용하는가?
+
+로그에는 한 decision마다 사람이 선택한 후보 하나와, 선택하지 않은 후보 여러 개가 있다. 하지만 각 후보의 절대 점수나 정확한 선택 확률은 없다.
+
+```txt
+선택 후보 A
+선택하지 않은 후보 B, C, D
+
+학습 목표:
+A의 점수 > B의 점수
+A의 점수 > C의 점수
+A의 점수 > D의 점수
+```
+
+이처럼 후보 두 개의 상대적 순서를 학습하는 방식을 `pairwise ranking`이라고 한다. 후보 수가 decision마다 달라도 처리하기 쉽고, "사람이 무엇을 골랐는가"라는 현재 로그 구조와 맞는다.
+
+### 3. sigmoid는 왜 학습에는 쓰고, 배치 선택에는 안 쓰는가?
+
+학습에서는 두 후보의 점수 차이를 확률 형태로 바꾸기 위해 sigmoid를 사용한다.
+
+```txt
+P(A가 B보다 선호됨)
+= sigmoid(score(A) - score(B))
+```
+
+하지만 실제 배치 선택은 점수가 높은 후보를 고르면 된다.
+
+```txt
+score(A) > score(B)
+이면
+sigmoid(score(A)) > sigmoid(score(B))
+```
+
+sigmoid는 순서를 바꾸지 않는 단조 증가 함수다. 따라서 추론 단계에서 각 후보에 sigmoid를 다시 적용해도 1등 후보는 달라지지 않는다. `sigmoid(score(A))`는 여러 후보 중 A를 고를 확률도 아니다. 후보 전체의 확률을 만들려면 별도의 softmax 또는 확률 보정 계약이 필요하다.
+
+### 4. `gameOver: true` 후보가 0개인데, 실제 게임에서는 왜 패배할 수 있는가?
+
+두 의미를 구분해야 한다.
+
+```txt
+candidateResult.gameOver
+= 지금 이 후보 배치를 즉시 고정했을 때 top-out이 나는가?
+
+game_over event
+= 실제 한 게임이 최종적으로 끝났다는 기록
+```
+
+현재 winner-only dataset은 승자의 placement만 사용한다. 패배한 player의 마지막 top-out 배치는 제외되므로, 학습 후보에 `candidateResult.gameOver: true`가 거의 또는 전혀 없을 수 있다. 이것은 "게임에서 패배한 적이 없다"는 뜻이 아니다.
+
+그래서 실전 AI에서는 모델 점수보다 먼저 안전 규칙을 둬야 한다.
+
+```js
+const safeCandidates = candidates.filter(candidate => {
+    return candidate.candidateResult.gameOver !== true;
+});
+```
+
+safe 후보가 하나라도 있으면 위험한 후보는 모델 점수가 높아도 선택하지 않는다. 이를 hard-safety filter라고 한다. 단, 모든 후보가 위험하면 피할 방법이 없는 game over다.
+
+### 5. 승자만 학습하면 내 행동을 학습하는 것이 아닌가?
+
+맞다. 현재 `winner-only + source all` 설정이라면 사람 승자와 heuristic AI 승자의 행동이 섞인 데이터다. "나만의 플레이 모방 모델"은 아니다.
+
+목적에 따라 dataset을 분리해야 한다.
+
+```txt
+사람 행동 모방:
+source = human
+selection policy = all-completed
+
+휴리스틱 AI 재현:
+source = heuristic_ai
+selection policy = all-completed
+
+승자 행동 기준선:
+source = all
+selection policy = winner-only
+```
+
+현재 데이터는 마지막 세 번째, 즉 "이긴 쪽이 고른 배치" 기준선에 가깝다.
+
+### 6. T-Spin도 현재 배치 선택 방식으로 재현할 수 있는가?
+
+일부는 가능하지만, 안정적으로 선택하도록 학습되지는 않았다.
+
+현재 planner는 `move_left`, `move_right`, `rotate`, `soft_drop`, `hard_drop` 행동을 탐색한다. 따라서 회전과 wall kick이 필요한 경로 자체는 만들 수 있다.
+
+```txt
+후보 배치 선택
+-> plannedActions 생성
+-> rotate 포함 행동열 실행
+-> 조건이 맞으면 T-Spin 판정 가능
+```
+
+문제는 같은 최종 위치라도 마지막 동작이 회전인지에 따라 일반 lock과 T-Spin이 달라진다는 점이다. 현재 후보 중복 제거와 feature는 이 lock 문맥을 충분히 구분하지 않는다. 나중에 T-Spin을 전략으로 다루려면 후보에 `lastActionWasRotation`, `isTSpin`, 공격량 같은 결과를 포함하고, 같은 칸을 차지해도 일반 배치와 T-Spin 배치를 합치지 않아야 한다.
+
+### 7. JSON도 실제 모델 파일이 될 수 있는가?
+
+가능하다. 현재 선형 모델은 큰 신경망 파일이 아니라 숫자 표다.
+
+```json
+{
+  "featureNames": ["linesCleared", "holesDelta"],
+  "mean": [0.1, 2.4],
+  "scale": [0.3, 1.1],
+  "weights": [0.8, -1.2],
+  "intercept": 0.05
+}
+```
+
+Node는 후보 feature를 같은 순서로 표준화한 뒤 `weights`와 곱해 더하면 점수를 계산할 수 있다. 즉 JSON은 현재처럼 작은 선형 모델에는 충분한 model artifact다.
+
+### 8. ONNX 파일로 바꿀 수도 있는가?
+
+가능하지만 지금 바로 바꿀 이유는 약하다.
+
+```txt
+Python sklearn 모델
+-> ONNX 변환
+-> Node의 ONNX Runtime으로 추론
+```
+
+ONNX는 여러 언어와 환경에서 모델을 실행하기 위한 바이너리 배포 형식이다. 복잡한 트리 모델이나 신경망으로 커졌을 때 유리하다. 현재 모델은 16개 feature를 표준화하고 가중치와 곱하는 정도라 JSON이 더 작고, 사람이 확인하기 쉽고, Node 의존성도 필요 없다.
+
+ONNX로 옮긴다면 `mean`과 `scale`도 ONNX 그래프에 포함하거나, 별도 전처리 계약을 반드시 고정해야 한다. 가중치만 옮기고 표준화를 빠뜨리면 점수와 순위가 달라진다.
+
+```txt
+현재 권장:
+JSON = 기준 artifact
+
+나중:
+ONNX = JSON과 같은 점수/순위를 내는 배포용 파생 artifact
+```
+
+### 9. SHA-256은 왜 계산하는가?
+
+SHA-256은 파일 내용을 고정 길이의 지문으로 바꾸는 함수다.
+
+```txt
+같은 파일 내용
+-> 같은 SHA-256
+
+공백 하나라도 다른 파일 내용
+-> 거의 항상 다른 SHA-256
+```
+
+그래서 다음을 확인할 수 있다.
+
+```txt
+export 전 로그 SHA = export 후 로그 SHA
+-> exporter가 원본 로그를 수정하지 않음
+
+같은 설정으로 두 번 만든 model/report SHA가 같음
+-> 결과가 byte 단위로 동일함
+```
+
+같은 명령을 실행했다고 항상 같은 파일이 만들어지는 것은 아니다. 실행 시각, 랜덤 seed, 데이터 순서, 라이브러리 버전, 병렬 계산 순서가 결과를 바꿀 수 있다. SHA 기록은 실제 결과가 같은지 확인하는 가장 짧은 증거다.
+
+### 10. Python test가 JavaScript test와 별도로 있는 이유는 무엇인가?
+
+Node 테스트는 JavaScript exporter, 게임 규칙, JSON 계약을 검증한다. Python 테스트는 pandas, NumPy, scikit-learn으로 읽고 학습하고 평가하는 경로를 검증한다.
+
+```txt
+Node test
+-> 로그 export / 게임 규칙 / JS 계약
+
+Python test
+-> feature 로딩 / scaler / pair 생성 / sklearn 학습 / LOGO 평가
+```
+
+두 언어가 같은 데이터 계약을 사용하더라도 실행 환경과 라이브러리가 다르므로 둘 다 테스트해야 한다.
+
+### 11. Notebook, smoke, full run은 각각 무엇인가?
+
+Notebook은 실험 설명, 코드, 결과를 한 파일에 묶는 Jupyter 문서다. 내부적으로는 JSON이고 cell마다 고정 `id`를 넣을 수 있다. 이 id는 화면 제목이 아니라 테스트가 특정 계산 cell을 찾는 식별자다.
+
+```txt
+smoke run
+-> 작은 일부 게임만 실행
+-> 경로, 환경, leakage 검사, report 생성이 되는지 확인
+
+full run
+-> 전체 대상 게임을 실행
+-> 실제 성능 수치와 gate 판단에 사용
+```
+
+smoke 결과는 실행 확인용이므로 모델 성능 결론에 사용하지 않는다.
+
+### 12. 지금 ML 프로세스는 어디까지 완료된 것인가?
+
+현재 완료는 "오프라인 학습과 평가 파이프라인" 단계다.
+
+```txt
+로그 수집 / dataset export                    O
+feature / pairwise model / LOGO 평가           O
+시간 분리 holdout 평가                         O
+versioned model artifact 후보 생성             O
+PVE에 모델 연결                                X
+gameOver hard-safety filter                    X
+휴리스틱보다 gameplay가 강하다는 benchmark    X
+```
+
+따라서 `candidate_artifact_validated`는 artifact 형식, 학습, 결정성, 저장 연결이 정상이라는 뜻이다. `productionIntegration=false`는 아직 실제 게임 AI 판단에 연결하지 않았다는 뜻이고, `heldOutEvidence=false`는 이번 125게임 전체 학습의 training loss만으로는 새 게임 성능을 증명하지 못한다는 뜻이다.

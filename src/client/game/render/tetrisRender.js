@@ -222,7 +222,7 @@ export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks,
                         const flashData = flashRows.find(fr => typeof fr === 'object' ? fr.row === row : fr === row);
                         const progress = flashData.progress || 0;
 
-                        // CSS 애니메이션(@keyframes lineClearFlash) 근사값
+                        // line clear flash의 밝기 변화를 계산한다.
                         let scale = 1;
                         let translateY = 0;
                         let opacity = 1;

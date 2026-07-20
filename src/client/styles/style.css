@@ -102,8 +102,6 @@ body {
 .hero { text-align: center; }
 .hero-title { font-size: 2.5rem; font-weight: 800; margin: 0 0 16px; letter-spacing: -0.02em; }
 .hero-desc { color: var(--muted); margin: 0 auto 32px; line-height: 1.6; max-width: 500px; font-size: 1.05rem; }
-.cta { display: flex; gap: 16px; justify-content: center; }
-
 /* Cards Grid */
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
 .card {
@@ -363,6 +361,12 @@ kbd {
         font-size: 0.85rem;
         font-weight: 700;
         text-align: center;
+}
+
+#aiPolicySelector .difficulty-option span {
+        padding-inline: 4px;
+        font-size: 0.75rem;
+        white-space: nowrap;
 }
 
 .difficulty-option input:checked + span {

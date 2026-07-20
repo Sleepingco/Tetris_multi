@@ -14,11 +14,14 @@ export function getServerConnection() {
     return serverConnection
 }
 
-export function requestCreateRoom(player, mode = "pvp", aiDifficulty = null) {
+export function requestCreateRoom(player, mode = "pvp", aiDifficulty = null, aiPolicy = null) {
     lastRoomRequestType = "create"
     const payload = { player, mode }
     if (mode === "pve" && aiDifficulty !== null) {
         payload.aiDifficulty = aiDifficulty
+    }
+    if (mode === "pve" && aiPolicy !== null) {
+        payload.aiPolicy = aiPolicy
     }
     serverConnection.emit("room:create", payload)
 }
@@ -84,6 +87,14 @@ export function onGameJoinResult(handler) {
     serverConnection.on("game:join:result", handler)
 }
 
+export function onPveAiPolicy(handler) {
+    serverConnection.on("pve:ai-policy", handler)
+
+    return () => {
+        serverConnection.off("pve:ai-policy", handler)
+    }
+}
+
 export function requestStartGame(roomId, playerId) {
     lastRoomRequestType = "start"
     serverConnection.emit("room:start", { roomId, playerId })
@@ -115,14 +126,6 @@ export function sendGameInput(
         payload.expectedTransform = expectedTransform
     }
     serverConnection.emit("game:input", payload)
-}
-
-export function receiveGameInput(handler) {
-    serverConnection.on("game:input", handler)
-
-    return () => {
-        serverConnection.off("game:input", handler)
-    }
 }
 
 export function onGameInputResult(handler) {

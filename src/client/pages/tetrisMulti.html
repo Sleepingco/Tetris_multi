@@ -31,7 +31,6 @@
             background: var(--initial-game-bg);
         }
     </style>
-    <link rel="stylesheet" href="../styles/style.css">
     <link rel="stylesheet" href="../styles/tetris.css">
 </head>
 
@@ -69,10 +68,9 @@
                             <span class="label">Lines</span>
                             <span class="lines">0</span>
                         </div>
-                        <div class="stat stat--incoming">
+                        <div class="stat stat--incoming" aria-live="polite" aria-atomic="true">
                             <span class="label">Incoming</span>
                             <span class="pending-garbage" data-player="1">0</span>
-                            <span class="garbage-log" data-player="1" aria-live="polite"></span>
                         </div>
                     </div>
                 </div>
@@ -106,7 +104,7 @@
                 <div class="player-header">
                     <div class="player-id-wrap">
                         <div class="player-id" id="player2Name">Player 2</div>
-                        <span id="player2RoleBadge">-</span>
+                        <span id="player2RoleBadge" aria-live="polite">-</span>
                     </div>
                     <div class="player-stats">
                         <div class="stat">
@@ -117,10 +115,9 @@
                             <span class="label">Lines</span>
                             <span class="lines">0</span>
                         </div>
-                        <div class="stat stat--incoming">
+                        <div class="stat stat--incoming" aria-live="polite" aria-atomic="true">
                             <span class="label">Incoming</span>
                             <span class="pending-garbage" data-player="2">0</span>
-                            <span class="garbage-log" data-player="2" aria-live="polite"></span>
                         </div>
                     </div>
                 </div>
@@ -159,7 +156,7 @@
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.js"
         import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.js"
         import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js"
-        import { requestJoinGameRoom, onGameJoinResult, leaveGame, onGameOpponentLeft, onMatchFinish, requestLeaveRoom } from "../net/roomClient.js"
+        import { requestJoinGameRoom, onGameJoinResult, onPveAiPolicy, leaveGame, onGameOpponentLeft, onMatchFinish, requestLeaveRoom } from "../net/roomClient.js"
         import { onPlacementDecisionLogResult } from "../net/logClient.js"
         const soundToggleBtn = queryElement(document, "#soundToggle")
         const themeToggleBtn = queryElement(document, "#themeToggle")
@@ -272,7 +269,11 @@
 
             if (myRole === "host") {
                 player1RoleBadge.textContent = "내 보드"
-                player2RoleBadge.textContent = isPveMode ? "AI 상대" : "상대 보드"
+                player2RoleBadge.textContent = isPveMode
+                    ? room.aiPolicy === "placement_v4"
+                        ? "실험 AI · 준비 중"
+                        : "AI 상대 · 휴리스틱"
+                    : "상대 보드"
             } else {
                 player1RoleBadge.textContent = "상대 보드"
                 player2RoleBadge.textContent = "내 보드"
@@ -294,8 +295,6 @@
             const player2HoldPreview = queryElement(document, '.hold-preview[data-player="2"]')
             const player1PendingGarbage = queryElement(document, '.pending-garbage[data-player="1"]')
             const player2PendingGarbage = queryElement(document, '.pending-garbage[data-player="2"]')
-            const player1GarbageLog = queryElement(document, '.garbage-log[data-player="1"]')
-            const player2GarbageLog = queryElement(document, '.garbage-log[data-player="2"]')
             const myCanvas = myRole === "host" ? player1Canvas : player2Canvas
             const opponentCanvas = myRole === "host" ? player2Canvas : player1Canvas
             const myScoreEl = myRole === "host" ? player1Score : player2Score
@@ -303,13 +302,11 @@
             const myNextPreviewEl = myRole === "host" ? player1NextPreview : player2NextPreview
             const myHoldPreviewEl = myRole === "host" ? player1HoldPreview : player2HoldPreview
             const myPendingGarbageEl = myRole === "host" ? player1PendingGarbage : player2PendingGarbage
-            const myGarbageLogEl = myRole === "host" ? player1GarbageLog : player2GarbageLog
             const opponentScoreEl = myRole === "host" ? player2Score : player1Score
             const opponentLinesEl = myRole === "host" ? player2Lines : player1Lines
             const opponentNextPreviewEl = myRole === "host" ? player2NextPreview : player1NextPreview
             const opponentHoldPreviewEl = myRole === "host" ? player2HoldPreview : player1HoldPreview
             const opponentPendingGarbageEl = myRole === "host" ? player2PendingGarbage : player1PendingGarbage
-            const opponentGarbageLogEl = myRole === "host" ? player2GarbageLog : player1GarbageLog
 
             console.log("myCanvas : ", myCanvas)
             console.log("opponentCanvas : ", opponentCanvas)
@@ -322,6 +319,27 @@
             let gameSession = null
             let shouldNotifyGameLeave = true
             let hasMatchFinished = false
+            const updatePveAiPolicyBadge = (policy) => {
+                if (policy.roomId !== roomId || policy.playerId !== guestPlayer?.playerId) return
+
+                if (policy.policyUsed === "placement_v4") {
+                    player2RoleBadge.textContent = "실험 AI · 동작 중"
+                    player2RoleBadge.removeAttribute("title")
+                    return
+                }
+
+                player2RoleBadge.textContent = policy.policyRequested === "placement_v4"
+                    ? "실험 AI · 휴리스틱 전환"
+                    : "AI 상대 · 휴리스틱"
+                if (policy.fallbackReason) {
+                    player2RoleBadge.title = `모델 전환 사유: ${policy.fallbackReason}`
+                } else {
+                    player2RoleBadge.removeAttribute("title")
+                }
+            }
+            const detachPveAiPolicy = isPveMode
+                ? onPveAiPolicy(updatePveAiPolicyBadge)
+                : () => {}
 
             /**
              * 멀티 게임 세션에서 만든 timer, socket listener, runtime을 모두 정리한다.
@@ -397,6 +415,9 @@
                     sessionStorage.setItem("tetris:roomId", result.room.roomId)
                     sessionStorage.setItem("room", JSON.stringify(result.room))
                 }
+                if (isPveMode && result.match?.aiPolicyRuntime) {
+                    updatePveAiPolicyBadge(result.match.aiPolicyRuntime)
+                }
 
                 if (gameSession) return
 
@@ -417,13 +438,11 @@
                     myScoreEl,
                     myLinesEl,
                     myPendingGarbageEl,
-                    myGarbageLogEl,
                     opponentNextPreviewEl,
                     opponentHoldPreviewEl,
                     opponentScoreEl,
                     opponentLinesEl,
                     opponentPendingGarbageEl,
-                    opponentGarbageLogEl,
                     onUserInteract: tryPlayMusic,
                 })
             })
@@ -440,6 +459,7 @@
                 location.replace("./multiLobby.html")
             })
             window.addEventListener("pagehide", () => {
+                detachPveAiPolicy()
                 themeToggleBtn?.removeEventListener("click", onToggleTheme)
                 homeBtn?.removeEventListener("click", handleHomeClick)
                 detachMatchFinish()

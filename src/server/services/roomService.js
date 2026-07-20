@@ -1,8 +1,11 @@
 const { randomUUID } = require("crypto")
 const {
     AI_DIFFICULTY,
+    AI_POLICY,
     DEFAULT_AI_DIFFICULTY,
+    DEFAULT_AI_POLICY,
     isValidAiDifficulty,
+    isValidAiPolicy,
 } = require("./aiDifficulty.js")
 
 // =============================
@@ -70,10 +73,12 @@ function createHumanPlayer(player) {
     }
 }
 
-function createHeuristicAiPlayer(roomId) {
+function createHeuristicAiPlayer(roomId, aiPolicy) {
     return {
         playerId: `heuristic-ai-${roomId}`,
-        nickname: "Heuristic AI",
+        nickname: aiPolicy === AI_POLICY.PLACEMENT_V4
+            ? "My Imitation AI (Experimental)"
+            : "Heuristic AI",
         playerType: PLAYER_TYPE.HEURISTIC_AI,
     }
 }
@@ -128,8 +133,14 @@ function createRoom(hostPlayer, options = {}) {
     const aiDifficulty = mode === ROOM_MODE.PVE
         ? options.aiDifficulty ?? DEFAULT_AI_DIFFICULTY
         : null
+    const aiPolicy = mode === ROOM_MODE.PVE
+        ? options.aiPolicy ?? DEFAULT_AI_POLICY
+        : null
     if (mode === ROOM_MODE.PVE && !isValidAiDifficulty(aiDifficulty)) {
         return failure("INVALID_AI_DIFFICULTY")
+    }
+    if (mode === ROOM_MODE.PVE && !isValidAiPolicy(aiPolicy)) {
+        return failure("INVALID_AI_POLICY")
     }
 
     const roomId = createUniqueRoomId(options.generateRoomId)
@@ -139,12 +150,13 @@ function createRoom(hostPlayer, options = {}) {
 
     const humanHost = createHumanPlayer(hostPlayer)
     const players = mode === ROOM_MODE.PVE
-        ? [humanHost, createHeuristicAiPlayer(roomId)]
+        ? [humanHost, createHeuristicAiPlayer(roomId, aiPolicy)]
         : [humanHost]
     const room = {
         roomId,
         mode,
         aiDifficulty,
+        aiPolicy,
         hostPlayerId: humanHost.playerId,
         players,
         status: "waiting",
@@ -501,6 +513,7 @@ function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
 
 module.exports = {
     AI_DIFFICULTY,
+    AI_POLICY,
     PLAYER_TYPE,
     ROOM_MODE,
     createRoom,

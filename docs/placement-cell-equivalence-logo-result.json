@@ -1,0 +1,2909 @@
+{
+  "baselineReproduction": {
+    "canonicalTop1Count": 561,
+    "canonicalTop3Count": 886,
+    "meanSelectedRankRounded6": 2.96114,
+    "mrrRounded6": 0.64529,
+    "tieAwareTop1Count": 659
+  },
+  "coefficientSummary": {
+    "maximumAbsoluteDifference": 0.010317491510303922,
+    "meanCosineSimilarity": 0.9999940193676429,
+    "minimumCosineSimilarity": 0.9999927919852237
+  },
+  "compressionByDifficulty": [
+    {
+      "aiDifficulty": "normal",
+      "candidates": 29861,
+      "classes": 20040,
+      "decisions": 877,
+      "games": 16,
+      "removedAliases": 9821
+    },
+    {
+      "aiDifficulty": "hard",
+      "candidates": 9514,
+      "classes": 6363,
+      "decisions": 281,
+      "games": 10,
+      "removedAliases": 3151
+    }
+  ],
+  "compressionByOutcome": [
+    {
+      "candidates": 33555,
+      "classes": 22494,
+      "decisions": 988,
+      "games": 23,
+      "isWinner": false,
+      "removedAliases": 11061
+    },
+    {
+      "candidates": 5820,
+      "classes": 3909,
+      "decisions": 170,
+      "games": 3,
+      "isWinner": true,
+      "removedAliases": 1911
+    }
+  ],
+  "compressionByPiece": [
+    {
+      "candidates": 6080,
+      "classes": 1520,
+      "decisions": 170,
+      "games": 26,
+      "pieceType": "square",
+      "removedAliases": 4560
+    },
+    {
+      "candidates": 5425,
+      "classes": 5425,
+      "decisions": 161,
+      "games": 26,
+      "pieceType": "tree",
+      "removedAliases": 0
+    },
+    {
+      "candidates": 5684,
+      "classes": 5684,
+      "decisions": 168,
+      "games": 26,
+      "pieceType": "eleft",
+      "removedAliases": 0
+    },
+    {
+      "candidates": 5592,
+      "classes": 2796,
+      "decisions": 165,
+      "games": 26,
+      "pieceType": "zee",
+      "removedAliases": 2796
+    },
+    {
+      "candidates": 5794,
+      "classes": 2897,
+      "decisions": 173,
+      "games": 26,
+      "pieceType": "ess",
+      "removedAliases": 2897
+    },
+    {
+      "candidates": 5361,
+      "classes": 5361,
+      "decisions": 159,
+      "games": 26,
+      "pieceType": "eright",
+      "removedAliases": 0
+    },
+    {
+      "candidates": 5439,
+      "classes": 2720,
+      "decisions": 162,
+      "games": 26,
+      "pieceType": "bar",
+      "removedAliases": 2719
+    }
+  ],
+  "contracts": {
+    "allFoldsConverged": true,
+    "baselineReproduced": true,
+    "equivalenceContractPassed": true,
+    "gameIdLeakageCount": 0,
+    "gameplayStrengthClaimed": false,
+    "groupedZeroDifferencePairCount": 0,
+    "labelFreeGrouping": true,
+    "sharedRawCandidateScalerEveryFold": true,
+    "validationExcludedFromScaler": true,
+    "winnerSegmentReferenceOnly": true
+  },
+  "dataSummary": {
+    "candidateCount": 39375,
+    "decisionCount": 1158,
+    "gameCount": 26,
+    "selectedCandidateCount": 1158,
+    "winnerGameCount": 3
+  },
+  "environment": {
+    "machine": "arm64",
+    "numpy": "2.5.1",
+    "pandas": "3.0.3",
+    "python": "3.12.13",
+    "scikitLearn": "1.9.0",
+    "scipy": "1.18.0",
+    "system": "Darwin"
+  },
+  "equivalenceClassSummary": {
+    "candidateCount": 39375,
+    "duplicateClassCount": 9932,
+    "duplicateDecisionCount": 670,
+    "equivalenceClassCount": 26403,
+    "nonSelectedDuplicateClassCount": 9262,
+    "physicalSingleChoiceDecisionCount": 2,
+    "removedAliasCount": 12972,
+    "removedAliasRatio": 0.32944761904761904,
+    "selectedClassMultiplicityCounts": {
+      "1": 488,
+      "2": 500,
+      "4": 170
+    }
+  },
+  "experimentCard": {
+    "baseline": "selected candidate versus every unselected candidate",
+    "changedVariable": "pair construction unit only",
+    "fixedVariables": [
+      "snapshot",
+      "26-fold LOGO",
+      "16-feature schema",
+      "shared raw-candidate scaler",
+      "LogisticRegression settings",
+      "C formula",
+      "symmetric samples",
+      "decision-balanced weights",
+      "metrics",
+      "Unicode code-point tie-break"
+    ],
+    "hypothesis": "Canonical physical-class pairs remove alias negatives and multiplicity effects.",
+    "possibleStatuses": [
+      "blocked_by_equivalence_contract",
+      "unexpected_pipeline_regression",
+      "pair_canonicalization_supported",
+      "pair_canonicalization_valid_but_metric_tradeoff"
+    ],
+    "primaryMetrics": [
+      "physical-class micro MRR",
+      "physical-class macro MRR"
+    ],
+    "question": "Does candidate multiplicity distort pairwise learning for one physical placement?",
+    "tolerance": 1e-12
+  },
+  "experimentId": "placement-cell-equivalence-logo-v1",
+  "experimentReportSchemaVersion": 1,
+  "featureContract": {
+    "featureNames": [
+      "candidateResult.linesCleared",
+      "candidateResult.gameOver",
+      "metricDelta.aggregateHeight",
+      "metricDelta.maxHeight",
+      "metricDelta.holes",
+      "metricDelta.bumpiness",
+      "metricDelta.columnHeights[0]",
+      "metricDelta.columnHeights[1]",
+      "metricDelta.columnHeights[2]",
+      "metricDelta.columnHeights[3]",
+      "metricDelta.columnHeights[4]",
+      "metricDelta.columnHeights[5]",
+      "metricDelta.columnHeights[6]",
+      "metricDelta.columnHeights[7]",
+      "metricDelta.columnHeights[8]",
+      "metricDelta.columnHeights[9]"
+    ],
+    "featureSchemaVersion": 1,
+    "forbiddenLeakageInputs": [
+      "gameId",
+      "heuristicBaseline.score",
+      "metadata.inputSequence",
+      "metadata.isWinner",
+      "playerId",
+      "selectedBySource",
+      "winnerPlayerId"
+    ],
+    "isWinnerUsage": "evaluation_segmentation_only",
+    "selectedBySourceUsage": "label_only"
+  },
+  "foldResults": [
+    {
+      "baselineFit": {
+        "c": 0.08960573476702509,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1116
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36828,
+      "coefficientCosineSimilarity": 0.9999941672989843,
+      "coefficientMaximumAbsoluteDifference": 0.007931451524425093,
+      "foldNumber": 1,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08960573476702509,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1114
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24321,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 42,
+            "meanSelectedRank": 1.8571428571428572,
+            "mrr": 0.7321428571428571,
+            "tieAwareTop1Accuracy": 0.5714285714285714,
+            "tieAwareTop1Count": 24,
+            "top1Accuracy": 0.5714285714285714,
+            "top1Count": 24,
+            "top3Accuracy": 0.8571428571428571,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 42,
+            "meanSelectedRank": 2.5952380952380953,
+            "mrr": 0.6377551020408163,
+            "tieAwareTop1Accuracy": 0.5714285714285714,
+            "tieAwareTop1Count": 24,
+            "top1Accuracy": 0.47619047619047616,
+            "top1Count": 20,
+            "top3Accuracy": 0.7380952380952381,
+            "top3Count": 31,
+            "topScoreTieDecisionCount": 24
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 42,
+            "meanSelectedRank": 1.880952380952381,
+            "mrr": 0.7281746031746031,
+            "tieAwareTop1Accuracy": 0.5714285714285714,
+            "tieAwareTop1Count": 24,
+            "top1Accuracy": 0.5714285714285714,
+            "top1Count": 24,
+            "top3Accuracy": 0.8571428571428571,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 42,
+            "meanSelectedRank": 2.642857142857143,
+            "mrr": 0.6357709750566893,
+            "tieAwareTop1Accuracy": 0.5714285714285714,
+            "tieAwareTop1Count": 24,
+            "top1Accuracy": 0.47619047619047616,
+            "top1Count": 20,
+            "top3Accuracy": 0.7380952380952381,
+            "top3Count": 31,
+            "topScoreTieDecisionCount": 24
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37944,
+      "removedPairCount": 12507,
+      "scalerFitCandidateCount": 37944,
+      "sharedScaler": true,
+      "trainDecisionCount": 1116,
+      "trainGameCount": 25,
+      "validationDecisionCount": 42,
+      "validationGameId": "3A5869D1-1784156123783"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09049773755656108,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1105
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36472,
+      "coefficientCosineSimilarity": 0.9999961713437122,
+      "coefficientMaximumAbsoluteDifference": 0.010317491510303922,
+      "foldNumber": 2,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09049773755656108,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1103
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24128,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 53,
+            "meanSelectedRank": 1.849056603773585,
+            "mrr": 0.7319407008086254,
+            "tieAwareTop1Accuracy": 0.5471698113207547,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.5471698113207547,
+            "top1Count": 29,
+            "top3Accuracy": 0.9056603773584906,
+            "top3Count": 48,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 53,
+            "meanSelectedRank": 2.981132075471698,
+            "mrr": 0.6339832285115305,
+            "tieAwareTop1Accuracy": 0.5471698113207547,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.4716981132075472,
+            "top1Count": 25,
+            "top3Accuracy": 0.7169811320754716,
+            "top3Count": 38,
+            "topScoreTieDecisionCount": 32
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 53,
+            "meanSelectedRank": 1.849056603773585,
+            "mrr": 0.7319407008086254,
+            "tieAwareTop1Accuracy": 0.5471698113207547,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.5471698113207547,
+            "top1Count": 29,
+            "top3Accuracy": 0.9056603773584906,
+            "top3Count": 48,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 53,
+            "meanSelectedRank": 2.981132075471698,
+            "mrr": 0.6339832285115305,
+            "tieAwareTop1Accuracy": 0.5471698113207547,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.4716981132075472,
+            "top1Count": 25,
+            "top3Accuracy": 0.7169811320754716,
+            "top3Count": 38,
+            "topScoreTieDecisionCount": 32
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37577,
+      "removedPairCount": 12344,
+      "scalerFitCandidateCount": 37577,
+      "sharedScaler": true,
+      "trainDecisionCount": 1105,
+      "trainGameCount": 25,
+      "validationDecisionCount": 53,
+      "validationGameId": "3A5869D1-1784156351669"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09140767824497258,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1094
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36094,
+      "coefficientCosineSimilarity": 0.9999950055379417,
+      "coefficientMaximumAbsoluteDifference": 0.008952859465486629,
+      "foldNumber": 3,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09140767824497258,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1092
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 23867,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 64,
+            "meanSelectedRank": 1.734375,
+            "mrr": 0.7705729166666666,
+            "tieAwareTop1Accuracy": 0.625,
+            "tieAwareTop1Count": 40,
+            "top1Accuracy": 0.625,
+            "top1Count": 40,
+            "top3Accuracy": 0.921875,
+            "top3Count": 59,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 64,
+            "meanSelectedRank": 2.609375,
+            "mrr": 0.6786401966089466,
+            "tieAwareTop1Accuracy": 0.625,
+            "tieAwareTop1Count": 40,
+            "top1Accuracy": 0.515625,
+            "top1Count": 33,
+            "top3Accuracy": 0.828125,
+            "top3Count": 53,
+            "topScoreTieDecisionCount": 38
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 64,
+            "meanSelectedRank": 1.734375,
+            "mrr": 0.7705729166666666,
+            "tieAwareTop1Accuracy": 0.625,
+            "tieAwareTop1Count": 40,
+            "top1Accuracy": 0.625,
+            "top1Count": 40,
+            "top3Accuracy": 0.921875,
+            "top3Count": 59,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 64,
+            "meanSelectedRank": 2.609375,
+            "mrr": 0.6786401966089466,
+            "tieAwareTop1Accuracy": 0.625,
+            "tieAwareTop1Count": 40,
+            "top1Accuracy": 0.515625,
+            "top1Count": 33,
+            "top3Accuracy": 0.828125,
+            "top3Count": 53,
+            "topScoreTieDecisionCount": 38
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37188,
+      "removedPairCount": 12227,
+      "scalerFitCandidateCount": 37188,
+      "sharedScaler": true,
+      "trainDecisionCount": 1094,
+      "trainGameCount": 25,
+      "validationDecisionCount": 64,
+      "validationGameId": "3A5869D1-1784156462052"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08960573476702509,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1116
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36817,
+      "coefficientCosineSimilarity": 0.9999933522059415,
+      "coefficientMaximumAbsoluteDifference": 0.007836321266087465,
+      "foldNumber": 4,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08960573476702509,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1114
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24340,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 42,
+            "meanSelectedRank": 1.8571428571428572,
+            "mrr": 0.7343915343915344,
+            "tieAwareTop1Accuracy": 0.5476190476190477,
+            "tieAwareTop1Count": 23,
+            "top1Accuracy": 0.5476190476190477,
+            "top1Count": 23,
+            "top3Accuracy": 0.9285714285714286,
+            "top3Count": 39,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 42,
+            "meanSelectedRank": 2.761904761904762,
+            "mrr": 0.6672902494331066,
+            "tieAwareTop1Accuracy": 0.5476190476190477,
+            "tieAwareTop1Count": 23,
+            "top1Accuracy": 0.5238095238095238,
+            "top1Count": 22,
+            "top3Accuracy": 0.7619047619047619,
+            "top3Count": 32,
+            "topScoreTieDecisionCount": 25
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 42,
+            "meanSelectedRank": 1.8571428571428572,
+            "mrr": 0.7343915343915344,
+            "tieAwareTop1Accuracy": 0.5476190476190477,
+            "tieAwareTop1Count": 23,
+            "top1Accuracy": 0.5476190476190477,
+            "top1Count": 23,
+            "top3Accuracy": 0.9285714285714286,
+            "top3Count": 39,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 42,
+            "meanSelectedRank": 2.761904761904762,
+            "mrr": 0.6672902494331066,
+            "tieAwareTop1Accuracy": 0.5476190476190477,
+            "tieAwareTop1Count": 23,
+            "top1Accuracy": 0.5238095238095238,
+            "top1Count": 22,
+            "top3Accuracy": 0.7619047619047619,
+            "top3Count": 32,
+            "topScoreTieDecisionCount": 25
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37933,
+      "removedPairCount": 12477,
+      "scalerFitCandidateCount": 37933,
+      "sharedScaler": true,
+      "trainDecisionCount": 1116,
+      "trainGameCount": 25,
+      "validationDecisionCount": 42,
+      "validationGameId": "3A5869D1-1784156604205"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09165902841429881,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1091
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 35986,
+      "coefficientCosineSimilarity": 0.9999937972007279,
+      "coefficientMaximumAbsoluteDifference": 0.00770184511487737,
+      "foldNumber": 5,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09165902841429881,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1089
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 23760,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 67,
+            "meanSelectedRank": 1.7313432835820894,
+            "mrr": 0.7618336886993604,
+            "tieAwareTop1Accuracy": 0.6119402985074627,
+            "tieAwareTop1Count": 41,
+            "top1Accuracy": 0.6119402985074627,
+            "top1Count": 41,
+            "top3Accuracy": 0.9552238805970149,
+            "top3Count": 64,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 67,
+            "meanSelectedRank": 2.3134328358208953,
+            "mrr": 0.6660625444207535,
+            "tieAwareTop1Accuracy": 0.6119402985074627,
+            "tieAwareTop1Count": 41,
+            "top1Accuracy": 0.4925373134328358,
+            "top1Count": 33,
+            "top3Accuracy": 0.8059701492537313,
+            "top3Count": 54,
+            "topScoreTieDecisionCount": 38
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 67,
+            "meanSelectedRank": 1.7462686567164178,
+            "mrr": 0.7543710021321962,
+            "tieAwareTop1Accuracy": 0.5970149253731343,
+            "tieAwareTop1Count": 40,
+            "top1Accuracy": 0.5970149253731343,
+            "top1Count": 40,
+            "top3Accuracy": 0.9552238805970149,
+            "top3Count": 64,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 67,
+            "meanSelectedRank": 2.373134328358209,
+            "mrr": 0.6541222459132907,
+            "tieAwareTop1Accuracy": 0.5970149253731343,
+            "tieAwareTop1Count": 40,
+            "top1Accuracy": 0.47761194029850745,
+            "top1Count": 32,
+            "top3Accuracy": 0.7910447761194029,
+            "top3Count": 53,
+            "topScoreTieDecisionCount": 38
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37077,
+      "removedPairCount": 12226,
+      "scalerFitCandidateCount": 37077,
+      "sharedScaler": true,
+      "trainDecisionCount": 1091,
+      "trainGameCount": 25,
+      "validationDecisionCount": 67,
+      "validationGameId": "3A5869D1-1784156687253"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08888888888888889,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1125
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37138,
+      "coefficientCosineSimilarity": 0.9999927919852237,
+      "coefficientMaximumAbsoluteDifference": 0.008520045750809224,
+      "foldNumber": 6,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08888888888888889,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1123
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24548,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 33,
+            "meanSelectedRank": 2.090909090909091,
+            "mrr": 0.7212481962481962,
+            "tieAwareTop1Accuracy": 0.5757575757575758,
+            "tieAwareTop1Count": 19,
+            "top1Accuracy": 0.5757575757575758,
+            "top1Count": 19,
+            "top3Accuracy": 0.8484848484848485,
+            "top3Count": 28,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 33,
+            "meanSelectedRank": 2.757575757575758,
+            "mrr": 0.6212703962703963,
+            "tieAwareTop1Accuracy": 0.5757575757575758,
+            "tieAwareTop1Count": 19,
+            "top1Accuracy": 0.42424242424242425,
+            "top1Count": 14,
+            "top3Accuracy": 0.7575757575757576,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 20
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 33,
+            "meanSelectedRank": 2.121212121212121,
+            "mrr": 0.7060966810966811,
+            "tieAwareTop1Accuracy": 0.5454545454545454,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.5454545454545454,
+            "top1Count": 18,
+            "top3Accuracy": 0.8484848484848485,
+            "top3Count": 28,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 33,
+            "meanSelectedRank": 2.8181818181818183,
+            "mrr": 0.6010683760683762,
+            "tieAwareTop1Accuracy": 0.5454545454545454,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.3939393939393939,
+            "top1Count": 13,
+            "top3Accuracy": 0.7575757575757576,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 20
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38263,
+      "removedPairCount": 12590,
+      "scalerFitCandidateCount": 38263,
+      "sharedScaler": true,
+      "trainDecisionCount": 1125,
+      "trainGameCount": 25,
+      "validationDecisionCount": 33,
+      "validationGameId": "5FBD427F-1784135419893"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08795074758135443,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1137
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37541,
+      "coefficientCosineSimilarity": 0.9999940434519734,
+      "coefficientMaximumAbsoluteDifference": 0.007852102490717439,
+      "foldNumber": 7,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08795074758135443,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1135
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24813,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 21,
+            "meanSelectedRank": 2.3333333333333335,
+            "mrr": 0.6487734487734487,
+            "tieAwareTop1Accuracy": 0.42857142857142855,
+            "tieAwareTop1Count": 9,
+            "top1Accuracy": 0.42857142857142855,
+            "top1Count": 9,
+            "top3Accuracy": 0.9047619047619048,
+            "top3Count": 19,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 21,
+            "meanSelectedRank": 3.4285714285714284,
+            "mrr": 0.5921596921596921,
+            "tieAwareTop1Accuracy": 0.42857142857142855,
+            "tieAwareTop1Count": 9,
+            "top1Accuracy": 0.42857142857142855,
+            "top1Count": 9,
+            "top3Accuracy": 0.7619047619047619,
+            "top3Count": 16,
+            "topScoreTieDecisionCount": 13
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 21,
+            "meanSelectedRank": 2.3333333333333335,
+            "mrr": 0.6487734487734487,
+            "tieAwareTop1Accuracy": 0.42857142857142855,
+            "tieAwareTop1Count": 9,
+            "top1Accuracy": 0.42857142857142855,
+            "top1Count": 9,
+            "top3Accuracy": 0.9047619047619048,
+            "top3Count": 19,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 21,
+            "meanSelectedRank": 3.4285714285714284,
+            "mrr": 0.5921596921596921,
+            "tieAwareTop1Accuracy": 0.42857142857142855,
+            "tieAwareTop1Count": 9,
+            "top1Accuracy": 0.42857142857142855,
+            "top1Count": 9,
+            "top3Accuracy": 0.7619047619047619,
+            "top3Count": 16,
+            "topScoreTieDecisionCount": 13
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38678,
+      "removedPairCount": 12728,
+      "scalerFitCandidateCount": 38678,
+      "sharedScaler": true,
+      "trainDecisionCount": 1137,
+      "trainGameCount": 25,
+      "validationDecisionCount": 21,
+      "validationGameId": "5FBD427F-1784135487375"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08857395925597873,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1129
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37263,
+      "coefficientCosineSimilarity": 0.9999945299949038,
+      "coefficientMaximumAbsoluteDifference": 0.00840059712424468,
+      "foldNumber": 8,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08857395925597873,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1127
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24620,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 29,
+            "meanSelectedRank": 1.896551724137931,
+            "mrr": 0.7614942528735633,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.6206896551724138,
+            "top1Count": 18,
+            "top3Accuracy": 0.8620689655172413,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 29,
+            "meanSelectedRank": 2.7586206896551726,
+            "mrr": 0.6940961337513062,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.5517241379310345,
+            "top1Count": 16,
+            "top3Accuracy": 0.8275862068965517,
+            "top3Count": 24,
+            "topScoreTieDecisionCount": 17
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 29,
+            "meanSelectedRank": 1.9310344827586208,
+            "mrr": 0.7557471264367817,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.6206896551724138,
+            "top1Count": 18,
+            "top3Accuracy": 0.8620689655172413,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 29,
+            "meanSelectedRank": 2.8275862068965516,
+            "mrr": 0.6894984326018809,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.5517241379310345,
+            "top1Count": 16,
+            "top3Accuracy": 0.7931034482758621,
+            "top3Count": 23,
+            "topScoreTieDecisionCount": 17
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38392,
+      "removedPairCount": 12643,
+      "scalerFitCandidateCount": 38392,
+      "sharedScaler": true,
+      "trainDecisionCount": 1129,
+      "trainGameCount": 25,
+      "validationDecisionCount": 29,
+      "validationGameId": "5FBD427F-1784135534207"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08976660682226212,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1114
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36765,
+      "coefficientCosineSimilarity": 0.9999936999408042,
+      "coefficientMaximumAbsoluteDifference": 0.00792747681097361,
+      "foldNumber": 9,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08976660682226212,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1112
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24298,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 44,
+            "meanSelectedRank": 1.5681818181818181,
+            "mrr": 0.7973484848484849,
+            "tieAwareTop1Accuracy": 0.6590909090909091,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.6590909090909091,
+            "top1Count": 29,
+            "top3Accuracy": 0.9318181818181818,
+            "top3Count": 41,
+            "topScoreTieDecisionCount": 1
+          },
+          "rawCandidate": {
+            "decisionCount": 44,
+            "meanSelectedRank": 2.2045454545454546,
+            "mrr": 0.688131313131313,
+            "tieAwareTop1Accuracy": 0.6590909090909091,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.5227272727272727,
+            "top1Count": 23,
+            "top3Accuracy": 0.8181818181818182,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 27
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 44,
+            "meanSelectedRank": 1.5681818181818181,
+            "mrr": 0.7973484848484849,
+            "tieAwareTop1Accuracy": 0.6590909090909091,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.6590909090909091,
+            "top1Count": 29,
+            "top3Accuracy": 0.9318181818181818,
+            "top3Count": 41,
+            "topScoreTieDecisionCount": 1
+          },
+          "rawCandidate": {
+            "decisionCount": 44,
+            "meanSelectedRank": 2.2045454545454546,
+            "mrr": 0.688131313131313,
+            "tieAwareTop1Accuracy": 0.6590909090909091,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.5227272727272727,
+            "top1Count": 23,
+            "top3Accuracy": 0.8181818181818182,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 27
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37879,
+      "removedPairCount": 12467,
+      "scalerFitCandidateCount": 37879,
+      "sharedScaler": true,
+      "trainDecisionCount": 1114,
+      "trainGameCount": 25,
+      "validationDecisionCount": 44,
+      "validationGameId": "5FBD427F-1784135586904"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08703220191470844,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1149
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37865,
+      "coefficientCosineSimilarity": 0.9999929411463494,
+      "coefficientMaximumAbsoluteDifference": 0.008579868636770627,
+      "foldNumber": 10,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08703220191470844,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1147
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 25001,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 9,
+            "meanSelectedRank": 14.222222222222221,
+            "mrr": 0.12151612609128946,
+            "tieAwareTop1Accuracy": 0.0,
+            "tieAwareTop1Count": 0,
+            "top1Accuracy": 0.0,
+            "top1Count": 0,
+            "top3Accuracy": 0.1111111111111111,
+            "top3Count": 1,
+            "topScoreTieDecisionCount": 1
+          },
+          "rawCandidate": {
+            "decisionCount": 9,
+            "meanSelectedRank": 20.11111111111111,
+            "mrr": 0.07837303674130358,
+            "tieAwareTop1Accuracy": 0.0,
+            "tieAwareTop1Count": 0,
+            "top1Accuracy": 0.0,
+            "top1Count": 0,
+            "top3Accuracy": 0.1111111111111111,
+            "top3Count": 1,
+            "topScoreTieDecisionCount": 6
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 9,
+            "meanSelectedRank": 14.222222222222221,
+            "mrr": 0.12151612609128946,
+            "tieAwareTop1Accuracy": 0.0,
+            "tieAwareTop1Count": 0,
+            "top1Accuracy": 0.0,
+            "top1Count": 0,
+            "top3Accuracy": 0.1111111111111111,
+            "top3Count": 1,
+            "topScoreTieDecisionCount": 1
+          },
+          "rawCandidate": {
+            "decisionCount": 9,
+            "meanSelectedRank": 20.11111111111111,
+            "mrr": 0.07837303674130358,
+            "tieAwareTop1Accuracy": 0.0,
+            "tieAwareTop1Count": 0,
+            "top1Accuracy": 0.0,
+            "top1Count": 0,
+            "top3Accuracy": 0.1111111111111111,
+            "top3Count": 1,
+            "topScoreTieDecisionCount": 6
+          }
+        }
+      },
+      "rawTrainCandidateCount": 39014,
+      "removedPairCount": 12864,
+      "scalerFitCandidateCount": 39014,
+      "sharedScaler": true,
+      "trainDecisionCount": 1149,
+      "trainGameCount": 25,
+      "validationDecisionCount": 9,
+      "validationGameId": "5FBD427F-1784135673581"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09182736455463728,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1089
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 35932,
+      "coefficientCosineSimilarity": 0.9999937190854131,
+      "coefficientMaximumAbsoluteDifference": 0.00823846986921617,
+      "foldNumber": 11,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09182736455463728,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1087
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 23710,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 69,
+            "meanSelectedRank": 1.5942028985507246,
+            "mrr": 0.8222222222222222,
+            "tieAwareTop1Accuracy": 0.7101449275362319,
+            "tieAwareTop1Count": 49,
+            "top1Accuracy": 0.7101449275362319,
+            "top1Count": 49,
+            "top3Accuracy": 0.9130434782608695,
+            "top3Count": 63,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 69,
+            "meanSelectedRank": 2.3768115942028984,
+            "mrr": 0.7076698663655185,
+            "tieAwareTop1Accuracy": 0.7101449275362319,
+            "tieAwareTop1Count": 49,
+            "top1Accuracy": 0.5507246376811594,
+            "top1Count": 38,
+            "top3Accuracy": 0.8115942028985508,
+            "top3Count": 56,
+            "topScoreTieDecisionCount": 39
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 69,
+            "meanSelectedRank": 1.5942028985507246,
+            "mrr": 0.8222222222222222,
+            "tieAwareTop1Accuracy": 0.7101449275362319,
+            "tieAwareTop1Count": 49,
+            "top1Accuracy": 0.7101449275362319,
+            "top1Count": 49,
+            "top3Accuracy": 0.9130434782608695,
+            "top3Count": 63,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 69,
+            "meanSelectedRank": 2.3768115942028984,
+            "mrr": 0.7076698663655185,
+            "tieAwareTop1Accuracy": 0.7101449275362319,
+            "tieAwareTop1Count": 49,
+            "top1Accuracy": 0.5507246376811594,
+            "top1Count": 38,
+            "top3Accuracy": 0.8115942028985508,
+            "top3Count": 56,
+            "topScoreTieDecisionCount": 39
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37021,
+      "removedPairCount": 12222,
+      "scalerFitCandidateCount": 37021,
+      "sharedScaler": true,
+      "trainDecisionCount": 1089,
+      "trainGameCount": 25,
+      "validationDecisionCount": 69,
+      "validationGameId": "72DAB167-1784289164990"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09354536950420955,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1069
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 35287,
+      "coefficientCosineSimilarity": 0.9999935834444429,
+      "coefficientMaximumAbsoluteDifference": 0.00757825306803539,
+      "foldNumber": 12,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09354536950420955,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1067
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 23306,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 89,
+            "meanSelectedRank": 1.9213483146067416,
+            "mrr": 0.7349696807561976,
+            "tieAwareTop1Accuracy": 0.5730337078651685,
+            "tieAwareTop1Count": 51,
+            "top1Accuracy": 0.5730337078651685,
+            "top1Count": 51,
+            "top3Accuracy": 0.898876404494382,
+            "top3Count": 80,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 89,
+            "meanSelectedRank": 2.6853932584269664,
+            "mrr": 0.6673362420057728,
+            "tieAwareTop1Accuracy": 0.5730337078651685,
+            "tieAwareTop1Count": 51,
+            "top1Accuracy": 0.5168539325842697,
+            "top1Count": 46,
+            "top3Accuracy": 0.797752808988764,
+            "top3Count": 71,
+            "topScoreTieDecisionCount": 52
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 89,
+            "meanSelectedRank": 1.9213483146067416,
+            "mrr": 0.7349696807561976,
+            "tieAwareTop1Accuracy": 0.5730337078651685,
+            "tieAwareTop1Count": 51,
+            "top1Accuracy": 0.5730337078651685,
+            "top1Count": 51,
+            "top3Accuracy": 0.898876404494382,
+            "top3Count": 80,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 89,
+            "meanSelectedRank": 2.6853932584269664,
+            "mrr": 0.6673362420057728,
+            "tieAwareTop1Accuracy": 0.5730337078651685,
+            "tieAwareTop1Count": 51,
+            "top1Accuracy": 0.5168539325842697,
+            "top1Count": 46,
+            "top3Accuracy": 0.797752808988764,
+            "top3Count": 71,
+            "topScoreTieDecisionCount": 52
+          }
+        }
+      },
+      "rawTrainCandidateCount": 36356,
+      "removedPairCount": 11981,
+      "scalerFitCandidateCount": 36356,
+      "sharedScaler": true,
+      "trainDecisionCount": 1069,
+      "trainGameCount": 25,
+      "validationDecisionCount": 89,
+      "validationGameId": "72DAB167-1784289294180"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08952551477170993,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1117
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36894,
+      "coefficientCosineSimilarity": 0.9999940134407247,
+      "coefficientMaximumAbsoluteDifference": 0.007883627054869224,
+      "foldNumber": 13,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08952551477170993,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1116
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24361,
+      "groupedPairlessDecisionCount": 1,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 41,
+            "meanSelectedRank": 1.8048780487804879,
+            "mrr": 0.8071815718157183,
+            "tieAwareTop1Accuracy": 0.7073170731707317,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.7073170731707317,
+            "top1Count": 29,
+            "top3Accuracy": 0.8780487804878049,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 41,
+            "meanSelectedRank": 2.4634146341463414,
+            "mrr": 0.7610723964382501,
+            "tieAwareTop1Accuracy": 0.7073170731707317,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.6585365853658537,
+            "top1Count": 27,
+            "top3Accuracy": 0.8292682926829268,
+            "top3Count": 34,
+            "topScoreTieDecisionCount": 24
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 41,
+            "meanSelectedRank": 1.8048780487804879,
+            "mrr": 0.8071815718157183,
+            "tieAwareTop1Accuracy": 0.7073170731707317,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.7073170731707317,
+            "top1Count": 29,
+            "top3Accuracy": 0.8780487804878049,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 41,
+            "meanSelectedRank": 2.4634146341463414,
+            "mrr": 0.7610723964382501,
+            "tieAwareTop1Accuracy": 0.7073170731707317,
+            "tieAwareTop1Count": 29,
+            "top1Accuracy": 0.6585365853658537,
+            "top1Count": 27,
+            "top3Accuracy": 0.8292682926829268,
+            "top3Count": 34,
+            "topScoreTieDecisionCount": 24
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38011,
+      "removedPairCount": 12533,
+      "scalerFitCandidateCount": 38011,
+      "sharedScaler": true,
+      "trainDecisionCount": 1117,
+      "trainGameCount": 25,
+      "validationDecisionCount": 41,
+      "validationGameId": "72DAB167-1784289443896"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09199632014719411,
+        "convergenceWarnings": [],
+        "iterations": 19,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1087
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 35854,
+      "coefficientCosineSimilarity": 0.9999946519575801,
+      "coefficientMaximumAbsoluteDifference": 0.007923802633669208,
+      "foldNumber": 14,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09199632014719411,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1085
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 23645,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 71,
+            "meanSelectedRank": 2.140845070422535,
+            "mrr": 0.7255365526492288,
+            "tieAwareTop1Accuracy": 0.5915492957746479,
+            "tieAwareTop1Count": 42,
+            "top1Accuracy": 0.5915492957746479,
+            "top1Count": 42,
+            "top3Accuracy": 0.8450704225352113,
+            "top3Count": 60,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 71,
+            "meanSelectedRank": 2.9295774647887325,
+            "mrr": 0.6619462168136568,
+            "tieAwareTop1Accuracy": 0.5915492957746479,
+            "tieAwareTop1Count": 42,
+            "top1Accuracy": 0.5070422535211268,
+            "top1Count": 36,
+            "top3Accuracy": 0.8028169014084507,
+            "top3Count": 57,
+            "topScoreTieDecisionCount": 39
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 71,
+            "meanSelectedRank": 2.140845070422535,
+            "mrr": 0.7255365526492288,
+            "tieAwareTop1Accuracy": 0.5915492957746479,
+            "tieAwareTop1Count": 42,
+            "top1Accuracy": 0.5915492957746479,
+            "top1Count": 42,
+            "top3Accuracy": 0.8450704225352113,
+            "top3Count": 60,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 71,
+            "meanSelectedRank": 2.9295774647887325,
+            "mrr": 0.6619462168136568,
+            "tieAwareTop1Accuracy": 0.5915492957746479,
+            "tieAwareTop1Count": 42,
+            "top1Accuracy": 0.5070422535211268,
+            "top1Count": 36,
+            "top3Accuracy": 0.8028169014084507,
+            "top3Count": 57,
+            "topScoreTieDecisionCount": 39
+          }
+        }
+      },
+      "rawTrainCandidateCount": 36941,
+      "removedPairCount": 12209,
+      "scalerFitCandidateCount": 36941,
+      "sharedScaler": true,
+      "trainDecisionCount": 1087,
+      "trainGameCount": 25,
+      "validationDecisionCount": 71,
+      "validationGameId": "72DAB167-1784289532081"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09140767824497258,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1094
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36087,
+      "coefficientCosineSimilarity": 0.9999941169735452,
+      "coefficientMaximumAbsoluteDifference": 0.007991912355311825,
+      "foldNumber": 15,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09140767824497258,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1092
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 23834,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 64,
+            "meanSelectedRank": 2.015625,
+            "mrr": 0.7030133928571429,
+            "tieAwareTop1Accuracy": 0.53125,
+            "tieAwareTop1Count": 34,
+            "top1Accuracy": 0.53125,
+            "top1Count": 34,
+            "top3Accuracy": 0.84375,
+            "top3Count": 54,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 64,
+            "meanSelectedRank": 2.796875,
+            "mrr": 0.6253048881265793,
+            "tieAwareTop1Accuracy": 0.53125,
+            "tieAwareTop1Count": 34,
+            "top1Accuracy": 0.4375,
+            "top1Count": 28,
+            "top3Accuracy": 0.734375,
+            "top3Count": 47,
+            "topScoreTieDecisionCount": 37
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 64,
+            "meanSelectedRank": 2.03125,
+            "mrr": 0.7004092261904762,
+            "tieAwareTop1Accuracy": 0.53125,
+            "tieAwareTop1Count": 34,
+            "top1Accuracy": 0.53125,
+            "top1Count": 34,
+            "top3Accuracy": 0.84375,
+            "top3Count": 54,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 64,
+            "meanSelectedRank": 2.8125,
+            "mrr": 0.6227007214599126,
+            "tieAwareTop1Accuracy": 0.53125,
+            "tieAwareTop1Count": 34,
+            "top1Accuracy": 0.4375,
+            "top1Count": 28,
+            "top3Accuracy": 0.734375,
+            "top3Count": 47,
+            "topScoreTieDecisionCount": 37
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37181,
+      "removedPairCount": 12253,
+      "scalerFitCandidateCount": 37181,
+      "sharedScaler": true,
+      "trainDecisionCount": 1094,
+      "trainGameCount": 25,
+      "validationDecisionCount": 64,
+      "validationGameId": "8E9B93A7-1784135279319"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09025270758122744,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1108
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36606,
+      "coefficientCosineSimilarity": 0.9999938189339507,
+      "coefficientMaximumAbsoluteDifference": 0.007355742220521155,
+      "foldNumber": 16,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09025270758122744,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1107
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24164,
+      "groupedPairlessDecisionCount": 1,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 50,
+            "meanSelectedRank": 1.96,
+            "mrr": 0.7164999999999999,
+            "tieAwareTop1Accuracy": 0.54,
+            "tieAwareTop1Count": 27,
+            "top1Accuracy": 0.54,
+            "top1Count": 27,
+            "top3Accuracy": 0.86,
+            "top3Count": 43,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 50,
+            "meanSelectedRank": 2.9,
+            "mrr": 0.6379761904761905,
+            "tieAwareTop1Accuracy": 0.54,
+            "tieAwareTop1Count": 27,
+            "top1Accuracy": 0.5,
+            "top1Count": 25,
+            "top3Accuracy": 0.72,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 28
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 50,
+            "meanSelectedRank": 1.96,
+            "mrr": 0.7164999999999999,
+            "tieAwareTop1Accuracy": 0.54,
+            "tieAwareTop1Count": 27,
+            "top1Accuracy": 0.54,
+            "top1Count": 27,
+            "top3Accuracy": 0.86,
+            "top3Count": 43,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 50,
+            "meanSelectedRank": 2.9,
+            "mrr": 0.6379761904761905,
+            "tieAwareTop1Accuracy": 0.54,
+            "tieAwareTop1Count": 27,
+            "top1Accuracy": 0.5,
+            "top1Count": 25,
+            "top3Accuracy": 0.72,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 28
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37714,
+      "removedPairCount": 12442,
+      "scalerFitCandidateCount": 37714,
+      "sharedScaler": true,
+      "trainDecisionCount": 1108,
+      "trainGameCount": 25,
+      "validationDecisionCount": 50,
+      "validationGameId": "E0E8338C-1784289657930"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09049773755656108,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1105
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36462,
+      "coefficientCosineSimilarity": 0.9999936324639431,
+      "coefficientMaximumAbsoluteDifference": 0.008132272791756656,
+      "foldNumber": 17,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09049773755656108,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1103
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24092,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 53,
+            "meanSelectedRank": 2.4150943396226414,
+            "mrr": 0.6978304529358913,
+            "tieAwareTop1Accuracy": 0.5283018867924528,
+            "tieAwareTop1Count": 28,
+            "top1Accuracy": 0.5283018867924528,
+            "top1Count": 28,
+            "top3Accuracy": 0.8490566037735849,
+            "top3Count": 45,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 53,
+            "meanSelectedRank": 3.3962264150943398,
+            "mrr": 0.6216388248574708,
+            "tieAwareTop1Accuracy": 0.5283018867924528,
+            "tieAwareTop1Count": 28,
+            "top1Accuracy": 0.4716981132075472,
+            "top1Count": 25,
+            "top3Accuracy": 0.7735849056603774,
+            "top3Count": 41,
+            "topScoreTieDecisionCount": 31
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 53,
+            "meanSelectedRank": 2.4150943396226414,
+            "mrr": 0.6978304529358913,
+            "tieAwareTop1Accuracy": 0.5283018867924528,
+            "tieAwareTop1Count": 28,
+            "top1Accuracy": 0.5283018867924528,
+            "top1Count": 28,
+            "top3Accuracy": 0.8490566037735849,
+            "top3Count": 45,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 53,
+            "meanSelectedRank": 3.3962264150943398,
+            "mrr": 0.6216388248574708,
+            "tieAwareTop1Accuracy": 0.5283018867924528,
+            "tieAwareTop1Count": 28,
+            "top1Accuracy": 0.4716981132075472,
+            "top1Count": 25,
+            "top3Accuracy": 0.7735849056603774,
+            "top3Count": 41,
+            "topScoreTieDecisionCount": 31
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37567,
+      "removedPairCount": 12370,
+      "scalerFitCandidateCount": 37567,
+      "sharedScaler": true,
+      "trainDecisionCount": 1105,
+      "trainGameCount": 25,
+      "validationDecisionCount": 53,
+      "validationGameId": "E0E8338C-1784289749058"
+    },
+    {
+      "baselineFit": {
+        "c": 0.09025270758122744,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1108
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36553,
+      "coefficientCosineSimilarity": 0.9999944958372069,
+      "coefficientMaximumAbsoluteDifference": 0.008533306988534939,
+      "foldNumber": 18,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.09025270758122744,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1106
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24144,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 50,
+            "meanSelectedRank": 2.22,
+            "mrr": 0.6411904761904762,
+            "tieAwareTop1Accuracy": 0.44,
+            "tieAwareTop1Count": 22,
+            "top1Accuracy": 0.44,
+            "top1Count": 22,
+            "top3Accuracy": 0.84,
+            "top3Count": 42,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 50,
+            "meanSelectedRank": 3.28,
+            "mrr": 0.5726784326784327,
+            "tieAwareTop1Accuracy": 0.44,
+            "tieAwareTop1Count": 22,
+            "top1Accuracy": 0.38,
+            "top1Count": 19,
+            "top3Accuracy": 0.72,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 29
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 50,
+            "meanSelectedRank": 2.22,
+            "mrr": 0.6411904761904762,
+            "tieAwareTop1Accuracy": 0.44,
+            "tieAwareTop1Count": 22,
+            "top1Accuracy": 0.44,
+            "top1Count": 22,
+            "top3Accuracy": 0.84,
+            "top3Count": 42,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 50,
+            "meanSelectedRank": 3.28,
+            "mrr": 0.5726784326784327,
+            "tieAwareTop1Accuracy": 0.44,
+            "tieAwareTop1Count": 22,
+            "top1Accuracy": 0.38,
+            "top1Count": 19,
+            "top3Accuracy": 0.72,
+            "top3Count": 36,
+            "topScoreTieDecisionCount": 29
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37661,
+      "removedPairCount": 12409,
+      "scalerFitCandidateCount": 37661,
+      "sharedScaler": true,
+      "trainDecisionCount": 1108,
+      "trainGameCount": 25,
+      "validationDecisionCount": 50,
+      "validationGameId": "E0E8338C-1784289854008"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08912655971479501,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1122
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37047,
+      "coefficientCosineSimilarity": 0.9999946902953881,
+      "coefficientMaximumAbsoluteDifference": 0.007964363464087576,
+      "foldNumber": 19,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08912655971479501,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1120
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24456,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 36,
+            "meanSelectedRank": 2.1666666666666665,
+            "mrr": 0.6732142857142857,
+            "tieAwareTop1Accuracy": 0.4722222222222222,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.4722222222222222,
+            "top1Count": 17,
+            "top3Accuracy": 0.8611111111111112,
+            "top3Count": 31,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 36,
+            "meanSelectedRank": 2.9444444444444446,
+            "mrr": 0.6080146705146705,
+            "tieAwareTop1Accuracy": 0.4722222222222222,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.4444444444444444,
+            "top1Count": 16,
+            "top3Accuracy": 0.75,
+            "top3Count": 27,
+            "topScoreTieDecisionCount": 20
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 36,
+            "meanSelectedRank": 2.1666666666666665,
+            "mrr": 0.6732142857142857,
+            "tieAwareTop1Accuracy": 0.4722222222222222,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.4722222222222222,
+            "top1Count": 17,
+            "top3Accuracy": 0.8611111111111112,
+            "top3Count": 31,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 36,
+            "meanSelectedRank": 2.9444444444444446,
+            "mrr": 0.6080146705146705,
+            "tieAwareTop1Accuracy": 0.4722222222222222,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.4444444444444444,
+            "top1Count": 16,
+            "top3Accuracy": 0.75,
+            "top3Count": 27,
+            "topScoreTieDecisionCount": 20
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38169,
+      "removedPairCount": 12591,
+      "scalerFitCandidateCount": 38169,
+      "sharedScaler": true,
+      "trainDecisionCount": 1122,
+      "trainGameCount": 25,
+      "validationDecisionCount": 36,
+      "validationGameId": "E0E8338C-1784289948414"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08787346221441124,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1138
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37554,
+      "coefficientCosineSimilarity": 0.9999937416415033,
+      "coefficientMaximumAbsoluteDifference": 0.008240985506501541,
+      "foldNumber": 20,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08787346221441124,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1136
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24825,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 20,
+            "meanSelectedRank": 3.6,
+            "mrr": 0.641234827264239,
+            "tieAwareTop1Accuracy": 0.5,
+            "tieAwareTop1Count": 10,
+            "top1Accuracy": 0.5,
+            "top1Count": 10,
+            "top3Accuracy": 0.75,
+            "top3Count": 15,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 20,
+            "meanSelectedRank": 5.35,
+            "mrr": 0.558501400560224,
+            "tieAwareTop1Accuracy": 0.5,
+            "tieAwareTop1Count": 10,
+            "top1Accuracy": 0.45,
+            "top1Count": 9,
+            "top3Accuracy": 0.55,
+            "top3Count": 11,
+            "topScoreTieDecisionCount": 12
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 20,
+            "meanSelectedRank": 3.6,
+            "mrr": 0.641234827264239,
+            "tieAwareTop1Accuracy": 0.5,
+            "tieAwareTop1Count": 10,
+            "top1Accuracy": 0.5,
+            "top1Count": 10,
+            "top3Accuracy": 0.75,
+            "top3Count": 15,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 20,
+            "meanSelectedRank": 5.35,
+            "mrr": 0.558501400560224,
+            "tieAwareTop1Accuracy": 0.5,
+            "tieAwareTop1Count": 10,
+            "top1Accuracy": 0.45,
+            "top1Count": 9,
+            "top3Accuracy": 0.55,
+            "top3Count": 11,
+            "topScoreTieDecisionCount": 12
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38692,
+      "removedPairCount": 12729,
+      "scalerFitCandidateCount": 38692,
+      "sharedScaler": true,
+      "trainDecisionCount": 1138,
+      "trainGameCount": 25,
+      "validationDecisionCount": 20,
+      "validationGameId": "EB52EE99-1784290014031"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08865248226950355,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1128
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37289,
+      "coefficientCosineSimilarity": 0.9999941044681212,
+      "coefficientMaximumAbsoluteDifference": 0.008045946023437667,
+      "foldNumber": 21,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08865248226950355,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1126
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24638,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 30,
+            "meanSelectedRank": 2.1666666666666665,
+            "mrr": 0.7084656084656086,
+            "tieAwareTop1Accuracy": 0.5333333333333333,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.5333333333333333,
+            "top1Count": 16,
+            "top3Accuracy": 0.8333333333333334,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 30,
+            "meanSelectedRank": 2.6333333333333333,
+            "mrr": 0.6573544973544974,
+            "tieAwareTop1Accuracy": 0.5333333333333333,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.5,
+            "top1Count": 15,
+            "top3Accuracy": 0.7666666666666667,
+            "top3Count": 23,
+            "topScoreTieDecisionCount": 17
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 30,
+            "meanSelectedRank": 2.066666666666667,
+            "mrr": 0.7150793650793651,
+            "tieAwareTop1Accuracy": 0.5333333333333333,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.5333333333333333,
+            "top1Count": 16,
+            "top3Accuracy": 0.8333333333333334,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 30,
+            "meanSelectedRank": 2.433333333333333,
+            "mrr": 0.6606349206349207,
+            "tieAwareTop1Accuracy": 0.5333333333333333,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.5,
+            "top1Count": 15,
+            "top3Accuracy": 0.7666666666666667,
+            "top3Count": 23,
+            "topScoreTieDecisionCount": 17
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38417,
+      "removedPairCount": 12651,
+      "scalerFitCandidateCount": 38417,
+      "sharedScaler": true,
+      "trainDecisionCount": 1128,
+      "trainGameCount": 25,
+      "validationDecisionCount": 30,
+      "validationGameId": "EB52EE99-1784290052139"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08857395925597873,
+        "convergenceWarnings": [],
+        "iterations": 19,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1129
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37250,
+      "coefficientCosineSimilarity": 0.9999934569596112,
+      "coefficientMaximumAbsoluteDifference": 0.008698078632892736,
+      "foldNumber": 22,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08857395925597873,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1127
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24600,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 29,
+            "meanSelectedRank": 2.1379310344827585,
+            "mrr": 0.7532272325375773,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.6206896551724138,
+            "top1Count": 18,
+            "top3Accuracy": 0.8620689655172413,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 29,
+            "meanSelectedRank": 3.4482758620689653,
+            "mrr": 0.6771883289124668,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.5172413793103449,
+            "top1Count": 15,
+            "top3Accuracy": 0.7931034482758621,
+            "top3Count": 23,
+            "topScoreTieDecisionCount": 16
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 29,
+            "meanSelectedRank": 2.1379310344827585,
+            "mrr": 0.7532272325375773,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.6206896551724138,
+            "top1Count": 18,
+            "top3Accuracy": 0.8620689655172413,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 29,
+            "meanSelectedRank": 3.4482758620689653,
+            "mrr": 0.6771883289124668,
+            "tieAwareTop1Accuracy": 0.6206896551724138,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.5172413793103449,
+            "top1Count": 15,
+            "top3Accuracy": 0.7931034482758621,
+            "top3Count": 23,
+            "topScoreTieDecisionCount": 16
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38379,
+      "removedPairCount": 12650,
+      "scalerFitCandidateCount": 38379,
+      "sharedScaler": true,
+      "trainDecisionCount": 1129,
+      "trainGameCount": 25,
+      "validationDecisionCount": 29,
+      "validationGameId": "EB52EE99-1784290108498"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08944543828264759,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1118
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36913,
+      "coefficientCosineSimilarity": 0.9999936217636156,
+      "coefficientMaximumAbsoluteDifference": 0.007853686458661358,
+      "foldNumber": 23,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08944543828264759,
+        "convergenceWarnings": [],
+        "iterations": 21,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1116
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24360,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 40,
+            "meanSelectedRank": 2.45,
+            "mrr": 0.647689393939394,
+            "tieAwareTop1Accuracy": 0.45,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.45,
+            "top1Count": 18,
+            "top3Accuracy": 0.825,
+            "top3Count": 33,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 40,
+            "meanSelectedRank": 3.475,
+            "mrr": 0.555394072301967,
+            "tieAwareTop1Accuracy": 0.45,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.375,
+            "top1Count": 15,
+            "top3Accuracy": 0.65,
+            "top3Count": 26,
+            "topScoreTieDecisionCount": 22
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 40,
+            "meanSelectedRank": 2.475,
+            "mrr": 0.6468560606060606,
+            "tieAwareTop1Accuracy": 0.45,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.45,
+            "top1Count": 18,
+            "top3Accuracy": 0.825,
+            "top3Count": 33,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 40,
+            "meanSelectedRank": 3.525,
+            "mrr": 0.5548890217969166,
+            "tieAwareTop1Accuracy": 0.45,
+            "tieAwareTop1Count": 18,
+            "top1Accuracy": 0.375,
+            "top1Count": 15,
+            "top3Accuracy": 0.65,
+            "top3Count": 26,
+            "topScoreTieDecisionCount": 22
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38031,
+      "removedPairCount": 12553,
+      "scalerFitCandidateCount": 38031,
+      "sharedScaler": true,
+      "trainDecisionCount": 1118,
+      "trainGameCount": 25,
+      "validationDecisionCount": 40,
+      "validationGameId": "EB52EE99-1784290161956"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08833922261484099,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1132
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 37359,
+      "coefficientCosineSimilarity": 0.9999935910863359,
+      "coefficientMaximumAbsoluteDifference": 0.008182734100864453,
+      "foldNumber": 24,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08833922261484099,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1130
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24665,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 26,
+            "meanSelectedRank": 1.6538461538461537,
+            "mrr": 0.766025641025641,
+            "tieAwareTop1Accuracy": 0.6153846153846154,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.6153846153846154,
+            "top1Count": 16,
+            "top3Accuracy": 0.9615384615384616,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 26,
+            "meanSelectedRank": 2.3461538461538463,
+            "mrr": 0.6856837606837607,
+            "tieAwareTop1Accuracy": 0.6153846153846154,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.5384615384615384,
+            "top1Count": 14,
+            "top3Accuracy": 0.7692307692307693,
+            "top3Count": 20,
+            "topScoreTieDecisionCount": 14
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 26,
+            "meanSelectedRank": 1.6538461538461537,
+            "mrr": 0.766025641025641,
+            "tieAwareTop1Accuracy": 0.6153846153846154,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.6153846153846154,
+            "top1Count": 16,
+            "top3Accuracy": 0.9615384615384616,
+            "top3Count": 25,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 26,
+            "meanSelectedRank": 2.3461538461538463,
+            "mrr": 0.6856837606837607,
+            "tieAwareTop1Accuracy": 0.6153846153846154,
+            "tieAwareTop1Count": 16,
+            "top1Accuracy": 0.5384615384615384,
+            "top1Count": 14,
+            "top3Accuracy": 0.7692307692307693,
+            "top3Count": 20,
+            "topScoreTieDecisionCount": 14
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38491,
+      "removedPairCount": 12694,
+      "scalerFitCandidateCount": 38491,
+      "sharedScaler": true,
+      "trainDecisionCount": 1132,
+      "trainGameCount": 25,
+      "validationDecisionCount": 26,
+      "validationGameId": "EB52EE99-1784290234947"
+    },
+    {
+      "baselineFit": {
+        "c": 0.0900900900900901,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1110
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36619,
+      "coefficientCosineSimilarity": 0.9999945566082984,
+      "coefficientMaximumAbsoluteDifference": 0.007944572276179951,
+      "foldNumber": 25,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.0900900900900901,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1108
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24193,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 48,
+            "meanSelectedRank": 1.8541666666666667,
+            "mrr": 0.809052059052059,
+            "tieAwareTop1Accuracy": 0.6875,
+            "tieAwareTop1Count": 33,
+            "top1Accuracy": 0.6875,
+            "top1Count": 33,
+            "top3Accuracy": 0.9166666666666666,
+            "top3Count": 44,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 48,
+            "meanSelectedRank": 2.375,
+            "mrr": 0.6946671384171385,
+            "tieAwareTop1Accuracy": 0.6875,
+            "tieAwareTop1Count": 33,
+            "top1Accuracy": 0.5208333333333334,
+            "top1Count": 25,
+            "top3Accuracy": 0.8333333333333334,
+            "top3Count": 40,
+            "topScoreTieDecisionCount": 28
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 48,
+            "meanSelectedRank": 1.8541666666666667,
+            "mrr": 0.809052059052059,
+            "tieAwareTop1Accuracy": 0.6875,
+            "tieAwareTop1Count": 33,
+            "top1Accuracy": 0.6875,
+            "top1Count": 33,
+            "top3Accuracy": 0.9166666666666666,
+            "top3Count": 44,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 48,
+            "meanSelectedRank": 2.375,
+            "mrr": 0.6946671384171385,
+            "tieAwareTop1Accuracy": 0.6875,
+            "tieAwareTop1Count": 33,
+            "top1Accuracy": 0.5208333333333334,
+            "top1Count": 25,
+            "top3Accuracy": 0.8333333333333334,
+            "top3Count": 40,
+            "topScoreTieDecisionCount": 28
+          }
+        }
+      },
+      "rawTrainCandidateCount": 37729,
+      "removedPairCount": 12426,
+      "scalerFitCandidateCount": 37729,
+      "sharedScaler": true,
+      "trainDecisionCount": 1110,
+      "trainGameCount": 25,
+      "validationDecisionCount": 48,
+      "validationGameId": "FB9BB7B1-1784135082950"
+    },
+    {
+      "baselineFit": {
+        "c": 0.08928571428571427,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1120
+        },
+        "unexpectedWarnings": []
+      },
+      "baselinePairCount": 36950,
+      "coefficientCosineSimilarity": 0.9999942084924701,
+      "coefficientMaximumAbsoluteDifference": 0.008069787933752792,
+      "foldNumber": 26,
+      "gameIdLeakageCount": 0,
+      "groupedFit": {
+        "c": 0.08928571428571427,
+        "convergenceWarnings": [],
+        "iterations": 20,
+        "sampleWeight": {
+          "maximumDecisionWeight": 1.0,
+          "minimumDecisionWeight": 1.0,
+          "representedDecisionCount": 1118
+        },
+        "unexpectedWarnings": []
+      },
+      "groupedPairCount": 24436,
+      "groupedPairlessDecisionCount": 2,
+      "groupedZeroDifferencePairCount": 0,
+      "metrics": {
+        "baselineModel": {
+          "physicalClass": {
+            "decisionCount": 38,
+            "meanSelectedRank": 2.1315789473684212,
+            "mrr": 0.6561403508771929,
+            "tieAwareTop1Accuracy": 0.4473684210526316,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.4473684210526316,
+            "top1Count": 17,
+            "top3Accuracy": 0.8421052631578947,
+            "top3Count": 32,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 38,
+            "meanSelectedRank": 3.0789473684210527,
+            "mrr": 0.552529608334562,
+            "tieAwareTop1Accuracy": 0.4473684210526316,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.34210526315789475,
+            "top1Count": 13,
+            "top3Accuracy": 0.7368421052631579,
+            "top3Count": 28,
+            "topScoreTieDecisionCount": 24
+          }
+        },
+        "groupedModel": {
+          "physicalClass": {
+            "decisionCount": 38,
+            "meanSelectedRank": 2.1315789473684212,
+            "mrr": 0.6561403508771929,
+            "tieAwareTop1Accuracy": 0.4473684210526316,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.4473684210526316,
+            "top1Count": 17,
+            "top3Accuracy": 0.8421052631578947,
+            "top3Count": 32,
+            "topScoreTieDecisionCount": 0
+          },
+          "rawCandidate": {
+            "decisionCount": 38,
+            "meanSelectedRank": 3.0789473684210527,
+            "mrr": 0.552529608334562,
+            "tieAwareTop1Accuracy": 0.4473684210526316,
+            "tieAwareTop1Count": 17,
+            "top1Accuracy": 0.34210526315789475,
+            "top1Count": 13,
+            "top3Accuracy": 0.7368421052631579,
+            "top3Count": 28,
+            "topScoreTieDecisionCount": 24
+          }
+        }
+      },
+      "rawTrainCandidateCount": 38070,
+      "removedPairCount": 12514,
+      "scalerFitCandidateCount": 38070,
+      "sharedScaler": true,
+      "trainDecisionCount": 1120,
+      "trainGameCount": 25,
+      "validationDecisionCount": 38,
+      "validationGameId": "FB9BB7B1-1784135182233"
+    }
+  ],
+  "foldSummary": {
+    "baselineIterations": {
+      "maximum": 21,
+      "minimum": 19
+    },
+    "convergedBaselineFoldCount": 26,
+    "convergedGroupedFoldCount": 26,
+    "foldCount": 26,
+    "gameIdLeakageCount": 0,
+    "groupedIterations": {
+      "maximum": 21,
+      "minimum": 20
+    },
+    "primaryDeltaCounts": {
+      "equal": 19,
+      "improved": 1,
+      "worse": 6
+    },
+    "worstPrimaryDeltaFold": {
+      "baselineClassMrr": 0.7212481962481962,
+      "delta": -0.015151515151515138,
+      "direction": "worse",
+      "groupedClassMrr": 0.7060966810966811,
+      "validationGameId": "5FBD427F-1784135419893"
+    }
+  },
+  "modelConfig": {
+    "cFormula": "1/(trainDecisionCount*l2)",
+    "classWeight": null,
+    "fitIntercept": false,
+    "l2": 0.01,
+    "maxIterations": 10000,
+    "model": "LogisticRegression",
+    "solver": "lbfgs",
+    "tolerance": 1e-12
+  },
+  "pairSummary": {
+    "baselineFullPairCount": 38217,
+    "baselineZeroDifferencePairCount": 1010,
+    "groupedFullPairCount": 25245,
+    "groupedZeroDifferencePairCount": 0,
+    "physicalSingleChoiceDecisionCount": 2,
+    "removedPairMultiplicity": 12972
+  },
+  "primaryComparison": {
+    "baselineMacroClassMrr": 0.7032598444171886,
+    "baselineMicroClassMrr": 0.7278049940246426,
+    "equalFoldCount": 19,
+    "groupedMacroClassMrr": 0.7021385626668055,
+    "groupedMicroClassMrr": 0.7266522128200478,
+    "improvedFoldCount": 1,
+    "macroDelta": -0.001121281750383063,
+    "microDelta": -0.0011527812045948327,
+    "worseFoldCount": 6,
+    "worstFold": {
+      "baselineClassMrr": 0.7212481962481962,
+      "delta": -0.015151515151515138,
+      "direction": "worse",
+      "groupedClassMrr": 0.7060966810966811,
+      "validationGameId": "5FBD427F-1784135419893"
+    }
+  },
+  "recommendation": "Keep the baseline representation for now; isolate scaler canonicalization and pair-weight effects in the next experiment without adding a third model here.",
+  "results2x2": {
+    "baselineModel": {
+      "physicalClass": {
+        "macro": {
+          "meanSelectedRank": 2.514350330696394,
+          "mrr": 0.7032598444171886,
+          "tieAwareTop1Accuracy": 0.5436677859912543,
+          "top1Accuracy": 0.5436677859912543,
+          "top3Accuracy": 0.8463995402399861
+        },
+        "maximum": {
+          "meanSelectedRank": 14.222222222222221,
+          "mrr": 0.8222222222222222,
+          "tieAwareTop1Accuracy": 0.7101449275362319,
+          "top1Accuracy": 0.7101449275362319,
+          "top3Accuracy": 0.9615384615384616
+        },
+        "median": {
+          "meanSelectedRank": 1.9878125,
+          "mrr": 0.7287386267289271,
+          "tieAwareTop1Accuracy": 0.5595238095238095,
+          "top1Accuracy": 0.5595238095238095,
+          "top3Accuracy": 0.8615900383141762
+        },
+        "micro": {
+          "decisionCount": 1158,
+          "meanSelectedRank": 2.082901554404145,
+          "mrr": 0.7278049940246426,
+          "tieAwareTop1Accuracy": 0.5690846286701209,
+          "tieAwareTop1Count": 659,
+          "top1Accuracy": 0.5690846286701209,
+          "top1Count": 659,
+          "top3Accuracy": 0.8747841105354058,
+          "top3Count": 1013,
+          "topScoreTieDecisionCount": 2
+        },
+        "minimum": {
+          "meanSelectedRank": 1.5681818181818181,
+          "mrr": 0.12151612609128946,
+          "tieAwareTop1Accuracy": 0.0,
+          "top1Accuracy": 0.0,
+          "top3Accuracy": 0.1111111111111111
+        }
+      },
+      "rawCandidate": {
+        "macro": {
+          "meanSelectedRank": 3.576960016575973,
+          "mrr": 0.6231814779965509,
+          "tieAwareTop1Accuracy": 0.5436677859912543,
+          "top1Accuracy": 0.46606027581461756,
+          "top3Accuracy": 0.7371540142849254
+        },
+        "maximum": {
+          "meanSelectedRank": 20.11111111111111,
+          "mrr": 0.7610723964382501,
+          "tieAwareTop1Accuracy": 0.7101449275362319,
+          "top1Accuracy": 0.6585365853658537,
+          "top3Accuracy": 0.8333333333333334
+        },
+        "median": {
+          "meanSelectedRank": 2.779389880952381,
+          "mrr": 0.6476653439153439,
+          "tieAwareTop1Accuracy": 0.5595238095238095,
+          "top1Accuracy": 0.4962686567164179,
+          "top3Accuracy": 0.7642857142857142
+        },
+        "micro": {
+          "decisionCount": 1158,
+          "meanSelectedRank": 2.961139896373057,
+          "mrr": 0.645290256694184,
+          "tieAwareTop1Accuracy": 0.5690846286701209,
+          "tieAwareTop1Count": 659,
+          "top1Accuracy": 0.4844559585492228,
+          "top1Count": 561,
+          "top3Accuracy": 0.7651122625215889,
+          "top3Count": 886,
+          "topScoreTieDecisionCount": 672
+        },
+        "minimum": {
+          "meanSelectedRank": 2.2045454545454546,
+          "mrr": 0.07837303674130358,
+          "tieAwareTop1Accuracy": 0.0,
+          "top1Accuracy": 0.0,
+          "top3Accuracy": 0.1111111111111111
+        }
+      }
+    },
+    "groupedModel": {
+      "physicalClass": {
+        "macro": {
+          "meanSelectedRank": 2.5160482416913004,
+          "mrr": 0.7021385626668055,
+          "tieAwareTop1Accuracy": 0.5419282320128944,
+          "top1Accuracy": 0.5419282320128944,
+          "top3Accuracy": 0.8463995402399861
+        },
+        "maximum": {
+          "meanSelectedRank": 14.222222222222221,
+          "mrr": 0.8222222222222222,
+          "tieAwareTop1Accuracy": 0.7101449275362319,
+          "top1Accuracy": 0.7101449275362319,
+          "top3Accuracy": 0.9615384615384616
+        },
+        "median": {
+          "meanSelectedRank": 1.995625,
+          "mrr": 0.7268555779119159,
+          "tieAwareTop1Accuracy": 0.5473944294699011,
+          "top1Accuracy": 0.5473944294699011,
+          "top3Accuracy": 0.8615900383141762
+        },
+        "micro": {
+          "decisionCount": 1158,
+          "meanSelectedRank": 2.0854922279792745,
+          "mrr": 0.7266522128200478,
+          "tieAwareTop1Accuracy": 0.5673575129533679,
+          "tieAwareTop1Count": 657,
+          "top1Accuracy": 0.5673575129533679,
+          "top1Count": 657,
+          "top3Accuracy": 0.8747841105354058,
+          "top3Count": 1013,
+          "topScoreTieDecisionCount": 2
+        },
+        "minimum": {
+          "meanSelectedRank": 1.5681818181818181,
+          "mrr": 0.12151612609128946,
+          "tieAwareTop1Accuracy": 0.0,
+          "top1Accuracy": 0.0,
+          "top3Accuracy": 0.1111111111111111
+        }
+      },
+      "rawCandidate": {
+        "macro": {
+          "meanSelectedRank": 3.5809029826530425,
+          "mrr": 0.621698672583692,
+          "tieAwareTop1Accuracy": 0.5419282320128944,
+          "top1Accuracy": 0.46432072183625767,
+          "top3Accuracy": 0.735253701525117
+        },
+        "maximum": {
+          "meanSelectedRank": 20.11111111111111,
+          "mrr": 0.7610723964382501,
+          "tieAwareTop1Accuracy": 0.7101449275362319,
+          "top1Accuracy": 0.6585365853658537,
+          "top3Accuracy": 0.8333333333333334
+        },
+        "median": {
+          "meanSelectedRank": 2.822884012539185,
+          "mrr": 0.6460492181947406,
+          "tieAwareTop1Accuracy": 0.5473944294699011,
+          "top1Accuracy": 0.48880597014925375,
+          "top3Accuracy": 0.7642857142857142
+        },
+        "micro": {
+          "decisionCount": 1158,
+          "meanSelectedRank": 2.9671848013816926,
+          "mrr": 0.6437602141019653,
+          "tieAwareTop1Accuracy": 0.5673575129533679,
+          "tieAwareTop1Count": 657,
+          "top1Accuracy": 0.48272884283246975,
+          "top1Count": 559,
+          "top3Accuracy": 0.7633851468048359,
+          "top3Count": 884,
+          "topScoreTieDecisionCount": 672
+        },
+        "minimum": {
+          "meanSelectedRank": 2.2045454545454546,
+          "mrr": 0.07837303674130358,
+          "tieAwareTop1Accuracy": 0.0,
+          "top1Accuracy": 0.0,
+          "top3Accuracy": 0.1111111111111111
+        }
+      }
+    }
+  },
+  "sourceSnapshot": {
+    "datasetSchemaVersion": 2,
+    "relativeDirectory": "data/datasets/human-behavior-v2-snapshot-26g-20260717",
+    "sha256": {
+      "manifest.json": "51027be0ebad578f2c38bb8715aa491daa8f13208e3da551a5e4a2dd08bef088",
+      "rejected.jsonl": "06ede14119014e2b040f8a4d62e00532ca6eecae9424b93e9cc882394db8a85f",
+      "train.jsonl": "85034a66373add54324a56673cb99ed5854810e4299abcaf9c195ae8cbca631e",
+      "validation.jsonl": "23b832d95a2057b7b29e7062286c58c68524fa8db00f00870e6076a0a846f58a"
+    },
+    "sourceUnchanged": true
+  },
+  "status": "pair_canonicalization_valid_but_metric_tradeoff"
+}

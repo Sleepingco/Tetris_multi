@@ -194,13 +194,11 @@ function createSessionParams(overrides = {}) {
         myScoreEl: createFakeElement(),
         myLinesEl: createFakeElement(),
         myPendingGarbageEl: createFakeElement(),
-        myGarbageLogEl: createFakeElement(),
         opponentNextPreviewEl: createFakeElement(),
         opponentHoldPreviewEl: createFakeElement(),
         opponentScoreEl: createFakeElement(),
         opponentLinesEl: createFakeElement(),
         opponentPendingGarbageEl: createFakeElement(),
-        opponentGarbageLogEl: createFakeElement(),
         ...overrides,
     };
 }
@@ -1208,47 +1206,6 @@ test("최신 ack보다 뒤처진 deferred own snapshot은 폐기하고 다음 sn
     assert.deepEqual(session.myGame.getSnapshot().board, latestBoard);
 });
 
-test("legacy game:snapshot은 상대 보드를 덮지 않고 authoritative snapshot만 적용된다", async (t) => {
-    const { startMultiplayerGame } = await loadSession();
-    const session = startMultiplayerGame(createSessionParams());
-    t.after(() => cleanupSession(session));
-
-    const opponentBaseSnapshot = session.opponentGame.getSnapshot();
-
-    sharedFakeSocket.emitServer("game:snapshot", {
-        playerId: "player-opponent",
-        snapshot: snapshotWithScore(opponentBaseSnapshot, 10),
-    });
-
-    assert.equal(session.opponentGame.getSnapshot().score, opponentBaseSnapshot.score);
-
-    const opponentAuthoritativeSnapshot = {
-        ...snapshotWithScore(opponentBaseSnapshot, 20),
-        activePiece: {
-            ...opponentBaseSnapshot.activePiece,
-            col: opponentBaseSnapshot.activePiece.col + 1,
-        },
-    };
-    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-opponent",
-        snapshot: opponentAuthoritativeSnapshot,
-    });
-
-    assert.equal(session.opponentGame.getSnapshot().score, 20);
-    assert.equal(
-        session.opponentGame.getSnapshot().activePiece.col,
-        opponentAuthoritativeSnapshot.activePiece.col,
-    );
-    assert.equal(session.opponentGame.runtime.gravityRunning, false);
-
-    sharedFakeSocket.emitServer("game:snapshot", {
-        playerId: "player-opponent",
-        snapshot: snapshotWithScore(session.opponentGame.getSnapshot(), 30),
-    });
-
-    assert.equal(session.opponentGame.getSnapshot().score, 20);
-});
-
 test("상대 authoritative snapshot은 full apply 후 line clear presentation을 정확히 1회 재생한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
@@ -1414,33 +1371,6 @@ test("같은 pieceIndex의 board drift는 A local과 B의 A 보드를 같은 sna
     );
     assert.equal(sessionA.myGame.runtime.gravityRunning, true);
     assert.equal(sessionB.opponentGame.runtime.gravityRunning, false);
-});
-
-test("상대 game:input relay 수신은 opponentGame 상태를 바꾸지 않는다", async (t) => {
-    const { startMultiplayerGame } = await loadSession();
-    const session = startMultiplayerGame(createSessionParams());
-    t.after(() => cleanupSession(session));
-
-    const opponentBaseSnapshot = session.opponentGame.getSnapshot();
-    let enqueueInputCallCount = 0;
-    session.opponentGame.enqueueInput = () => {
-        enqueueInputCallCount += 1;
-        return null;
-    };
-
-    sharedFakeSocket.emitServer("game:input", {
-        playerId: "player-opponent",
-        action: "move_left",
-        tick: opponentBaseSnapshot.tick + 1,
-        pieceIndex: opponentBaseSnapshot.pieceIndex,
-    });
-
-    const opponentSnapshot = session.opponentGame.getSnapshot();
-
-    assert.equal(enqueueInputCallCount, 0);
-    assert.deepEqual(opponentSnapshot.inputQueue, opponentBaseSnapshot.inputQueue);
-    assert.deepEqual(opponentSnapshot.activePiece, opponentBaseSnapshot.activePiece);
-    assert.equal(opponentSnapshot.score, opponentBaseSnapshot.score);
 });
 
 test("game:garbage:append listener를 session에 연결하지 않는다", async (t) => {

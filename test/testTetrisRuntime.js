@@ -1248,35 +1248,7 @@ test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한
     assert.equal(log.boardAfter[19][5], "square");
 });
 
-test("runtime applyGarbageLines는 board 아래에서 garbage를 올린다", async (t) => {
-    const { createTetrisRuntime } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
-    t.after(() => game.destroy());
-
-    const board = createEmptyBoard();
-    board[18][0] = "bar";
-
-    game.init({ autoStart: false });
-    game.applySnapshot({
-        ...game.getSnapshot(),
-        board,
-    });
-
-    const result = game.applyGarbageLines({
-        lines: 1,
-        holeCol: 4,
-    });
-    const snapshot = game.getSnapshot();
-
-    assert.equal(result.appliedLines, 1);
-    assert.equal(result.overflow, false);
-    assert.equal(snapshot.board[17][0], "bar");
-    assert.equal(snapshot.board[19][4], null);
-    assert.equal(snapshot.board[19][0], "garbage");
-    assert.equal(snapshot.board[19][9], "garbage");
-});
-
-test("queueGarbageLines는 incoming을 위험 상태로 강조하고 수신 pulse를 남긴다", async (t) => {
+test("authoritative pending garbage는 incoming 수와 위험 상태를 갱신한다", async (t) => {
     const { createTetrisRuntime } = await loadRuntime();
     const incomingStatEl = createFakeElement();
     const pendingGarbageEl = createFakeElement();
@@ -1288,15 +1260,15 @@ test("queueGarbageLines는 incoming을 위험 상태로 강조하고 수신 puls
     t.after(() => game.destroy());
 
     game.init({ autoStart: false });
-    game.queueGarbageLines({
-        lines: 3,
-        holeCol: 4,
-    });
+    game.setAuthoritativePendingGarbageLines(3);
 
-    assert.equal(game.getPendingGarbageLines(), 3);
     assert.equal(pendingGarbageEl.innerText, 3);
     assert.ok(incomingStatEl.classList.contains("is-danger"));
-    assert.ok(incomingStatEl.classList.contains("is-receiving"));
+
+    game.setAuthoritativePendingGarbageLines(0);
+
+    assert.equal(pendingGarbageEl.innerText, 0);
+    assert.equal(incomingStatEl.classList.contains("is-danger"), false);
 });
 
 test("placement_decision은 line clear 결과로 garbage attackLines를 기록한다", async (t) => {
@@ -1339,7 +1311,11 @@ test("placement_decision은 line clear 결과로 garbage attackLines를 기록�
     const [log] = game.getPlacementDecisionLog();
 
     assert.equal(log.placementResult.linesCleared, 4);
+    assert.equal(log.placementResult.rawAttackLines, 4);
     assert.equal(log.placementResult.attackLines, 4);
+    assert.equal(log.placementResult.canceledGarbageLines, 0);
+    assert.equal(log.placementResult.incomingGarbageLines, 0);
+    assert.equal(log.placementResult.appliedGarbageLines, 0);
 });
 
 test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기록한다", async (t) => {
@@ -1389,113 +1365,6 @@ test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기�
     assert.equal(log.placementResult.rawAttackLines, 2);
     assert.equal(log.placementResult.attackLines, 2);
     assert.equal(log.placementResult.scoreDelta, 50);
-});
-
-test("runtime은 pending garbage를 line clear 공격으로 먼저 상쇄한다", async (t) => {
-    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ rng: () => 0 });
-    t.after(() => game.destroy());
-
-    const board = createEmptyBoard();
-    board[19] = Array(10).fill("square");
-    board[19][4] = null;
-    board[19][5] = null;
-
-    game.init({ autoStart: true });
-    game.queueGarbageLines({
-        lines: 2,
-        holeCol: 4,
-    });
-    game.applySnapshot({
-        ...game.getSnapshot(),
-        board,
-        activePiece: {
-            pieceType: "square",
-            rotation: 0,
-            row: 18,
-            col: 4,
-        },
-        pendingPiece: {
-            pieceType: "square",
-            rotation: 0,
-            row: 18,
-            col: 4,
-        },
-        tick: 60,
-        pieceIndex: 10,
-        phase: "playing",
-    });
-
-    const targetTick = game.runtime.currentTick + 1;
-    game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, 10);
-
-    await waitForTick(game, targetTick);
-
-    const [log] = game.getPlacementDecisionLog();
-    const snapshot = game.getSnapshot();
-
-    assert.equal(log.placementResult.linesCleared, 1);
-    assert.equal(log.placementResult.rawAttackLines, 0);
-    assert.equal(log.placementResult.canceledGarbageLines, 0);
-    assert.equal(log.placementResult.appliedGarbageLines, 2);
-    assert.equal(log.placementResult.attackLines, 0);
-    assert.equal(snapshot.board[19][4], null);
-    assert.equal(snapshot.board[19][0], "garbage");
-});
-
-test("runtime은 pending garbage보다 공격량이 크면 남은 공격만 전송 대상으로 기록한다", async (t) => {
-    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const garbageLogEl = createFakeElement();
-    const game = createTetrisRuntime({
-        rng: () => 0,
-        garbageLogEl,
-    });
-    t.after(() => game.destroy());
-
-    const board = createEmptyBoard();
-    for (let row = 16; row <= 19; row++) {
-        board[row] = Array(10).fill("square");
-        board[row][4] = null;
-    }
-
-    game.init({ autoStart: true });
-    game.queueGarbageLines({
-        lines: 2,
-        holeCol: 4,
-    });
-    game.applySnapshot({
-        ...game.getSnapshot(),
-        board,
-        activePiece: {
-            pieceType: "bar",
-            rotation: 1,
-            row: 16,
-            col: 2,
-        },
-        pendingPiece: {
-            pieceType: "bar",
-            rotation: 1,
-            row: 16,
-            col: 2,
-        },
-        tick: 70,
-        pieceIndex: 11,
-        phase: "playing",
-    });
-
-    const targetTick = game.runtime.currentTick + 1;
-    game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, 11);
-
-    await waitForTick(game, targetTick);
-
-    const [log] = game.getPlacementDecisionLog();
-
-    assert.equal(log.placementResult.rawAttackLines, 4);
-    assert.equal(log.placementResult.canceledGarbageLines, 2);
-    assert.equal(log.placementResult.appliedGarbageLines, 0);
-    assert.equal(log.placementResult.attackLines, 2);
-    assert.equal(garbageLogEl.textContent, "Canceled 2");
-    assert.ok(garbageLogEl.classList.contains("is-cancel"));
 });
 
 test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", async (t) => {

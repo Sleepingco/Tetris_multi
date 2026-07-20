@@ -96,6 +96,42 @@ test("resolveMoveAttempt는 입력 activePiece와 pendingPiece를 직접 변경�
     assert.deepEqual(pendingPiece, beforePendingPiece);
 });
 
+test("resolveMoveAttempt는 막힌 spawn 조각을 active 상태에 남기지 않는다", async () => {
+    const {
+        resolveMoveAttempt,
+        resolveMoveIntent,
+        createEmptyBoard,
+        blocks,
+        wallKicks,
+    } = await loadMoveStep();
+    const board = createEmptyBoard(20, 10);
+    board[0][3] = "stack";
+    const spawnedPiece = {
+        pieceType: "bar",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+
+    const outcome = resolveMoveAttempt({
+        board,
+        activePiece: spawnedPiece,
+        pendingPiece: spawnedPiece,
+        moveCause: "spawn",
+        blocks,
+        wallKicks,
+    });
+    const intent = resolveMoveIntent({
+        outcome,
+        hasFallTimer: true,
+    });
+
+    assert.equal(outcome.status, "gameOver");
+    assert.equal(outcome.active.pieceType, "");
+    assert.equal(outcome.pending.pieceType, "");
+    assert.equal(intent.active.pieceType, "");
+});
+
 test("resolveInputMoveIntent는 input action을 runtime move intent로 매핑한다", async () => {
     const { resolveInputMoveIntent } = await loadMoveStep();
 

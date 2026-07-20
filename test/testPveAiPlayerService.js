@@ -1,5 +1,8 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { mkdtemp, writeFile } = require("node:fs/promises");
+const { tmpdir } = require("node:os");
+const path = require("node:path");
 
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
 const {
@@ -9,24 +12,33 @@ const {
     getMatchState,
     resetMatches,
 } = require("../src/server/services/matchService.js");
-const { createPveAiPlayerService } = require(
+const { createPveAiPlayerService: createService } = require(
     "../src/server/services/pveAiPlayerService.js"
 );
 const { validatePlacementDecisionLog } = require(
     "../src/server/validators/gameLogValidator.js"
 );
 
-function createPveMatch(roomId, aiDifficulty = "normal") {
+function createPveAiPlayerService(dependencies = {}) {
+    return createService({ env: {}, ...dependencies });
+}
+
+function createPveMatch(roomId, aiDifficulty = "normal", aiPolicy = "heuristic") {
     return createMatch({
         roomId,
         mode: "pve",
         aiDifficulty,
+        aiPolicy,
         status: "playing",
         players: [
             { playerId: "human", playerType: "human" },
             { playerId: "ai", playerType: "heuristic_ai" },
         ],
     }).match;
+}
+
+function createV4Match(roomId) {
+    return createPveMatch(roomId, "normal", "placement_v4");
 }
 
 async function processUntilPlacement(service, roomId, gameCore, maxSteps = 100) {
@@ -83,6 +95,36 @@ function createStubAi(decision) {
     });
 }
 
+function createV4Decision(options) {
+    return {
+        ...createDecision(options),
+        source: "ml_ai",
+        modelType: "pairwise_linear_ranker",
+        selectedClassKey: "square|18,3;18,4;19,3;19,4",
+        selectedRepresentativeKey: "square:0:18:3",
+        physicalClassCount: 4,
+        unavoidableGameOver: false,
+        policyRequested: "placement_v4",
+        policyUsed: "placement_v4",
+        fallbackReason: null,
+    };
+}
+
+function createV4StubAi(v4Decision, heuristicDecision = v4Decision) {
+    return async () => ({
+        getHeuristicDecision() {
+            return structuredClone(heuristicDecision);
+        },
+        getPlacementV4PveDecision() {
+            return structuredClone(v4Decision);
+        },
+        validatePlacementV4Model() {
+            return { ok: true, reason: null };
+        },
+        getBoardMetrics: createMetrics,
+    });
+}
+
 function setActivePiece(match, piece) {
     const aiPlayer = match.players.find(player => player.playerId === "ai");
     aiPlayer.authoritativeState.activePiece = { ...piece };
@@ -115,6 +157,8 @@ test("AI step은 plan을 먼저 만들고 action을 하나씩 적용한 뒤 log�
     assert.equal(planResult.ok, true);
     assert.equal(planResult.skipped, true);
     assert.equal(planResult.reason, "AI_PLAN_CREATED");
+    assert.equal(planResult.decision.policyRequested, undefined);
+    assert.equal(planResult.decision.policyUsed, undefined);
     assert.deepEqual(aiPlayer.authoritativeState, aiStateBefore);
     assert.ok(aiPlayer.aiPlan);
     assert.deepEqual(Object.keys(aiPlayer.aiPlan).sort(), [
@@ -767,19 +811,392 @@ test("selectedPlacement까지 거리가 5보다 짧으면 필요한 soft_drop만
     assert.equal(aiPlayer.authoritativeState.score, 0);
     assert.equal(aiPlayer.aiPlan, null);
 });
-
-test("AI player는 human input log를 기록할 수 없다", () => {
+test("heuristic policy는 model 설정과 무관하게 V4 loader를 호출하지 않는다", async () => {
     resetMatches();
-    createPveMatch("PVE-AI-4");
-    const { recordInput } = require("../src/server/services/matchService.js");
-
-    const result = recordInput("PVE-AI-4", "ai", {
-        action: "hard_drop",
-        tick: 1,
-        pieceIndex: 1,
+    const gameCore = await loadGameCore();
+    createPveMatch("PVE-V4-DEFAULT");
+    const heuristicDecision = createDecision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    let modelLoadCount = 0;
+    let v4ModuleLoadCount = 0;
+    const service = createPveAiPlayerService({
+        env: {},
+        loadHeuristicAi: createStubAi(heuristicDecision),
+        loadPlacementV4Ai() {
+            v4ModuleLoadCount += 1;
+            throw new Error("V4 modules must not load");
+        },
+        loadPlacementV4Model() {
+            modelLoadCount += 1;
+            return { ok: true, model: {} };
+        },
     });
 
-    assert.equal(result.ok, false);
-    assert.equal(result.reason, "PLAYER_INPUT_NOT_ALLOWED");
-    assert.deepEqual(getMatchState("PVE-AI-4").match.players[1].inputLog, []);
+    const result = await service.processAiStep("PVE-V4-DEFAULT", "ai", gameCore);
+
+    assert.equal(result.reason, "AI_PLAN_CREATED");
+    assert.equal(result.decision.source, "heuristic_ai");
+    assert.equal(result.decision.policyRequested, undefined);
+    assert.equal(result.decision.policyUsed, undefined);
+    assert.equal(modelLoadCount, 0);
+    assert.equal(v4ModuleLoadCount, 0);
+
+    resetMatches();
+    createPveMatch("PVE-V4-EMPTY-PATH");
+    const emptyPathService = createPveAiPlayerService({
+        env: { PVE_PLACEMENT_V4_MODEL_PATH: "   " },
+        loadHeuristicAi: createStubAi(heuristicDecision),
+        loadPlacementV4Ai() {
+            v4ModuleLoadCount += 1;
+            throw new Error("V4 modules must not load");
+        },
+        loadPlacementV4Model() {
+            modelLoadCount += 1;
+            return { ok: true, model: {} };
+        },
+    });
+    const emptyPathResult = await emptyPathService.processAiStep(
+        "PVE-V4-EMPTY-PATH",
+        "ai",
+        gameCore,
+    );
+
+    assert.equal(emptyPathResult.decision.policyUsed, undefined);
+    assert.equal(modelLoadCount, 0);
+    assert.equal(v4ModuleLoadCount, 0);
+
+    const previousModelPath = process.env.PVE_PLACEMENT_V4_MODEL_PATH;
+    process.env.PVE_PLACEMENT_V4_MODEL_PATH = "ambient-model.json";
+    try {
+        resetMatches();
+        createPveMatch("PVE-V4-AMBIENT-ISOLATED");
+        const ambientIsolatedService = createPveAiPlayerService({
+            loadHeuristicAi: createStubAi(heuristicDecision),
+            loadPlacementV4Ai() {
+                v4ModuleLoadCount += 1;
+                throw new Error("ambient model path must be isolated");
+            },
+        });
+        const ambientResult = await ambientIsolatedService.processAiStep(
+            "PVE-V4-AMBIENT-ISOLATED",
+            "ai",
+            gameCore,
+        );
+
+        assert.equal(ambientResult.decision.policyUsed, undefined);
+        assert.equal(v4ModuleLoadCount, 0);
+    } finally {
+        if (previousModelPath === undefined) {
+            delete process.env.PVE_PLACEMENT_V4_MODEL_PATH;
+        } else {
+            process.env.PVE_PLACEMENT_V4_MODEL_PATH = previousModelPath;
+        }
+    }
+});
+
+test("placement_v4 policy는 bundled experimental model을 별도 설정 없이 사용한다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    createV4Match("PVE-V4-BUNDLED");
+    const service = createPveAiPlayerService();
+
+    const result = await service.processAiStep("PVE-V4-BUNDLED", "ai", gameCore);
+
+    assert.equal(result.reason, "AI_PLAN_CREATED");
+    assert.equal(result.decision.policyRequested, "placement_v4");
+    assert.equal(result.decision.policyUsed, "placement_v4");
+    assert.equal(
+        result.decision.modelSha256,
+        "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d",
+    );
+});
+
+test("V4 성공은 authoritative plan을 만들고 training log 대신 provenance만 남긴다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    const match = createV4Match("PVE-V4-SUCCESS");
+    setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
+    const heuristicDecision = createDecision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    const v4Decision = createV4Decision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    const evidence = [];
+    let logSaveCount = 0;
+    const service = createPveAiPlayerService({
+        env: { PVE_PLACEMENT_V4_MODEL_PATH: "synthetic-model.json" },
+        loadHeuristicAi: createStubAi(heuristicDecision),
+        loadPlacementV4Ai: createV4StubAi(v4Decision, heuristicDecision),
+        loadPlacementV4Model() {
+            return { ok: true, model: { id: "synthetic" }, modelSha256: "model-sha" };
+        },
+        recordAiPolicyEvidence(value) {
+            evidence.push(value);
+        },
+        savePlacementDecisionLog() {
+            logSaveCount += 1;
+            return { ok: true };
+        },
+    });
+
+    const planResult = await service.processAiStep("PVE-V4-SUCCESS", "ai", gameCore);
+    const { result } = await processUntilPlacement(service, "PVE-V4-SUCCESS", gameCore);
+
+    assert.equal(planResult.decision.policyUsed, "placement_v4");
+    assert.equal(result.ok, true);
+    assert.equal(result.log, null);
+    assert.deepEqual(result.logResult, {
+        ok: true,
+        log: null,
+        reason: "V4_TRAINING_LOG_EXCLUDED",
+        skipped: true,
+    });
+    assert.equal(logSaveCount, 0);
+    assert.deepEqual(evidence, [{
+        roomId: "PVE-V4-SUCCESS",
+        playerId: "ai",
+        pieceIndex: 1,
+        policyRequested: "placement_v4",
+        policyUsed: "placement_v4",
+        fallbackReason: null,
+        modelSha256: "model-sha",
+        selectedClassKey: v4Decision.selectedClassKey,
+        selectedRepresentativeKey: v4Decision.selectedRepresentativeKey,
+    }]);
+});
+
+test("V4 model loading 실패는 reason을 보존하고 heuristic log 경로로 fallback한다", async (t) => {
+    const gameCore = await loadGameCore();
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "pve-v4-model-"));
+    const invalidJsonPath = path.join(temporaryDirectory, "invalid.json");
+    const shaMismatchPath = path.join(temporaryDirectory, "mismatch.json");
+    await writeFile(invalidJsonPath, "{invalid", "utf8");
+    await writeFile(shaMismatchPath, "{}\n", "utf8");
+    const fixtures = [
+        ["missing", path.join(temporaryDirectory, "missing.json"), null, "MODEL_NOT_FOUND"],
+        ["invalid JSON", invalidJsonPath, null, "MODEL_JSON_INVALID"],
+        ["SHA mismatch", shaMismatchPath, null, "MODEL_SHA_MISMATCH"],
+        ["schema rejection", "synthetic.json", {
+            ok: false,
+            reason: "MODEL_VALIDATION_FAILED:FEATURE_NAMES_MISMATCH",
+            modelSha256: "model-sha",
+        }, "MODEL_VALIDATION_FAILED:FEATURE_NAMES_MISMATCH"],
+    ];
+
+    for (const [name, modelPath, injectedResult, expectedReason] of fixtures) {
+        await t.test(name, async () => {
+            resetMatches();
+            const roomId = `PVE-V4-LOAD-${name}`;
+            const match = createV4Match(roomId);
+            setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
+            const heuristicDecision = createDecision({
+                selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+                plannedActions: ["hard_drop"],
+            });
+            const v4Decision = createV4Decision({
+                selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+                plannedActions: ["hard_drop"],
+            });
+            const savedLogs = [];
+            const dependencies = {
+                env: { PVE_PLACEMENT_V4_MODEL_PATH: modelPath },
+                loadHeuristicAi: createStubAi(heuristicDecision),
+                loadPlacementV4Ai: createV4StubAi(v4Decision, heuristicDecision),
+                savePlacementDecisionLog(log) {
+                    savedLogs.push(log);
+                    return { ok: true, log, reason: null };
+                },
+            };
+            if (injectedResult) {
+                dependencies.loadPlacementV4Model = () => injectedResult;
+            }
+            const service = createPveAiPlayerService(dependencies);
+
+            const planResult = await service.processAiStep(roomId, "ai", gameCore);
+            const { result } = await processUntilPlacement(service, roomId, gameCore);
+
+            assert.equal(planResult.decision.policyRequested, "placement_v4");
+            assert.equal(planResult.decision.policyUsed, "heuristic");
+            assert.equal(planResult.decision.fallbackReason, expectedReason);
+            assert.equal(result.ok, true);
+            assert.equal(savedLogs.length, 1);
+            assert.equal(savedLogs[0].source, "heuristic_ai");
+            assert.equal(savedLogs[0].modelType, "heuristic");
+        });
+    }
+});
+
+test("V4 model 성공과 실패는 service별 최초 요청 Promise를 재사용한다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    createV4Match("PVE-V4-CACHE-1");
+    createV4Match("PVE-V4-CACHE-2");
+    const heuristicDecision = createDecision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    const v4Decision = createV4Decision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    let loadCount = 0;
+    let loadedPath;
+    const service = createPveAiPlayerService({
+        env: { PVE_PLACEMENT_V4_MODEL_PATH: "cached-model.json" },
+        loadHeuristicAi: createStubAi(heuristicDecision),
+        loadPlacementV4Ai: createV4StubAi(v4Decision, heuristicDecision),
+        loadPlacementV4Model(modelPath) {
+            loadCount += 1;
+            loadedPath = modelPath;
+            return { ok: true, model: {}, modelSha256: "model-sha" };
+        },
+    });
+
+    await service.processAiStep("PVE-V4-CACHE-1", "ai", gameCore);
+    await service.processAiStep("PVE-V4-CACHE-2", "ai", gameCore);
+
+    assert.equal(loadCount, 1);
+    assert.equal(loadedPath, path.resolve(process.cwd(), "cached-model.json"));
+
+    resetMatches();
+    createV4Match("PVE-V4-FAILED-CACHE-1");
+    createV4Match("PVE-V4-FAILED-CACHE-2");
+    let failedLoadCount = 0;
+    const failedService = createPveAiPlayerService({
+        env: { PVE_PLACEMENT_V4_MODEL_PATH: "missing-model.json" },
+        loadHeuristicAi: createStubAi(heuristicDecision),
+        loadPlacementV4Ai: createV4StubAi(v4Decision, heuristicDecision),
+        loadPlacementV4Model() {
+            failedLoadCount += 1;
+            return { ok: false, reason: "MODEL_NOT_FOUND", modelSha256: null };
+        },
+    });
+
+    await failedService.processAiStep("PVE-V4-FAILED-CACHE-1", "ai", gameCore);
+    await failedService.processAiStep("PVE-V4-FAILED-CACHE-2", "ai", gameCore);
+
+    assert.equal(failedLoadCount, 1);
+});
+
+test("V4 adapter와 evidence callback 예외는 gameplay를 중단하지 않고 heuristic으로 복구한다", async () => {
+    resetMatches();
+    const gameCore = await loadGameCore();
+    const match = createV4Match("PVE-V4-EXCEPTION");
+    setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
+    const heuristicDecision = createDecision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    const service = createPveAiPlayerService({
+        env: { PVE_PLACEMENT_V4_MODEL_PATH: "synthetic-model.json" },
+        loadHeuristicAi: createStubAi(heuristicDecision),
+        loadPlacementV4Ai: async () => ({
+            getPlacementV4PveDecision() {
+                throw new Error("synthetic scorer failure");
+            },
+            validatePlacementV4Model: () => ({ ok: true, reason: null }),
+        }),
+        loadPlacementV4Model: () => ({ ok: true, model: {}, modelSha256: "model-sha" }),
+        recordAiPolicyEvidence() {
+            throw new Error("evidence unavailable");
+        },
+        savePlacementDecisionLog(log) {
+            return { ok: true, log, reason: null };
+        },
+    });
+
+    const planResult = await service.processAiStep("PVE-V4-EXCEPTION", "ai", gameCore);
+    const { result } = await processUntilPlacement(service, "PVE-V4-EXCEPTION", gameCore);
+
+    assert.equal(planResult.decision.policyUsed, "heuristic");
+    assert.equal(planResult.decision.fallbackReason, "V4_SCORER_FAILED:UNEXPECTED_ERROR");
+    assert.equal(result.ok, true);
+    assert.equal(result.log.source, "heuristic_ai");
+});
+
+test("pending 또는 rejected evidence Promise는 authoritative gameplay를 기다리게 하지 않는다", async (t) => {
+    const gameCore = await loadGameCore();
+    const heuristicDecision = createDecision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+    const v4Decision = createV4Decision({
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        plannedActions: ["hard_drop"],
+    });
+
+    await t.test("never resolving", async () => {
+        resetMatches();
+        createV4Match("PVE-V4-EVIDENCE-PENDING");
+        let evidenceCalled = false;
+        const service = createPveAiPlayerService({
+            env: { PVE_PLACEMENT_V4_MODEL_PATH: "synthetic-model.json" },
+            loadHeuristicAi: createStubAi(heuristicDecision),
+            loadPlacementV4Ai: createV4StubAi(v4Decision, heuristicDecision),
+            loadPlacementV4Model: () => ({
+                ok: true,
+                model: {},
+                modelSha256: "model-sha",
+            }),
+            recordAiPolicyEvidence() {
+                evidenceCalled = true;
+                return new Promise(() => {});
+            },
+        });
+        let timeoutId;
+        const timeout = new Promise((resolve, reject) => {
+            timeoutId = setTimeout(() => reject(new Error("processAiStep blocked")), 100);
+        });
+
+        try {
+            const result = await Promise.race([
+                service.processAiStep("PVE-V4-EVIDENCE-PENDING", "ai", gameCore),
+                timeout,
+            ]);
+            assert.equal(result.reason, "AI_PLAN_CREATED");
+            assert.equal(evidenceCalled, true);
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    });
+
+    await t.test("rejected Promise", async () => {
+        resetMatches();
+        const match = createV4Match("PVE-V4-EVIDENCE-REJECTED");
+        setActivePiece(match, { pieceType: "square", rotation: 0, row: -1, col: 3 });
+        const service = createPveAiPlayerService({
+            env: { PVE_PLACEMENT_V4_MODEL_PATH: "synthetic-model.json" },
+            loadHeuristicAi: createStubAi(heuristicDecision),
+            loadPlacementV4Ai: createV4StubAi(v4Decision, heuristicDecision),
+            loadPlacementV4Model: () => ({
+                ok: true,
+                model: {},
+                modelSha256: "model-sha",
+            }),
+            recordAiPolicyEvidence() {
+                return Promise.reject(new Error("evidence unavailable"));
+            },
+        });
+
+        const planResult = await service.processAiStep(
+            "PVE-V4-EVIDENCE-REJECTED",
+            "ai",
+            gameCore,
+        );
+        const { result } = await processUntilPlacement(
+            service,
+            "PVE-V4-EVIDENCE-REJECTED",
+            gameCore,
+        );
+
+        assert.equal(planResult.reason, "AI_PLAN_CREATED");
+        assert.equal(result.ok, true);
+        assert.equal(result.log, null);
+        assert.equal(result.logResult.reason, "V4_TRAINING_LOG_EXCLUDED");
+    });
 });

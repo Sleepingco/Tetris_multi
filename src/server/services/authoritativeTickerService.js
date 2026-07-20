@@ -19,6 +19,28 @@ const AUTHORITATIVE_GRAVITY_INTERVAL_MS = 500;
 const AI_ACTION_INTERVAL_MS = 100;
 const LINE_CLEAR_PRESENTATION_DELAY_MS = 350;
 
+function updateAiPolicyRuntime(match, playerId, decision = {}) {
+    const policyRequested = decision.policyRequested || "heuristic";
+    const policyUsed = decision.policyUsed || "heuristic";
+    const fallbackReason = decision.fallbackReason ?? null;
+    const previous = match.aiPolicyRuntime;
+    const didFallback = policyRequested === "placement_v4"
+        && policyUsed !== "placement_v4";
+
+    match.aiPolicyRuntime = {
+        roomId: match.roomId,
+        playerId,
+        policyRequested,
+        policyUsed,
+        fallbackReason,
+        modelSha256: decision.modelSha256 ?? previous?.modelSha256 ?? null,
+        fallbackCount: (previous?.fallbackCount ?? 0) + (didFallback ? 1 : 0),
+        lastFallbackReason: fallbackReason ?? previous?.lastFallbackReason ?? null,
+    };
+
+    return match.aiPolicyRuntime;
+}
+
 /**
  * room 단위 authoritative ticker를 만든다.
  * - 실제 timer는 roomId별로 하나만 유지한다.
@@ -261,6 +283,10 @@ function createAuthoritativeTickerService(dependencies = {}) {
             }
             return;
         }
+        if (isAiPlayer && stepResult.reason === "AI_PLAN_CREATED") {
+            const policyRuntime = updateAiPolicyRuntime(match, playerId, stepResult.decision);
+            socketServer.to(roomId).emit("pve:ai-policy", policyRuntime);
+        }
         if (!isAiPlayer && stepResult.gravityResult?.kind === "grounded") {
             gravityTiming.groundedPieceIndex = pieceIndex;
             return;
@@ -292,6 +318,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
             await finishAuthoritativeMatch({
                 roomId,
                 loserPlayerId: playerId,
+                finishReason: stepResult.placementResult?.gameOverReason,
                 match,
                 finishGame,
                 stopRoomTicker,

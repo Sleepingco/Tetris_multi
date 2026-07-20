@@ -10,7 +10,6 @@
   * @param {HTMLElement|null} params.scoreEl - 점수 표시 요소
   * @param {HTMLElement|null} params.linesEl - 삭제한 줄 수 표시 요소
   * @param {HTMLElement|null} params.pendingGarbageEl - 대기 garbage 표시 요소
-  * @param {HTMLElement|null} params.garbageLogEl - garbage 이벤트 로그 요소
   * @param {HTMLElement|null} params.gameOverEl - 게임오버 레이어 요소
   * @param {HTMLElement|null} params.nextPreviewEl - 다음 조각 미리보기 컨테이너
   * @param {HTMLElement|null} params.holdPreviewEl - 홀드 미리보기 컨테이너
@@ -26,7 +25,6 @@ export function createGameUi({
         scoreEl,
         linesEl,
         pendingGarbageEl,
-        garbageLogEl,
         gameOverEl,
         nextPreviewEl,
         holdPreviewEl,
@@ -39,8 +37,6 @@ export function createGameUi({
 }) {
         let nextPreviewCells = []
         let holdPreviewCells = null
-        let incomingPulseTimer = null
-        let garbageLogTimer = null
 
         function getIncomingStatusEl() {
                 return pendingGarbageEl?.closest?.(".stat--incoming")
@@ -58,28 +54,6 @@ export function createGameUi({
                 }
 
                 element.classList.remove(className)
-        }
-
-        function pulseIncomingStatus() {
-                const incomingStatusEl = getIncomingStatusEl()
-                if (!incomingStatusEl?.classList) return
-
-                incomingStatusEl.classList.remove("is-receiving")
-                void incomingStatusEl.offsetWidth
-                incomingStatusEl.classList.add("is-receiving")
-
-                clearTimeout(incomingPulseTimer)
-                incomingPulseTimer = setTimeout(() => {
-                        incomingStatusEl.classList.remove("is-receiving")
-                        incomingPulseTimer = null
-                }, 420)
-        }
-
-        function resetGarbageLog() {
-                if (!garbageLogEl) return
-
-                garbageLogEl.textContent = ""
-                garbageLogEl.className = "garbage-log"
         }
 
         return {
@@ -107,46 +81,15 @@ export function createGameUi({
                   * lock 전까지 대기 중인 incoming garbage 수를 표시한다.
                   *
                   * @param {number} lines - 표시할 pending garbage 수
-                  * @param {{pulse?: boolean}} options - 수신 pulse 여부
                   * @returns {void}
                   */
-                renderPendingGarbage(lines, { pulse = false } = {}) {
+                renderPendingGarbage(lines) {
                         if (!pendingGarbageEl) return
                         const safeLines = Number.isInteger(lines) && lines > 0 ? lines : 0
                         const incomingStatusEl = getIncomingStatusEl()
 
                         pendingGarbageEl.innerText = safeLines
                         setElementClass(incomingStatusEl, "is-danger", safeLines > 0)
-
-                        if (pulse && safeLines > 0) {
-                                pulseIncomingStatus()
-                        }
-                },
-                /**
-                  * garbage 상쇄 같은 짧은 전투 로그를 표시한다.
-                  *
-                  * @param {{type: string, lines: number}} event - 표시할 이벤트 정보
-                  * @returns {void}
-                  */
-                renderGarbageEvent(event = {}) {
-                        if (!garbageLogEl) return
-
-                        const lines = Number.isInteger(event.lines) && event.lines > 0 ? event.lines : 0
-                        if (lines === 0) return
-
-                        const type = event.type === "cancel" ? "cancel" : "info"
-                        const text = type === "cancel"
-                                ? `Canceled ${lines}`
-                                : `Incoming ${lines}`
-
-                        garbageLogEl.textContent = text
-                        garbageLogEl.className = `garbage-log is-visible is-${type}`
-
-                        clearTimeout(garbageLogTimer)
-                        garbageLogTimer = setTimeout(() => {
-                                resetGarbageLog()
-                                garbageLogTimer = null
-                        }, 1200)
                 },
                 /**
                   * 게임오버 레이어를 화면에 표시한다.
@@ -216,17 +159,6 @@ export function createGameUi({
                                 holdPieceType,
                                 blocks,
                         })
-                },
-                /**
-                  * UI 어댑터가 가진 transient timer를 정리한다.
-                  *
-                  * @returns {void}
-                  */
-                dispose() {
-                        clearTimeout(incomingPulseTimer)
-                        clearTimeout(garbageLogTimer)
-                        incomingPulseTimer = null
-                        garbageLogTimer = null
                 },
         }
 }

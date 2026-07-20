@@ -56,10 +56,27 @@ LLM 코칭 문구 작성이나 게임 규칙 구현을 대신하는 모드는 �
 
 ## 현재 프로젝트 단계
 
-- 현재 범위와 선행 조건은 `PLAN.md`와 `docs/ai-pve-plan.md`를 먼저 확인한다.
-- 첫 순서는 `boardMetrics -> placementGenerator -> simulatePlacement -> heuristicEvaluator`의 순수 모듈 흐름이다.
-- 브라우저 2탭 멀티플레이 회귀가 끝나기 전에는 AI controller를 실제 PVE 게임 루프에 연결하지 않는다.
-- Python AI 서버, 강화학습, LLM 코칭은 현재 heuristic baseline 작업에 섞지 않는다.
+- 현재 범위와 선행 조건은 `PLAN.md`와 `docs/ai-plan.md`를 먼저 확인한다.
+- 초기 PVE 단계 계획의 역사적 근거가 필요할 때만
+  `docs/archive/ai-ml/plans/ai-pve-plan.md`를 확인한다.
+- `boardMetrics -> placementGenerator -> simulatePlacement -> heuristicEvaluator`의
+  순수 모듈 흐름은 현재도 재사용하는 분석 기준이다.
+- Production/PVE 기본 정책은 heuristic이다. V4 경로는 명시적인 dev-only opt-in
+  범위를 넘겨 승격하지 않는다.
+- Python AI 서버, 강화학습, LLM 코칭은 별도 승인이 없는 한 현재 작업에 섞지 않는다.
+
+## 반복 ML 실험 라우팅
+
+Placement dataset, Notebook, feature, pair weighting 또는 sklearn 평가를 반복 실행하는 작업은 이 파일에 세부 계약을 복제하지 않는다.
+
+다음 순서로 `ai-harness/ml-experiments/`를 추가 적용한다.
+
+1. 공통 constraints와 workflow
+2. verification profile
+3. 현재 experiment 파일 하나
+4. 현재 MODE에 필요한 implementation, documentation 또는 review task
+
+기본 MODE는 `implement-smoke`다. Full 실행과 결과 분석은 각각 별도 gate로 분리한다.
 
 ## 검증 예시
 
@@ -68,3 +85,4 @@ LLM 코칭 문구 작성이나 게임 규칙 구현을 대신하는 모드는 �
 - 여러 후보를 평가한 뒤에도 원본 board가 바뀌지 않는가
 - 안전한 board가 위험한 board보다 높은 점수를 받는가
 - AI 관련 변경 후에도 `bash scripts/verify.sh`가 통과하는가
+- ML Notebook·테스트 변경이면 targeted test와 `npm run verify:ml`도 통과하는가

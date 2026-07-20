@@ -36,6 +36,16 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 - 변경 후 코드 리뷰: `ai-harness/tasks/review.md`
 - 규칙 기반 AI, feature, 데이터셋, ML 평가: `ai-harness/tasks/ai-analysis.md`
 
+반복 placement ML 실험:
+
+- 긴 실험 프롬프트를 반복하지 않고 `ai-harness/ml-experiments/`를 사용한다.
+- 먼저 공통 `README.md`, `constraints.md`, `workflow.md`, `verification.md`를 읽고 현재 `experiments/*.md` 하나만 선택한다.
+- 기본 실행은 `MODE=implement-smoke`이며 Notebook·계약 테스트·smoke와 사용자 full 명령 제공에서 멈춘다.
+- 긴 full 평가는 사용자가 실행하거나 `MODE=run-full`을 명시적으로 승인한 경우에만 수행한다.
+- Full report 해석은 `MODE=analyze-result`, 동결 감사는 `MODE=freeze-audit`로 분리한다.
+- 현재 branch, HEAD, dirty 파일, 날짜, game count와 checksum은 하네스에 고정하지 않고 실행 시 실제 상태에서 읽는다.
+- 현재 실험이 끝나도 다음 실험, 누적 재학습, runtime/PVE 또는 migration을 자동으로 시작하지 않는다.
+
 실행 검증:
 - 런타임 코드, 테스트, 빌드/실행 동작을 변경한 뒤에는 완료 전에 `bash scripts/verify.sh`를 실행한다.
 - 문서만 변경한 경우에는 전체 테스트를 생략할 수 있다.
@@ -85,7 +95,7 @@ src/
 │   ├── init.js              # Express / HTTP / Socket.IO server assembly
 │   ├── services/
 │   │   ├── roomService.js   # Room lifecycle / lobby state
-│   │   ├── matchService.js  # Match state / input log / server bag / authoritative player state
+│   │   ├── matchService.js  # Match state / server bag / authoritative player state
 │   │   └── authoritativeTickerService.js # Room gravity tick / snapshot lifecycle
 │   └── sockets/
 │       ├── index.js             # Socket.IO connection composition
@@ -102,7 +112,6 @@ src/
     │   ├── state/
     │   └── ui/
     ├── net/
-    │   ├── chat.js          # Browser Socket.IO chat adapter
     │   └── roomClient.js    # Browser Socket.IO room adapter
     ├── pages/
     │   ├── index.html
@@ -273,7 +282,7 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 
 - `server/services/roomService`는 방 생성, 참가, 퇴장, 시작, 종료, 로비 복귀 같은 room lifecycle을 담당한다.
 
-- `server/services/matchService`는 match 단위 input log, player별 server bag chunk와 authoritative player state를 담당한다.
+- `server/services/matchService`는 player별 server bag chunk와 authoritative player state를 담당한다.
   room별 gravity 진행과 snapshot emit lifecycle은 `authoritativeTickerService`가 조율한다.
 
 - `client/net`은 브라우저 Socket.IO 어댑터를 담당한다.  
