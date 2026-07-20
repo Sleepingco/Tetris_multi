@@ -412,8 +412,8 @@
 
 ### Server and room layer
 
-- `src/app.js`
-  - Node.js 실행 진입점
+- `src/app.ts`
+  - TypeScript source 진입점이며 production은 compiled `dist/server/app.js`를 실행한다.
   - `src/server/init.js`를 로드한다.
 - `src/server/init.js`
   - Express static server, HTTP server, Socket.IO server를 조립한다.

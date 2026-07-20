@@ -11,7 +11,7 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 - 프론트엔드: 현재 Vanilla JS + Canvas 구조, 승인된 Goal에 따라 Vite + React + TypeScript로 점진 전환 예정
 - 현재 실행 구조: Vanilla JS + Express + Socket.IO + server authoritative multiplayer
 - 실무형 확장 단계: Express + Socket.IO 경계를 유지하며 frontend/build/type/data 계층을 단계적으로 마이그레이션
-- 실행: `npm start`
+- 실행: `npm start` (`src/app.ts` source entry → `dist/server/app.js` production entry)
 - 테스트: `npm test` (`node --test`)
 
 - 싱글플레이 엔진 완성  
@@ -90,7 +90,7 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 ## 🧱 디렉터리 구조
 
 src/
-├── app.js                   # Node.js server entry
+├── app.ts                   # TypeScript source server entry
 ├── server/                 # Node.js only
 │   ├── init.js              # Express / HTTP / Socket.IO server assembly
 │   ├── services/
@@ -295,7 +295,7 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 현재 단계의 기본 원칙:
 - Vanilla JS + Express + Socket.IO 기반 server authoritative 멀티플레이 MVP를 기준선으로 보존한다.
 - Socket.IO 이벤트 흐름, roomService/matchService 상태 변화와 클라이언트 통신 어댑터의 책임 경계를 유지한다.
-- 프레임워크가 없어도 계층은 나눈다: `src/app.js` → `server/init` → `server/sockets` → `server/services` → `client/net` → `client/pages` / `client/game/ui`.
+- 프레임워크가 없어도 계층은 나눈다: `src/app.ts` → `server/init` → `server/sockets` → `server/services` → `client/net` → `client/pages` / `client/game/ui`. production은 compiled `dist/server/app.js`에서 시작한다.
 
 실무/유지보수 기준에서 프레임워크 도입을 고려할 조건:
 - 로비, 방 목록, 준비 상태, 채팅, 설정, 결과 화면처럼 화면 상태가 많아진다.
