@@ -2236,3 +2236,14 @@ client input
 - 실제 브라우저에서 `My Imitation AI (Experimental)`과 `실험 AI · 동작 중` 표시 확인
 - 브라우저 console error 0
 - bundled experimental model SHA-256 일치
+
+## Migration Goal 1 후보 완료
+
+- local `main@2d4d66e`에서 Node `24.18.0`, Vite `8.1.5`, TypeScript `7.0.2` 기반을 추가했다.
+- `src/client`의 index, lobby, single, multiplayer 네 HTML을 Vite multi-page build로 구성하고 production output을 `dist/client`로 분리했다.
+- client/server/test `tsconfig` 경계와 `allowJs` 공존을 추가하고 client theme leaf 하나를 TypeScript로 전환했다.
+- 개발 Vite proxy와 production Express static 경계를 분리했으며 production start는 build나 devDependency 설치를 수행하지 않는다.
+- root에서 single/lobby로 실제 click 이동하는 Playwright 회귀를 추가했다.
+- Node 24에서 typecheck, build, Node test 542개와 Playwright 16개를 검증했다. 기존 조건부 Node test 1개는 skip이며 첫 Playwright 실행의 기존 PVE timing 실패는 단독, 전체와 3회 반복 재실행에서 통과했다.
+- production dependency만 설치한 HTTP smoke에서 네 page, build asset과 Socket.IO client를 확인했고 source map은 노출되지 않았다.
+- gameplay 규칙, Socket.IO event 의미, session 보안과 dataset schema는 변경하지 않았다.

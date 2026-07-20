@@ -12,6 +12,40 @@ Vanilla JS, Express, Socket.IO 기반으로 싱글플레이 엔진을 정리하�
 - `test/testBoardMetrics.js`가 empty board, line count, hole, bumpiness, height, mutation 방지를 검증한다.
 - 런타임 변경은 `npm test` 전체 회귀 테스트로 검증한다.
 
+## 실행과 검증
+
+Node 24 환경은 `.nvmrc`로 고정한다.
+
+```bash
+nvm use
+npm ci
+```
+
+개발 환경은 Express/Socket.IO와 Vite를 별도 터미널에서 실행한다. 브라우저 진입점은 `http://127.0.0.1:5173`이며 Vite가 `/socket.io`를 기본적으로 `http://127.0.0.1:5500`에 proxy한다.
+
+```bash
+npm run dev:server
+npm run dev
+```
+
+production은 먼저 client output을 만들고 Express를 실행한다. `npm start`는 build를 암묵적으로 수행하지 않으며, 실행 시 Vite 같은 devDependency를 요구하지 않는다.
+
+```bash
+npm run build
+npm start
+```
+
+기본 자동 검증은 다음 두 명령이다.
+
+```bash
+bash scripts/verify.sh
+npm run test:e2e
+```
+
+`scripts/verify.sh`는 Git whitespace, client/server/test TypeScript 경계, Vite build와 Node test를 확인한다. 기존 JavaScript는 `allowJs`로 공존하지만 strict 검사 완료로 간주하지 않으며, 새 TypeScript만 strict 설정을 적용한다.
+
+브라우저 회귀에서는 `/`에서 single과 lobby로 실제 click 이동한 뒤 single의 이동·회전·soft drop·hard drop, lobby의 PVP/PVE 시작, Canvas, CSS, theme와 sound asset을 확인한다.
+
 ## AI Direction
 
 현재 AI 우선순위는 ML 학습이 아니라 휴리스틱 PVE AI 상대와 플레이 로그 축적이다.

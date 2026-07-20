@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-19 기준. main은 `server authoritative state + authoritative snapshot + server garbage/gameOver` 기반 멀티 MVP 상태다. 알려진 own board rollback은 sequence/ack·gravity timing 보강과 반복 E2E 기준으로 해결됐으며, 아직 조합 검증하지 않은 경계는 회귀 위험으로 관리한다. 입력별 full snapshot 전송 최적화는 별도 성능 작업으로 둔다.
+- Last update: 2026-07-20 기준. main `2d4d66e` 위 Goal 1 후보 branch는 Node 24, Vite multi-page build와 TypeScript 공존 기반을 준비해 merge gate에 있다. 기존 server authoritative gameplay와 Socket.IO 의미는 유지하며, Goal 2 범위는 시작하지 않았다.
 
 ## Document Role
 
@@ -47,6 +47,30 @@
 - Chromium local 고정 시나리오에서는 known own board rollback이 재현되지 않았다.
 - packet loss, 높은 외부 latency, 장시간 soak와 다른 browser engine은 아직 검증하지 않았다.
 - Goal 0 merge 후 main에서 같은 gate를 재검증하기 전에는 Goal 1을 시작하지 않는다.
+
+## Migration Goal 1 Gate (2026-07-20)
+
+### 실행·빌드 경계
+
+- 기준은 local `main@2d4d66e`이며 Goal 0 main 반영 commit `57152ce`를 포함한다.
+- Node는 `.nvmrc`와 `engines`에서 `24.18.0` 계열로 고정했다.
+- 개발은 `npm run dev:server`와 `npm run dev`를 분리하고, Vite가 `/socket.io`를 Express/Socket.IO로 proxy한다.
+- production은 `npm run build`가 `dist/client`를 만들고 기존 `npm start`가 그 결과만 제공한다. start가 build나 Vite 설치를 암묵적으로 수행하지 않는다.
+- Vite input은 index, lobby, single, multiplayer 네 HTML이며 root click navigation을 유지한다.
+
+### TypeScript 공존 경계
+
+- client, server와 test는 별도 `tsconfig`에서 검사하고 기존 JavaScript는 `allowJs: true`, `checkJs: false`로 유지한다.
+- 새 TypeScript에는 strict 검사를 적용했으며 기존 server/test JavaScript 전체가 strict 전환됐다고 간주하지 않는다.
+- client leaf인 theme module 하나만 `.ts`로 옮겼다. React, root `type: module`, typed Socket contract와 server 전체 변환은 포함하지 않았다.
+
+### 검증과 남은 위험
+
+- Node 24 clean install, typecheck, build와 Node test를 포함한 `bash scripts/verify.sh`가 통과했다. Node test는 542개 중 541개 통과, 기존 조건부 1개 skip이다.
+- 전체 Playwright 최종 재실행은 16/16 통과했다. 첫 전체 실행에서 기존 PVE timing assertion 1건이 실패했으나 단독 재실행, 전체 재실행과 3회 반복이 모두 통과해 코드 변경 없이 timing 변동 위험으로 기록했다.
+- production dependency만 설치한 runtime에서 `/`, 네 page, CSS/JS/MP3와 Socket.IO client를 HTTP 200으로 확인했고 source map 요청은 404였다.
+- 수동 사람 조작 2탭 회귀는 수행하지 않았다. 자동 Playwright가 실제 click navigation, single Canvas 결과, 두 browser context PVP와 PVE 흐름을 검증했다.
+- Goal 1은 merge gate에서 멈추며 push, main merge와 Goal 2는 별도 승인 전 수행하지 않는다.
 
 ## Project Direction
 
