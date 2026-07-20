@@ -2247,3 +2247,108 @@ client input
 - Node 24에서 typecheck, build, Node test 542개와 Playwright 16개를 검증했다. 기존 조건부 Node test 1개는 skip이며 첫 Playwright 실행의 기존 PVE timing 실패는 단독, 전체와 3회 반복 재실행에서 통과했다.
 - production dependency만 설치한 HTTP smoke에서 네 page, build asset과 Socket.IO client를 확인했고 source map은 노출되지 않았다.
 - gameplay 규칙, Socket.IO event 의미, session 보안과 dataset schema는 변경하지 않았다.
+
+---
+
+# 2026년 7월 21일
+
+---
+
+## Migration Goal 1 main 반영
+
+- Vite + TypeScript 기반과 리뷰 보완을 main에 반영했다.
+- Node `24.18.0`, Vite `8.1.5`, TypeScript `7.0.2`와 `dist/client` production build 경계를 유지한다.
+- 기존 JavaScript는 `allowJs`로 공존하고 client theme leaf 하나만 TypeScript로 전환했다.
+- React, root ESM 전환과 server 전체 TypeScript 변환은 다음 Goal로 넘겼다.
+- Goal 2는 Goal 1 최종 commit `21d191f`을 포함한 clean main에서 시작했다.
+
+## Migration Goal 2 player session 보안
+
+- client payload의 `playerId`를 신원 증명으로 사용하던 경계를 제거했다.
+- 서버가 256-bit CSPRNG token과 UUID playerId를 발급하고 token은 SHA-256 digest만 memory에 저장한다.
+- browser는 versioned credential을 `sessionStorage` 하나에 저장하고 reconnect마다 token과 generation을 회전한다.
+- newest socket wins 정책으로 이전 socket 권한을 즉시 폐기하고, active socket이 없을 때만 직전 token을 60초 안에 한 번 복구할 수 있다.
+- partial, malformed, invalid, expired와 replayed credential은 조용히 새 identity로 바꾸지 않고 terminal auth 경계로 처리한다.
+
+## Reconnect와 room lifecycle
+
+- 일시적인 transport disconnect에는 30초 grace를 적용한다.
+- lobby reconnect는 `room:sync`, game reconnect는 `game:join`으로 최신 authoritative 상태를 다시 받는다.
+- playing player가 grace 안에 돌아오지 않으면 `disconnect_timeout`으로 match를 종료한 뒤 loser를 제거한다.
+- `io server disconnect`는 자동 재연결되지 않는 terminal 상태로 구분하고 사용자에게 새로고침을 안내한다.
+- stale socket의 queued input과 placement log는 side effect 직전에 active socket과 generation을 다시 확인한다.
+- disconnect 시 Socket.IO reconnect send buffer를 비워 이전 generation mutation이 새 연결에서 실행되지 않게 했다.
+
+## Socket ownership과 공개 보안 경계
+
+- room, game, bag, placement log와 chat mutation의 identity를 모두 active socket session에서 파생한다.
+- client가 보낸 playerId와 nickname은 인증 근거로 사용하지 않는다.
+- 한 player는 하나의 room에만 속하며 playing 중 `room:leave`는 거부하고 명시적 `game:leave`만 허용한다.
+- public room DTO는 whitelist 필드만 반환하고 token, digest, generation, socketId와 expiry를 노출하지 않는다.
+- production은 exact `SOCKET_ALLOWED_ORIGINS` 없이는 시작하지 않으며 CORS와 Engine.IO가 같은 allowlist를 사용한다.
+- payload 상한은 512KiB, socket별 outstanding game input 상한은 120개로 고정했다.
+- session, lifecycle, input, bag, chat과 placement log에 서로 독립된 in-memory rate bucket을 적용했다.
+
+## Goal 2 검증과 남은 위험
+
+- Node `24.18.0`에서 typecheck와 44-module production build가 통과했다.
+- Node test는 556개 중 555개 통과, 기존 조건부 1개 skip, 실패 0이었다.
+- Chromium Playwright는 session 발급·rotation·replay, duplicate tab, reload, reconnect, Origin, DTO, disconnect grace와 기존 PVP/PVE/single을 포함해 24/24 통과했다.
+- production HTTP smoke에서 주요 page, Socket.IO client와 built asset이 모두 HTTP 200을 반환했다.
+- session, rate limiter, room과 match는 단일 Node process memory에 있으므로 server restart와 multi-instance 공유는 아직 지원하지 않는다.
+- TLS termination, Redis, WebKit/Firefox, 장시간 abuse·network soak와 CSP는 후속 Goal 범위로 남겼다.
+
+## 배포 전 게임 로그 용량 감사
+
+- 현재 `data/logs/game-events.jsonl`은 130게임, 17,636줄, 약 82.7MiB다.
+- placement decision이 17,378줄로 전체의 약 98.5%이며 게임당 원본 로그는 평균 약 0.67MiB다.
+- 현재 repository는 하나의 JSONL 파일에 계속 append하고 총 용량, rotation과 retention 상한이 없다.
+- 현재 exporter도 단일 파일 하나를 `readFile()`로 메모리에 올리며 rotated shard와 gzip 입력은 지원하지 않는다.
+- 실제 로그를 gzip으로 측정했을 때 약 4.1MiB로 줄어 약 95% 압축 효과를 확인했다.
+
+## 로그 운영 결정
+
+- 단일 instance 배포에서는 `GAME_EVENTS_LOG_PATH`를 영속 volume으로 지정한다.
+- 운영 도구에서 일 단위와 50~100MiB 크기 상한을 함께 적용해 rename 기반으로 rotation한다.
+- 닫힌 shard는 gzip으로 압축하고 서버에는 최근 30~90일만 보관한다.
+- 장기 학습 원본은 object storage에 checksum과 함께 보관하고 삭제 전에 immutable dataset snapshot을 생성한다.
+- 다음 학습 시점에만 exporter를 여러 `.jsonl`과 `.jsonl.gz` shard의 순차 streaming 입력으로 확장한다.
+- 현재 압축 효과가 충분하므로 CSV 전환, payload schema 축소, DB와 별도 logging framework는 추가하지 않았다.
+- ephemeral filesystem 또는 multi-instance 배포가 확정되면 로컬 JSONL 대신 공용 object storage나 Goal 9~10의 PostgreSQL 경계를 검토한다.
+
+## Migration Goal 3 Socket 계약과 Zod 검증
+
+- `zod@4.4.3`을 exact production dependency로 추가하고 handshake, client→server 12개, server→client 16개 event 계약을 `src/shared/socketContracts.mjs`에 통합했다.
+- wire payload와 parse 이후 payload 타입은 `z.input`과 `z.output`에서 파생해 runtime schema와 타입 선언이 서로 다른 계약으로 어긋나지 않게 했다.
+- 서버는 active session과 rate limit 확인 뒤 service 호출 전에 C2S payload를 검증하고, browser는 모든 application S2C event를 `roomClient`의 공통 검증 경계에서 처리한다.
+- invalid payload는 기존 result channel의 `INVALID_PAYLOAD`로만 응답하며 raw payload, token, Zod issue와 stack을 외부 응답이나 production log에 남기지 않는다.
+- placement log의 기존 256KiB 상한, private-field 차단과 domain validator를 유지하고, 충분한 bag queue에는 추가 mutation 없이 `BAG_QUEUE_SUFFICIENT`를 반환하도록 보완했다.
+- Goal 3 최종 commit `79042e8`까지 main에 반영했으며 session, reconnect, room ownership과 gameplay protocol 의미는 유지했다.
+
+## Goal 3 검증과 남은 위험
+
+- Node `24.18.0`에서 typecheck, 124-module build와 Node test 571개 중 570개 통과, 기존 조건부 1개 skip을 확인했다.
+- Chromium Playwright는 PVP/PVE/session/reconnect/rollback/single을 포함해 24/24 통과했다.
+- production dependency-only 환경에서 Express, Socket.IO와 Zod만으로 server를 기동하고 주요 page, built JS/CSS와 Socket.IO client의 HTTP 200을 확인했다.
+- browser inbound 검증으로 `roomClient` chunk는 기준 대비 gzip 약 19.60kB 증가했다.
+- strict schema가 아직 관찰되지 않은 정상 variant를 차단할 가능성과 WebKit/Firefox, 외부 TLS·reverse proxy, 장시간 malformed traffic 미검증 위험은 남아 있다.
+
+## Migration Goal 4 server TypeScript build 병합 준비
+
+- `NodeNext + allowJs`로 `dist/server` mirror를 생성하고 production에서 TypeScript runtime loader 없이 `dist/server/app.js`를 실행하도록 구성했다.
+- `src/app.ts`와 `src/server/socketSecurity.ts`만 대표 TypeScript entry/leaf로 전환하고 나머지 기존 server JavaScript는 Goal 8까지 `allowJs`로 유지한다.
+- `src/client/package.json`의 ESM 경계를 output에도 복사해 server가 사용하는 core/state/AI module의 export 의미를 보존했다.
+- Vite hashed browser bundle은 `dist/client`, server shared core와 PVE dependency는 `dist/server/client/game`, Socket 계약은 `dist/server/shared`로 분리했다.
+- build helper는 stale output을 제거한 뒤 TypeScript emit, client ESM manifest와 bundled V4 model asset 복사를 수행하며 새 dependency나 framework를 추가하지 않았다.
+- production source map과 source `.ts`, test fixture, `.env`는 server artifact에 포함하지 않는다.
+- `dev:server`는 server artifact를 먼저 build한 뒤 production과 같은 compiled entry를 실행한다.
+- Goal 4 branch `codex/add-server-typescript-build`는 리뷰 수정 commit `7533095`까지 완료했으며 main merge gate에서 대기한다.
+
+## Goal 4 검증과 남은 위험
+
+- artifact test는 output whitelist, 금지 파일, client ESM manifest, compiled game core와 bundled `placement_v4` decision을 검증해 1/1 통과했다.
+- Node `24.18.0`에서 `bash scripts/verify.sh`가 통과했고 Node test는 571개 중 570개 통과, 기존 조건부 1개 skip이었다.
+- compiled server 기준 Chromium Playwright는 24/24 통과했다.
+- `npm run dev:server`에서 `/`와 `/socket.io/socket.io.js`가 HTTP 200을 반환했다.
+- production dependency-only 환경은 Express, Socket.IO와 Zod만으로 기동했고 주요 page/asset은 200, server artifact와 source map 요청은 404였다.
+- 기존 server JavaScript의 strict TypeScript 전환, WebKit/Firefox, 외부 TLS·reverse proxy, container와 장시간 soak는 후속 Goal로 남겼다.
