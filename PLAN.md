@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. main `3b235dd` 위 Goal 3 후보 branch는 Zod runtime schema와 schema-derived Socket payload type, server/browser 수신 검증 경계를 준비해 merge gate에 있다. Goal 4의 server TypeScript 전환은 시작하지 않았다.
+- Last update: 2026-07-21 기준. main `79042e8` 위 Goal 4 후보 branch는 runtime loader 없는 compiled server entry와 stable shared core output을 준비해 merge gate에 있다. 기능, Socket.IO protocol과 gameplay 규칙은 변경하지 않았다.
 
 ## Document Role
 
@@ -135,6 +135,26 @@
 - 기준 build의 `roomClient` chunk는 4.10 kB(gzip 1.59 kB)였고 최종 리뷰 수정 후 76.86 kB(gzip 21.19 kB)다. 증가는 raw 72.76 kB, gzip 19.60 kB이며 향후 bundle 최적화는 정상 계약을 바꾸지 않는 별도 판단 대상이다.
 - strict schema에 정상 protocol variant가 새로 발견되면 해당 event group의 schema와 parity fixture를 함께 보완해야 한다. 외부 TLS/reverse proxy, WebKit/Firefox, 장시간 malformed traffic/soak와 실제 TypeScript Socket.IO generic은 이번 Goal에서 검증하지 않았다.
 - Goal 3는 merge gate에서 멈추며 push, PR, main merge, branch 삭제와 Goal 4는 별도 승인 전 수행하지 않는다.
+
+## Migration Goal 4 Gate (2026-07-21)
+
+### Build와 module 경계
+
+- 기준은 `main@79042e8`이며 Goal 3 최종 수정까지 포함한다.
+- root CommonJS와 `socketContracts.mjs` 경계를 유지하고 `NodeNext + allowJs`로 `dist/server`를 emit한다. root `type: module`, server bundler와 runtime TypeScript loader는 추가하지 않았다.
+- `src/client/package.json`의 `type: module`을 NodeNext 입력과 output에 동일하게 적용해 stable client core를 ESM으로 emit한다. compiled `gameCoreLoader`에서 `BLOCKS.tree` 네 rotation을 직접 확인한다.
+- Vite hashed browser bundle은 `dist/client`, server가 dynamic import하는 core/state/AI는 `dist/server/client/game`에 분리한다. Zod 계약은 `dist/server/shared/socketContracts.mjs`, PVE model은 server asset 경로에 둔다.
+- Node 표준 라이브러리 build helper 하나가 clean build, Vite, TypeScript emit과 manifest/model 복사를 처리한다. dependency와 lockfile은 변경하지 않았다.
+
+### Runtime과 검증 경계
+
+- package entry와 production start는 `dist/server/app.js`다. `dev:server`는 server artifact를 먼저 build하고 같은 compiled entry를 실행한다.
+- 대표 TypeScript 전환은 실제 entry `src/app.ts`와 gameplay 밖의 leaf `socketSecurity.ts`만 포함한다. 기존 source security unit test는 Node 24 source `.ts`를 직접 검증한다.
+- compiled `init.js`는 자신의 `__dirname`에서 `dist/client`를 계산한다. production source map은 생성하지 않으며 stack trace는 compiled JavaScript 위치를 기록한다.
+- clean build 직후 단일 artifact test가 output whitelist, `.ts`/`.map`/`.env`와 test fixture 부재, source/output manifest 일치와 compiled loader fixture를 함께 확인한다.
+- Node 24.18.0에서 fast gate는 artifact test 1개와 Node test 571개 중 570개 통과, 기존 조건부 1개 skip으로 통과했다. compiled `npm start` 기준 전체 Playwright는 24/24 통과했다.
+- production dependency-only release는 Express, Socket.IO와 Zod만으로 기동했다. 주요 HTML, hashed asset과 Socket.IO client는 HTTP 200, server artifact와 source map은 404였고 실제 bundled V4 decision은 `placement_v4`, fallback 0이었다.
+- Goal 4는 merge gate에서 멈추며 push, main merge, branch 삭제와 Goal 5는 별도 승인 전 수행하지 않는다.
 
 ## Project Direction
 
