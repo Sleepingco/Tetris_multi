@@ -1034,7 +1034,12 @@ test("PREDICTION_DIVERGED result snapshot은 pending prediction을 버리고 즉
         },
         tick: 20,
         pieceIndex: 1,
+        pendingGarbageLines: 3,
         lastProcessedClientSequence: divergedSequence,
+    });
+    let displayCalls = 0;
+    session.myGame.subscribeDisplay(() => {
+        displayCalls += 1;
     });
 
     sharedFakeSocket.emitServer("game:input:result", {
@@ -1049,6 +1054,7 @@ test("PREDICTION_DIVERGED result snapshot은 pending prediction을 버리고 즉
     assert.equal(session.myGame.getSnapshot().activePiece.col, 3);
     assert.equal(session.myGame.getPendingInputCount(), 0);
     assert.equal(session.myGame.runtime.gravityRunning, true);
+    assert.equal(displayCalls, 1);
 
     const duplicateBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
     duplicateBoard[19][0] = "bar";
@@ -1479,6 +1485,10 @@ test("authoritative snapshot의 pendingGarbageLines가 상대 pending garbage �
     t.after(() => cleanupSession(session));
 
     const opponentBaseSnapshot = session.opponentGame.getSnapshot();
+    let displayCalls = 0;
+    session.opponentGame.subscribeDisplay(() => {
+        displayCalls += 1;
+    });
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
         playerId: "00000000-0000-4000-8000-000000000002",
@@ -1491,6 +1501,7 @@ test("authoritative snapshot의 pendingGarbageLines가 상대 pending garbage �
     assert.equal(session.opponentGame.getSnapshot().pendingGarbageLines, 3);
     assert.equal(Object.hasOwn(session.opponentGame.getSnapshot(), "pendingGarbageQueue"), false);
     assert.equal(params.opponentPendingGarbageEl.innerText, 3);
+    assert.equal(displayCalls, 1);
 });
 
 test("내 authoritative snapshot의 pendingGarbageLines는 표시만 갱신하고 activePiece만으로 full correction하지 않는다", async (t) => {
@@ -1533,6 +1544,10 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 증가하
         applySnapshotCallCount += 1;
         originalApplySnapshot(snapshot, options);
     };
+    let displayCalls = 0;
+    session.myGame.subscribeDisplay(() => {
+        displayCalls += 1;
+    });
     const serverSnapshot = {
         ...myBaseSnapshot,
         board: myBaseSnapshot.board.map(row => [...row]),
@@ -1548,6 +1563,7 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 증가하
 
     assert.equal(applySnapshotCallCount, 0);
     assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 5);
+    assert.equal(displayCalls, 1);
 });
 
 test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하고 board가 다르면 full apply한다", async (t) => {
@@ -1564,6 +1580,10 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하
         applySnapshotCallCount += 1;
         originalApplySnapshot(snapshot, options);
     };
+    let displayCalls = 0;
+    session.myGame.subscribeDisplay(() => {
+        displayCalls += 1;
+    });
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
         playerId: "00000000-0000-4000-8000-000000000001",
@@ -1581,6 +1601,7 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하
     assert.deepEqual(session.myGame.getSnapshot().board, serverBoard);
     assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 0);
     assert.equal(session.myGame.runtime.gravityRunning, true);
+    assert.equal(displayCalls, 1);
 });
 
 test("대기 중인 local input이 있으면 own full correction을 다음 snapshot까지 미룬다", async (t) => {

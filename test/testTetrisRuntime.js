@@ -1778,6 +1778,7 @@ test("display bridge는 applySnapshot과 init의 최종 표시 상태만 한 번
         lines: 2,
         holdPieceType: "tree",
         nextPieceTypes: ["bar", "square"],
+        pendingGarbageLines: 0,
         phase: "gameOver",
     });
 
@@ -1785,6 +1786,37 @@ test("display bridge는 applySnapshot과 init의 최종 표시 상태만 한 번
     game.init({ autoStart: false });
     assert.equal(calls, 1);
     assert.equal(game.getDisplaySnapshot().phase, "playing");
+});
+
+test("pending garbage setter와 applySnapshot은 최종 display를 한 번만 알린다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+    game.init({ autoStart: false });
+
+    const initialSnapshot = game.getDisplaySnapshot();
+    let calls = 0;
+    game.subscribeDisplay(() => {
+        calls += 1;
+    });
+
+    game.setAuthoritativePendingGarbageLines(0);
+    assert.equal(calls, 0);
+    assert.equal(game.getDisplaySnapshot(), initialSnapshot);
+
+    game.setAuthoritativePendingGarbageLines(4);
+    assert.equal(calls, 1);
+    assert.equal(game.getDisplaySnapshot().pendingGarbageLines, 4);
+
+    calls = 0;
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        score: 40,
+        pendingGarbageLines: 2,
+    });
+    assert.equal(calls, 1);
+    assert.equal(game.getDisplaySnapshot().score, 40);
+    assert.equal(game.getDisplaySnapshot().pendingGarbageLines, 2);
 });
 
 test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playing을 각각 알린다", async (t) => {

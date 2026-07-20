@@ -147,6 +147,7 @@ export function createTetrisRuntime({
         lines: gameState.lines,
         holdPieceType: gameState.holdPieceType,
         nextPieceTypes: [gameState.pieceQueue[0], gameState.pieceQueue[1]],
+        pendingGarbageLines: runtime.authoritativePendingGarbageLines,
         phase: gameState.phase,
     }))
 
@@ -1196,9 +1197,10 @@ export function createTetrisRuntime({
         return Number.isInteger(lines) && lines > 0 ? lines : 0
     }
 
-    function setAuthoritativePendingGarbageLines(lines) {
+    function setAuthoritativePendingGarbageLines(lines, { publish = true } = {}) {
         runtime.authoritativePendingGarbageLines = normalizePendingGarbageLines(lines)
         ui.renderPendingGarbage(runtime.authoritativePendingGarbageLines)
+        if (publish) displayBridge.publishDisplay()
         return runtime.authoritativePendingGarbageLines
     }
 
@@ -1422,7 +1424,7 @@ export function createTetrisRuntime({
 
         ui.renderScore(gameState.score)
         ui.renderLines(gameState.lines)
-        setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
+        setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines, { publish: false })
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
         if (gameState.phase === GAME_PHASE.GAME_OVER) {

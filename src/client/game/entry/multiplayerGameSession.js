@@ -328,7 +328,9 @@ export function startMultiplayerGame({
         if (correctionDecision.shouldCorrect) {
             pendingOwnDriftState = null
             myGame.applySnapshot(snapshot, { resumeGravity: true })
+            return true
         }
+        return false
     }
 
     function applyDeferredOwnSnapshotIfReady() {
@@ -360,7 +362,6 @@ export function startMultiplayerGame({
         if (snapshotClientSequence < lastAcknowledgedClientSequence) return false
 
         lastForcedResyncClientSequence = clientSequence
-        updateOwnPendingGarbage(snapshot)
         discardPlacementLogBuffer()
         pendingServerInputs.clear()
         deferredOwnSnapshot = null
@@ -382,7 +383,6 @@ export function startMultiplayerGame({
 
         if (snapshot.phase === "gameOver") {
             hasAuthoritativeGameOver = true
-            updateOwnPendingGarbage(snapshot)
             acknowledgeServerInputs(snapshotClientSequence)
             pendingServerInputs.clear()
             deferredOwnSnapshot = null
@@ -394,16 +394,18 @@ export function startMultiplayerGame({
 
         if (snapshotClientSequence < lastAcknowledgedClientSequence) return
 
-        updateOwnPendingGarbage(snapshot)
         acknowledgeServerInputs(snapshotClientSequence)
 
         if (pendingServerInputs.size > 0 || myGame.getPendingInputCount() > 0) {
+            updateOwnPendingGarbage(snapshot)
             deferOwnSnapshot(snapshot)
             return
         }
 
         deferredOwnSnapshot = null
-        evaluateOwnSnapshot(snapshot, localSnapshot)
+        if (!evaluateOwnSnapshot(snapshot, localSnapshot)) {
+            updateOwnPendingGarbage(snapshot)
+        }
     }
 
     /**

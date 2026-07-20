@@ -18,6 +18,7 @@ export function createRuntimeDisplayBridge(readDisplayValues) {
                 values.nextPieceTypes?.[0] ?? null,
                 values.nextPieceTypes?.[1] ?? null,
             ],
+            pendingGarbageLines: values.pendingGarbageLines ?? 0,
             phase: values.phase,
         };
     }
@@ -28,6 +29,7 @@ export function createRuntimeDisplayBridge(readDisplayValues) {
             && snapshot.holdPieceType === next.holdPieceType
             && snapshot.nextPieceTypes[0] === next.nextPieceTypes[0]
             && snapshot.nextPieceTypes[1] === next.nextPieceTypes[1]
+            && snapshot.pendingGarbageLines === next.pendingGarbageLines
             && snapshot.phase === next.phase;
     }
 
