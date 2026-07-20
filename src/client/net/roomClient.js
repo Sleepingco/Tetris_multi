@@ -80,15 +80,26 @@ const serverConnection = io({
 })
 let lastRoomRequestType = null
 
+function notifySessionDisconnected(reason, terminal) {
+    sessionDisconnectedHandlers.forEach(handler => handler({
+        reason,
+        terminal,
+    }))
+}
+
 function stopForProtocolError() {
     activeSession = null
-    terminalDisconnectPending = serverConnection.connected
+    const wasConnected = serverConnection.connected
+    terminalDisconnectPending = wasConnected
     serverConnection.io?.reconnection?.(false)
     sessionErrorHandlers.forEach(handler => handler({
         code: "SESSION_PROTOCOL_ERROR",
         terminal: true,
     }))
     serverConnection.disconnect?.()
+    if (!wasConnected) {
+        notifySessionDisconnected("io client disconnect", true)
+    }
 }
 
 function onValidatedServerEvent(eventName, handler) {
@@ -170,10 +181,7 @@ serverConnection.on("disconnect", (reason) => {
     }
     const terminal = terminalDisconnectPending || reason === "io server disconnect"
     terminalDisconnectPending = false
-    sessionDisconnectedHandlers.forEach(handler => handler({
-        reason,
-        terminal,
-    }))
+    notifySessionDisconnected(reason, terminal)
 })
 
 serverConnection.connect()

@@ -148,22 +148,30 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     detachBagResult();
 
     const credentialBeforeProtocolError = sessionStorage.getItem("tetris:playerSession");
+    const disconnectCountBeforeInvalidSessionReady = disconnects.length;
     handlers.get("session:ready")?.({ version: 1 });
     assert.deepEqual(sessionErrors.at(-1), {
         code: "SESSION_PROTOCOL_ERROR",
         terminal: true,
     });
+    assert.equal(disconnects.length, disconnectCountBeforeInvalidSessionReady + 1);
     assert.deepEqual(disconnects.at(-1), {
         reason: "io client disconnect",
         terminal: true,
     });
     assert.equal(sessionStorage.getItem("tetris:playerSession"), credentialBeforeProtocolError);
 
+    const disconnectCountBeforeMalformedConnectError = disconnects.length;
     handlers.get("connect_error")?.({
         data: { code: "SESSION_INVALID", terminal: true, unknown: true },
     });
     assert.deepEqual(sessionErrors.at(-1), {
         code: "SESSION_PROTOCOL_ERROR",
+        terminal: true,
+    });
+    assert.equal(disconnects.length, disconnectCountBeforeMalformedConnectError + 1);
+    assert.deepEqual(disconnects.at(-1), {
+        reason: "io client disconnect",
         terminal: true,
     });
     assert.equal(sessionStorage.getItem("tetris:playerSession"), credentialBeforeProtocolError);

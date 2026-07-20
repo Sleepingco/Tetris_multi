@@ -124,7 +124,7 @@
 
 - placement log 외부 `{roomId, log}`만 strict 처리하고 256 KiB 제한, 순환 안전한 iterative private-field scan과 기존 `validatePlacementDecisionLog`를 유지한다. human v1/v2의 placementResult 전체 scalar를 socket 경계에서 검사하고 server가 roomId/playerId를 인증된 값으로 덮어쓴 뒤 domain validation과 저장을 수행한다.
 - `game:bag:request`는 기존 `ensurePlayerBagQueue` low-water 경계를 사용한다. queue가 충분하면 mutation 없이 `BAG_QUEUE_SUFFICIENT`를 반환하고 client pending을 해제하며, 부족할 때만 정확히 7개 chunk를 broadcast한다. 장시간 queue/bagChunks에 schema-only hard cap은 추가하지 않았다.
-- `roomClient`의 모든 S2C application listener가 shared schema를 통과한다. `logClient`의 raw socket 우회를 제거했고 invalid S2C는 handler를 호출하지 않는다. invalid `session:ready`와 malformed `connect_error.data`는 credential을 지우지 않는 terminal protocol 오류이며 그 disconnect도 `terminal:true`를 유지한다. data 없는 transport 오류는 nonterminal이다.
+- `roomClient`의 모든 S2C application listener가 shared schema를 통과한다. `logClient`의 raw socket 우회를 제거했고 invalid S2C는 handler를 호출하지 않는다. invalid `session:ready`와 malformed `connect_error.data`는 credential을 지우지 않는 terminal protocol 오류다. 연결 중인 invalid `session:ready`는 실제 disconnect event로 한 번만 알리고, 이미 연결이 끊긴 malformed `connect_error`도 구독자에게 `terminal:true`를 정확히 한 번 전달한다. data 없는 transport 오류는 nonterminal이다.
 - 정상 PVP/PVE payload 의미와 Goal 2의 session/token, reconnect, origin/rate 정책은 유지했다. 존재하지 않는 방 E2E는 실제 8자리 방 코드 형식의 미존재 값으로 fixture를 바로잡았다.
 
 ### 검증, bundle과 남은 위험
@@ -132,7 +132,7 @@
 - Node 24.18.0/npm 11.16.0에서 `bash scripts/verify.sh`가 diff check, typecheck, 124-module build와 Node test 571개 중 570개 통과, 기존 조건부 1개 skip으로 통과했다.
 - 전체 Chromium Playwright는 PVP/PVE/session/reconnect/rollback/single을 포함해 24/24 통과했다. 첫 실행의 2건 실패는 invalid 7자리 room fixture와 정상 garbage snapshot schema 누락을 드러냈고, 계약/fixture 수정 후 전체를 다시 통과했다.
 - production dependency-only 임시 설치에서 Express, Socket.IO와 Zod만으로 server를 기동했다. `/`, 네 page, Socket.IO client와 대표 built JS/CSS가 모두 HTTP 200을 반환했다.
-- 기준 build의 `roomClient` chunk는 4.10 kB(gzip 1.59 kB)였고 리뷰 수정 후 76.79 kB(gzip 21.17 kB)다. 증가는 raw 72.69 kB, gzip 19.58 kB이며 향후 bundle 최적화는 정상 계약을 바꾸지 않는 별도 판단 대상이다.
+- 기준 build의 `roomClient` chunk는 4.10 kB(gzip 1.59 kB)였고 최종 리뷰 수정 후 76.86 kB(gzip 21.19 kB)다. 증가는 raw 72.76 kB, gzip 19.60 kB이며 향후 bundle 최적화는 정상 계약을 바꾸지 않는 별도 판단 대상이다.
 - strict schema에 정상 protocol variant가 새로 발견되면 해당 event group의 schema와 parity fixture를 함께 보완해야 한다. 외부 TLS/reverse proxy, WebKit/Firefox, 장시간 malformed traffic/soak와 실제 TypeScript Socket.IO generic은 이번 Goal에서 검증하지 않았다.
 - Goal 3는 merge gate에서 멈추며 push, PR, main merge, branch 삭제와 Goal 4는 별도 승인 전 수행하지 않는다.
 
