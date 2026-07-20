@@ -25,6 +25,10 @@ class FakeSocket {
         this.emitted.push({ eventName, payload });
     }
 
+    get volatile() {
+        return this;
+    }
+
     emitServer(eventName, payload) {
         this.handlers.get(eventName)?.forEach(handler => {
             handler(payload);

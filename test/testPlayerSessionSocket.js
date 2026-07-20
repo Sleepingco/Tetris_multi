@@ -107,6 +107,8 @@ test("bootstrap은 session을 발급·회전하고 newest socket wins를 적용�
     assert.equal(firstReady.version, 1)
     assert.equal(firstReady.resumed, false)
     assert.equal(firstReady.token.length, 43)
+    firstSocket.trigger("room:create", {})
+    const roomId = firstSocket.lastEvent("room:result").room.roomId
 
     const secondSocket = new FakeSocket("socket-2", {
         nickname: "Player",
@@ -123,6 +125,14 @@ test("bootstrap은 session을 발급·회전하고 newest socket wins를 적용�
 
     firstSocket.trigger("room:create", { playerId: firstReady.playerId, nickname: "Forged" })
     assert.equal(firstSocket.lastEvent("room:result").reason, "NOT_AUTHORIZED")
+    firstSocket.trigger("game:input", {
+        roomId,
+        action: "hold",
+        tick: 1,
+        pieceIndex: 1,
+        clientSequence: 1,
+    })
+    assert.equal(firstSocket.lastEvent("game:input:result").reason, "NOT_AUTHORIZED")
 
     const replaySocket = new FakeSocket("socket-3", {
         nickname: "Player",

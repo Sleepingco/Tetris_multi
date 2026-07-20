@@ -414,8 +414,7 @@ export function startMultiplayerGame({
      */
     function requestBagIfNeeded() {
         if (!hasPendingBagRequest && myGame.getServerBagRemainingCount() <= bagLowWatermark) {
-            hasPendingBagRequest = true
-            requestGameBagChunk(roomId, playerId)
+            hasPendingBagRequest = requestGameBagChunk(roomId, playerId)
         }
     }
 

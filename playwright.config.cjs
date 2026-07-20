@@ -37,6 +37,7 @@ module.exports = defineConfig({
             ...process.env,
             PORT: "5510",
             GAME_EVENTS_LOG_PATH: gameEventsLogPath,
+            SOCKET_RATE_LIMIT_PROFILE: "test",
         },
         reuseExistingServer: false,
         timeout: 15_000,

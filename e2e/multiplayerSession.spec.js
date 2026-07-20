@@ -2,6 +2,7 @@ const { test, expect } = require("@playwright/test");
 const {
     MULTI_LOBBY_URL,
     createPlayerPages,
+    createAuthoritativeSnapshotMonitor,
     enterTwoPlayerMatch,
     createWaitingRoom,
     readPlayerSession,
@@ -61,10 +62,23 @@ test("lobby reload와 transport reconnect는 token을 회전하고 room을 다�
         expect(reloadedSession.expiresAt).toBe(initialSession.expiresAt);
 
         await hostContext.setOffline(true);
-        await hostPage.waitForTimeout(200);
+        await expect(hostPage.locator("#btnLeaveRoom")).toBeDisabled();
         await hostContext.setOffline(false);
         await expect.poll(async () => (await readPlayerSession(hostPage))?.token).not.toBe(
             reloadedSession.token,
+        );
+        await expect(hostPage.locator("#roomCodeText")).toHaveText(roomId);
+        await expect(hostPage.locator("#btnLeaveRoom")).toBeEnabled();
+
+        const tokenBeforeBfcacheRestore = (await readPlayerSession(hostPage)).token;
+        await Promise.all([
+            hostPage.waitForNavigation(),
+            hostPage.evaluate(() => {
+                window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+            }),
+        ]);
+        await expect.poll(async () => (await readPlayerSession(hostPage))?.token).not.toBe(
+            tokenBeforeBfcacheRestore,
         );
         await expect(hostPage.locator("#roomCodeText")).toHaveText(roomId);
     } finally {
@@ -87,6 +101,97 @@ test("game reload은 자동 game:join으로 같은 player session을 복구한�
         expect(afterReload.playerId).toBe(beforeReload.playerId);
         expect(afterReload.token).not.toBe(beforeReload.token);
     } finally {
+        await players.close();
+    }
+});
+
+test("game transport reconnect는 authoritative match와 sequence, bag 흐름을 복구한다", async ({ browser }) => {
+    test.setTimeout(75_000);
+    const players = await createPlayerPages(browser);
+    const { guestContext, hostPage, guestPage } = players;
+    const monitor = createAuthoritativeSnapshotMonitor(guestPage);
+
+    try {
+        await enterTwoPlayerMatch(hostPage, guestPage);
+        const initialFingerprint = await readBottomBoardFingerprint(guestPage, 2);
+        await guestPage.keyboard.press("Space");
+        const committedBeforeReconnect = await waitForBoardConvergence({
+            sourcePage: guestPage,
+            observerPage: hostPage,
+            playerNumber: 2,
+            previousFingerprint: initialFingerprint,
+        });
+        const sequenceBeforeReconnect = monitor.getSentGameInputs().at(-1).clientSequence;
+        const sessionBeforeReconnect = await readPlayerSession(guestPage);
+
+        await guestContext.setOffline(true);
+        await expect(guestPage.locator('.game-text[data-player="2"] span')).toHaveText("재연결 중");
+        const inputCountWhileOffline = monitor.getSentGameInputCount();
+        await guestPage.keyboard.press("Space");
+        await guestPage.waitForTimeout(200);
+        expect(monitor.getSentGameInputCount()).toBe(inputCountWhileOffline);
+
+        await guestContext.setOffline(false);
+        await expect.poll(async () => (await readPlayerSession(guestPage))?.token).not.toBe(
+            sessionBeforeReconnect.token,
+        );
+        await expect(guestPage.locator('.next-preview[data-player="2"] .next-cell')).toHaveCount(32);
+        await expect.poll(async () => {
+            const [guestBoard, hostBoard] = await Promise.all([
+                readBottomBoardFingerprint(guestPage, 2),
+                readBottomBoardFingerprint(hostPage, 2),
+            ]);
+            return guestBoard === committedBeforeReconnect && hostBoard === committedBeforeReconnect;
+        }).toBe(true);
+
+        async function pressAndWaitForAuthoritativeAck(key) {
+            const sentInputCount = monitor.getSentGameInputCount();
+            await guestPage.keyboard.press(key);
+            await expect.poll(() => monitor.getSentGameInputCount()).toBeGreaterThan(sentInputCount);
+            const sequence = monitor.getSentGameInputs().at(-1).clientSequence;
+            await expect.poll(() => monitor.getRecentEvents(sessionBeforeReconnect.playerId).some(event => {
+                return event.lastProcessedClientSequence >= sequence;
+            })).toBe(true);
+            return sequence;
+        }
+
+        await pressAndWaitForAuthoritativeAck("ArrowRight");
+        const sequenceAfterReconnect = await pressAndWaitForAuthoritativeAck("Space");
+        expect(sequenceAfterReconnect).toBeGreaterThan(sequenceBeforeReconnect);
+        await expect.poll(async () => {
+            const [guestBoard, hostBoard] = await Promise.all([
+                readBottomBoardFingerprint(guestPage, 2),
+                readBottomBoardFingerprint(hostPage, 2),
+            ]);
+            return {
+                guestChanged: guestBoard !== committedBeforeReconnect,
+                hostChanged: hostBoard !== committedBeforeReconnect,
+            };
+        }).toEqual({
+            guestChanged: true,
+            hostChanged: true,
+        });
+
+        const bagRequestsBefore = monitor.getSentBagRequestCount();
+        const bagAppendsBefore = monitor.getReceivedBagAppendCount();
+        const horizontalPatterns = [
+            ["ArrowLeft", "ArrowLeft", "ArrowLeft"],
+            ["ArrowLeft"],
+            ["ArrowRight"],
+            ["ArrowRight", "ArrowRight", "ArrowRight"],
+        ];
+        for (let drop = 0; drop < 18 && monitor.getReceivedBagAppendCount() === bagAppendsBefore; drop += 1) {
+            for (const key of horizontalPatterns[drop % horizontalPatterns.length]) {
+                await pressAndWaitForAuthoritativeAck(key);
+            }
+            await pressAndWaitForAuthoritativeAck("Space");
+            await guestPage.waitForTimeout(50);
+        }
+
+        await expect.poll(() => monitor.getSentBagRequestCount()).toBeGreaterThan(bagRequestsBefore);
+        await expect.poll(() => monitor.getReceivedBagAppendCount()).toBeGreaterThan(bagAppendsBefore);
+    } finally {
+        monitor.dispose();
         await players.close();
     }
 });
@@ -147,18 +252,37 @@ test("허용되지 않은 Origin의 Socket.IO handshake는 거부된다", async 
 });
 
 test("playing disconnect는 30초 grace 후 disconnect_timeout으로 종료된다", async ({ browser }) => {
-    test.setTimeout(45_000);
+    test.setTimeout(55_000);
     const players = await createPlayerPages(browser);
     const { hostPage, guestPage } = players;
+    let replacementContext = null;
 
     try {
-        await enterTwoPlayerMatch(hostPage, guestPage);
+        const roomId = await enterTwoPlayerMatch(hostPage, guestPage);
         await guestPage.close();
 
-        await expect(
-            hostPage.locator('.game-text[data-player="1"] .match-lobby-btn'),
-        ).toBeVisible({ timeout: 35_000 });
+        const lobbyButton = hostPage.locator('.game-text[data-player="1"] .match-lobby-btn');
+        await expect(lobbyButton).toBeHidden({ timeout: 2_000 });
+        await expect(lobbyButton).toBeVisible({ timeout: 35_000 });
+        await Promise.all([
+            hostPage.waitForURL(MULTI_LOBBY_URL),
+            lobbyButton.click(),
+        ]);
+        await expect(hostPage.locator("#roomStateText")).toHaveText("waiting");
+        await expect(hostPage.locator("#roomPlayerCountText")).toHaveText("1");
+
+        replacementContext = await browser.newContext();
+        const replacementPage = await replacementContext.newPage();
+        await replacementPage.goto("/pages/multiLobby.html");
+        await expect.poll(() => replacementPage.evaluate(() => {
+            return sessionStorage.getItem("tetris:playerSession") !== null;
+        })).toBe(true);
+        await replacementPage.locator("#roomCodeInput").fill(roomId);
+        await replacementPage.locator("#btnJoinCode").click();
+        await expect(hostPage.locator("#roomPlayerCountText")).toHaveText("2");
+        await expect(hostPage.locator("#btnPrimaryAction")).toBeEnabled();
     } finally {
+        await replacementContext?.close();
         await players.close();
     }
 });

@@ -1,11 +1,17 @@
 const RATE_LIMITS = Object.freeze({
-    newSession: { limit: 120, windowMs: 60_000 },
+    newSession: { limit: 20, windowMs: 60_000 },
     invalidResume: { limit: 10, windowMs: 60_000 },
-    lifecycle: { limit: 30, windowMs: 60_000 },
+    lifecycle: { limit: 10, windowMs: 60_000 },
     input: { limit: 60, windowMs: 1_000 },
-    bag: { limit: 4, windowMs: 1_000 },
+    bag: { limit: 2, windowMs: 1_000 },
     chat: { limit: 1, windowMs: 1_000 },
     placementLog: { limit: 10, windowMs: 10_000 },
+})
+const TEST_RATE_LIMITS = Object.freeze({
+    ...RATE_LIMITS,
+    newSession: { limit: 120, windowMs: 60_000 },
+    lifecycle: { limit: 100, windowMs: 60_000 },
+    bag: { limit: 20, windowMs: 1_000 },
 })
 
 function createSocketRateLimitService(dependencies = {}) {
@@ -48,5 +54,6 @@ function createSocketRateLimitService(dependencies = {}) {
 
 module.exports = {
     RATE_LIMITS,
+    TEST_RATE_LIMITS,
     createSocketRateLimitService,
 }

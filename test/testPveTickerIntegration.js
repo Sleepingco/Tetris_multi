@@ -14,10 +14,13 @@ const {
 } = require("../src/server/services/matchService.js");
 const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
 const {
+    clearRoomsForTest,
     createRoom,
     getRoomState,
     startGame,
 } = require("../src/server/services/roomService.js");
+
+test.beforeEach(clearRoomsForTest);
 
 test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로 snapshot을 전송한다", async () => {
     resetMatches();

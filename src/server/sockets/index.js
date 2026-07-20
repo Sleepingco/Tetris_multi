@@ -14,6 +14,7 @@ const {
 } = require("../services/playerSessionService.js")
 const {
     createSocketRateLimitService,
+    TEST_RATE_LIMITS,
 } = require("../services/socketRateLimitService.js")
 
 const SESSION_CLEANUP_INTERVAL_MS = 60_000
@@ -44,8 +45,14 @@ function getRemoteAddress(clientSocket) {
 function registerSocketHandlers(socketServer, dependencies = {}) {
     const playerSessionService = dependencies.playerSessionService
         || createPlayerSessionService()
+    const rateLimitProfile = dependencies.rateLimitProfile
+        || process.env.SOCKET_RATE_LIMIT_PROFILE
     const socketRateLimitService = dependencies.socketRateLimitService
-        || createSocketRateLimitService()
+        || createSocketRateLimitService({
+            limits: process.env.NODE_ENV !== "production" && rateLimitProfile === "test"
+                ? TEST_RATE_LIMITS
+                : undefined,
+        })
     const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
         || createAuthoritativePlayerMutationQueue()
     const authoritativeTickerService = dependencies.authoritativeTickerService

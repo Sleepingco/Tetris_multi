@@ -9,6 +9,8 @@ const {
     createRoomPublicDto,
 } = require("../src/server/services/roomPublicDto.js")
 const {
+    RATE_LIMITS,
+    TEST_RATE_LIMITS,
     createSocketRateLimitService,
 } = require("../src/server/services/socketRateLimitService.js")
 
@@ -106,4 +108,14 @@ test("독립 rate bucket은 window 종료 후 만료 항목을 재사용한다",
     limiter.cleanupExpired()
     assert.equal(limiter.consume("input", "player"), true)
     assert.equal(limiter.consume("chat", "player"), true)
+})
+
+test("production rate 기본값과 명시적 E2E profile을 분리한다", () => {
+    assert.equal(RATE_LIMITS.newSession.limit, 20)
+    assert.equal(RATE_LIMITS.lifecycle.limit, 10)
+    assert.equal(RATE_LIMITS.bag.limit, 2)
+    assert.equal(TEST_RATE_LIMITS.newSession.limit, 120)
+    assert.equal(TEST_RATE_LIMITS.lifecycle.limit, 100)
+    assert.equal(TEST_RATE_LIMITS.bag.limit, 20)
+    assert.equal(TEST_RATE_LIMITS.invalidResume, RATE_LIMITS.invalidResume)
 })

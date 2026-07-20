@@ -1,12 +1,14 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-test("requestCreateRoom은 PVE 요청에만 AI 난이도와 정책을 포함한다", async () => {
+test("mutation은 active 연결에서만 전송되고 reconnect buffer에 남지 않는다", async () => {
     const emitted = [];
     const handlers = new Map();
-    global.io = () => ({
+    let connectCount = 0;
+    const fakeSocket = {
         connected: true,
         id: "client-socket",
+        sendBuffer: [],
         emit(eventName, payload) {
             emitted.push({ eventName, payload });
         },
@@ -14,6 +16,8 @@ test("requestCreateRoom은 PVE 요청에만 AI 난이도와 정책을 포함한�
             handlers.set(eventName, handler);
         },
         connect() {
+            connectCount += 1;
+            this.connected = true;
             handlers.get("connect")?.();
             handlers.get("session:ready")?.({
                 version: 1,
@@ -23,7 +27,12 @@ test("requestCreateRoom은 PVE 요청에만 AI 난이도와 정책을 포함한�
                 expiresAt: Date.now() + 60_000,
             });
         },
-    });
+        disconnect() {
+            this.connected = false;
+            handlers.get("disconnect")?.();
+        },
+    };
+    global.io = () => fakeSocket;
     global.sessionStorage = {
         values: new Map([["tetris:nickname", "Player"]]),
         getItem(key) {
@@ -36,7 +45,11 @@ test("requestCreateRoom은 PVE 요청에만 AI 난이도와 정책을 포함한�
             this.values.delete(key);
         },
     };
-    const { requestCreateRoom } = await import(
+    const {
+        requestCreateRoom,
+        sendGameInput,
+        sendPlacementDecisionLogEvent,
+    } = await import(
         "../src/client/net/roomClient.js?test=room-create-difficulty"
     );
     const player = { playerId: "client-player", nickname: "Player" };
@@ -63,6 +76,26 @@ test("requestCreateRoom은 PVE 요청에만 AI 난이도와 정책을 포함한�
             },
         },
     ]);
+
+    const emittedBeforeDisconnect = emitted.length;
+    fakeSocket.sendBuffer.push({ eventName: "game:input" });
+    fakeSocket.disconnect();
+    assert.deepEqual(fakeSocket.sendBuffer, []);
+    assert.equal(sendGameInput("room", "player", "hold", 1, 1, 1), false);
+    assert.equal(sendPlacementDecisionLogEvent("room", { eventType: "placement_decision" }), false);
+    requestCreateRoom(player, "pvp");
+    fakeSocket.connect();
+    assert.equal(emitted.length, emittedBeforeDisconnect);
+
+    fakeSocket.connected = false;
+    handlers.get("connect_error")?.({
+        data: { code: "SESSION_INVALID", terminal: true },
+    });
+    fakeSocket.connected = false;
+    handlers.get("connect_error")?.({
+        data: { code: "SESSION_INVALID", terminal: true },
+    });
+    assert.equal(connectCount, 4);
 
     delete global.io;
     delete global.sessionStorage;

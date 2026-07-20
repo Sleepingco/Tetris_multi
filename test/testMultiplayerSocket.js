@@ -16,9 +16,12 @@ const {
     createAuthoritativePlayerMutationQueue,
 } = require("../src/server/services/authoritativePlayerMutationQueue.js")
 const {
+    clearRoomsForTest,
     finishGame,
     getRoomState,
 } = require("../src/server/services/roomService.js")
+
+test.beforeEach(clearRoomsForTest)
 
 class FakeSocketServer {
     constructor() {
@@ -1438,7 +1441,7 @@ test("finished game socket disconnect와 lobby sync 순서는 player와 room을 
     assert.equal(restartResult.room.status, "playing")
 })
 
-test("PVE finished room은 human lobby sync로 waiting이 되고 명시적 room:leave는 player를 제거한다", () => {
+test("PVE 재시작 뒤 room:leave는 거부하고 game:leave만 player를 제거한다", () => {
     const socketServer = new FakeSocketServer()
     const gameSocket = new FakeClientSocket("pve-finished-game-socket")
     const lobbySocket = new FakeClientSocket("pve-finished-lobby-socket")
@@ -1486,7 +1489,14 @@ test("PVE finished room은 human lobby sync로 waiting이 되고 명시적 room:
         roomId,
         playerId: "pve-finished-host",
     })
-    assert.equal(lobbySocket.lastClientEvent("room:result").payload.ok, true)
+    assert.equal(lobbySocket.lastClientEvent("room:result").payload.ok, false)
+    assert.equal(lobbySocket.lastClientEvent("room:result").payload.reason, "GAME_IN_PROGRESS")
+
+    lobbySocket.trigger("game:leave", {
+        roomId,
+        playerId: "pve-finished-host",
+    })
+    assert.equal(lobbySocket.lastClientEvent("game:leave:result").payload.ok, true)
     assert.equal(getRoomState(roomId), null)
 })
 
@@ -4042,4 +4052,120 @@ test("disconnect grace timer는 captured generation을 재검증한 뒤 waiting 
 
     assert.equal(getRoomState(roomId).players.length, 1)
     assert.equal(getRoomState(roomId).players[0].playerId, "grace-host")
+})
+
+test("socket별 game input은 120개 pending까지만 받고 완료 후 다시 허용한다", async () => {
+    const gameCore = await loadGameCore()
+    const loadStarted = createDeferred()
+    const releaseLoad = createDeferred()
+    let loadCount = 0
+    const fixture = await createStartedPvpSocketFixture("pending-input-limit", {
+        async loadGameCore() {
+            loadCount += 1
+            if (loadCount === 1) {
+                loadStarted.resolve()
+                await releaseLoad.promise
+            }
+            return gameCore
+        },
+    })
+    const pieceIndex = fixture.hostPlayer.authoritativeState.pieceIndex
+    const pendingRequests = Array.from({ length: 120 }, (_, index) => {
+        return fixture.hostSocket.triggerAsync("game:input", {
+            roomId: fixture.roomId,
+            action: "hold",
+            tick: index + 1,
+            pieceIndex,
+            clientSequence: index + 1,
+        })
+    })
+    await loadStarted.promise
+
+    await fixture.hostSocket.triggerAsync("game:input", {
+        roomId: fixture.roomId,
+        action: "hold",
+        tick: 121,
+        pieceIndex,
+        clientSequence: 121,
+    })
+    assert.equal(
+        fixture.hostSocket.lastClientEvent("game:input:result").payload.reason,
+        "TOO_MANY_PENDING_INPUTS",
+    )
+    assert.equal(loadCount, 1)
+
+    releaseLoad.resolve()
+    await Promise.all(pendingRequests)
+    const currentPieceIndex = fixture.hostPlayer.authoritativeState.pieceIndex
+    await fixture.hostSocket.triggerAsync("game:input", {
+        roomId: fixture.roomId,
+        action: "hold",
+        tick: 122,
+        pieceIndex: currentPieceIndex,
+        clientSequence: 121,
+    })
+    assert.notEqual(
+        fixture.hostSocket.lastClientEvent("game:input:result").payload.reason,
+        "TOO_MANY_PENDING_INPUTS",
+    )
+})
+
+test("playing disconnect timeout은 finish를 먼저 보내고 loser를 room에서 제거한다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("timeout-cleanup-host-socket")
+    const guestSocket = new FakeClientSocket("timeout-cleanup-guest-socket")
+    const disconnectedPlayers = new Set()
+    let scheduledTask = null
+    registerTestSocketHandlers(socketServer, {
+        playerSessionService: {
+            cleanupExpired() {},
+            isActiveSocket(context) {
+                return !disconnectedPlayers.has(context.playerId)
+            },
+            isDisconnectedSession(context) {
+                return disconnectedPlayers.has(context.playerId)
+            },
+            markDisconnected(context) {
+                disconnectedPlayers.add(context.playerId)
+                return true
+            },
+        },
+        setTimeoutFn(task, delay) {
+            assert.equal(delay, 30_000)
+            scheduledTask = task
+            return { unref() {} }
+        },
+    })
+    socketServer.connect(hostSocket)
+    socketServer.connect(guestSocket)
+    hostSocket.trigger("room:create", {
+        playerId: "timeout-cleanup-host",
+        nickname: "Host",
+    })
+    const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
+    guestSocket.trigger("room:join", {
+        roomId,
+        player: { playerId: "timeout-cleanup-guest", nickname: "Guest" },
+    })
+    await hostSocket.triggerAsync("room:start", { roomId })
+
+    guestSocket.trigger("disconnect")
+    assert.equal(getRoomState(roomId).status, "playing")
+    assert.equal(getRoomState(roomId).players.length, 2)
+    const eventCountBeforeTimeout = socketServer.roomEvents.length
+
+    await scheduledTask()
+
+    const timeoutEvents = socketServer.roomEvents.slice(eventCountBeforeTimeout)
+    assert.deepEqual(timeoutEvents.map(event => event.eventName), [
+        "match:finish",
+        "room:updated",
+    ])
+    assert.equal(timeoutEvents[0].payload.reason, "disconnect_timeout")
+    assert.equal(timeoutEvents[0].payload.room.players.length, 2)
+    assert.equal(timeoutEvents[1].payload.status, "waiting")
+    assert.deepEqual(
+        timeoutEvents[1].payload.players.map(player => player.playerId),
+        ["timeout-cleanup-host"],
+    )
 })

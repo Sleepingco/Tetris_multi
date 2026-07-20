@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const {
     AI_DIFFICULTY,
     AI_POLICY,
+    clearRoomsForTest,
     createRoom,
     finishGame,
     getRoomState,
@@ -12,6 +13,8 @@ const {
     startGame,
     syncRoom,
 } = require("../src/server/services/roomService.js");
+
+test.beforeEach(clearRoomsForTest);
 
 function createHuman(playerId, socketId) {
     return {

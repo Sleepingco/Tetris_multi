@@ -2,6 +2,7 @@ const test = require("node:test")
 const assert = require("node:assert/strict")
 
 const {
+    clearRoomsForTest,
     createRoom,
     getRoomState,
     joinRoom,
@@ -12,6 +13,8 @@ const {
     syncRoom,
     finishGame,
 } = require("../src/server/services/roomService.js")
+
+test.beforeEach(clearRoomsForTest)
 
 test("createRoom은 host player가 들어간 waiting room을 만든다", () => {
     const hostPlayer = {
@@ -776,4 +779,47 @@ test("syncRoom은 없는 roomId면 ROOM_NOT_FOUND를 반환한다", () => {
     assert.equal(result.ok, false)
     assert.equal(result.room, null)
     assert.equal(result.reason, "ROOM_NOT_FOUND")
+})
+
+test("같은 player는 room을 연속 생성할 수 없다", () => {
+    const player = { playerId: "single-room-create-player", nickname: "Host" }
+    const firstResult = createRoom(player)
+    const secondResult = createRoom(player)
+
+    assert.equal(firstResult.ok, true)
+    assert.equal(secondResult.ok, false)
+    assert.equal(secondResult.reason, "PLAYER_ALREADY_IN_ROOM")
+    assert.equal(getRoomState(firstResult.room.roomId).players.length, 1)
+})
+
+test("이미 room에 속한 player는 다른 room에 join할 수 없다", () => {
+    const member = { playerId: "single-room-join-member", nickname: "Member" }
+    const targetHost = { playerId: "single-room-join-host", nickname: "Host" }
+    const memberRoom = createRoom(member)
+    const targetRoom = createRoom(targetHost)
+
+    const result = joinRoom(targetRoom.room.roomId, member)
+
+    assert.equal(result.ok, false)
+    assert.equal(result.reason, "PLAYER_ALREADY_IN_ROOM")
+    assert.equal(getRoomState(memberRoom.room.roomId).players.length, 1)
+    assert.equal(getRoomState(targetRoom.room.roomId).players.length, 1)
+})
+
+test("playing room은 room:leave 경계를 거부하고 game leave만 허용한다", () => {
+    const host = { playerId: "playing-leave-host", nickname: "Host" }
+    const guest = { playerId: "playing-leave-guest", nickname: "Guest" }
+    const createResult = createRoom(host)
+    joinRoom(createResult.room.roomId, guest)
+    startGame(createResult.room.roomId, host.playerId)
+
+    const roomLeaveResult = leaveRoom(createResult.room.roomId, guest.playerId)
+    assert.equal(roomLeaveResult.ok, false)
+    assert.equal(roomLeaveResult.reason, "GAME_IN_PROGRESS")
+    assert.equal(getRoomState(createResult.room.roomId).players.length, 2)
+
+    const gameLeaveResult = leaveGame(createResult.room.roomId, guest.playerId)
+    assert.equal(gameLeaveResult.ok, true)
+    assert.equal(gameLeaveResult.room.status, "waiting")
+    assert.equal(gameLeaveResult.room.players.length, 1)
 })

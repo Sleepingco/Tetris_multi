@@ -34,6 +34,7 @@ const {
 } = require("../services/roomPublicDto.js")
 
 const DISCONNECT_GRACE_MS = 30_000
+const MAX_OUTSTANDING_GAME_INPUTS = 120
 const PRIVATE_FIELD_NAMES = new Set([
     "token",
     "tokenDigest",
@@ -166,6 +167,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     const playerIdentity = clientSocket.data?.playerIdentity
     const getPlayerId = () => playerIdentity?.playerId
     let gameInputProcessingChain = null
+    let outstandingGameInputCount = 0
     let hasJoinedGame = false
 
     function isActiveSession() {
@@ -247,6 +249,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
     clientSocket.on("disconnect", () => {
         gameInputProcessingChain = null
+        outstandingGameInputCount = 0
         if (!playerSessionService?.markDisconnected(sessionContext, clientSocket.id)) return
 
         const disconnectedAt = now()
@@ -500,18 +503,30 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             })
             return null
         }
+        if (outstandingGameInputCount >= MAX_OUTSTANDING_GAME_INPUTS) {
+            clientSocket.emit("game:input:result", {
+                ok: false,
+                reason: "TOO_MANY_PENDING_INPUTS",
+                clientSequence: payload.clientSequence,
+                pieceIndex: payload.pieceIndex,
+                placementCommitted: false,
+            })
+            return null
+        }
+        outstandingGameInputCount += 1
         const processingResult = gameInputProcessingChain
             ? gameInputProcessingChain.then(() => processGameInput(payload))
             : processGameInput(payload)
         const trackedResult = processingResult
             .catch(() => {})
             .finally(() => {
+                outstandingGameInputCount = Math.max(0, outstandingGameInputCount - 1)
                 if (gameInputProcessingChain === trackedResult) {
                     gameInputProcessingChain = null
                 }
             })
         gameInputProcessingChain = trackedResult
-        return processingResult
+        return trackedResult
     })
 
     clientSocket.on("game:log:placement_decision", async (payload = {}) => {
@@ -833,7 +848,7 @@ async function handleDisconnectGraceExpired({
 
     const { room, player } = context
     if (room.status === "playing") {
-        await finishAuthoritativeMatch({
+        const finishResult = await finishAuthoritativeMatch({
             roomId: room.roomId,
             loserPlayerId: playerId,
             finishReason: "disconnect_timeout",
@@ -846,6 +861,15 @@ async function handleDisconnectGraceExpired({
             getMatchState,
             deleteMatch,
         })
+        if (!finishResult.finished) return
+
+        const leaveResult = leaveRoom(room.roomId, playerId)
+        if (leaveResult.room) {
+            socketServer.to(room.roomId).emit(
+                "room:updated",
+                createRoomPublicDto(leaveResult.room),
+            )
+        }
         return
     }
 

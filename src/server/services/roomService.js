@@ -45,6 +45,10 @@ function getRoomState(roomId) {
     return rooms.get(roomId) || null
 }
 
+function clearRoomsForTest() {
+    rooms.clear()
+}
+
 function generateRoomId() {
     return randomUUID().slice(0, 8).toUpperCase()
 }
@@ -128,6 +132,9 @@ function createRoom(hostPlayer, options = {}) {
     if (!hostPlayer.playerId) {
         return failure("HOST_PLAYER_ID_REQUIRED")
     }
+    if (findRoomByPlayerId(hostPlayer.playerId)) {
+        return failure("PLAYER_ALREADY_IN_ROOM")
+    }
 
     const mode = normalizeRoomMode(options.mode)
     const aiDifficulty = mode === ROOM_MODE.PVE
@@ -179,6 +186,13 @@ function joinRoom(roomId, guestPlayer) {
 
     if (!roomId) {
         return failure("ROOM_ID_REQUIRED")
+    }
+
+    const existingMembership = findRoomByPlayerId(guestPlayer.playerId)
+    if (existingMembership) {
+        return failure(existingMembership.room.roomId === roomId
+            ? "PLAYER_ALREADY_JOINED"
+            : "PLAYER_ALREADY_IN_ROOM")
     }
 
     const roomState = getRoomState(roomId)
@@ -269,6 +283,12 @@ function leaveRoom(roomId, playerId) {
         return failure(context.reason, {
             roomId: roomId || null,
             player: null,
+        })
+    }
+    if (context.roomState.status === "playing") {
+        return failure("GAME_IN_PROGRESS", {
+            roomId,
+            player: context.player,
         })
     }
 
@@ -428,6 +448,7 @@ module.exports = {
     AI_POLICY,
     PLAYER_TYPE,
     ROOM_MODE,
+    clearRoomsForTest,
     createRoom,
     findRoomByPlayerId,
     getRoomState,

@@ -5,6 +5,8 @@ const MULTI_GAME_URL = /\/pages\/tetrisMulti\.html\?roomId=[^&]+$/;
 const MULTI_LOBBY_URL = /\/pages\/multiLobby\.html$/;
 const AUTHORITATIVE_SNAPSHOT_EVENT = "game:authoritative:snapshot";
 const GAME_INPUT_EVENT = "game:input";
+const GAME_BAG_REQUEST_EVENT = "game:bag:request";
+const GAME_BAG_APPEND_EVENT = "game:bag:append";
 
 function getBoardCanvasSelector(playerNumber) {
     return `.playground[data-player="${playerNumber}"] .tetrisBoardCanvas`;
@@ -219,10 +221,14 @@ function parseGameInputFrame(payload) {
 function createAuthoritativeSnapshotMonitor(page) {
     const events = [];
     const sentGameInputs = [];
+    let sentBagRequestCount = 0;
+    let receivedBagAppendCount = 0;
     const socketListeners = new Map();
 
     const onWebSocket = (webSocket) => {
         const onFrameReceived = ({ payload }) => {
+            const [eventName] = parseSocketIoFrame(payload) || [];
+            if (eventName === GAME_BAG_APPEND_EVENT) receivedBagAppendCount += 1;
             const snapshotEvent = parseAuthoritativeSnapshotFrame(payload);
             if (!snapshotEvent) return;
 
@@ -230,6 +236,8 @@ function createAuthoritativeSnapshotMonitor(page) {
             if (events.length > 100) events.shift();
         };
         const onFrameSent = ({ payload }) => {
+            const [eventName] = parseSocketIoFrame(payload) || [];
+            if (eventName === GAME_BAG_REQUEST_EVENT) sentBagRequestCount += 1;
             const inputEvent = parseGameInputFrame(payload);
             if (!inputEvent) return;
 
@@ -263,6 +271,15 @@ function createAuthoritativeSnapshotMonitor(page) {
         },
         getSentGameInputCount() {
             return sentGameInputs.length;
+        },
+        getSentGameInputs() {
+            return [...sentGameInputs];
+        },
+        getSentBagRequestCount() {
+            return sentBagRequestCount;
+        },
+        getReceivedBagAppendCount() {
+            return receivedBagAppendCount;
         },
         dispose() {
             page.off("websocket", onWebSocket);

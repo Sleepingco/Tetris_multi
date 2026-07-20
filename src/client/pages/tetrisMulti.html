@@ -166,6 +166,7 @@
             onMatchFinish,
             onSessionReady,
             onSessionError,
+            onSessionDisconnected,
             requestLeaveRoom,
         } from "../net/roomClient.js"
         import { onPlacementDecisionLogResult } from "../net/logClient.js"
@@ -320,6 +321,8 @@
 
             let gameSession = null
             let hasMatchFinished = false
+            let isSessionReady = false
+            homeBtn?.setAttribute("aria-disabled", "true")
             const updatePveAiPolicyBadge = (policy) => {
                 if (policy.roomId !== roomId || policy.playerId !== guestPlayer?.playerId) return
 
@@ -371,6 +374,7 @@
 
             function handleHomeClick(event) {
                 event.preventDefault()
+                if (!isSessionReady) return
                 if (hasMatchFinished) {
                     requestLeaveRoom(roomId, playerId)
                 } else {
@@ -418,7 +422,11 @@
                     updatePveAiPolicyBadge(result.match.aiPolicyRuntime)
                 }
 
-                if (gameSession) return
+                if (!result.match) {
+                    redirectToLobby()
+                    return
+                }
+                cleanupGameSession()
 
                 const opponentPlayerId = myRole === "host" ? guestPlayer?.playerId : hostPlayer?.playerId
 
@@ -449,10 +457,19 @@
                     redirectToLobby()
                     return
                 }
+                isSessionReady = true
+                homeBtn?.removeAttribute("aria-disabled")
                 requestJoinGameRoom(roomId, playerId)
             })
             const detachSessionError = onSessionError(({ terminal }) => {
                 if (terminal) redirectToLobby()
+            })
+            const detachSessionDisconnected = onSessionDisconnected(() => {
+                isSessionReady = false
+                homeBtn?.setAttribute("aria-disabled", "true")
+                cleanupGameSession()
+                setPlayerGameText("1", "재연결 중")
+                setPlayerGameText("2", "재연결 중")
             })
 
             onGameOpponentLeft(({ room: updatedRoom }) => {
@@ -470,10 +487,15 @@
                 detachMatchFinish()
                 detachSessionReady()
                 detachSessionError()
+                detachSessionDisconnected()
                 cleanupSound?.()
                 cleanupGameSession()
             }, { once: true })
         }
+
+        window.addEventListener("pageshow", (event) => {
+            if (event.persisted) location.reload()
+        })
 
     </script>
 </body>

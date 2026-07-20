@@ -93,6 +93,7 @@ serverConnection.on("session:ready", (session) => {
     }
 
     activeSession = { ...session }
+    terminalRetryUsed = false
     recoveringWithNewSession = false
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(activeSession))
     sessionStorage.setItem("tetris:nickname", activeSession.nickname)
@@ -121,6 +122,9 @@ serverConnection.on("connect_error", (error) => {
 
 serverConnection.on("disconnect", () => {
     activeSession = null
+    if (Array.isArray(serverConnection.sendBuffer)) {
+        serverConnection.sendBuffer.length = 0
+    }
     sessionDisconnectedHandlers.forEach(handler => handler())
 })
 
@@ -129,6 +133,8 @@ serverConnection.connect()
 function emitAuthenticated(eventName, payload) {
     if (!activeSession || !serverConnection.connected) return false
 
+    // connected 확인과 emit은 같은 task에서 실행되므로 Socket.IO의 reconnect
+    // sendBuffer에는 들어가지 않는다. disconnect 시 남은 buffer도 즉시 폐기한다.
     serverConnection.emit(eventName, payload)
     return true
 }
@@ -284,7 +290,7 @@ export function onGameInputResult(handler) {
 }
 
 export function requestGameBagChunk(roomId, playerId) {
-    emitAuthenticated("game:bag:request", { roomId })
+    return emitAuthenticated("game:bag:request", { roomId })
 }
 
 export function receiveGameBagAppend(handler) {
