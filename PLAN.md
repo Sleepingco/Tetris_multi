@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. main `79042e8` 위 Goal 4 후보 branch는 runtime loader 없는 compiled server entry와 stable shared core output을 준비해 merge gate에 있다. 기능, Socket.IO protocol과 gameplay 규칙은 변경하지 않았다.
+- Last update: 2026-07-21 기준. Goal 4 server TypeScript build는 merge commit `128ac39`로 main과 origin/main에 반영됐고 main fast/full gate가 통과했다. Goal 5 React index/lobby shell은 시작하지 않았다.
 
 ## Document Role
 
@@ -154,7 +154,7 @@
 - clean build 직후 단일 artifact test가 output whitelist, `.ts`/`.map`/`.env`와 test fixture 부재, source/output manifest 일치와 compiled loader fixture를 함께 확인한다.
 - Node 24.18.0에서 fast gate는 artifact test 1개와 Node test 571개 중 570개 통과, 기존 조건부 1개 skip으로 통과했다. compiled `npm start` 기준 전체 Playwright는 24/24 통과했다.
 - production dependency-only release는 Express, Socket.IO와 Zod만으로 기동했다. 주요 HTML, hashed asset과 Socket.IO client는 HTTP 200, server artifact와 source map은 404였고 실제 bundled V4 decision은 `placement_v4`, fallback 0이었다.
-- Goal 4는 merge gate에서 멈추며 push, main merge, branch 삭제와 Goal 5는 별도 승인 전 수행하지 않는다.
+- Goal 4는 merge commit `128ac39`로 main에 반영했으며, Goal 5는 해당 main의 clean 상태와 선행 gate를 확인한 뒤 별도 branch에서 시작한다.
 
 ## Project Direction
 

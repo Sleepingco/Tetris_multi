@@ -2333,7 +2333,7 @@ client input
 - browser inbound 검증으로 `roomClient` chunk는 기준 대비 gzip 약 19.60kB 증가했다.
 - strict schema가 아직 관찰되지 않은 정상 variant를 차단할 가능성과 WebKit/Firefox, 외부 TLS·reverse proxy, 장시간 malformed traffic 미검증 위험은 남아 있다.
 
-## Migration Goal 4 server TypeScript build 병합 준비
+## Migration Goal 4 server TypeScript build main 반영
 
 - `NodeNext + allowJs`로 `dist/server` mirror를 생성하고 production에서 TypeScript runtime loader 없이 `dist/server/app.js`를 실행하도록 구성했다.
 - `src/app.ts`와 `src/server/socketSecurity.ts`만 대표 TypeScript entry/leaf로 전환하고 나머지 기존 server JavaScript는 Goal 8까지 `allowJs`로 유지한다.
@@ -2342,7 +2342,7 @@ client input
 - build helper는 stale output을 제거한 뒤 TypeScript emit, client ESM manifest와 bundled V4 model asset 복사를 수행하며 새 dependency나 framework를 추가하지 않았다.
 - production source map과 source `.ts`, test fixture, `.env`는 server artifact에 포함하지 않는다.
 - `dev:server`는 server artifact를 먼저 build한 뒤 production과 같은 compiled entry를 실행한다.
-- Goal 4 branch `codex/add-server-typescript-build`는 리뷰 수정 commit `7533095`까지 완료했으며 main merge gate에서 대기한다.
+- Goal 4 branch `codex/add-server-typescript-build`의 리뷰 수정 commit `7533095`까지 merge commit `128ac39`로 main에 반영하고 origin/main과 동기화했다.
 
 ## Goal 4 검증과 남은 위험
 
