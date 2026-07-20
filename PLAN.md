@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 5 React index/lobby shell과 review fix `87a679d`까지 main에 반영했고 전체 gate를 다시 통과했다.
+- Last update: 2026-07-21 기준. Goal 6 single React HUD와 runtime display bridge를 `codex/migrate-react-single`의 merge gate까지 검증했다.
 
 ## Document Role
 
@@ -182,7 +182,28 @@
 - production dependency-only 임시 설치는 Express, Socket.IO, Zod와 React/ReactDOM만으로 compiled server를 기동했다. root/index/lobby, Socket.IO client와 React/index/lobby bundle은 HTTP 200, `.tsx`와 source map은 404였다.
 - 공용 React runtime은 189.60 kB(gzip 59.63 kB) shared chunk 하나다. index entry는 4.68 kB(gzip 1.93 kB), lobby entry는 11.61 kB(gzip 3.98 kB)다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 실제 browser history 기반 BFCache eligibility와 장시간 soak는 이번 local Chromium gate에서 검증하지 않았다.
-- Goal 5 구현과 review fix `87a679d`는 main에 반영됐다. Goal 5 branch는 보존하며 Goal 6은 별도 승인 전 시작하지 않는다.
+- Goal 5 구현과 review fix `87a679d`는 main에 반영됐고 Goal 5 branch는 보존한다. Goal 6은 별도 승인 후 독립 branch에서 진행했다.
+
+## Migration Goal 6 Single React merge gate (2026-07-21)
+
+### Runtime display bridge와 React 소유권
+
+- 기준은 `main@cc62f3e64e452767c8ea153a0a841dd0da5c0eb8`이며 Goal 5 main 반영을 포함한다.
+- `gameState`와 runtime은 gameplay 상태의 단일 진실 원천으로 유지한다. React는 `useSyncExternalStore`로 score, lines, hold, next 2개와 phase만 포함한 cached display snapshot을 읽는다.
+- snapshot 값이 같으면 같은 객체를 반환하고 HUD 값이 실제로 바뀔 때만 새 객체와 알림을 만든다. 일반 이동·회전·gravity는 알리지 않으며 hold/lock, line clear, snapshot 적용과 init의 최종 표시 경계만 알린다.
+- `lines`는 display 계약과 unit/integration test에 포함하지만 기존 single 화면에 visible Lines HUD를 추가하지 않는다. 점수·line 계산과 gameplay/protocol 의미도 변경하지 않는다.
+- single runtime에는 Canvas만 전달한다. score, hold, next와 game-over DOM은 page-local `SingleHud`/`PiecePreview`가 소유하며 multiplayer의 기존 DOM UI adapter는 유지한다.
+- StrictMode cleanup은 자신이 만든 runtime만 idempotent하게 destroy한다. restart는 같은 runtime의 `init()`을 재사용하고 pagehide는 runtime·sound를 정리하며 `pageshow.persisted`는 reload한다.
+
+### 검증과 남은 위험
+
+- Node 24.18.0/npm 11.16.0에서 `bash scripts/verify.sh`가 typecheck, 135-module clean build, artifact 1/1과 Node test 576개 중 575 pass, 기존 조건부 1 skip으로 통과했다.
+- 관련 display/runtime Node test 43개가 snapshot reference, 독립 unsubscribe, HUD 불변 이동 0회, hold/hard drop 1회, line clear 2단계, server bag 고갈, applySnapshot/init과 destroy idempotency를 검증했다.
+- Vite development StrictMode gate는 기존 lobby/index와 single lifecycle을 함께 실행해 5 pass, production-only 2 skip으로 통과했다. single input/sound listener 단일성, preview DOM, 반복 restart, BFCache와 console error/pageerror 0을 확인했다.
+- compiled production 전체 Chromium Playwright는 기존 Canvas 입력, PVP/PVE/session/rollback과 single lifecycle/artifact를 포함해 31/31 통과했다. `/pages/tetrisSingle.tsx`와 built single module source map은 HTTP 404였다.
+- current production bundle은 single entry 4.75 kB(gzip 1.76 kB), gameplay runtime chunk 34.58 kB(gzip 10.84 kB), shared React runtime 189.66 kB(gzip 59.65 kB)다. Goal 5 shared React 기준 증가는 0.06 kB(gzip 0.02 kB)이며 dependency와 lockfile 변화는 없다.
+- 실제 browser history 기반 BFCache eligibility, WebKit/Firefox, 장시간 timer/animation soak는 이번 local Chromium gate에서 검증하지 않았다.
+- Goal 6은 local branch merge gate에서 멈춘다. push, main merge, branch 삭제와 Goal 7은 별도 승인 전 수행하지 않는다.
 
 ## Project Direction
 
