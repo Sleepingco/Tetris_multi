@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 6 single React HUD와 runtime display bridge를 `codex/migrate-react-single`의 merge gate까지 검증했다.
+- Last update: 2026-07-21 기준. Goal 6 single React HUD와 runtime display bridge를 `0cdc3cee`로 main에 반영하고 검증했다.
 
 ## Document Role
 
@@ -184,7 +184,7 @@
 - WebKit/Firefox, 외부 TLS/reverse proxy, 실제 browser history 기반 BFCache eligibility와 장시간 soak는 이번 local Chromium gate에서 검증하지 않았다.
 - Goal 5 구현과 review fix `87a679d`는 main에 반영됐고 Goal 5 branch는 보존한다. Goal 6은 별도 승인 후 독립 branch에서 진행했다.
 
-## Migration Goal 6 Single React merge gate (2026-07-21)
+## Migration Goal 6 Single React main integration (2026-07-21)
 
 ### Runtime display bridge와 React 소유권
 
@@ -203,7 +203,7 @@
 - compiled production 전체 Chromium Playwright는 기존 Canvas 입력, PVP/PVE/session/rollback과 single lifecycle/artifact를 포함해 31/31 통과했다. `/pages/tetrisSingle.tsx`와 built single module source map은 HTTP 404였다.
 - current production bundle은 single entry 4.75 kB(gzip 1.76 kB), gameplay runtime chunk 34.58 kB(gzip 10.84 kB), shared React runtime 189.66 kB(gzip 59.65 kB)다. Goal 5 shared React 기준 증가는 0.06 kB(gzip 0.02 kB)이며 dependency와 lockfile 변화는 없다.
 - 실제 browser history 기반 BFCache eligibility, WebKit/Firefox, 장시간 timer/animation soak는 이번 local Chromium gate에서 검증하지 않았다.
-- Goal 6은 local branch merge gate에서 멈춘다. push, main merge, branch 삭제와 Goal 7은 별도 승인 전 수행하지 않는다.
+- `main`은 `cc62f3e`에서 Goal 6 최종 commit `0cdc3ce`까지 fast-forward 되었고, Node 24.18.0 기준 `bash scripts/verify.sh`를 다시 통과했다. Goal 6 branch는 보존하며 Goal 7은 시작하지 않았다.
 
 ## Project Direction
 

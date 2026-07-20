@@ -2369,3 +2369,11 @@ client input
 - Vite-dev Playwright는 StrictMode lifecycle과 index BFCache 2 pass, production-only artifact 1 skip으로 통과했다.
 - compiled production Chromium Playwright는 gameplay/session과 React lifecycle 회귀를 포함해 27/27 통과했다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 실제 browser history 기반 BFCache eligibility와 장시간 soak는 계속 미검증 범위다.
+
+## Migration Goal 6 main 통합 (2026-07-21)
+
+- clean한 local `main`/`origin/main`이 `cc62f3e`와 일치하고 Goal branch HEAD가 `0cdc3cee`인 상태에서 `codex/migrate-react-single`을 `--ff-only`로 main에 병합했다.
+- Node `24.18.0`/npm `11.16.0`에서 `bash scripts/verify.sh`를 재실행했다. typecheck와 clean build, artifact 1/1, Node test 576개 중 575 pass와 기존 조건부 1 skip, 실패 0이었다.
+- main에서 `git diff --check`와 clean worktree를 확인했고 `0cdc3cee`가 main에 포함됐다.
+- 동일 HEAD에서 이미 전체 production Playwright 31/31과 Vite-dev 5 pass가 통과했으며 코드 변경이 없으므로 두 E2E 명령은 재실행하지 않았다.
+- 실제 browser history 기반 BFCache eligibility, WebKit/Firefox, 외부 TLS/reverse proxy와 장시간 timer/animation soak는 남은 위험이다. Goal 6 branch는 보존하고 push와 Goal 7은 수행하지 않았다.
