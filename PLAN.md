@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 4는 main에 반영됐고, Goal 5 React index/lobby shell은 `codex/migrate-react-shell`에서 전체 gate를 통과해 merge gate에 있다.
+- Last update: 2026-07-21 기준. Goal 5 React index/lobby shell과 review fix `87a679d`까지 main에 반영했고 전체 gate를 다시 통과했다.
 
 ## Document Role
 
@@ -156,7 +156,7 @@
 - production dependency-only release는 Express, Socket.IO와 Zod만으로 기동했다. 주요 HTML, hashed asset과 Socket.IO client는 HTTP 200, server artifact와 source map은 404였고 실제 bundled V4 decision은 `placement_v4`, fallback 0이었다.
 - Goal 4는 merge commit `128ac39`로 main에 반영했으며, Goal 5는 해당 main의 clean 상태와 선행 gate를 확인한 뒤 별도 branch에서 시작한다.
 
-## Migration Goal 5 Gate (2026-07-21)
+## Migration Goal 5 React shell main 반영 (2026-07-21)
 
 ### React shell과 DOM 경계
 
@@ -171,18 +171,18 @@
 - `roomClient` singleton이 Socket.IO 연결, handshake와 credential을 계속 소유한다. React mount/cleanup은 socket을 생성·연결·해제하지 않는다.
 - session subscriber는 등록마다 고유 wrapper와 idempotent disposer를 사용한다. `onSessionReady` replay는 예약 당시 `activeSession` 객체와 현재 Set membership이 모두 유지될 때만 실행돼 unsubscribe, rotation과 disconnect 뒤 stale replay를 전달하지 않는다.
 - lobby effect는 room updated/message/result, global message, chat result와 session ready/error/disconnected의 8개 disposer를 모두 보관한다. StrictMode setup-cleanup-setup 뒤 listener와 초기 `room:sync`는 한 세트만 남는다.
-- pagehide는 구독과 sound side effect만 idempotent하게 정리하고 root를 unmount하지 않는다. `pageshow.persisted` listener는 남아 복귀 즉시 reload한다.
+- lobby pagehide는 구독과 sound side effect만 idempotent하게 정리하고 root를 unmount하지 않는다. index와 lobby의 `pageshow.persisted` listener는 남아 복귀 즉시 reload하고 sound listener와 socket 구독을 복원한다.
 - React state에는 공개 playerId, nickname, public room DTO와 UI 상태만 저장한다. token은 React state/props, DOM, URL과 console에 남기지 않고 사용자 문자열은 JSX text로 렌더링한다.
 
 ### 검증과 남은 위험
 
 - Node 24.18.0/npm 11.16.0에서 `bash scripts/verify.sh`가 typecheck, 134-module clean build, artifact 1/1과 Node test 571개 중 570 pass, 기존 조건부 1 skip으로 통과했다.
-- Vite development StrictMode gate는 listener 한 세트, 초기 `room:sync` 1회, server result/message DOM 1회, console error와 pageerror 0을 확인해 1 pass, production-only artifact test 1 skip으로 통과했다.
-- compiled production 전체 Chromium Playwright는 기존 gameplay/session 회귀와 React lifecycle/artifact 2개를 포함해 26/26 통과했다. 별도 UI 체크리스트 2/2에서 theme, sound, footer year, nickname/Guest, clipboard와 placement_v4 hard PVE 선택을 확인했다.
+- Vite development StrictMode gate는 listener 한 세트, 초기 `room:sync` 1회, server result/message DOM 1회, index BFCache sound 복원과 console error/pageerror 0을 확인해 2 pass, production-only artifact test 1 skip으로 통과했다.
+- compiled production 전체 Chromium Playwright는 실제 `pagehide → pageshow → reload`, index BFCache sound 복원, host/guest token 비노출과 기존 gameplay/session 회귀를 포함해 27/27 통과했다. 별도 UI 체크리스트 2/2에서 theme, sound, footer year, nickname/Guest, clipboard와 placement_v4 hard PVE 선택을 확인했다.
 - production dependency-only 임시 설치는 Express, Socket.IO, Zod와 React/ReactDOM만으로 compiled server를 기동했다. root/index/lobby, Socket.IO client와 React/index/lobby bundle은 HTTP 200, `.tsx`와 source map은 404였다.
-- 공용 React runtime은 189.60 kB(gzip 59.63 kB) shared chunk 하나다. index entry는 4.55 kB(gzip 1.90 kB), lobby entry는 11.61 kB(gzip 3.98 kB)다.
+- 공용 React runtime은 189.60 kB(gzip 59.63 kB) shared chunk 하나다. index entry는 4.68 kB(gzip 1.93 kB), lobby entry는 11.61 kB(gzip 3.98 kB)다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 실제 browser history 기반 BFCache eligibility와 장시간 soak는 이번 local Chromium gate에서 검증하지 않았다.
-- Goal 5는 merge gate에서 멈추며 push, PR, main merge, branch 삭제와 Goal 6은 별도 승인 전 수행하지 않는다.
+- Goal 5 구현과 review fix `87a679d`는 main에 반영됐다. Goal 5 branch는 보존하며 Goal 6은 별도 승인 전 시작하지 않는다.
 
 ## Project Direction
 

@@ -2352,3 +2352,20 @@ client input
 - `npm run dev:server`에서 `/`와 `/socket.io/socket.io.js`가 HTTP 200을 반환했다.
 - production dependency-only 환경은 Express, Socket.IO와 Zod만으로 기동했고 주요 page/asset은 200, server artifact와 source map 요청은 404였다.
 - 기존 server JavaScript의 strict TypeScript 전환, WebKit/Firefox, 외부 TLS·reverse proxy, container와 장시간 soak는 후속 Goal로 남겼다.
+
+## Migration Goal 5 React shell main 반영
+
+- Vite multi-page와 기존 URL을 유지하면서 index와 multiplayer lobby body만 독립 `React.StrictMode` TSX entry로 전환했다.
+- single/multiplayer Canvas runtime, Socket.IO protocol, server service와 gameplay rule은 변경하지 않았다.
+- `react@19.2.7`, `react-dom@19.2.7`, `@types/react@19.2.17`, `@types/react-dom@19.2.3`만 exact version으로 추가했다.
+- roomClient singleton의 session/handshake 소유권을 유지하고 lobby의 8개 구독을 React effect cleanup에서 정확히 해제한다.
+- index와 lobby는 BFCache `pagehide`에서 sound/구독 side effect를 정리하고 `pageshow.persisted`에서 reload해 listener를 복원한다.
+- review fix `87a679d`에서 disconnect-before-microtask, 실제 `pagehide → pageshow → reload`, index sound 복원과 host/guest token 비노출 회귀를 보강했다.
+- local main은 Goal 5 구현과 review fix까지 fast-forward로 반영했다. Goal 5 branch는 보존하고 Goal 6은 시작하지 않았다.
+
+## Goal 5 main 재검증
+
+- Node `24.18.0`에서 `bash scripts/verify.sh`가 typecheck, 134-module build, artifact 1/1과 Node test 571개 중 570 pass, 기존 조건부 1 skip으로 통과했다.
+- Vite-dev Playwright는 StrictMode lifecycle과 index BFCache 2 pass, production-only artifact 1 skip으로 통과했다.
+- compiled production Chromium Playwright는 gameplay/session과 React lifecycle 회귀를 포함해 27/27 통과했다.
+- WebKit/Firefox, 외부 TLS/reverse proxy, 실제 browser history 기반 BFCache eligibility와 장시간 soak는 계속 미검증 범위다.
