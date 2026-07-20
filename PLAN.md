@@ -33,7 +33,7 @@
 - PVP rollback gate는 첫 burst 4개와 전체 6개 입력이 실제 outgoing `game:input` frame으로 송신된 뒤 board 수렴과 안정성을 판정한다.
 - 수렴한 PVP board는 서로 다른 authoritative snapshot tick 2회 동안 이전 fingerprint로 돌아가지 않아야 한다.
 - rollback과 싱글 test를 각각 5회 반복했으며 10/10이 통과했다.
-- 전체 Playwright 15/15와 `bash scripts/verify.sh`의 Node test 519/519가 통과했다.
+- 전체 Playwright 15/15와 `bash scripts/verify.sh`의 Node test 542개 중 541개 통과, 1개 skip이 확인됐다.
 
 ### Codex-managed worktree 호환성 예외
 
