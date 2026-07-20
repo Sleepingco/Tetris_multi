@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-20 기준. main `21d191f` 위 Goal 2 후보 branch는 server-issued player session, reconnect rotation, Socket mutation ownership, public room DTO와 origin/rate 제한을 준비해 merge gate에 있다. Goal 3의 typed contract, React와 server TypeScript 전환은 시작하지 않았다.
+- Last update: 2026-07-21 기준. main `3b235dd` 위 Goal 3 후보 branch는 Zod runtime schema와 schema-derived Socket payload type, server/browser 수신 검증 경계를 준비해 merge gate에 있다. Goal 4의 server TypeScript 전환은 시작하지 않았다.
 
 ## Document Role
 
@@ -106,6 +106,34 @@
 - session과 limiter는 단일 Node process memory에 있으므로 process restart 후 기존 credential은 terminal invalid 처리되고 room/match 상태도 함께 사라진다. 다중 instance/Redis 공유는 이번 Goal 범위가 아니다.
 - sessionStorage token은 XSS에 노출될 수 있으므로 CSP와 broader input validation은 별도 hardening 대상이다. 외부 TLS termination, multi-browser engine, 장시간 abuse/soak는 이번 local gate에서 검증하지 않았다.
 - Goal 2는 merge gate에서 멈추며 push, main merge, branch 삭제와 Goal 3은 별도 승인 전 수행하지 않는다.
+
+## Migration Goal 3 Gate (2026-07-21)
+
+### Socket 계약과 검증 경계
+
+- 기준은 `main@3b235dd`이며 Goal 2의 최종 terminal disconnect 수정까지 포함한다.
+- production dependency `zod@4.4.3`을 exact version으로 추가하고, server CommonJS와 Vite browser가 함께 import하는 `src/shared/socketContracts.mjs`에 handshake, 12개 C2S와 16개 S2C schema를 둔다.
+- `src/shared/socketContractTypes.d.ts`는 wire payload를 `z.input`, parse 이후 payload를 `z.output`으로 파생한다. 현재 JavaScript handler는 `checkJs:false`이므로 compile-time Socket.IO generic 강제를 주장하지 않으며 그 적용은 Goal 4 범위다.
+- production runtime parse는 server의 handshake/C2S 수신과 browser의 S2C 수신에서 한 번만 수행한다. client outbound와 server outbound에는 parse wrapper를 추가하지 않고 실제 fake socket/server emission을 계약 테스트로 검증한다.
+- server app event 순서는 active session 확인, server-derived rate key, Zod parse, room/host/status authorization, input queue, service/domain 호출로 고정했다. stale socket은 정상 player rate bucket을 소모하지 않는다.
+- strict control envelope, UUID/room/token 형식, nickname/chat 길이, transform/board/DTO 중첩 구조와 숫자·enum 범위를 검증한다. authoritative board의 기존 `garbage` cell은 허용하되 active piece와 piece queue는 7개 tetromino enum을 유지한다.
+- invalid payload는 기존 event별 result channel에서 `INVALID_PAYLOAD`만 반환한다. raw payload, unknown key, Zod issue와 stack은 응답·로그에 포함하지 않으며 game input의 안전한 정수 sequence/piece metadata만 보존한다.
+
+### 기존 domain과 browser 호환성
+
+- placement log 외부 `{roomId, log}`만 strict 처리하고 256 KiB 제한, private-field scan과 기존 `validatePlacementDecisionLog`를 유지한다. server가 roomId/playerId를 인증된 socket 값으로 덮어쓴 뒤 human v1/v2 domain validation과 저장을 수행한다.
+- `game:bag:request`는 기존 `ensurePlayerBagQueue` low-water 경계를 사용한다. queue가 충분하면 mutation 없이 `BAG_QUEUE_SUFFICIENT`를 반환하고 client pending을 해제하며, 부족할 때만 정확히 7개 chunk를 broadcast한다. 장시간 queue/bagChunks에 schema-only hard cap은 추가하지 않았다.
+- `roomClient`의 모든 S2C application listener가 shared schema를 통과한다. `logClient`의 raw socket 우회를 제거했고 invalid S2C는 handler를 호출하지 않는다. invalid `session:ready`는 credential을 지우지 않고 terminal protocol 오류로 연결을 중단한다.
+- 정상 PVP/PVE payload 의미와 Goal 2의 session/token, reconnect, origin/rate 정책은 유지했다. 존재하지 않는 방 E2E는 실제 8자리 방 코드 형식의 미존재 값으로 fixture를 바로잡았다.
+
+### 검증, bundle과 남은 위험
+
+- Node 24.18.0/npm 11.16.0에서 `bash scripts/verify.sh`가 diff check, typecheck, 124-module build와 Node test 570개 중 569개 통과, 기존 조건부 1개 skip으로 통과했다.
+- 전체 Chromium Playwright는 PVP/PVE/session/reconnect/rollback/single을 포함해 24/24 통과했다. 첫 실행의 2건 실패는 invalid 7자리 room fixture와 정상 garbage snapshot schema 누락을 드러냈고, 계약/fixture 수정 후 전체를 다시 통과했다.
+- production dependency-only 임시 설치에서 Express, Socket.IO와 Zod만으로 server를 기동했다. `/`, 네 page, Socket.IO client와 대표 built JS/CSS가 모두 HTTP 200을 반환했다.
+- 기준 build의 `roomClient` chunk는 4.10 kB(gzip 1.59 kB)였고 Zod 기반 S2C runtime 검증 후 75.41 kB(gzip 20.78 kB)로 증가했다. 증가는 raw 71.31 kB, gzip 19.19 kB이며 향후 bundle 최적화는 정상 계약을 바꾸지 않는 별도 판단 대상이다.
+- strict schema에 정상 protocol variant가 새로 발견되면 해당 event group의 schema와 parity fixture를 함께 보완해야 한다. 외부 TLS/reverse proxy, WebKit/Firefox, 장시간 malformed traffic/soak와 실제 TypeScript Socket.IO generic은 이번 Goal에서 검증하지 않았다.
+- Goal 3는 merge gate에서 멈추며 push, PR, main merge, branch 삭제와 Goal 4는 별도 승인 전 수행하지 않는다.
 
 ## Project Direction
 
