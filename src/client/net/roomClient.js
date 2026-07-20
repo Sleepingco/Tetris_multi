@@ -1,3 +1,5 @@
+import { parseServerEvent } from "../../shared/socketContracts.mjs"
+
 if (typeof io !== "function") {
     throw new Error("Socket.IO client script must be loaded before client/net/roomClient.js")
 }
@@ -74,20 +76,38 @@ const serverConnection = io({
 })
 let lastRoomRequestType = null
 
+function onValidatedServerEvent(eventName, handler) {
+    const validatedHandler = (payload) => {
+        const validation = parseServerEvent(eventName, payload)
+        if (!validation.success) {
+            console.warn(`[socket-protocol] ${eventName}: INVALID_SERVER_PAYLOAD`)
+            if (eventName === "session:ready") {
+                activeSession = null
+                serverConnection.io?.reconnection?.(false)
+                sessionErrorHandlers.forEach(sessionHandler => sessionHandler({
+                    code: "SESSION_PROTOCOL_ERROR",
+                    terminal: true,
+                }))
+                serverConnection.disconnect?.()
+            }
+            return
+        }
+        handler(validation.data)
+    }
+
+    serverConnection.on(eventName, validatedHandler)
+    return () => serverConnection.off(eventName, validatedHandler)
+}
+
 serverConnection.on("connect", () => {
     activeSocketId = serverConnection.id
     activeSession = null
 })
 
-serverConnection.on("session:ready", (session) => {
+onValidatedServerEvent("session:ready", (session) => {
     if (
         !serverConnection.connected
         || serverConnection.id !== activeSocketId
-        || session?.version !== SESSION_VERSION
-        || typeof session.playerId !== "string"
-        || typeof session.token !== "string"
-        || typeof session.nickname !== "string"
-        || !Number.isFinite(session.expiresAt)
     ) {
         return
     }
@@ -147,10 +167,6 @@ function emitAuthenticated(eventName, payload) {
 // 브라우저 전역 socket을 한 번만 만들고, 페이지 코드는 이 얇은 함수들만 사용한다.
 // =============================
 
-export function getServerConnection() {
-    return serverConnection
-}
-
 export function getPlayerSession() {
     if (activeSession) return { ...activeSession }
 
@@ -188,7 +204,7 @@ export function requestCreateRoom(player, mode = "pvp", aiDifficulty = null, aiP
 }
 
 export function onRoomResult(handler) {
-    serverConnection.on("room:result", (result) => {
+    return onValidatedServerEvent("room:result", (result) => {
         handler(result, lastRoomRequestType)
     })
 }
@@ -199,11 +215,11 @@ export function requestJoinRoom(roomId, player) {
 }
 
 export function onRoomUpdated(handler) {
-    serverConnection.on("room:updated", handler)
+    return onValidatedServerEvent("room:updated", handler)
 }
 
 export function onRoomMessage(handler) {
-    serverConnection.on("room:message", handler)
+    return onValidatedServerEvent("room:message", handler)
 }
 
 export function sendGlobalChat(player, text) {
@@ -215,19 +231,11 @@ export function sendRoomChat(roomId, playerId, text) {
 }
 
 export function onGlobalMessage(handler) {
-    serverConnection.on("global:message", handler)
-
-    return () => {
-        serverConnection.off("global:message", handler)
-    }
+    return onValidatedServerEvent("global:message", handler)
 }
 
 export function onChatResult(handler) {
-    serverConnection.on("chat:result", handler)
-
-    return () => {
-        serverConnection.off("chat:result", handler)
-    }
+    return onValidatedServerEvent("chat:result", handler)
 }
 
 export function requestLeaveRoom(roomId, playerId) {
@@ -241,15 +249,11 @@ export function requestJoinGameRoom(roomId, playerId) {
 }
 
 export function onGameJoinResult(handler) {
-    serverConnection.on("game:join:result", handler)
+    return onValidatedServerEvent("game:join:result", handler)
 }
 
 export function onPveAiPolicy(handler) {
-    serverConnection.on("pve:ai-policy", handler)
-
-    return () => {
-        serverConnection.off("pve:ai-policy", handler)
-    }
+    return onValidatedServerEvent("pve:ai-policy", handler)
 }
 
 export function requestStartGame(roomId, playerId) {
@@ -285,11 +289,7 @@ export function sendGameInput(
 }
 
 export function onGameInputResult(handler) {
-    serverConnection.on("game:input:result", handler)
-
-    return () => {
-        serverConnection.off("game:input:result", handler)
-    }
+    return onValidatedServerEvent("game:input:result", handler)
 }
 
 export function requestGameBagChunk(roomId, playerId) {
@@ -297,19 +297,11 @@ export function requestGameBagChunk(roomId, playerId) {
 }
 
 export function receiveGameBagAppend(handler) {
-    serverConnection.on("game:bag:append", handler)
-
-    return () => {
-        serverConnection.off("game:bag:append", handler)
-    }
+    return onValidatedServerEvent("game:bag:append", handler)
 }
 
 export function onGameBagResult(handler) {
-    serverConnection.on("game:bag:result", handler)
-
-    return () => {
-        serverConnection.off("game:bag:result", handler)
-    }
+    return onValidatedServerEvent("game:bag:result", handler)
 }
 
 export function sendPlacementDecisionLogEvent(roomId, log) {
@@ -319,12 +311,12 @@ export function sendPlacementDecisionLogEvent(roomId, log) {
     })
 }
 
-export function receiveAuthoritativeSnapshot(handler) {
-    serverConnection.on("game:authoritative:snapshot", handler)
+export function onPlacementDecisionLogResult(handler) {
+    return onValidatedServerEvent("game:log:result", handler)
+}
 
-    return () => {
-        serverConnection.off("game:authoritative:snapshot", handler)
-    }
+export function receiveAuthoritativeSnapshot(handler) {
+    return onValidatedServerEvent("game:authoritative:snapshot", handler)
 }
 
 export function leaveGame(roomId, playerId) {
@@ -333,7 +325,7 @@ export function leaveGame(roomId, playerId) {
 }
 
 export function onGameOpponentLeft(handler) {
-    serverConnection.on("game:opponent-left", handler)
+    return onValidatedServerEvent("game:opponent-left", handler)
 }
 
 export function requestRoomSync(roomId, playerId) {
@@ -342,9 +334,5 @@ export function requestRoomSync(roomId, playerId) {
 }
 
 export function onMatchFinish(handler) {
-    serverConnection.on("match:finish", handler)
-
-    return () => {
-        serverConnection.off("match:finish", handler)
-    }
+    return onValidatedServerEvent("match:finish", handler)
 }

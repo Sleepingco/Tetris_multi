@@ -1,14 +1,5 @@
 const { syncRoom } = require("../services/roomService.js")
-
-const CHAT_MAX_LENGTH = 200
-
-function success(meta = {}) {
-    return {
-        ok: true,
-        reason: null,
-        ...meta,
-    }
-}
+const { parseClientEvent } = require("../../shared/socketContracts.mjs")
 
 function failure(reason, meta = {}) {
     return {
@@ -18,51 +9,32 @@ function failure(reason, meta = {}) {
     }
 }
 
-function normalizeChatText(text) {
-    if (typeof text !== "string") {
-        return failure("EMPTY_CHAT_MESSAGE", { text: "" })
-    }
-
-    const normalizedText = text.trim()
-    if (!normalizedText) {
-        return failure("EMPTY_CHAT_MESSAGE", { text: "" })
-    }
-
-    if (normalizedText.length > CHAT_MAX_LENGTH) {
-        return failure("CHAT_MESSAGE_TOO_LONG", { text: normalizedText })
-    }
-
-    return success({ text: normalizedText })
-}
-
-function validateChat(text) {
-    const textResult = normalizeChatText(text)
-    if (!textResult.ok) return textResult
-    return success({ text: textResult.text })
-}
-
 function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
     const playerSessionService = dependencies.playerSessionService
     const socketRateLimitService = dependencies.socketRateLimitService
     const sessionContext = clientSocket.data?.playerSession
     const playerIdentity = clientSocket.data?.playerIdentity
 
-    function authorizeChat(text) {
+    function authorizeChat() {
         if (!playerSessionService?.isActiveSocket(sessionContext, clientSocket.id)) {
             return failure("NOT_AUTHORIZED")
         }
         if (!socketRateLimitService?.consume("chat", playerIdentity?.playerId)) {
             return failure("CHAT_RATE_LIMITED")
         }
-        return validateChat(text)
+        return null
     }
 
-    clientSocket.on("global:chat", (payload = {}) => {
-        const { text } = payload
-        const result = authorizeChat(text)
+    clientSocket.on("global:chat", (payload) => {
+        const result = authorizeChat()
 
-        if (!result.ok) {
+        if (result) {
             clientSocket.emit("chat:result", result)
+            return
+        }
+        const validation = parseClientEvent("global:chat", payload)
+        if (!validation.success) {
+            clientSocket.emit("chat:result", failure("INVALID_PAYLOAD"))
             return
         }
 
@@ -71,27 +43,27 @@ function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
             scope: "global",
             playerId: playerIdentity.playerId,
             nickname: playerIdentity.nickname,
-            text: result.text,
+            text: validation.data.text,
         })
     })
 
-    clientSocket.on("room:chat", (payload = {}) => {
-        const { roomId, text } = payload
+    clientSocket.on("room:chat", (payload) => {
         const playerId = playerIdentity?.playerId
-        if (!playerSessionService?.isActiveSocket(sessionContext, clientSocket.id)) {
-            clientSocket.emit("chat:result", failure("NOT_AUTHORIZED"))
+        const authorization = authorizeChat()
+        if (authorization) {
+            clientSocket.emit("chat:result", authorization)
             return
         }
+        const validation = parseClientEvent("room:chat", payload)
+        if (!validation.success) {
+            clientSocket.emit("chat:result", failure("INVALID_PAYLOAD"))
+            return
+        }
+        const { roomId, text } = validation.data
         // 채팅 전송 전에 room/player 소속만 검증한다. 게임 판정이나 room 상태 전이는 하지 않는다.
         const roomResult = syncRoom(roomId, playerId)
         if (!roomResult.ok) {
             clientSocket.emit("chat:result", roomResult)
-            return
-        }
-
-        const chatResult = authorizeChat(text)
-        if (!chatResult.ok) {
-            clientSocket.emit("chat:result", chatResult)
             return
         }
 
@@ -102,7 +74,7 @@ function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
             roomId: roomResult.room.roomId,
             playerId,
             nickname: player?.nickname || "Guest",
-            text: chatResult.text,
+            text,
         })
     })
 

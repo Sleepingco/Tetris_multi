@@ -12,10 +12,10 @@ const {
 const {
     acknowledgeClientInputSequence,
     appendPendingGarbageToOpponent,
-    appendPlayerBagChunk,
     applyAuthoritativeInputToMatchPlayerState,
     createMatch,
     deleteMatch,
+    ensurePlayerBagQueue,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
     validateClientInputSequence,
@@ -32,6 +32,10 @@ const {
     createPublicRoomResult,
     createRoomPublicDto,
 } = require("../services/roomPublicDto.js")
+const {
+    validatePlacementDecisionLog,
+} = require("../validators/gameLogValidator.js")
+const { parseClientEvent } = require("../../shared/socketContracts.mjs")
 
 const DISCONNECT_GRACE_MS = 30_000
 const MAX_OUTSTANDING_GAME_INPUTS = 120
@@ -44,51 +48,6 @@ const PRIVATE_FIELD_NAMES = new Set([
     "expiresAt",
 ])
 
-const VALID_GAME_ACTIONS = new Set([
-    "move_left",
-    "move_right",
-    "soft_drop",
-    "rotate",
-    "hard_drop",
-    "hold",
-])
-const EXPECTED_TRANSFORM_ACTIONS = new Set([
-    "move_left",
-    "move_right",
-    "soft_drop",
-    "rotate",
-    "hard_drop",
-])
-const VALID_PIECE_TYPES = new Set([
-    "bar",
-    "eleft",
-    "eright",
-    "ess",
-    "square",
-    "tree",
-    "zee",
-])
-const PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS = [
-    "linesCleared",
-    "combo",
-    "rawAttackLines",
-    "attackLines",
-    "canceledGarbageLines",
-    "incomingGarbageLines",
-    "appliedGarbageLines",
-]
-const PLACEMENT_RESULT_NON_NEGATIVE_NUMBER_FIELDS = [
-    "scoreBefore",
-    "scoreAfter",
-]
-const PLACEMENT_RESULT_FINITE_NUMBER_FIELDS = [
-    "scoreDelta",
-]
-const PLACEMENT_RESULT_BOOLEAN_FIELDS = [
-    "isTSpin",
-    "backToBack",
-    "gameOver",
-]
 /**
  * room 퇴장 결과를 Socket.IO room leave와 남은 참가자 broadcast로 연결한다.
  * - 마지막 참가자가 나가 room이 삭제된 경우에는 broadcast할 room이 없으므로 조용히 종료한다.
@@ -191,12 +150,29 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         clientSocket.emit("room:result", createPublicRoomResult(result))
     }
 
+    function emitInvalidRoomResult() {
+        emitRoomResult({
+            ok: false,
+            room: null,
+            reason: "INVALID_PAYLOAD",
+        })
+    }
+
     clientSocket.on("room:create", (payload) => {
-        if (!isActiveSession() || !consumeRateLimit("lifecycle")) {
+        if (!isActiveSession()) {
             emitRoomResult(createNotAuthorizedResult())
             return
         }
-        const createPayload = payload?.player ? payload : payload || {}
+        if (!consumeRateLimit("lifecycle")) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        const validation = parseClientEvent("room:create", payload)
+        if (!validation.success) {
+            emitInvalidRoomResult()
+            return
+        }
+        const createPayload = validation.data
         const hostPlayer = {
             playerId: getPlayerId(),
             nickname: playerIdentity.nickname,
@@ -213,11 +189,21 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         emitRoomResult(result)
     })
 
-    clientSocket.on("room:join", ({ roomId } = {}) => {
-        if (!isActiveSession() || !consumeRateLimit("lifecycle")) {
+    clientSocket.on("room:join", (payload) => {
+        if (!isActiveSession()) {
             emitRoomResult(createNotAuthorizedResult())
             return
         }
+        if (!consumeRateLimit("lifecycle")) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        const validation = parseClientEvent("room:join", payload)
+        if (!validation.success) {
+            emitInvalidRoomResult()
+            return
+        }
+        const { roomId } = validation.data
         const guestPlayer = {
             playerId: getPlayerId(),
             nickname: playerIdentity.nickname,
@@ -226,10 +212,22 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         handlePlayerJoinedRoom(socketServer, clientSocket, result, guestPlayer.nickname)
     })
 
-    clientSocket.on("room:leave", ({ roomId } = {}) => {
-        const roomResult = isActiveSession() && consumeRateLimit("lifecycle")
-            ? isAuthorizedRoom(roomId)
-            : createNotAuthorizedResult()
+    clientSocket.on("room:leave", (payload) => {
+        if (!isActiveSession()) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        if (!consumeRateLimit("lifecycle")) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        const validation = parseClientEvent("room:leave", payload)
+        if (!validation.success) {
+            emitInvalidRoomResult()
+            return
+        }
+        const { roomId } = validation.data
+        const roomResult = isAuthorizedRoom(roomId)
         const result = roomResult.ok
             ? leaveRoom(roomId, getPlayerId())
             : roomResult
@@ -281,11 +279,22 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     })
 
     // room 상태를 playing으로 바꾸고 matchService에 player별 input log/server bag을 만든다.
-    clientSocket.on("room:start", async (payload = {}) => {
-        const { roomId } = payload
-        const roomResult = isActiveSession() && consumeRateLimit("lifecycle")
-            ? isAuthorizedRoom(roomId)
-            : createNotAuthorizedResult()
+    clientSocket.on("room:start", async (payload) => {
+        if (!isActiveSession()) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        if (!consumeRateLimit("lifecycle")) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        const validation = parseClientEvent("room:start", payload)
+        if (!validation.success) {
+            emitInvalidRoomResult()
+            return
+        }
+        const { roomId } = validation.data
+        const roomResult = isAuthorizedRoom(roomId)
         const result = roomResult.ok
             ? startGame(roomId, getPlayerId())
             : roomResult
@@ -310,11 +319,35 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         }
     })
 
-    clientSocket.on("game:join", (payload = {}) => {
-        const { roomId } = payload
-        const result = isActiveSession() && consumeRateLimit("lifecycle")
-            ? isAuthorizedRoom(roomId)
-            : createNotAuthorizedResult()
+    clientSocket.on("game:join", (payload) => {
+        if (!isActiveSession()) {
+            clientSocket.emit("game:join:result", {
+                ...createPublicRoomResult(createNotAuthorizedResult()),
+                match: null,
+            })
+            return
+        }
+        if (!consumeRateLimit("lifecycle")) {
+            clientSocket.emit("game:join:result", {
+                ...createPublicRoomResult(createNotAuthorizedResult()),
+                match: null,
+            })
+            return
+        }
+        const validation = parseClientEvent("game:join", payload)
+        if (!validation.success) {
+            clientSocket.emit("game:join:result", {
+                ...createPublicRoomResult({
+                    ok: false,
+                    room: null,
+                    reason: "INVALID_PAYLOAD",
+                }),
+                match: null,
+            })
+            return
+        }
+        const { roomId } = validation.data
+        const result = isAuthorizedRoom(roomId)
         if (result.ok && !hasJoinedGame) {
             authoritativeTickerService?.resetPlayerGravity?.(roomId, getPlayerId())
             hasJoinedGame = true
@@ -334,7 +367,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     })
 
     // 같은 socket의 입력은 validation → authoritative apply 순서로 직렬 처리한다.
-    async function processGameInput(payload = {}) {
+    async function processGameInput(payload) {
         const {
             roomId,
             action,
@@ -369,26 +402,6 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
         if (result.room.status !== "playing") {
             emitInputResult(false, "GAME_NOT_PLAYING")
-            return
-        }
-
-        if (!VALID_GAME_ACTIONS.has(action)) {
-            emitInputResult(false, "INVALID_ACTION")
-            return
-        }
-
-        if (!Number.isInteger(tick) || tick < 0
-            || !Number.isInteger(pieceIndex) || pieceIndex < 0
-            || !Number.isInteger(clientSequence) || clientSequence < 1) {
-            emitInputResult(false, "INVALID_INPUT")
-            return
-        }
-
-        if (
-            EXPECTED_TRANSFORM_ACTIONS.has(action) &&
-            !isValidExpectedTransform(expectedTransform)
-        ) {
-            emitInputResult(false, "INVALID_EXPECTED_TRANSFORM")
             return
         }
 
@@ -492,13 +505,30 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         }
     }
 
-    clientSocket.on("game:input", (payload = {}) => {
-        if (!isActiveSession() || !consumeRateLimit("input")) {
+    clientSocket.on("game:input", (payload) => {
+        if (!isActiveSession()) {
             clientSocket.emit("game:input:result", {
                 ok: false,
-                reason: isActiveSession() ? "RATE_LIMITED" : "NOT_AUTHORIZED",
-                clientSequence: payload.clientSequence,
-                pieceIndex: payload.pieceIndex,
+                reason: "NOT_AUTHORIZED",
+                placementCommitted: false,
+            })
+            return null
+        }
+        if (!consumeRateLimit("input")) {
+            clientSocket.emit("game:input:result", {
+                ok: false,
+                reason: "RATE_LIMITED",
+                ...createSafeInputMetadata(payload),
+                placementCommitted: false,
+            })
+            return null
+        }
+        const validation = parseClientEvent("game:input", payload)
+        if (!validation.success) {
+            clientSocket.emit("game:input:result", {
+                ok: false,
+                reason: "INVALID_PAYLOAD",
+                ...createSafeInputMetadata(payload),
                 placementCommitted: false,
             })
             return null
@@ -507,16 +537,16 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             clientSocket.emit("game:input:result", {
                 ok: false,
                 reason: "TOO_MANY_PENDING_INPUTS",
-                clientSequence: payload.clientSequence,
-                pieceIndex: payload.pieceIndex,
+                clientSequence: validation.data.clientSequence,
+                pieceIndex: validation.data.pieceIndex,
                 placementCommitted: false,
             })
             return null
         }
         outstandingGameInputCount += 1
         const processingResult = gameInputProcessingChain
-            ? gameInputProcessingChain.then(() => processGameInput(payload))
-            : processGameInput(payload)
+            ? gameInputProcessingChain.then(() => processGameInput(validation.data))
+            : processGameInput(validation.data)
         const trackedResult = processingResult
             .catch(() => {})
             .finally(() => {
@@ -529,16 +559,33 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         return trackedResult
     })
 
-    clientSocket.on("game:log:placement_decision", async (payload = {}) => {
-        const { roomId, log } = payload
-        if (!isActiveSession() || !consumeRateLimit("placementLog")) {
+    clientSocket.on("game:log:placement_decision", async (payload) => {
+        if (!isActiveSession()) {
             clientSocket.emit("game:log:result", {
                 ok: false,
                 log: null,
-                reason: isActiveSession() ? "RATE_LIMITED" : "NOT_AUTHORIZED",
+                reason: "NOT_AUTHORIZED",
             })
             return
         }
+        if (!consumeRateLimit("placementLog")) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: "RATE_LIMITED",
+            })
+            return
+        }
+        const validation = parseClientEvent("game:log:placement_decision", payload)
+        if (!validation.success) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: "INVALID_PAYLOAD",
+            })
+            return
+        }
+        const { roomId, log } = validation.data
         const result = isAuthorizedRoom(roomId)
 
         if (!result.ok) {
@@ -555,23 +602,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        const placementResult = log?.placementResult
-        const hasValidPlacementResultScalars = placementResult
-            && typeof placementResult === "object"
-            && !Array.isArray(placementResult)
-            && PLACEMENT_RESULT_NON_NEGATIVE_INTEGER_FIELDS.every(field => (
-                Number.isInteger(placementResult[field]) && placementResult[field] >= 0
-            ))
-            && PLACEMENT_RESULT_NON_NEGATIVE_NUMBER_FIELDS.every(field => (
-                Number.isFinite(placementResult[field]) && placementResult[field] >= 0
-            ))
-            && PLACEMENT_RESULT_FINITE_NUMBER_FIELDS.every(field => (
-                Number.isFinite(placementResult[field])
-            ))
-            && PLACEMENT_RESULT_BOOLEAN_FIELDS.every(field => (
-                typeof placementResult[field] === "boolean"
-            ))
-        const hasValidPlacementDecisionLog = log
+        const isHumanPlacementDecisionLog = log
             && typeof log === "object"
             && !Array.isArray(log)
             && log.eventType === "placement_decision"
@@ -579,10 +610,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                 (log.schemaVersion === 1 && (log.source === undefined || log.source === "human"))
                 || (log.schemaVersion === 2 && log.source === "human")
             )
-            && hasValidPlacementResultScalars
-            && !containsPrivateField(log)
 
-        if (!hasValidPlacementDecisionLog) {
+        if (!isHumanPlacementDecisionLog || containsPrivateField(log)) {
             clientSocket.emit("game:log:result", {
                 ok: false,
                 log: null,
@@ -595,6 +624,15 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             ...log,
             roomId,
             playerId: getPlayerId(),
+        }
+        const logValidation = validatePlacementDecisionLog(authenticatedLog)
+        if (!logValidation.ok) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: logValidation.reason,
+            })
+            return
         }
         if (!isActiveSession()) {
             clientSocket.emit("game:log:result", {
@@ -610,16 +648,33 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     })
 
     // server bag chunk를 player별로 추가해 로컬/상대 런타임의 다음 조각 공급을 맞춘다.
-    clientSocket.on("game:bag:request", (payload = {}) => {
-        const { roomId } = payload
-        if (!isActiveSession() || !consumeRateLimit("bag")) {
+    clientSocket.on("game:bag:request", (payload) => {
+        if (!isActiveSession()) {
             clientSocket.emit("game:bag:result", {
                 ok: false,
                 room: null,
-                reason: isActiveSession() ? "RATE_LIMITED" : "NOT_AUTHORIZED",
+                reason: "NOT_AUTHORIZED",
             })
             return
         }
+        if (!consumeRateLimit("bag")) {
+            clientSocket.emit("game:bag:result", {
+                ok: false,
+                room: null,
+                reason: "RATE_LIMITED",
+            })
+            return
+        }
+        const validation = parseClientEvent("game:bag:request", payload)
+        if (!validation.success) {
+            clientSocket.emit("game:bag:result", {
+                ok: false,
+                room: null,
+                reason: "INVALID_PAYLOAD",
+            })
+            return
+        }
+        const { roomId } = validation.data
         const result = isAuthorizedRoom(roomId)
 
         if (!result.ok) {
@@ -636,10 +691,18 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
             return
         }
 
-        const bagResult = appendPlayerBagChunk(roomId, getPlayerId())
+        const bagResult = ensurePlayerBagQueue(roomId, getPlayerId())
 
         if (!bagResult.ok) {
             clientSocket.emit("game:bag:result", bagResult)
+            return
+        }
+        if (!bagResult.bagChunk) {
+            clientSocket.emit("game:bag:result", {
+                ok: false,
+                room: null,
+                reason: "BAG_QUEUE_SUFFICIENT",
+            })
             return
         }
 
@@ -650,11 +713,26 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
         })
     })
 
-    clientSocket.on("game:leave", (payload = {}) => {
-        const { roomId } = payload
-        const roomResult = isActiveSession() && consumeRateLimit("lifecycle")
-            ? isAuthorizedRoom(roomId)
-            : createNotAuthorizedResult()
+    clientSocket.on("game:leave", (payload) => {
+        if (!isActiveSession()) {
+            clientSocket.emit("game:leave:result", createPublicRoomResult(createNotAuthorizedResult()))
+            return
+        }
+        if (!consumeRateLimit("lifecycle")) {
+            clientSocket.emit("game:leave:result", createPublicRoomResult(createNotAuthorizedResult()))
+            return
+        }
+        const validation = parseClientEvent("game:leave", payload)
+        if (!validation.success) {
+            clientSocket.emit("game:leave:result", createPublicRoomResult({
+                ok: false,
+                room: null,
+                reason: "INVALID_PAYLOAD",
+            }))
+            return
+        }
+        const { roomId } = validation.data
+        const roomResult = isAuthorizedRoom(roomId)
         const result = roomResult.ok
             ? leaveGame(roomId, getPlayerId())
             : createNotAuthorizedResult()
@@ -673,11 +751,22 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
     })
 
     // 로비 복귀 시 membership과 finished room 복귀 조건을 확인한다.
-    clientSocket.on("room:sync", (payload = {}) => {
-        const { roomId } = payload
-        const currentResult = isActiveSession() && consumeRateLimit("lifecycle")
-            ? isAuthorizedRoom(roomId)
-            : createNotAuthorizedResult()
+    clientSocket.on("room:sync", (payload) => {
+        if (!isActiveSession()) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        if (!consumeRateLimit("lifecycle")) {
+            emitRoomResult(createNotAuthorizedResult())
+            return
+        }
+        const validation = parseClientEvent("room:sync", payload)
+        if (!validation.success) {
+            emitInvalidRoomResult()
+            return
+        }
+        const { roomId } = validation.data
+        const currentResult = isAuthorizedRoom(roomId)
         const result = currentResult.ok
             ? syncRoom(roomId, getPlayerId(), {
                 location: "lobby",
@@ -694,15 +783,17 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
 
 }
 
-function isValidExpectedTransform(expectedTransform) {
-    return expectedTransform !== null
-        && typeof expectedTransform === "object"
-        && !Array.isArray(expectedTransform)
-        && VALID_PIECE_TYPES.has(expectedTransform.pieceType)
-        && Number.isInteger(expectedTransform.rotation)
-        && expectedTransform.rotation >= 0
-        && expectedTransform.rotation < 4
-        && Number.isInteger(expectedTransform.col)
+function createSafeInputMetadata(payload) {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return {}
+
+    return {
+        ...(Number.isSafeInteger(payload.clientSequence) && payload.clientSequence > 0
+            ? { clientSequence: payload.clientSequence }
+            : {}),
+        ...(Number.isSafeInteger(payload.pieceIndex) && payload.pieceIndex >= 0
+            ? { pieceIndex: payload.pieceIndex }
+            : {}),
+    }
 }
 
 function handleServerPlacementResult(roomId, playerId, placementResult, createGarbageHoleCol) {

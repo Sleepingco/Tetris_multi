@@ -16,6 +16,7 @@ const {
     createSocketRateLimitService,
     TEST_RATE_LIMITS,
 } = require("../services/socketRateLimitService.js")
+const { handshakeAuthSchema } = require("../../shared/socketContracts.mjs")
 
 const SESSION_CLEANUP_INTERVAL_MS = 60_000
 
@@ -80,7 +81,25 @@ function registerSocketHandlers(socketServer, dependencies = {}) {
             return
         }
 
-        const result = playerSessionService.authenticate(auth, clientSocket.id)
+        const authValidation = handshakeAuthSchema.safeParse(auth)
+        if (!authValidation.success) {
+            if (
+                hasCredential
+                && !socketRateLimitService.consume("invalidResume", remoteAddress)
+            ) {
+                next(createSessionError("SESSION_RATE_LIMITED"))
+                return
+            }
+            const hasInvalidNickname = typeof auth?.nickname !== "string"
+                || !auth.nickname.trim()
+                || auth.nickname.trim().length > 24
+            next(createSessionError(hasInvalidNickname
+                ? "SESSION_NICKNAME_INVALID"
+                : "SESSION_CREDENTIALS_MALFORMED"))
+            return
+        }
+
+        const result = playerSessionService.authenticate(authValidation.data, clientSocket.id)
         if (!result.ok) {
             if (
                 hasCredential

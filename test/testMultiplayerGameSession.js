@@ -30,6 +30,13 @@ class FakeSocket {
     }
 
     emitServer(eventName, payload) {
+        const wirePayload = createServerWirePayload(eventName, payload);
+        this.handlers.get(eventName)?.forEach(handler => {
+            handler(wirePayload);
+        });
+    }
+
+    emitRawServer(eventName, payload) {
         this.handlers.get(eventName)?.forEach(handler => {
             handler(payload);
         });
@@ -40,15 +47,54 @@ class FakeSocket {
         this.emitServer("connect");
         this.emitServer("session:ready", {
             version: 1,
-            playerId: "me",
+            playerId: "00000000-0000-4000-8000-000000000001",
             token: "a".repeat(43),
             nickname: "Player",
             expiresAt: Date.now() + 60_000,
+            resumed: false,
         });
     }
 }
 
 const sharedFakeSocket = new FakeSocket();
+
+function createServerWirePayload(eventName, payload) {
+    if (eventName === "game:input:result") {
+        return {
+            ...payload,
+            placementCommitted: payload.placementCommitted === true,
+            ...(payload.snapshot ? { snapshot: createWireSnapshot(payload.snapshot) } : {}),
+        };
+    }
+    if (eventName === "game:authoritative:snapshot") {
+        return {
+            roomId: "ABCDEF12",
+            ...payload,
+            snapshot: createWireSnapshot(payload.snapshot),
+        };
+    }
+    return payload;
+}
+
+function createWireSnapshot(snapshot) {
+    return {
+        board: snapshot.board,
+        activePiece: snapshot.activePiece ?? null,
+        pieceQueue: snapshot.pieceQueue ?? [],
+        holdPieceType: snapshot.holdPieceType ?? null,
+        holdUsedThisDrop: snapshot.holdUsedThisDrop === true,
+        score: snapshot.score ?? 0,
+        lines: snapshot.lines ?? 0,
+        phase: snapshot.phase ?? "playing",
+        gameOver: snapshot.gameOver === true,
+        combo: snapshot.combo ?? -1,
+        backToBack: snapshot.backToBack === true,
+        tick: snapshot.tick ?? 0,
+        pieceIndex: snapshot.pieceIndex ?? 0,
+        pendingGarbageLines: snapshot.pendingGarbageLines ?? 0,
+        lastProcessedClientSequence: snapshot.lastProcessedClientSequence ?? 0,
+    };
+}
 
 function createFakeElement(tagName = "div") {
     const element = {
@@ -207,14 +253,14 @@ async function loadSession() {
 
 function createSessionParams(overrides = {}) {
     return {
-        roomId: "room-1",
-        playerId: "player-me",
-        opponentPlayerId: "player-opponent",
+        roomId: "ABCDEF12",
+        playerId: "00000000-0000-4000-8000-000000000001",
+        opponentPlayerId: "00000000-0000-4000-8000-000000000002",
         match: {
             createdAt: 1,
             players: [
-                { playerId: "player-me", bagChunks: [["tree", "bar", "square", "zee", "eleft", "eright", "ess"]] },
-                { playerId: "player-opponent", bagChunks: [["tree", "bar", "square", "zee", "eleft", "eright", "ess"]] },
+                { playerId: "00000000-0000-4000-8000-000000000001", bagChunks: [["tree", "bar", "square", "zee", "eleft", "eright", "ess"]] },
+                { playerId: "00000000-0000-4000-8000-000000000002", bagChunks: [["tree", "bar", "square", "zee", "eleft", "eright", "ess"]] },
             ],
         },
         myCanvas: createFakeCanvas(),
@@ -261,7 +307,7 @@ function snapshotWithScore(baseSnapshot, score) {
 
 function cloneBoardWithGarbageCell(baseSnapshot) {
     const board = baseSnapshot.board.map(row => [...row]);
-    board[board.length - 1][0] = "garbage";
+    board[board.length - 1][0] = "zee";
     return board;
 }
 
@@ -300,6 +346,7 @@ function createAuthoritativeSnapshot(overrides = {}) {
         score: 0,
         lines: 0,
         phase: "playing",
+        gameOver: false,
         combo: -1,
         backToBack: false,
         tick: 0,
@@ -326,7 +373,7 @@ function installAnimationFrameQueue() {
 function applySingleLineClearFixture(session) {
     const snapshot = session.myGame.getSnapshot();
     const board = Array.from({ length: 20 }, () => Array(10).fill(null));
-    board[19].fill("stack");
+    board[19].fill("square");
     board[19][4] = null;
     board[19][5] = null;
     session.myGame.applySnapshot({
@@ -412,6 +459,20 @@ test("heartbeatTimer는 game:snapshot과 game:over 없이 bag 요청만 유지�
     assert.equal(sharedFakeSocket.emitted.some(event => event.eventName === "game:snapshot"), false);
     assert.equal(sharedFakeSocket.emitted.some(event => event.eventName === "game:bag:request"), true);
 
+    const countBagRequests = () => sharedFakeSocket.emitted.filter(
+        event => event.eventName === "game:bag:request",
+    ).length;
+    heartbeatTimer.callback();
+    assert.equal(countBagRequests(), 1);
+
+    sharedFakeSocket.emitServer("game:bag:result", {
+        ok: false,
+        room: null,
+        reason: "BAG_QUEUE_SUFFICIENT",
+    });
+    heartbeatTimer.callback();
+    assert.equal(countBagRequests(), 2);
+
     const gameOverSnapshot = {
         ...session.myGame.getSnapshot(),
         board: session.myGame.getSnapshot().board.map(row => [...row]),
@@ -456,7 +517,7 @@ test("내 키보드 입력은 game:input으로 서버에 전송된다", async (t
     });
 
     assert.equal(userInteractionCount, 1);
-    assert.equal(inputEvent.payload.roomId, "room-1");
+    assert.equal(inputEvent.payload.roomId, "ABCDEF12");
     assert.equal(inputEvent.payload.playerId, undefined);
     assert.equal(inputEvent.payload.action, "move_left");
     assert.deepEqual(inputEvent.payload.expectedTransform, {
@@ -833,7 +894,7 @@ test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조�
         return event.eventName === "game:input";
     });
     assert.deepEqual(inputEvent.payload, {
-        roomId: "room-1",
+        roomId: "ABCDEF12",
         action: "soft_drop",
         tick: inputEvent.payload.tick,
         pieceIndex,
@@ -920,7 +981,7 @@ test("더 높은 acknowledgment 뒤 오래된 divergence result는 현재 predic
     });
     const currentBoard = session.myGame.getSnapshot().board.map(row => [...row]);
     const staleBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
-    staleBoard[19][0] = "garbage";
+    staleBoard[19][0] = "zee";
 
     sharedFakeSocket.emitServer("game:input:result", {
         ok: false,
@@ -962,7 +1023,7 @@ test("PREDICTION_DIVERGED result snapshot은 pending prediction을 버리고 즉
     assert.equal(session.myGame.getPendingInputCount(), 1);
 
     const authoritativeBoard = Array.from({ length: 20 }, () => Array(10).fill(null));
-    authoritativeBoard[19][8] = "garbage";
+    authoritativeBoard[19][8] = "zee";
     const authoritativeSnapshot = createAuthoritativeSnapshot({
         board: authoritativeBoard,
         activePiece: {
@@ -1072,7 +1133,7 @@ test("local queue가 비어도 server ack 전 stale own snapshot은 prediction�
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...beforePrediction,
             board: beforePrediction.board.map(row => [...row]),
@@ -1114,7 +1175,7 @@ test("최신 ack snapshot은 pending을 해소한 뒤 board 일치 여부에 따
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...session.myGame.getSnapshot(),
             board: session.myGame.getSnapshot().board.map(row => [...row]),
@@ -1136,7 +1197,7 @@ test("최신 ack snapshot은 pending을 해소한 뒤 board 일치 여부에 따
     authoritativeBoard[19][2] = "square";
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...beforeMismatch,
             board: authoritativeBoard,
@@ -1150,7 +1211,7 @@ test("최신 ack snapshot은 pending을 해소한 뒤 board 일치 여부에 따
     const staleBoard = beforeMismatch.board.map(row => [...row]);
     staleBoard[19][3] = "bar";
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...beforeMismatch,
             board: staleBoard,
@@ -1195,7 +1256,7 @@ test("최신 ack보다 뒤처진 deferred own snapshot은 폐기하고 다음 sn
     olderBoard[19][2] = "bar";
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...localSnapshot,
             board: newerBoard,
@@ -1203,7 +1264,7 @@ test("최신 ack보다 뒤처진 deferred own snapshot은 폐기하고 다음 sn
         },
     });
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...localSnapshot,
             board: olderBoard,
@@ -1223,7 +1284,7 @@ test("최신 ack보다 뒤처진 deferred own snapshot은 폐기하고 다음 sn
     const latestBoard = localSnapshot.board.map(row => [...row]);
     latestBoard[19][3] = "tree";
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...localSnapshot,
             board: latestBoard,
@@ -1259,7 +1320,7 @@ test("상대 authoritative snapshot은 full apply 후 line clear presentation을
     const boardBeforeClear = snapshot.board.map(row => [...row]);
     boardBeforeClear[19] = Array(10).fill("bar");
     const presentationEffect = {
-        id: "player-opponent:7:line_clear",
+        id: "00000000-0000-4000-8000-000000000002:7:line_clear",
         type: "line_clear",
         pieceIndex: 7,
         rows: [19],
@@ -1267,12 +1328,12 @@ test("상대 authoritative snapshot은 full apply 후 line clear presentation을
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-opponent",
+        playerId: "00000000-0000-4000-8000-000000000002",
         snapshot,
         presentationEffect,
     });
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-opponent",
+        playerId: "00000000-0000-4000-8000-000000000002",
         snapshot,
         presentationEffect,
     });
@@ -1307,10 +1368,10 @@ test("상대 presentation은 오래된 pieceIndex를 거부하고 own player eff
     boardBeforeClear[18] = Array(10).fill("square");
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-opponent",
+        playerId: "00000000-0000-4000-8000-000000000002",
         snapshot: opponentSnapshot,
         presentationEffect: {
-            id: "player-opponent:9:line_clear",
+            id: "00000000-0000-4000-8000-000000000002:9:line_clear",
             type: "line_clear",
             pieceIndex: 9,
             rows: [18],
@@ -1318,10 +1379,10 @@ test("상대 presentation은 오래된 pieceIndex를 거부하고 own player eff
         },
     });
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-opponent",
+        playerId: "00000000-0000-4000-8000-000000000002",
         snapshot: opponentSnapshot,
         presentationEffect: {
-            id: "player-opponent:8:line_clear",
+            id: "00000000-0000-4000-8000-000000000002:8:line_clear",
             type: "line_clear",
             pieceIndex: 8,
             rows: [18],
@@ -1329,10 +1390,10 @@ test("상대 presentation은 오래된 pieceIndex를 거부하고 own player eff
         },
     });
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: createAuthoritativeSnapshot({ pieceIndex: 9, tick: 30 }),
         presentationEffect: {
-            id: "player-me:8:line_clear",
+            id: "00000000-0000-4000-8000-000000000001:8:line_clear",
             type: "line_clear",
             pieceIndex: 8,
             rows: [18],
@@ -1358,7 +1419,7 @@ test("effect 없는 authoritative snapshot은 presentation 호출 없이 기존�
     const snapshot = createAuthoritativeSnapshot({ score: 30, tick: 4 });
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-opponent",
+        playerId: "00000000-0000-4000-8000-000000000002",
         snapshot,
     });
 
@@ -1371,8 +1432,8 @@ test("같은 pieceIndex의 board drift는 A local과 B의 A 보드를 같은 sna
     const { startMultiplayerGame } = await loadSession();
     const sessionA = startMultiplayerGame(createSessionParams());
     const sessionB = startMultiplayerGame(createSessionParams({
-        playerId: "player-opponent",
-        opponentPlayerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000002",
+        opponentPlayerId: "00000000-0000-4000-8000-000000000001",
     }));
     t.after(() => {
         cleanupSession(sessionA);
@@ -1389,7 +1450,7 @@ test("같은 pieceIndex의 board drift는 A local과 B의 A 보드를 같은 sna
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: authoritativeSnapshot,
     });
 
@@ -1420,7 +1481,7 @@ test("authoritative snapshot의 pendingGarbageLines가 상대 pending garbage �
     const opponentBaseSnapshot = session.opponentGame.getSnapshot();
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-opponent",
+        playerId: "00000000-0000-4000-8000-000000000002",
         snapshot: {
             ...snapshotWithScore(opponentBaseSnapshot, 20),
             pendingGarbageLines: 3,
@@ -1451,7 +1512,7 @@ test("내 authoritative snapshot의 pendingGarbageLines는 표시만 갱신하�
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: displayOnlySnapshot,
     });
 
@@ -1481,7 +1542,7 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 증가하
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: serverSnapshot,
     });
 
@@ -1505,7 +1566,7 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소하
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...myBaseSnapshot,
             board: serverBoard,
@@ -1537,7 +1598,7 @@ test("대기 중인 local input이 있으면 own full correction을 다음 snaps
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...myBaseSnapshot,
             board: cloneBoardWithGarbageCell(myBaseSnapshot),
@@ -1564,7 +1625,7 @@ test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 감소해
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...myBaseSnapshot,
             board: myBaseSnapshot.board.map(row => [...row]),
@@ -1604,7 +1665,7 @@ test("내 playerId의 gameOver authoritative snapshot은 myGame에 full apply한
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: serverSnapshot,
     });
 
@@ -1636,13 +1697,13 @@ test("내 playerId snapshot의 pieceIndex 1 차이는 750ms 유지될 때만 ful
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: serverSnapshot,
     });
 
     clock.set(849);
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: serverSnapshot,
     });
 
@@ -1653,7 +1714,7 @@ test("내 playerId snapshot의 pieceIndex 1 차이는 750ms 유지될 때만 ful
 
     clock.set(850);
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: serverSnapshot,
     });
 
@@ -1686,7 +1747,7 @@ test("내 local phase가 lineClearing이면 앞선 snapshot도 full apply하지 
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
             board: cloneBoardWithGarbageCell(myBaseSnapshot),
@@ -1696,7 +1757,7 @@ test("내 local phase가 lineClearing이면 앞선 snapshot도 full apply하지 
         },
     });
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: {
             ...snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score + 40),
             board: cloneBoardWithGarbageCell(myBaseSnapshot),
@@ -1738,7 +1799,7 @@ test("빠른 col 차이 snapshot은 반복되어도 local prediction과 gravity�
 
     for (let index = 0; index < 4; index += 1) {
         sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-            playerId: "player-me",
+            playerId: "00000000-0000-4000-8000-000000000001",
             snapshot: serverSnapshot,
         });
     }
@@ -1772,7 +1833,7 @@ test("빠른 rotation 차이 snapshot은 반복되어도 local prediction을 덮
 
     for (let index = 0; index < 4; index += 1) {
         sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-            playerId: "player-me",
+            playerId: "00000000-0000-4000-8000-000000000001",
             snapshot: serverSnapshot,
         });
     }
@@ -1803,11 +1864,11 @@ test("내 playerId의 activePiece row와 tick만 다른 snapshot은 반복되어
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: rowOnlySnapshot,
     });
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: rowOnlySnapshot,
     });
 
@@ -1829,7 +1890,7 @@ test("내 playerId와 일치하는 authoritative snapshot은 full apply하지 �
     };
 
     sharedFakeSocket.emitServer("game:authoritative:snapshot", {
-        playerId: "player-me",
+        playerId: "00000000-0000-4000-8000-000000000001",
         snapshot: snapshotWithScore(myBaseSnapshot, myBaseSnapshot.score),
     });
 

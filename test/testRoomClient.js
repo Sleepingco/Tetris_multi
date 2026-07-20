@@ -15,6 +15,9 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
         on(eventName, handler) {
             handlers.set(eventName, handler);
         },
+        off(eventName, handler) {
+            if (handlers.get(eventName) === handler) handlers.delete(eventName);
+        },
         connect() {
             connectCount += 1;
             this.connected = true;
@@ -25,6 +28,7 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
                 token: "a".repeat(43),
                 nickname: "Player",
                 expiresAt: Date.now() + 60_000,
+                resumed: false,
             });
         },
         disconnect(reason = "io client disconnect") {
@@ -47,6 +51,8 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     };
     const {
         requestCreateRoom,
+        onGameBagResult,
+        onSessionError,
         onSessionDisconnected,
         sendGameInput,
         sendPlacementDecisionLogEvent,
@@ -55,7 +61,9 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     );
     const player = { playerId: "client-player", nickname: "Player" };
     const disconnects = [];
+    const sessionErrors = [];
     onSessionDisconnected((disconnect) => disconnects.push(disconnect));
+    onSessionError((error) => sessionErrors.push(error));
 
     requestCreateRoom(player, "pvp", "hard", "placement_v4");
     requestCreateRoom(player, "pve");
@@ -111,6 +119,33 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
         data: { code: "SESSION_INVALID", terminal: true },
     });
     assert.equal(connectCount, 4);
+
+    let bagResultCount = 0;
+    const detachBagResult = onGameBagResult(() => {
+        bagResultCount += 1;
+    });
+    handlers.get("game:bag:result")?.({
+        ok: false,
+        room: null,
+        reason: "BAG_QUEUE_SUFFICIENT",
+        unknown: true,
+    });
+    assert.equal(bagResultCount, 0);
+    handlers.get("game:bag:result")?.({
+        ok: false,
+        room: null,
+        reason: "BAG_QUEUE_SUFFICIENT",
+    });
+    assert.equal(bagResultCount, 1);
+    detachBagResult();
+
+    const credentialBeforeProtocolError = sessionStorage.getItem("tetris:playerSession");
+    handlers.get("session:ready")?.({ version: 1 });
+    assert.deepEqual(sessionErrors.at(-1), {
+        code: "SESSION_PROTOCOL_ERROR",
+        terminal: true,
+    });
+    assert.equal(sessionStorage.getItem("tetris:playerSession"), credentialBeforeProtocolError);
 
     delete global.io;
     delete global.sessionStorage;

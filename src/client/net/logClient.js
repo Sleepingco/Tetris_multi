@@ -1,5 +1,5 @@
 import {
-    getServerConnection,
+    onPlacementDecisionLogResult as onValidatedPlacementDecisionLogResult,
     sendPlacementDecisionLogEvent,
 } from "./roomClient.js"
 
@@ -12,9 +12,5 @@ export function sendPlacementDecisionLog(roomId, playerId, log) {
 }
 
 export function onPlacementDecisionLogResult(handler) {
-    getServerConnection().on("game:log:result", handler)
-
-    return () => {
-        getServerConnection().off("game:log:result", handler)
-    }
+    return onValidatedPlacementDecisionLogResult(handler)
 }

@@ -6,7 +6,7 @@ const {
 
 test("존재하지 않는 방 코드는 오류를 표시하고 로비 상태를 유지한다", async ({ page }) => {
     await page.goto("/pages/multiLobby.html");
-    await page.locator("#roomCodeInput").fill("UNKNOWN");
+    await page.locator("#roomCodeInput").fill("DEADBEEF");
     await page.locator("#btnJoinCode").click();
 
     await expect(page.locator("#chatMessages")).toContainText("ROOM_NOT_FOUND");

@@ -2,12 +2,14 @@ const test = require("node:test")
 const assert = require("node:assert/strict")
 
 const { registerSocketHandlers } = require("../src/server/sockets/index.js")
+const { serverToClientSchemas } = require("../src/shared/socketContracts.mjs")
 
 class FakeSocketServer {
     constructor() {
         this.middleware = null
         this.connectionHandler = null
         this.roomEvents = []
+        this.globalEvents = []
         this.sockets = { sockets: new Map() }
     }
 
@@ -40,7 +42,9 @@ class FakeSocketServer {
         }
     }
 
-    emit() {}
+    emit(eventName, payload) {
+        this.globalEvents.push({ eventName, payload })
+    }
 }
 
 class FakeSocket {
@@ -50,6 +54,7 @@ class FakeSocket {
         this.data = {}
         this.handlers = new Map()
         this.events = []
+        this.roomEvents = []
         this.disconnected = false
     }
 
@@ -65,8 +70,12 @@ class FakeSocket {
 
     join() {}
     leave() {}
-    to() {
-        return { emit() {} }
+    to(roomId) {
+        return {
+            emit: (eventName, payload) => {
+                this.roomEvents.push({ roomId, eventName, payload })
+            },
+        }
     }
 
     disconnect() {
@@ -77,6 +86,10 @@ class FakeSocket {
 
     trigger(eventName, payload) {
         for (const handler of this.handlers.get(eventName) || []) handler(payload)
+    }
+
+    async triggerAsync(eventName, payload) {
+        await Promise.all((this.handlers.get(eventName) || []).map(handler => handler(payload)))
     }
 
     lastEvent(eventName) {
@@ -104,6 +117,7 @@ test("bootstrap은 session을 발급·회전하고 newest socket wins를 적용�
     assert.equal(socketServer.connect(firstSocket), null)
     const firstReady = firstSocket.lastEvent("session:ready")
 
+    assert.equal(serverToClientSchemas["session:ready"].safeParse(firstReady).success, true)
     assert.equal(firstReady.version, 1)
     assert.equal(firstReady.resumed, false)
     assert.equal(firstReady.token.length, 43)
@@ -157,4 +171,96 @@ test("bootstrap은 partial credential을 인증 오류로 반환한다", () => {
     assert.equal(error.data.code, "SESSION_CREDENTIALS_INCOMPLETE")
     assert.equal(error.data.terminal, true)
     assert.equal(socket.lastEvent("session:ready"), undefined)
+})
+
+test("bootstrap은 strict auth unknown key를 session authenticate 전에 거부한다", () => {
+    const socketServer = new FakeSocketServer()
+    registerTestHandlers(socketServer)
+    const socket = new FakeSocket("socket-unknown-auth", {
+        nickname: "Player",
+        unknown: true,
+    })
+
+    const error = socketServer.connect(socket)
+
+    assert.equal(error.data.code, "SESSION_CREDENTIALS_MALFORMED")
+    assert.equal(error.data.terminal, true)
+    assert.equal(socket.lastEvent("session:ready"), undefined)
+})
+
+test("실제 socket handlers의 PVP emit payload가 S2C 계약을 통과한다", async () => {
+    const socketServer = new FakeSocketServer()
+    registerTestHandlers(socketServer)
+    const hostSocket = new FakeSocket("contract-host-socket", { nickname: "Host" })
+    const guestSocket = new FakeSocket("contract-guest-socket", { nickname: "Guest" })
+    assert.equal(socketServer.connect(hostSocket), null)
+    assert.equal(socketServer.connect(guestSocket), null)
+
+    hostSocket.trigger("room:create", { mode: "pvp" })
+    const roomId = hostSocket.lastEvent("room:result").room.roomId
+    guestSocket.trigger("room:join", { roomId })
+    await hostSocket.triggerAsync("room:start", { roomId })
+    hostSocket.trigger("global:chat", { text: "hello" })
+    guestSocket.trigger("room:chat", { roomId, text: "hello" })
+    hostSocket.trigger("game:join", { roomId })
+    guestSocket.trigger("game:join", { roomId })
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        action: "hold",
+        tick: 1,
+        pieceIndex: 1,
+        clientSequence: 1,
+    })
+    hostSocket.trigger("game:bag:request", { roomId })
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 1,
+            gameId: `${roomId}-game`,
+            pieceIndex: 1,
+            boardBefore: [[null]],
+            boardAfter: [["square"]],
+            selectedPlacement: {
+                pieceType: "square",
+                rotation: 0,
+                row: 18,
+                col: 4,
+            },
+        },
+    })
+    hostSocket.trigger("game:leave", { roomId })
+
+    const emitted = [
+        ...hostSocket.events,
+        ...guestSocket.events,
+        ...hostSocket.roomEvents,
+        ...guestSocket.roomEvents,
+        ...socketServer.globalEvents,
+        ...socketServer.roomEvents,
+    ].filter(event => serverToClientSchemas[event.eventName])
+    const names = new Set(emitted.map(event => event.eventName))
+    for (const event of emitted) {
+        assert.equal(
+            serverToClientSchemas[event.eventName].safeParse(event.payload).success,
+            true,
+            event.eventName,
+        )
+    }
+    for (const eventName of [
+        "session:ready",
+        "global:message",
+        "room:message",
+        "room:result",
+        "room:updated",
+        "game:join:result",
+        "game:input:result",
+        "game:log:result",
+        "game:bag:result",
+        "game:leave:result",
+        "game:opponent-left",
+        "game:authoritative:snapshot",
+    ]) {
+        assert.equal(names.has(eventName), true, eventName)
+    }
 })
