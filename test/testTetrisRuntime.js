@@ -1724,3 +1724,133 @@ test("runtime은 연속 Tetris에 combo와 back-to-back 보너스를 적용한�
     assert.equal(secondLog.placementResult.combo, 1);
     assert.equal(secondLog.placementResult.backToBack, true);
 });
+
+test("display bridge는 HUD 불변 이동을 알리지 않고 hold와 hard drop 최종 상태만 알린다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+    game.init({ autoStart: true });
+
+    const snapshots = [];
+    game.subscribeDisplay(() => {
+        snapshots.push(game.getDisplaySnapshot());
+    });
+
+    let targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.MOVE_LEFT, targetTick, game.runtime.pieceIndex);
+    await waitForTick(game, targetTick);
+    assert.equal(snapshots.length, 0);
+
+    targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HOLD, targetTick, game.runtime.pieceIndex);
+    await waitForTick(game, targetTick);
+    assert.equal(snapshots.length, 1);
+    assert.notEqual(snapshots[0].holdPieceType, null);
+
+    snapshots.length = 0;
+    targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, targetTick, game.runtime.pieceIndex);
+    await waitForTick(game, targetTick);
+    assert.equal(snapshots.length, 1);
+});
+
+test("display bridge는 applySnapshot과 init의 최종 표시 상태만 한 번 알린다", async (t) => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+    game.init({ autoStart: false });
+
+    let calls = 0;
+    game.subscribeDisplay(() => {
+        calls += 1;
+    });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        score: 20,
+        lines: 2,
+        holdPieceType: "tree",
+        pieceQueue: ["bar", "square"],
+        phase: "gameOver",
+    });
+    assert.equal(calls, 1);
+    assert.deepEqual(game.getDisplaySnapshot(), {
+        score: 20,
+        lines: 2,
+        holdPieceType: "tree",
+        nextPieceTypes: ["bar", "square"],
+        phase: "gameOver",
+    });
+
+    calls = 0;
+    game.init({ autoStart: false });
+    assert.equal(calls, 1);
+    assert.equal(game.getDisplaySnapshot().phase, "playing");
+});
+
+test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playing을 각각 알린다", async (t) => {
+    const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
+    const originalCancelAnimationFrame = globalThis.cancelAnimationFrame;
+    const originalGetComputedStyle = globalThis.getComputedStyle;
+    const animationCallbacks = new Map();
+    let nextAnimationFrameId = 1;
+    globalThis.requestAnimationFrame = (callback) => {
+        const frameId = nextAnimationFrameId++;
+        animationCallbacks.set(frameId, callback);
+        return frameId;
+    };
+    globalThis.cancelAnimationFrame = frameId => animationCallbacks.delete(frameId);
+    globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+    t.after(() => {
+        globalThis.requestAnimationFrame = originalRequestAnimationFrame;
+        globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
+        globalThis.getComputedStyle = originalGetComputedStyle;
+    });
+
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        boardCanvasEl: createFakeCanvas(),
+        rng: () => 0,
+    });
+    t.after(() => game.destroy());
+
+    const board = createEmptyBoard();
+    board[19] = Array(10).fill("bar");
+    board[19][4] = null;
+    board[19][5] = null;
+    game.init({ autoStart: true, serverBagChunks: [["square"]] });
+    game.applySnapshot({
+        ...game.getSnapshot(),
+        board,
+        activePiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pendingPiece: {
+            pieceType: "square",
+            rotation: 0,
+            row: 18,
+            col: 4,
+        },
+        pieceQueue: [],
+        phase: "playing",
+        tick: 90,
+        pieceIndex: 20,
+    }, { resumeGravity: true });
+
+    const phases = [];
+    game.subscribeDisplay(() => {
+        phases.push(game.getDisplaySnapshot().phase);
+    });
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.SOFT_DROP, targetTick, 20);
+    await waitForTick(game, targetTick);
+
+    assert.deepEqual(phases, ["lineClearing"]);
+    const animationCallback = [...animationCallbacks.values()][0];
+    assert.equal(typeof animationCallback, "function");
+    animationCallback(performance.now() + 400);
+    assert.deepEqual(phases, ["lineClearing", "playing"]);
+    assert.equal(game.getDisplaySnapshot().lines, 1);
+});

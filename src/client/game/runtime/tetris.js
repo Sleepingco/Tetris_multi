@@ -16,6 +16,7 @@ import {
 import { createSpawnedPiece, getHardDropRow } from "../core/piece.js"
 import { isTSpinLock } from "../core/tSpin.js"
 import { playLineClearSfx } from "./sound.js"
+import { createRuntimeDisplayBridge } from "./displayBridge.js"
 import { INPUT_ACTION } from "./input.js"
 import {
     BOARD_ROWS,
@@ -141,6 +142,14 @@ export function createTetrisRuntime({
         renderHoldPiece: renderHoldPieceDom,
     })
 
+    const displayBridge = createRuntimeDisplayBridge(() => ({
+        score: gameState.score,
+        lines: gameState.lines,
+        holdPieceType: gameState.holdPieceType,
+        nextPieceTypes: [gameState.pieceQueue[0], gameState.pieceQueue[1]],
+        phase: gameState.phase,
+    }))
+
     // =============================
     // 게임 초기화
     // 런타임 상태, 미리보기, 첫 스폰까지 새 세션 기준으로 다시 구성한다.
@@ -175,6 +184,7 @@ export function createTetrisRuntime({
             startInputLoop()
             startNextTurn()
         }
+        displayBridge.publishDisplay()
     }
 
     /**
@@ -245,6 +255,7 @@ export function createTetrisRuntime({
         if (!currentType) {
             stopGravity()
             console.error("No piece available for the next turn.")
+            displayBridge.publishDisplay()
             return
         }
         const nextActivePiece = createSpawnedPiece(currentType, SPAWN_ROW, SPAWN_COL)
@@ -660,6 +671,7 @@ export function createTetrisRuntime({
     function renderBlocks(moveType = "", options = {}) {
         const moveResult = resolvePendingMove(moveType)
         applyMoveIntent(moveResult, options)
+        displayBridge.publishDisplay()
         return moveResult
     }
 
@@ -877,6 +889,7 @@ export function createTetrisRuntime({
       * @returns {void}
       */
     function destroy() {
+        displayBridge.destroyDisplay()
         stopGameLoops()
         runtime.detachKeyboard?.()
         runtime.detachKeyboard = null
@@ -1423,6 +1436,7 @@ export function createTetrisRuntime({
             if (runtime.inputTimer === undefined) startInputLoop()
             startGravity()
         }
+        displayBridge.publishDisplay()
     }
 
     /**
@@ -1450,6 +1464,7 @@ export function createTetrisRuntime({
         runtime.serverBagQueue.push(...chunk)
         refillSpawnQueue()
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
+        displayBridge.publishDisplay()
     }
 
     /**
@@ -1505,6 +1520,8 @@ export function createTetrisRuntime({
         stop: stopGameLoops,
         destroy,
         getSnapshot,
+        getDisplaySnapshot: displayBridge.getDisplaySnapshot,
+        subscribeDisplay: displayBridge.subscribeDisplay,
         applySnapshot,
         playLineClearPresentation,
         getPendingInputCount,

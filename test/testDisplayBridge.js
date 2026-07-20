@@ -1,0 +1,46 @@
+const test = require("node:test");
+const assert = require("node:assert/strict");
+
+test("display bridge는 변경된 표시 값만 새 snapshot으로 알린다", async () => {
+    const { createRuntimeDisplayBridge } = await import(
+        "../src/client/game/runtime/displayBridge.js"
+    );
+    const values = {
+        score: 0,
+        lines: 0,
+        holdPieceType: null,
+        nextPieceTypes: ["tree", "bar", "square"],
+        phase: "playing",
+    };
+    const bridge = createRuntimeDisplayBridge(() => values);
+    const first = bridge.getDisplaySnapshot();
+    let calls = 0;
+    const callback = () => {
+        calls += 1;
+    };
+    const unsubscribeFirst = bridge.subscribeDisplay(callback);
+    const unsubscribeSecond = bridge.subscribeDisplay(callback);
+
+    assert.equal(bridge.publishDisplay(), false);
+    assert.equal(bridge.getDisplaySnapshot(), first);
+    assert.equal(calls, 0);
+    assert.deepEqual(first.nextPieceTypes, ["tree", "bar"]);
+
+    values.score = 1;
+    assert.equal(bridge.publishDisplay(), true);
+    assert.notEqual(bridge.getDisplaySnapshot(), first);
+    assert.equal(calls, 2);
+
+    unsubscribeFirst();
+    unsubscribeFirst();
+    values.lines = 1;
+    bridge.publishDisplay();
+    assert.equal(calls, 3);
+
+    unsubscribeSecond();
+    bridge.destroyDisplay();
+    bridge.destroyDisplay();
+    values.phase = "gameOver";
+    assert.equal(bridge.publishDisplay(), false);
+    assert.equal(calls, 3);
+});
