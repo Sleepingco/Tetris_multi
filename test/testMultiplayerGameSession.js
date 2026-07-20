@@ -5,6 +5,8 @@ class FakeSocket {
     constructor() {
         this.handlers = new Map();
         this.emitted = [];
+        this.connected = false;
+        this.id = "game-session-test-socket";
     }
 
     on(eventName, handler) {
@@ -26,6 +28,18 @@ class FakeSocket {
     emitServer(eventName, payload) {
         this.handlers.get(eventName)?.forEach(handler => {
             handler(payload);
+        });
+    }
+
+    connect() {
+        this.connected = true;
+        this.emitServer("connect");
+        this.emitServer("session:ready", {
+            version: 1,
+            playerId: "me",
+            token: "a".repeat(43),
+            nickname: "Player",
+            expiresAt: Date.now() + 60_000,
         });
     }
 }
@@ -159,6 +173,18 @@ function installBrowserStubs(fakeSocket) {
             return null;
         },
         setItem() {},
+    };
+    const sessionValues = new Map([["tetris:nickname", "Player"]]);
+    globalThis.sessionStorage = {
+        getItem(key) {
+            return sessionValues.get(key) ?? null;
+        },
+        setItem(key, value) {
+            sessionValues.set(key, value);
+        },
+        removeItem(key) {
+            sessionValues.delete(key);
+        },
     };
     globalThis.requestAnimationFrame = () => 0;
     globalThis.cancelAnimationFrame = () => {};
@@ -427,7 +453,7 @@ test("내 키보드 입력은 game:input으로 서버에 전송된다", async (t
 
     assert.equal(userInteractionCount, 1);
     assert.equal(inputEvent.payload.roomId, "room-1");
-    assert.equal(inputEvent.payload.playerId, "player-me");
+    assert.equal(inputEvent.payload.playerId, undefined);
     assert.equal(inputEvent.payload.action, "move_left");
     assert.deepEqual(inputEvent.payload.expectedTransform, {
         pieceType: "tree",
@@ -804,7 +830,6 @@ test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조�
     });
     assert.deepEqual(inputEvent.payload, {
         roomId: "room-1",
-        playerId: "player-me",
         action: "soft_drop",
         tick: inputEvent.payload.tick,
         pieceIndex,

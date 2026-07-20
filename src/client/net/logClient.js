@@ -1,12 +1,11 @@
-import { getServerConnection } from "./roomClient.js"
+import {
+    getServerConnection,
+    sendPlacementDecisionLogEvent,
+} from "./roomClient.js"
 
 export function sendPlacementDecisionLog(roomId, playerId, log) {
     try {
-        getServerConnection().emit("game:log:placement_decision", {
-            roomId,
-            playerId,
-            log,
-        })
+        sendPlacementDecisionLogEvent(roomId, log)
     } catch (error) {
         console.warn("placement_decision log send failed:", error)
     }

@@ -7,6 +7,7 @@ import {
     requestGameBagChunk,
     receiveGameBagAppend,
     onGameBagResult,
+    onSessionDisconnected,
 } from "../../net/roomClient.js"
 import { sendPlacementDecisionLog } from "../../net/logClient.js"
 import { evaluateOwnSnapshotCorrection } from "../runtime/snapshotCorrection.js"
@@ -69,9 +70,6 @@ export function startMultiplayerGame({
     const settledPlacementAttemptKeys = new Set()
     let placementLogBufferClosed = false
     let hasAuthoritativeGameOver = false
-
-    console.log("my bag chunks:", myBagChunks)
-    console.log("opponent bag chunks:", opponentBagChunks)
 
     const myGame = createTetrisRuntime({
         boardCanvasEl: myCanvas,
@@ -230,12 +228,7 @@ export function startMultiplayerGame({
         const expectedTransform = createExpectedTransform(outcome)
         const clientSequence = nextClientSequence
         nextClientSequence += 1
-        registerTerminalPlacementInput(outcome, clientSequence)
-        pendingServerInputs.set(clientSequence, {
-            ...outcome.input,
-            ...(expectedTransform ? { expectedTransform } : {}),
-        })
-        sendGameInput(
+        const didSend = sendGameInput(
             roomId,
             playerId,
             outcome.input.action,
@@ -244,6 +237,19 @@ export function startMultiplayerGame({
             clientSequence,
             expectedTransform,
         )
+        if (!didSend) {
+            settlePlacementAttempt(createPlacementAttemptKey(
+                outcome.input.pieceIndex,
+                outcome.input.tick,
+            ))
+            return
+        }
+
+        registerTerminalPlacementInput(outcome, clientSequence)
+        pendingServerInputs.set(clientSequence, {
+            ...outcome.input,
+            ...(expectedTransform ? { expectedTransform } : {}),
+        })
     }
 
     myGame.runtime.detachKeyboard = attachKeyboardInput({
@@ -496,6 +502,13 @@ export function startMultiplayerGame({
         hasPendingBagRequest = false
         console.warn("game:bag failed:", result.reason)
     })
+    const detachSessionDisconnected = onSessionDisconnected(() => {
+        pendingServerInputs.clear()
+        discardPlacementLogBuffer()
+        deferredOwnSnapshot = null
+        pendingOwnDriftState = null
+        hasPendingBagRequest = false
+    })
 
     return {
         myGame,
@@ -505,5 +518,6 @@ export function startMultiplayerGame({
         detachGameInputResult,
         detachGameBagAppend,
         detachGameBagResult,
+        detachSessionDisconnected,
     }
 }

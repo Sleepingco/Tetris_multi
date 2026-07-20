@@ -156,7 +156,18 @@
         import { applySavedTheme, toggleTheme } from "../game/entry/theme.ts"
         import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.js"
         import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js"
-        import { requestJoinGameRoom, onGameJoinResult, onPveAiPolicy, leaveGame, onGameOpponentLeft, onMatchFinish, requestLeaveRoom } from "../net/roomClient.js"
+        import {
+            getPlayerSession,
+            requestJoinGameRoom,
+            onGameJoinResult,
+            onPveAiPolicy,
+            leaveGame,
+            onGameOpponentLeft,
+            onMatchFinish,
+            onSessionReady,
+            onSessionError,
+            requestLeaveRoom,
+        } from "../net/roomClient.js"
         import { onPlacementDecisionLogResult } from "../net/logClient.js"
         const soundToggleBtn = queryElement(document, "#soundToggle")
         const themeToggleBtn = queryElement(document, "#themeToggle")
@@ -232,7 +243,7 @@
         }
 
         // 세션에서 방 정보와 player 정보를 불러온다. 서버 검증 실패 시 로비로 되돌린다.
-        const playerId = sessionStorage.getItem("tetris:playerId")
+        const playerId = getPlayerSession()?.playerId
         const room = readStoredRoom()
 
         if (!hasValidRoomSession(room, playerId)) {
@@ -244,12 +255,6 @@
             const myRole = playerId === room.hostPlayerId ? "host" : "guest"
             const isPveMode = room.mode === "pve"
             const cleanupSound = initGameSound(soundToggleBtn)
-
-            console.log("room : ", room)
-            console.log("playerId : ", playerId)
-            console.log("hostPlayer : ", hostPlayer)
-            console.log("guestPlayer : ", guestPlayer)
-            console.log("myRole : ", myRole)
 
             if (player1Name) {
                 player1Name.textContent = hostPlayer?.nickname || "Host"
@@ -308,16 +313,12 @@
             const opponentHoldPreviewEl = myRole === "host" ? player2HoldPreview : player1HoldPreview
             const opponentPendingGarbageEl = myRole === "host" ? player2PendingGarbage : player1PendingGarbage
 
-            console.log("myCanvas : ", myCanvas)
-            console.log("opponentCanvas : ", opponentCanvas)
-
             const player1Column = queryElement(document, '[data-player="1"]')
             const player2Column = queryElement(document, '[data-player="2"]')
             const myColumn = myRole === "host" ? player1Column : player2Column
             myColumn?.classList.add("is-mine")
 
             let gameSession = null
-            let shouldNotifyGameLeave = true
             let hasMatchFinished = false
             const updatePveAiPolicyBadge = (policy) => {
                 if (policy.roomId !== roomId || policy.playerId !== guestPlayer?.playerId) return
@@ -355,6 +356,7 @@
                 gameSession.detachGameInputResult()
                 gameSession.detachGameBagAppend()
                 gameSession.detachGameBagResult()
+                gameSession.detachSessionDisconnected()
                 gameSession.myGame.destroy()
                 gameSession.opponentGame.destroy()
                 gameSession = null
@@ -369,8 +371,6 @@
 
             function handleHomeClick(event) {
                 event.preventDefault()
-                shouldNotifyGameLeave = false
-
                 if (hasMatchFinished) {
                     requestLeaveRoom(roomId, playerId)
                 } else {
@@ -398,7 +398,6 @@
 
                 setPlayerGameText("1", hostResultText)
                 setPlayerGameText("2", guestResultText)
-                shouldNotifyGameLeave = false
                 addLobbyButton(myRole === "host" ? "1" : "2", () => {
                     location.replace("./multiLobby.html")
                 })
@@ -423,8 +422,6 @@
 
                 const opponentPlayerId = myRole === "host" ? guestPlayer?.playerId : hostPlayer?.playerId
 
-                console.log("game:join result:", result)
-
                 gameSession = startMultiplayerGame({
                     roomId,
                     playerId,
@@ -447,7 +444,16 @@
                 })
             })
 
-            requestJoinGameRoom(roomId, playerId)
+            const detachSessionReady = onSessionReady((session) => {
+                if (session.playerId !== playerId) {
+                    redirectToLobby()
+                    return
+                }
+                requestJoinGameRoom(roomId, playerId)
+            })
+            const detachSessionError = onSessionError(({ terminal }) => {
+                if (terminal) redirectToLobby()
+            })
 
             onGameOpponentLeft(({ room: updatedRoom }) => {
                 cleanupGameSession()
@@ -455,7 +461,6 @@
                     sessionStorage.setItem("tetris:roomId", updatedRoom.roomId)
                     sessionStorage.setItem("room", JSON.stringify(updatedRoom))
                 }
-                shouldNotifyGameLeave = false
                 location.replace("./multiLobby.html")
             })
             window.addEventListener("pagehide", () => {
@@ -463,10 +468,9 @@
                 themeToggleBtn?.removeEventListener("click", onToggleTheme)
                 homeBtn?.removeEventListener("click", handleHomeClick)
                 detachMatchFinish()
+                detachSessionReady()
+                detachSessionError()
                 cleanupSound?.()
-                if (shouldNotifyGameLeave) {
-                    leaveGame(roomId, playerId);
-                }
                 cleanupGameSession()
             }, { once: true })
         }

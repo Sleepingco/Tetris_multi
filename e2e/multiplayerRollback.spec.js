@@ -5,6 +5,7 @@ const {
     createPlayerPages,
     enterTwoPlayerMatch,
     pressRapidInputCombination,
+    readPlayerSession,
     readBottomBoardState,
     waitForBoardConvergence,
     waitForBoardStabilityAcrossSnapshots,
@@ -145,8 +146,8 @@ test("Host와 Guest의 연속 placement가 양방향 수렴하고 rollback되지
     try {
         await enterTwoPlayerMatch(hostPage, guestPage);
         const [hostPlayerId, guestPlayerId] = await Promise.all([
-            hostPage.evaluate(() => sessionStorage.getItem("tetris:playerId")),
-            guestPage.evaluate(() => sessionStorage.getItem("tetris:playerId")),
+            readPlayerSession(hostPage).then(session => session.playerId),
+            readPlayerSession(guestPage).then(session => session.playerId),
         ]);
 
         await runPlacementSequence({

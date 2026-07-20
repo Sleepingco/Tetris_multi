@@ -177,6 +177,8 @@
             sendRoomChat,
             onGlobalMessage,
             onChatResult,
+            onSessionReady,
+            onSessionError,
         } from "../net/roomClient.js"
 
         // =============================
@@ -294,6 +296,8 @@
         const cleanupSound = initLobbySound(soundToggleBtn)
         let detachGlobalMessage = null
         let detachChatResult = null
+        let detachSessionReady = null
+        let detachSessionError = null
 
         window.addEventListener("pagehide", () => {
             themeToggleBtn?.removeEventListener("click", onToggleTheme)
@@ -302,6 +306,8 @@
             primaryActionBtn.removeEventListener("click", onClickPrimaryAction)
             detachGlobalMessage?.()
             detachChatResult?.()
+            detachSessionReady?.()
+            detachSessionError?.()
             cleanupSound?.()
         }, { once: true })
 
@@ -328,16 +334,8 @@
             sessionStorage.setItem("tetris:nickname", guestNickname)
             return guestNickname
         }
-        function getSavedPlayerId() {
-            const savedPlayerId = sessionStorage.getItem("tetris:playerId")
-            if (savedPlayerId) return savedPlayerId
-
-            const playerId = crypto.randomUUID()
-            sessionStorage.setItem("tetris:playerId", playerId)
-            return playerId
-        }
         const currentPlayer = {
-            playerId: getSavedPlayerId(),
+            playerId: null,
             nickname: getSavedNickname(),
         }
 
@@ -394,14 +392,8 @@
         playerAvatarChar.textContent = currentPlayer.nickname.charAt(0).toUpperCase()
         renderPrimaryAction(null)
 
-        // 세션에 저장된 룸 ID가 있는 경우 UI 반영 및 자동 방 참가 요청
-        const savedRoomId = sessionStorage.getItem("tetris:roomId")
-        if (savedRoomId) {
-            requestRoomSync(savedRoomId, currentPlayer.playerId)
-        } else {
-            updateRoomBadge(null)
-            showJoinByCodeControls()
-        }
+        updateRoomBadge(null)
+        showJoinByCodeControls()
 
         openCreateRoomBtn?.addEventListener("click", showCreateRoomControls)
         backToJoinBtn?.addEventListener("click", showJoinByCodeControls)
@@ -515,7 +507,6 @@
             if (room.status === "playing") {
                 // 서버의 room:updated broadcast가 로비에서 게임 화면으로 넘어가는 트리거다.
                 saveRoomSession(room)
-                sessionStorage.setItem("tetris:playerId", currentPlayer.playerId);
                 location.href = `/pages/tetrisMulti.html?roomId=${room.roomId}`
                 return;
             }
@@ -540,6 +531,21 @@
         detachChatResult = onChatResult((result) => {
             if (!result || result.ok) return
             appendMessage("system", result.reason || "CHAT_ERROR")
+        })
+
+        detachSessionReady = onSessionReady((session) => {
+            currentPlayer.playerId = session.playerId
+            currentPlayer.nickname = session.nickname
+            playerNicknameText.textContent = session.nickname
+            playerAvatarChar.textContent = session.nickname.charAt(0).toUpperCase()
+
+            const savedRoomId = sessionStorage.getItem("tetris:roomId")
+            if (savedRoomId) {
+                requestRoomSync(savedRoomId, session.playerId)
+            }
+        })
+        detachSessionError = onSessionError(({ terminal }) => {
+            if (terminal) clearRoom()
         })
 
         // requestType은 서버 응답 필드가 아니라 roomClient가 기억한 마지막 요청 종류다.

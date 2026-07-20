@@ -42,6 +42,11 @@ async function createWaitingRoom(hostPage, guestPage) {
         hostPage.goto("/pages/multiLobby.html"),
         guestPage.goto("/pages/multiLobby.html"),
     ]);
+    await Promise.all([hostPage, guestPage].map(page => {
+        return expect.poll(() => page.evaluate(() => {
+            return sessionStorage.getItem("tetris:playerSession") !== null;
+        })).toBe(true);
+    }));
 
     await hostPage.locator("#btnOpenCreateRoom").click();
     await hostPage.locator("#btnCreateRoom").click();
@@ -195,10 +200,9 @@ function parseAuthoritativeSnapshotFrame(payload) {
 function parseGameInputFrame(payload) {
     const [eventName, eventPayload] = parseSocketIoFrame(payload) || [];
     if (eventName !== GAME_INPUT_EVENT) return null;
-    if (!eventPayload?.playerId || !Number.isInteger(eventPayload.clientSequence)) return null;
+    if (!Number.isInteger(eventPayload?.clientSequence)) return null;
 
     return {
-        playerId: eventPayload.playerId,
         action: eventPayload.action,
         pieceIndex: eventPayload.pieceIndex,
         clientSequence: eventPayload.clientSequence,
@@ -257,8 +261,8 @@ function createAuthoritativeSnapshotMonitor(page) {
                 .filter(event => !playerId || event.playerId === playerId)
                 .slice(-limit);
         },
-        getSentGameInputCount(playerId) {
-            return sentGameInputs.filter(event => !playerId || event.playerId === playerId).length;
+        getSentGameInputCount() {
+            return sentGameInputs.length;
         },
         dispose() {
             page.off("websocket", onWebSocket);
@@ -269,6 +273,13 @@ function createAuthoritativeSnapshotMonitor(page) {
             socketListeners.clear();
         },
     };
+}
+
+async function readPlayerSession(page) {
+    return page.evaluate(() => {
+        const value = sessionStorage.getItem("tetris:playerSession");
+        return value ? JSON.parse(value) : null;
+    });
 }
 
 /**
@@ -471,6 +482,7 @@ module.exports = {
     enterTwoPlayerMatch,
     hardDropUntilMatchFinishes,
     pressRapidInputCombination,
+    readPlayerSession,
     readBottomBoardFingerprint,
     readBottomBoardState,
     startWaitingMatch,
