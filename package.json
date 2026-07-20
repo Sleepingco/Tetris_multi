@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.client.json && tsc -p tsconfig.server.json && tsc -p tsconfig.test.json",
     "build": "vite build",
     "test": "node --test",
+    "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "dataset:export": "node scripts/export-placement-dataset.js",
     "dataset:evaluate": "node scripts/evaluate-placement-dataset.js",

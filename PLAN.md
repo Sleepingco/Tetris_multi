@@ -69,7 +69,8 @@
 - Node 24 clean install, typecheck, build와 Node test를 포함한 `bash scripts/verify.sh`가 통과했다. Node test는 542개 중 541개 통과, 기존 조건부 1개 skip이다.
 - 전체 Playwright 최종 재실행은 16/16 통과했다. 첫 전체 실행에서 기존 PVE timing assertion 1건이 실패했으나 단독 재실행, 전체 재실행과 3회 반복이 모두 통과해 코드 변경 없이 timing 변동 위험으로 기록했다.
 - production dependency만 설치한 runtime에서 `/`, 네 page, CSS/JS/MP3와 Socket.IO client를 HTTP 200으로 확인했고 source map 요청은 404였다.
-- 수동 사람 조작 2탭 회귀는 수행하지 않았다. 자동 Playwright가 실제 click navigation, single Canvas 결과, 두 browser context PVP와 PVE 흐름을 검증했다.
+- production build를 실제 브라우저 세 탭에서 수동 검증했다. root→single과 root→lobby, 두 탭 PVP 생성·참가·시작·입력, heuristic PVE 시작·종료·로비 복귀가 통과했다.
+- theme/sound 토글, Canvas 렌더, hashed CSS와 세 MP3 resource를 확인했고 세 탭의 browser console error는 0개였다.
 - Goal 1은 merge gate에서 멈추며 push, main merge와 Goal 2는 별도 승인 전 수행하지 않는다.
 
 ## Project Direction
@@ -333,7 +334,7 @@
   - `src/server/init.js`를 로드한다.
 - `src/server/init.js`
   - Express static server, HTTP server, Socket.IO server를 조립한다.
-  - static root는 `src/client`다.
+  - production static root는 `dist/client`다.
 - `src/server/services/roomService.js`
   - `Map` 기반 메모리 room 상태를 관리한다.
   - `createRoom`, `joinRoom`, `removePlayer`, `removePlayerBySocketId`, `leaveRoom`, `startGame`, `leaveGame`, `syncRoom`, `finishGame`, `getRoomState`를 제공한다.
