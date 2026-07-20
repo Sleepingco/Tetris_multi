@@ -16,7 +16,8 @@
 - `subscribe()`와 정확한 unsubscribe
 - runtime `destroy()`와 keyboard/timer/listener cleanup
 - StrictMode 이중 mount에 안전한 lifecycle
-- score, lines, hold, next와 phase를 작은 단위로 React HUD에 이전
+- 기존 single 화면에 표시되던 score, hold, next와 phase/game-over를 작은 단위로 React HUD에 이전
+- lines는 display snapshot 계약과 unit/integration test에 포함하되 기존 single 화면에 visible HUD를 추가하지 않음
 - 기존 Canvas renderer와 input runtime 재사용
 
 ## 제외 범위
@@ -28,6 +29,7 @@
 ## 허용되는 기능·프로토콜 변화
 
 없음. 표시 상태 계약은 추가할 수 있지만 gameplay state 의미는 유지한다.
+gameplay state, 점수 계산, line 계산과 protocol 의미는 변경하지 않는다.
 
 ## 완료 기준과 검증
 
