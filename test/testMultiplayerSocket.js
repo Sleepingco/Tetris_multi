@@ -2054,6 +2054,75 @@ test("game:input server lock gameOver는 match finish와 ticker 정리를 처리
     })
 })
 
+test("game:input hold block-out은 snapshot과 match finish를 한 번만 전송한다", async () => {
+    const stoppedRoomIds = []
+    const savedLogs = []
+    const fixture = await createStartedPvpSocketFixture("hold-block-out", {
+        authoritativeTickerService: {
+            startRoomTicker() {
+                return { ok: true, started: true }
+            },
+            resetPlayerGravity() {},
+            stopRoomTicker(roomId) {
+                stoppedRoomIds.push(roomId)
+                return { ok: true, stopped: true }
+            },
+        },
+        saveGameEventLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({ ok: true, log, reason: null })
+        },
+    })
+    const { socketServer, hostSocket, roomId, hostPlayer, hostPlayerId } = fixture
+    const gameCore = await loadGameCore()
+    const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS)
+    board[0][3] = "stack"
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 5,
+        col: 0,
+    }
+    hostPlayer.authoritativeState.board = board
+    hostPlayer.authoritativeState.activePiece = { ...activePiece }
+    hostPlayer.authoritativeState.pendingPiece = { ...activePiece }
+    hostPlayer.authoritativeState.pieceQueue = ["bar"]
+    hostPlayer.authoritativeState.holdPieceType = null
+    hostPlayer.authoritativeState.holdUsedThisDrop = false
+    hostPlayer.authoritativeState.pieceIndex = 1
+
+    await hostSocket.triggerAsync("game:input", {
+        roomId,
+        playerId: hostPlayerId,
+        action: "hold",
+        tick: 12,
+        pieceIndex: 1,
+        clientSequence: 1,
+    })
+
+    const snapshotEvents = socketServer.roomEvents.filter(event => {
+        return event.eventName === "game:authoritative:snapshot"
+            && event.payload.playerId === hostPlayerId
+    })
+    const finishEvents = socketServer.roomEvents.filter(event => {
+        return event.eventName === "match:finish"
+    })
+    const overLogs = savedLogs.filter(log => log.eventType === "game_over")
+
+    assert.equal(snapshotEvents.at(-1).payload.snapshot.phase, "gameOver")
+    assert.equal(snapshotEvents.at(-1).payload.snapshot.activePiece.pieceType, "")
+    assert.equal(finishEvents.length, 1)
+    assert.equal(finishEvents[0].payload.reason, "block_out")
+    assert.deepEqual(stoppedRoomIds, [roomId])
+    assert.equal(overLogs.length, 1)
+    assert.equal(overLogs[0].reason, "block_out")
+    assert.deepEqual(getMatchState(roomId), {
+        ok: false,
+        match: null,
+        reason: "MATCH_NOT_FOUND",
+    })
+})
+
 test("game:input 첫 move_left는 match 시작 직후 authoritativeState에 반영된다", async () => {
     const fixture = await createStartedPvpSocketFixture("authoritative-first-input")
     const { hostSocket, guestSocket, roomId, hostPlayer } = fixture

@@ -113,11 +113,15 @@ export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause
                 }
 
                 if (moveCause === "spawn") {
+                        const clearedPiece = {
+                                ...pendingPiece,
+                                pieceType: "",
+                        };
                         return {
                                 status: "gameOver",
                                 moveCause,
-                                active: { ...activePiece },
-                                pending: { ...pendingPiece },
+                                active: { ...clearedPiece },
+                                pending: { ...clearedPiece },
                         }
                 }
                 const reverted = { ...activePiece }

@@ -476,6 +476,36 @@ test("applyAuthoritativeInput은 attack이 없으면 pendingGarbageQueue를 boar
     assert.equal(playerState.board[19][1], "garbage");
 });
 
+test("applyAuthoritativeInput은 garbage 적용 후 막힌 spawn도 block-out 처리한다", async () => {
+    const gameCore = await loadGameCore();
+    const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS);
+    board[1][3] = "stack";
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board,
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["bar"],
+        pendingGarbageQueue: [{ lines: 1, holeCol: 0 }],
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.appliedGarbageLines, 1);
+    assert.equal(result.placementResult.gameOver, true);
+    assert.equal(result.placementResult.gameOverReason, "block_out");
+    assert.equal(playerState.board[0][3], "stack");
+    assert.equal(playerState.activePiece.pieceType, "");
+});
+
 test("applyAuthoritativeInput은 T-Spin Single placementResult scalar를 반영한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
@@ -657,6 +687,40 @@ test("applyAuthoritativeInput은 hard_drop으로 lock, score, next spawn을 처�
     assert.equal(playerState.pieceIndex, 2);
 });
 
+test("applyAuthoritativeInput은 막힌 next spawn에서 즉시 block-out 처리한다", async () => {
+    const gameCore = await loadGameCore();
+    const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS);
+    board[0][3] = "stack";
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 18,
+        col: 3,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board,
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["bar"],
+        pieceIndex: 1,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hard_drop",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.placementResult.gameOver, true);
+    assert.equal(result.placementResult.gameOverReason, "block_out");
+    assert.equal(result.placementResult.nextPiece, null);
+    assert.equal(playerState.phase, "gameOver");
+    assert.equal(playerState.gameOver, true);
+    assert.equal(playerState.activePiece.pieceType, "");
+    assert.equal(playerState.pendingPiece, null);
+    assert.equal(playerState.pieceIndex, 2);
+    assert.deepEqual(playerState.pieceQueue, []);
+});
+
 test("applyAuthoritativeInput은 hard_drop 후 next spawn에서 lastActionWasRotation을 reset한다", async () => {
     const gameCore = await loadGameCore();
     const playerState = createPlayerState(gameCore, {
@@ -797,6 +861,41 @@ test("applyAuthoritativeInput은 첫 hold에서 현재 piece를 hold하고 다�
     });
     assert.deepEqual(playerState.pieceQueue, []);
     assert.equal(playerState.pieceIndex, 1);
+});
+
+test("applyAuthoritativeInput은 hold spawn이 막히면 즉시 block-out 처리한다", async () => {
+    const gameCore = await loadGameCore();
+    const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS);
+    board[0][3] = "stack";
+    const activePiece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 5,
+        col: 0,
+    };
+    const playerState = createPlayerState(gameCore, {
+        board,
+        activePiece,
+        pendingPiece: { ...activePiece },
+        pieceQueue: ["bar"],
+        pieceIndex: 1,
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "hold",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.holdResult.gameOver, true);
+    assert.equal(result.holdResult.gameOverReason, "block_out");
+    assert.equal(playerState.phase, "gameOver");
+    assert.equal(playerState.gameOver, true);
+    assert.equal(playerState.holdPieceType, "square");
+    assert.equal(playerState.holdUsedThisDrop, true);
+    assert.equal(playerState.activePiece.pieceType, "");
+    assert.equal(playerState.pendingPiece, null);
+    assert.equal(playerState.pieceIndex, 1);
+    assert.deepEqual(playerState.pieceQueue, []);
 });
 
 test("applyAuthoritativeInput은 hold 후 lastActionWasRotation을 reset한다", async () => {

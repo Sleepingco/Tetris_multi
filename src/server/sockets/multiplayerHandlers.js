@@ -364,7 +364,7 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                         createGarbageHoleCol,
                     )
 
-                    emitAuthoritativeSnapshot(
+                    const snapshot = emitAuthoritativeSnapshot(
                         socketServer,
                         roomId,
                         playerId,
@@ -383,7 +383,8 @@ function registerMultiplayerHandlers(socketServer, clientSocket, dependencies = 
                         socketServer,
                         roomId,
                         playerId,
-                        gameplayResult?.placementResult,
+                        gameplayResult?.placementResult || gameplayResult?.holdResult,
+                        snapshot,
                         authoritativeTickerService,
                         saveEventLog,
                     )
@@ -637,15 +638,17 @@ async function handleServerGameOverResult(
     socketServer,
     roomId,
     loserPlayerId,
-    placementResult,
+    gameOverResult,
+    snapshot,
     authoritativeTickerService,
     saveEventLog,
 ) {
-    if (!placementResult?.gameOver) return
+    if (!gameOverResult?.gameOver && snapshot?.phase !== "gameOver") return
 
     await finishAuthoritativeMatch({
         roomId,
         loserPlayerId,
+        finishReason: gameOverResult?.gameOverReason,
         finishGame,
         stopRoomTicker: authoritativeTickerService.stopRoomTicker,
         emitMatchFinish(payload) {

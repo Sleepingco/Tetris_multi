@@ -318,6 +318,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
             await finishAuthoritativeMatch({
                 roomId,
                 loserPlayerId: playerId,
+                finishReason: stepResult.placementResult?.gameOverReason,
                 match,
                 finishGame,
                 stopRoomTicker,

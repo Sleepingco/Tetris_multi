@@ -363,6 +363,12 @@ kbd {
         text-align: center;
 }
 
+#aiPolicySelector .difficulty-option span {
+        padding-inline: 4px;
+        font-size: 0.75rem;
+        white-space: nowrap;
+}
+
 .difficulty-option input:checked + span {
         background: var(--panel);
         color: var(--text);

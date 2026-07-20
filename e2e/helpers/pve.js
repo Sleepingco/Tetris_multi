@@ -166,7 +166,7 @@ async function startPveMatch(page) {
     await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(32);
     await expect(page.locator("#player2Name")).toHaveText("Heuristic AI");
     await expect(page.locator("#player1RoleBadge")).toHaveText("내 보드");
-    await expect(page.locator("#player2RoleBadge")).toHaveText("AI 상대");
+    await expect(page.locator("#player2RoleBadge")).toHaveText("AI 상대 · 휴리스틱");
 }
 
 async function hardDropHumanUntilResult(page, maxDrops = 30) {

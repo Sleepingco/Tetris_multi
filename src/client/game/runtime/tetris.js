@@ -604,6 +604,7 @@ export function createTetrisRuntime({
         if (intent.kind === "gameOver") {
             runtime.automaticGroundedPieceIndex = null
             gameState.phase = GAME_PHASE.GAME_OVER
+            gameState.pendingPiece = null
             gameState.inputQueue = []
             runtime.decisionStartPiece = null
             stopGameLoops()

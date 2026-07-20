@@ -972,7 +972,7 @@ test("ticker callback은 마지막 player attack도 target snapshot을 즉시 em
     assert.equal(Object.hasOwn(p1SnapshotEvents[1].payload.snapshot, "pendingGarbageQueue"), false);
 });
 
-test("ticker callback은 server authoritative gameOver가 되면 match finish를 emit하고 ticker를 정리한다", async () => {
+test("ticker callback은 block-out reason으로 match finish를 emit하고 ticker를 정리한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();
     const finishedGames = [];
@@ -1000,6 +1000,7 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
                 placementResult: {
                     attackLines: 0,
                     gameOver: playerId === "p1",
+                    gameOverReason: playerId === "p1" ? "block_out" : undefined,
                 },
             };
         },
@@ -1055,7 +1056,7 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
     await runTickerCallbacks(scheduler, 5);
 
     assert.deepEqual(finishedGames, [
-        { roomId: "room-1", loserPlayerId: "p1", reason: "top_out" },
+        { roomId: "room-1", loserPlayerId: "p1", reason: "block_out" },
     ]);
     assert.deepEqual(deletedRoomIds, ["room-1"]);
     assert.deepEqual(scheduler.clearedIds, [intervalId]);
@@ -1067,7 +1068,7 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
         room: { roomId: "room-1", status: "finished" },
         winnerPlayerId: "p2",
         loserPlayerId: "p1",
-        reason: "top_out",
+        reason: "block_out",
     });
     assert.deepEqual(savedLogs.map(log => ({
         eventType: log.eventType,
@@ -1086,7 +1087,7 @@ test("ticker callback은 server authoritative gameOver가 되면 match finish를
             mode: "multi",
             winnerPlayerId: "p2",
             loserPlayerId: "p1",
-            reason: "top_out",
+            reason: "block_out",
             finishType: "normal",
         },
     ]);
