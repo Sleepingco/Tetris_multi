@@ -3,6 +3,10 @@
 // DOM 키보드 이벤트를 게임 액션으로 정규화한다.
 // =============================
 
+import type { InputAction } from "../state/stateFactory.ts";
+
+export type { InputAction };
+
 export const INPUT_ACTION = {
         MOVE_LEFT: "move_left",
         MOVE_RIGHT: "move_right",
@@ -10,9 +14,7 @@ export const INPUT_ACTION = {
         ROTATE: "rotate",
         HARD_DROP: "hard_drop",
         HOLD: "hold",
-} as const
-
-export type InputAction = typeof INPUT_ACTION[keyof typeof INPUT_ACTION];
+} as const satisfies Record<string, InputAction>
 
 const NON_REPEATABLE_ACTIONS = new Set<InputAction>([
         INPUT_ACTION.HOLD,
