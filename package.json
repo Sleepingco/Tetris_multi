@@ -12,6 +12,7 @@
     "test": "npm run build:server && npm run test:compiled",
     "test:compiled": "node --test",
     "test:artifact": "node --test test-artifact/serverBuildArtifact.js",
+    "test:release": "node --test test-artifact/productionRelease.js",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
     "test:e2e:vite-dev": "PLAYWRIGHT_VITE_DEV=1 playwright test e2e/reactShellLifecycle.spec.js e2e/singleReactLifecycle.spec.js e2e/multiplayerReactLifecycle.spec.js",

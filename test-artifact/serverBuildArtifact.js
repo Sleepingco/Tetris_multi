@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
 const { readdir, readFile } = require("node:fs/promises");
 const path = require("node:path");
 
@@ -14,6 +16,8 @@ const CLIENT_RUNTIME_SOURCE_ROOTS = [
     "src/client/game/ui",
     "src/client/net",
 ];
+const PLACEMENT_V4_MODEL_PATH = "server/assets/placement-v4-125g-experimental-model.json";
+const PLACEMENT_V4_MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d";
 
 async function listFiles(directory, prefix = "") {
     const files = [];
@@ -55,6 +59,17 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
     };
     assert.deepEqual(serverFiles.filter(file => !allowedServerArtifact(file)), []);
 
+    const sourceServerJavaScript = (await listFiles(path.join(ROOT, "src", "server")))
+        .filter(file => file.endsWith(".js"));
+    assert.deepEqual(sourceServerJavaScript, []);
+
+    const compiledJavaScript = serverFiles.filter(file => file.endsWith(".js"));
+    for (const relativePath of compiledJavaScript) {
+        const source = await readFile(path.join(SERVER_ROOT, relativePath), "utf8");
+        assert.doesNotMatch(source, /(?:from\s+|require\(|import\()["'][^"']+\.ts["']/);
+        assert.doesNotMatch(source, /sourceMappingURL/);
+    }
+
     const remainingClientRuntimeJavaScript = [];
     for (const sourceRoot of CLIENT_RUNTIME_SOURCE_ROOTS) {
         const sourceFiles = await listFiles(path.join(ROOT, sourceRoot));
@@ -88,6 +103,12 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
         "utf8",
     );
     assert.equal(outputManifest, sourceManifest);
+
+    const sourceModel = await readFile(path.join(ROOT, "src", "server", "assets", path.basename(PLACEMENT_V4_MODEL_PATH)));
+    const outputModel = await readFile(path.join(SERVER_ROOT, PLACEMENT_V4_MODEL_PATH));
+    assert.equal(outputModel.equals(sourceModel), true);
+    assert.equal(createHash("sha256").update(sourceModel).digest("hex"), PLACEMENT_V4_MODEL_SHA256);
+    assert.equal(createHash("sha256").update(outputModel).digest("hex"), PLACEMENT_V4_MODEL_SHA256);
 
     const { loadGameCore } = require(
         path.join(SERVER_ROOT, "server", "services", "gameCoreLoader.js")
@@ -147,4 +168,30 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
     assert.equal(decision.reason, "AI_PLAN_CREATED");
     assert.equal(decision.decision.policyUsed, "placement_v4");
     assert.equal(decision.decision.fallbackReason, null);
+    assert.equal(decision.decision.modelSha256, PLACEMENT_V4_MODEL_SHA256);
+
+    const stackTraceResult = spawnSync(
+        process.execPath,
+        [
+            "-e",
+            `const { createAuthoritativePlayerMutationQueue } = require(${JSON.stringify(
+                path.join(SERVER_ROOT, "server", "services", "authoritativePlayerMutationQueue.js"),
+            )}); createAuthoritativePlayerMutationQueue().enqueueAuthoritativePlayerMutation("room", "player", process.argv[1]).catch(error => { throw error; });`,
+            "sentinel-token-value",
+            "sentinel-session-value",
+        ],
+        {
+            cwd: ROOT,
+            encoding: "utf8",
+            env: {},
+        },
+    );
+    assert.notEqual(stackTraceResult.status, 0);
+    assert.match(stackTraceResult.stderr, /mutation must be a function/);
+    assert.match(
+        stackTraceResult.stderr,
+        /dist\/server\/server\/services\/authoritativePlayerMutationQueue\.js/,
+    );
+    assert.doesNotMatch(stackTraceResult.stderr, /src\/server|\.ts:\d|source-map/i);
+    assert.doesNotMatch(stackTraceResult.stderr, /sentinel-token-value|sentinel-session-value/);
 });
