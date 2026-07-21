@@ -64,6 +64,30 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
     assert.equal(core.BLOCKS.default, undefined);
     assert.equal(core.BLOCKS.tree.length, 4);
 
+    const board = core.createEmptyBoard(20, 10);
+    const activePiece = core.createSpawnedPiece("tree", -1, 3);
+    const inputIntent = core.resolveInputMoveIntent("move_left");
+    const pendingPiece = {
+        ...activePiece,
+        row: activePiece.row + inputIntent.rowDelta,
+        col: activePiece.col + inputIntent.colDelta,
+    };
+    const moveOutcome = core.resolveMoveAttempt({
+        board,
+        activePiece,
+        pendingPiece,
+        moveCause: inputIntent.moveType,
+        blocks: core.BLOCKS,
+        wallKicks: core.WALL_KICKS,
+    });
+    assert.equal(board.flat().every(cell => cell === null), true);
+    assert.deepEqual(moveOutcome, {
+        status: "ok",
+        moveCause: "horizontal",
+        active: { pieceType: "tree", rotation: 0, row: -1, col: 2 },
+        pending: { pieceType: "tree", rotation: 0, row: -1, col: 2 },
+    });
+
     const {
         createMatch,
         resetMatches,
