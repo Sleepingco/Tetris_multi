@@ -64,6 +64,7 @@ module.exports = defineConfig({
                 PORT: "5510",
                 GAME_EVENTS_LOG_PATH: gameEventsLogPath,
                 SOCKET_RATE_LIMIT_PROFILE: "test",
+                CSP_CONNECT_ORIGINS: "ws://127.0.0.1:5510",
             },
             reuseExistingServer: false,
             timeout: 15_000,

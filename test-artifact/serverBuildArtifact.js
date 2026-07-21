@@ -53,6 +53,7 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
             || file === "shared/socketContracts.mjs"
             || file === "server/assets/placement-v4-125g-experimental-model.json"
             || /^server\/(?:repositories|services|sockets|validators)\/.+\.js$/.test(file)
+            || file === "server/httpSecurity.js"
             || file === "server/init.js"
             || file === "server/socketSecurity.js"
             || /^client\/game\/(?:ai|core|state)\/.+\.js$/.test(file);
@@ -80,6 +81,33 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
         );
     }
     assert.deepEqual(remainingClientRuntimeJavaScript, []);
+
+    const {
+        CSP_INLINE_SCRIPT_HASHES,
+        CSP_INLINE_STYLE_HASHES,
+    } = require(path.join(SERVER_ROOT, "server", "httpSecurity.js"));
+    const inlineScriptHashes = [];
+    const inlineStyleHashes = [];
+    for (const pageName of ["index", "multiLobby", "tetrisSingle", "tetrisMulti"]) {
+        const html = await readFile(
+            path.join(DIST_ROOT, "client", "pages", `${pageName}.html`),
+            "utf8",
+        );
+        assert.doesNotMatch(html, /\sstyle\s*=/i);
+        assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
+
+        for (const match of html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)) {
+            if (/\bsrc\s*=/.test(match[1])) continue;
+            inlineScriptHashes.push(`'sha256-${createHash("sha256").update(match[2]).digest("base64")}'`);
+        }
+        for (const match of html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)) {
+            inlineStyleHashes.push(`'sha256-${createHash("sha256").update(match[1]).digest("base64")}'`);
+        }
+    }
+    assert.equal(inlineScriptHashes.length, 4);
+    assert.equal(inlineStyleHashes.length, 4);
+    assert.deepEqual([...new Set(inlineScriptHashes)].sort(), [...CSP_INLINE_SCRIPT_HASHES].sort());
+    assert.deepEqual([...new Set(inlineStyleHashes)].sort(), [...CSP_INLINE_STYLE_HASHES].sort());
 
     const compiledLoaderSource = await readFile(
         path.join(SERVER_ROOT, "server", "services", "gameCoreLoader.js"),

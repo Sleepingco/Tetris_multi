@@ -10,6 +10,15 @@ const ROOT = path.resolve(__dirname, "..");
 const MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d";
 const ALLOWED_ORIGIN = "http://127.0.0.1:5500";
 
+function assertSecurityHeaders(response) {
+    assert.match(response.headers.get("content-security-policy") || "", /default-src 'none'/);
+    assert.equal(response.headers.get("content-security-policy-report-only"), null);
+    assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+    assert.equal(response.headers.get("x-frame-options"), "DENY");
+    assert.equal(response.headers.get("referrer-policy"), "no-referrer");
+    assert.equal(response.headers.get("x-powered-by"), null);
+}
+
 async function listFiles(directory, prefix = "") {
     const files = [];
     for (const entry of await readdir(directory, { withFileTypes: true })) {
@@ -177,6 +186,7 @@ test("production dependencies만 있는 source-less release가 HTTP, PVP/PVE와 
                 NODE_ENV: "production",
                 PORT: String(port),
                 SOCKET_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
+                CSP_CONNECT_ORIGINS: "wss://socket.example.com",
             },
             stdio: ["ignore", "pipe", "pipe"],
         });
@@ -184,12 +194,32 @@ test("production dependencies만 있는 source-less release가 HTTP, PVP/PVE와 
         application.stderr.on("data", chunk => { applicationOutput += chunk; });
 
         const rootResponse = await waitForHttp(`http://127.0.0.1:${port}/`);
-        assert.match(await rootResponse.text(), /<div id="indexRoot"><\/div>/);
+        assertSecurityHeaders(rootResponse);
+        const rootHtml = await rootResponse.text();
+        assert.match(rootHtml, /<div id="indexRoot"><\/div>/);
+        const modulePath = rootHtml.match(/<script type="module"[^>]+src="([^"]+)"/)?.[1];
+        assert.ok(modulePath);
         const socketResponse = await waitForHttp(
             `http://127.0.0.1:${port}/socket.io/socket.io.js`,
             { headers: { Origin: ALLOWED_ORIGIN } },
         );
         assert.match(socketResponse.headers.get("content-type") || "", /javascript/);
+        assertSecurityHeaders(socketResponse);
+
+        const sourceResponse = await fetch(`http://127.0.0.1:${port}/pages/index.tsx`);
+        const sourceMapResponse = await fetch(`http://127.0.0.1:${port}${modulePath}.map`);
+        assert.equal(sourceResponse.status, 404);
+        assert.equal(sourceMapResponse.status, 404);
+        assertSecurityHeaders(sourceResponse);
+        assertSecurityHeaders(sourceMapResponse);
+
+        const socketMapResponse = await fetch(
+            `http://127.0.0.1:${port}/socket.io/socket.io.js.map`,
+            { headers: { Origin: ALLOWED_ORIGIN } },
+        );
+        assert.equal(socketMapResponse.status, 200);
+        assert.match(socketMapResponse.headers.get("content-type") || "", /json/);
+        assertSecurityHeaders(socketMapResponse);
 
         const packageJson = JSON.parse(await readFile(path.join(releaseRoot, "package.json"), "utf8"));
         assert.equal(packageJson.main, "dist/server/app.js");
