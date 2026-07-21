@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 7 multiplayer/PVE React 전환과 접근성 review fix를 local main에 반영하고 재검증했다.
+- Last update: 2026-07-21 기준. Goal 7A 단일 React SPA shell과 명시적 route/leave lifecycle을 Goal branch에서 구현·검증했다.
 
 ## Document Role
 
@@ -232,6 +232,31 @@
 - clean한 `main`/`origin/main`이 `b11e10c`와 일치하고 Goal branch가 clean한 상태에서 `codex/migrate-react-multiplayer`의 최종 `c673856`을 `--ff-only`로 local main에 반영했다. merge commit은 만들지 않았고 Goal branch는 보존한다.
 - main의 Node `24.18.0`/npm `11.16.0`에서 `bash scripts/verify.sh`를 재실행해 artifact 1/1, Node test 579개 중 578 pass와 기존 조건부 1 skip을 확인했다. main `git diff --check`와 clean worktree도 통과했다.
 - Goal branch 최종 HEAD `c673856`은 main의 조상이며 local main은 `origin/main`보다 6커밋 ahead다. push와 Goal 8은 수행하지 않았다.
+
+## Migration Goal 7A React SPA merge gate (2026-07-21)
+
+### SPA route와 runtime 경계
+
+- 기준은 `main@f9ff7f741a65ed471c7006a12591cea742173d19`이며 Goal 7A 명세 문서까지 main/origin main에 반영된 상태다.
+- Vite build는 `pages/index.html` 하나만 application entry로 사용한다. 하나의 `React.StrictMode` root가 `/`, `/pages/index.html`, `/pages/multiLobby.html`, `/pages/tetrisSingle.html`, `/pages/tetrisMulti.html`만 pathname allowlist로 선택한다.
+- History API navigation은 기존 `.html` URL·query·anchor semantics를 보존하고 title, route root focus와 live announcement를 갱신한다. Express와 Vite dev server는 같은 exact allowlist에서만 shell을 반환하며 unknown route, asset, TSX와 source map은 fallback하지 않는다.
+- index/single은 eager route로 유지하되 lobby/multiplayer와 `roomClient`는 lazy import한다. 따라서 최초 index/single 진입은 Socket.IO transport를 열지 않으며 classic Socket.IO script는 SPA module보다 먼저 준비된다.
+- route unmount가 single/multiplayer runtime, keyboard, timer/animation, display/Socket subscription과 sound를 idempotent하게 정리한다. route별로 `style.css` 또는 `tetris.css` 하나만 `media=all`로 활성화하고 theme pre-paint를 유지한다.
+
+### Room leave와 보안 경계
+
+- lobby→game과 finished game→lobby는 기존 membership을 유지하고, waiting lobby 이탈은 `room:leave`, active game 이탈은 `game:leave`를 한 번만 전송한다.
+- disconnect 중 route 이탈은 `{roomId, kind}` public data 하나만 memory에 bounded intent로 보관한다. 다음 `session:ready`에서 route의 `room:sync`/`game:join` callback보다 먼저 기존 leave event를 한 번 재전송하고 result 수신, terminal disconnect 또는 document pagehide에서 지운다.
+- session token, socketId, full session/room/match, board/bag와 callback은 route, history state, React state, DOM이나 console에 추가하지 않았다. Socket event/schema, session/reconnect 정책, gameplay, AI와 placement log 의미도 변경하지 않았다.
+
+### 검증, bundle과 남은 위험
+
+- Node `24.18.0`/npm `11.16.0`에서 `bash scripts/verify.sh`는 129-module clean build, artifact 1/1, Node test 580개 중 579 pass와 기존 조건부 1 skip으로 통과했다.
+- Vite development Playwright는 SPA/StrictMode lifecycle을 포함해 15 pass, production-only 2 skip이었고 compiled production 전체 Playwright는 41/41 통과했다.
+- production dependency-only 임시 설치에서 단일 shell, 허용 URL, CSS/JS/Socket.IO client는 HTTP 200, unknown·TSX·source map은 404였다. 실제 Chromium 수동 검증에서 index→single→history back→lobby shell, title/CSS/focus/Canvas/sound 상태와 console error 0을 확인했다. in-app Browser의 classic Socket.IO global 제한으로 수동 PVP/PVE는 완료하지 못했고 project Playwright Chromium 전체 flow로 대체 검증했다.
+- 최종 SPA entry는 240.61 kB(gzip 76.09 kB)다. 기준 index 최초 JS 196.94 kB(gzip 62.64 kB)보다 43.67 kB(gzip 13.45 kB) 커졌지만 lobby/multiplayer와 `roomClient` chunk는 해당 route 진입 전에 load되지 않는다. 전체 client artifact는 16개/4,613,123 bytes에서 10개/4,625,122 bytes로 11,999 bytes 증가했다.
+- route CSS 두 파일은 모두 shell에 링크되지만 한 번에 하나만 활성화된다. 이에 따른 최초 CSS transfer, WebKit/Firefox, 실제 browser history BFCache eligibility, 외부 TLS/reverse proxy와 장시간 reconnect/gameplay soak는 남은 검증 범위다.
+- Goal 7A는 `codex/migrate-react-spa` merge gate에서 멈춘다. push, PR, main merge, branch 삭제와 Goal 8은 수행하지 않았다.
 
 ## Project Direction
 
