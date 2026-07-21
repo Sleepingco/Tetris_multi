@@ -196,7 +196,7 @@ export type TetrisRuntimeOptions = {
 };
 export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "subscribeDisplay"> & {
     init: (options?: { autoStart?: boolean; serverBagChunks?: PieceType[][] | null }) => void;
-    enqueueInput: (action: InputAction | string | null, scheduledTick?: number | null, inputPieceIndex?: number | null) => QueuedInput | null;
+    enqueueInput: (action: InputAction | null, scheduledTick?: number | null, inputPieceIndex?: number | null) => QueuedInput | null;
     render: () => void;
     stop: () => void;
     destroy: () => void;
@@ -497,7 +497,7 @@ export function createTetrisRuntime({
       * @returns {{tick: number, action: string, pieceIndex: number|null}|null} 큐에 들어간 입력 또는 거부 시 null
       */
     function enqueueInput(
-        action: InputAction | string | null,
+        action: InputAction | null,
         scheduledTick: number | null = null,
         inputPieceIndex: number | null = null,
     ): QueuedInput | null {

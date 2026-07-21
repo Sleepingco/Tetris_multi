@@ -76,6 +76,21 @@ test("pair 생성은 selected 대 모든 unselected pair와 decision별 동일 �
     assert.deepEqual([...weightsByDecision.values()], [1, 1]);
 });
 
+test("malformed training group은 throw 없이 기존 실패 이유를 반환한다", async () => {
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
+    const cases = [
+        [null, "INVALID_TRAINING_GROUPS"],
+        [[null], "INVALID_DECISION_GROUP"],
+        [[{ decisionKey: "game-a:human-a:5", candidates: null }], "INVALID_DECISION_GROUP"],
+    ];
+
+    for (const [groups, reason] of cases) {
+        const result = ranker.trainPairwiseLinearRanker(groups, { epochs: 1 });
+        assert.equal(result.reason, reason);
+        assert.equal(result.model, null);
+    }
+});
+
 test("pair 생성은 selected feature duplicate와 zero-difference pair를 집계한다", async () => {
     const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const groups = [createGroup({ selectedFeatures: [1], unselectedFeatures: [[1], [0]] })];

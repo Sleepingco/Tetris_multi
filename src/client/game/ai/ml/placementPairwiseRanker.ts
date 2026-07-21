@@ -34,6 +34,15 @@ type PairwiseTrainingPair = {
 };
 type FailureResult = { ok: false; reason: string };
 type ValidationResult = { ok: true; reason: null } | FailureResult;
+type CanonicalGroup = {
+    decisionKey: unknown;
+    candidates: PlacementDatasetSample[] | null;
+};
+type GroupValidationResult = {
+    ok: true;
+    reason: null;
+    group: PlacementDecisionGroup;
+} | FailureResult;
 
 export const PAIRWISE_LINEAR_MODEL_SCHEMA_VERSION = 1;
 export const PAIRWISE_LINEAR_MODEL_TYPE = "pairwise_linear_ranker";
@@ -69,24 +78,40 @@ function createFailure(reason: string): FailureResult {
     return { ok: false, reason };
 }
 
-function canonicalizeGroups(groups: PlacementDecisionGroup[]): PlacementDecisionGroup[] | null {
-    if (!Array.isArray(groups) || groups.length === 0) return null;
-    return groups.map(group => ({
-        decisionKey: group.decisionKey,
-        candidates: group.candidates.slice().sort((left, right) => {
-            return compareCanonicalStrings(getCanonicalPlacementKey(left), getCanonicalPlacementKey(right));
-        }),
-    })).sort((left, right) => compareCanonicalStrings(left.decisionKey, right.decisionKey));
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function validateGroup(group: PlacementDecisionGroup): string | null {
+function canonicalizeGroups(groups: unknown): CanonicalGroup[] | null {
+    if (!Array.isArray(groups) || groups.length === 0) return null;
+    return groups.map(group => {
+        const record = isRecord(group) ? group : null;
+        return {
+            decisionKey: record?.decisionKey,
+            candidates: record && Array.isArray(record.candidates)
+                ? record.candidates.slice().sort((left, right) => {
+                    return compareCanonicalStrings(getCanonicalPlacementKey(left), getCanonicalPlacementKey(right));
+                })
+                : null,
+        };
+    }).sort((left, right) => compareCanonicalStrings(left.decisionKey, right.decisionKey));
+}
+
+function validateGroup(group: CanonicalGroup): GroupValidationResult {
     if (typeof group.decisionKey !== "string" || !Array.isArray(group.candidates) || group.candidates.length < 2) {
-        return PAIRWISE_RANKER_REASONS.INVALID_DECISION_GROUP;
+        return createFailure(PAIRWISE_RANKER_REASONS.INVALID_DECISION_GROUP);
     }
     const selectedCount = group.candidates.filter(candidate => candidate?.selectedBySource === true).length;
-    if (selectedCount === 0) return PAIRWISE_RANKER_REASONS.SELECTED_CANDIDATE_MISSING;
-    if (selectedCount > 1) return PAIRWISE_RANKER_REASONS.MULTIPLE_SELECTED_CANDIDATES;
-    return null;
+    if (selectedCount === 0) return createFailure(PAIRWISE_RANKER_REASONS.SELECTED_CANDIDATE_MISSING);
+    if (selectedCount > 1) return createFailure(PAIRWISE_RANKER_REASONS.MULTIPLE_SELECTED_CANDIDATES);
+    return {
+        ok: true,
+        reason: null,
+        group: {
+            decisionKey: group.decisionKey,
+            candidates: group.candidates,
+        },
+    };
 }
 
 function extractCandidateFeatures(candidate: PlacementDatasetSample): number[] | null {
@@ -94,10 +119,6 @@ function extractCandidateFeatures(candidate: PlacementDatasetSample): number[] |
     if (!result.ok || result.values.length !== PLACEMENT_FEATURE_NAMES.length ||
         !result.values.every(Number.isFinite)) return null;
     return result.values;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-    return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -134,14 +155,15 @@ function normalizeTrainingConfig(
 }
 
 /** Train candidate만 사용해 feature별 population mean/scale을 계산한다. */
-export function fitPlacementFeatureScaler(groups: PlacementDecisionGroup[]):
+export function fitPlacementFeatureScaler(groups: unknown):
     { ok: true; reason: null; scaler: FeatureScaler; candidateCount: number } | FailureResult {
     const canonicalGroups = canonicalizeGroups(groups);
     if (!canonicalGroups) return createFailure(PAIRWISE_RANKER_REASONS.INVALID_TRAINING_GROUPS);
     const vectors: number[][] = [];
-    for (const group of canonicalGroups) {
-        const groupFailure = validateGroup(group);
-        if (groupFailure) return createFailure(groupFailure);
+    for (const candidateGroup of canonicalGroups) {
+        const validation = validateGroup(candidateGroup);
+        if (!validation.ok) return validation;
+        const { group } = validation;
         for (const candidate of group.candidates) {
             const values = extractCandidateFeatures(candidate);
             if (!values) return createFailure(PAIRWISE_RANKER_REASONS.INVALID_FEATURE_VECTOR);
@@ -172,7 +194,7 @@ export function fitPlacementFeatureScaler(groups: PlacementDecisionGroup[]):
 
 /** 각 decision에서 selected-unselected pair를 만들고 decision별 pair weight 합을 1로 맞춘다. */
 export function createPairwiseTrainingPairs(
-    groups: PlacementDecisionGroup[],
+    groups: unknown,
     scaler: unknown,
 ): {
     ok: true;
@@ -192,9 +214,10 @@ export function createPairwiseTrainingPairs(
     let candidateCount = 0;
     let selectedFeatureDuplicateDecisionCount = 0;
     let zeroDifferencePairCount = 0;
-    for (const group of canonicalGroups) {
-        const groupFailure = validateGroup(group);
-        if (groupFailure) return createFailure(groupFailure);
+    for (const candidateGroup of canonicalGroups) {
+        const validation = validateGroup(candidateGroup);
+        if (!validation.ok) return validation;
+        const { group } = validation;
         const selected = group.candidates.find(candidate => candidate.selectedBySource === true);
         if (!selected) return createFailure(PAIRWISE_RANKER_REASONS.SELECTED_CANDIDATE_MISSING);
         const selectedValues = extractCandidateFeatures(selected);
@@ -277,7 +300,7 @@ function calculateTrainingState(
 
 /** 결정론적 full-batch gradient descent로 pairwise logistic linear ranker를 학습한다. */
 export function trainPairwiseLinearRanker(
-    groups: PlacementDecisionGroup[],
+    groups: unknown,
     config: Partial<PairwiseTrainingConfig> = {},
 ) {
     const trainingConfig = normalizeTrainingConfig(config);

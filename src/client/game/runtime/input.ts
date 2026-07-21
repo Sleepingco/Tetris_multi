@@ -10,7 +10,7 @@ export const INPUT_ACTION = {
         ROTATE: "rotate",
         HARD_DROP: "hard_drop",
         HOLD: "hold",
-} satisfies Record<string, string>
+} as const
 
 export type InputAction = typeof INPUT_ACTION[keyof typeof INPUT_ACTION];
 
