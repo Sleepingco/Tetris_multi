@@ -1,4 +1,14 @@
-import { extractPlacementFeatures } from "./placementFeatureSchema.js";
+import { extractPlacementFeatures } from "./placementFeatureSchema.ts";
+import type { PlacementDatasetSample } from "./placementDatasetBuilder.ts";
+
+export type PlacementDecisionGroup = {
+    decisionKey: string;
+    candidates: PlacementDatasetSample[];
+};
+export type RejectedDecisionGroup = {
+    decisionKey: string | null;
+    reason: string;
+};
 
 export const DECISION_GROUP_REJECTION_REASONS = Object.freeze({
     INVALID_DECISION_GROUP: "INVALID_DECISION_GROUP",
@@ -11,41 +21,50 @@ export const DECISION_GROUP_REJECTION_REASONS = Object.freeze({
     INSUFFICIENT_CANDIDATES: "INSUFFICIENT_CANDIDATES",
 });
 
-export function createDecisionKey(sample) {
-    if (!sample || typeof sample.gameId !== "string" || typeof sample.playerId !== "string" ||
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function createDecisionKey(sample: unknown): string | null {
+    if (!isRecord(sample) || typeof sample.gameId !== "string" || typeof sample.playerId !== "string" ||
         !Number.isInteger(sample.pieceIndex)) return null;
     return `${sample.gameId}:${sample.playerId}:${sample.pieceIndex}`;
 }
 
-export function getCanonicalPlacementKey(sample) {
-    const placement = sample?.candidatePlacement;
-    if (!placement || typeof placement.pieceType !== "string" ||
+export function getCanonicalPlacementKey(sample: unknown): string | null {
+    if (!isRecord(sample)) return null;
+    const placement = sample.candidatePlacement;
+    if (!isRecord(placement) || typeof placement.pieceType !== "string" ||
         !Number.isInteger(placement.rotation) || !Number.isInteger(placement.row) ||
         !Number.isInteger(placement.col)) return null;
     return [placement.pieceType, placement.rotation, placement.row, placement.col].join(":");
 }
 
 /** Locale과 실행 환경에 의존하지 않는 Unicode code-point 순서를 사용한다. */
-export function compareCanonicalStrings(leftValue, rightValue) {
+export function compareCanonicalStrings(leftValue: unknown, rightValue: unknown): number {
     const left = Array.from(String(leftValue));
     const right = Array.from(String(rightValue));
     const length = Math.min(left.length, right.length);
     for (let index = 0; index < length; index++) {
-        const difference = left[index].codePointAt(0) - right[index].codePointAt(0);
+        const difference = (left[index]?.codePointAt(0) ?? 0) -
+            (right[index]?.codePointAt(0) ?? 0);
         if (difference !== 0) return difference;
     }
     return left.length - right.length;
 }
 
-function stableValue(value) {
+function stableValue(value: unknown): string | undefined {
     return JSON.stringify(value);
 }
 
-function createRejected(key, reason) {
+function createRejected(key: string | null, reason: string): RejectedDecisionGroup {
     return { decisionKey: key, reason };
 }
 
-function validateGroup(key, samples) {
+function validateGroup(
+    key: string,
+    samples: PlacementDatasetSample[],
+): RejectedDecisionGroup | null {
     if (samples.length < 2) return createRejected(key, DECISION_GROUP_REJECTION_REASONS.INSUFFICIENT_CANDIDATES);
     const first = samples[0];
     const context = [first.gameId, first.playerId, first.pieceIndex, first.source, first.pieceType,
@@ -82,21 +101,27 @@ function validateGroup(key, samples) {
 }
 
 /** Candidate rows를 결정 단위로 검증·정렬해 묶는다. */
-export function groupPlacementDecisions(samples) {
-    const buckets = new Map();
-    const rejected = [];
+export function groupPlacementDecisions(samples: PlacementDatasetSample[]): {
+    groups: PlacementDecisionGroup[];
+    rejected: RejectedDecisionGroup[];
+} {
+    const buckets = new Map<string, PlacementDatasetSample[]>();
+    const rejected: RejectedDecisionGroup[] = [];
     (Array.isArray(samples) ? samples : []).forEach(sample => {
         const key = createDecisionKey(sample);
         if (!key) {
             rejected.push(createRejected(null, DECISION_GROUP_REJECTION_REASONS.INVALID_DECISION_GROUP));
             return;
         }
-        if (!buckets.has(key)) buckets.set(key, []);
-        buckets.get(key).push(sample);
+        const bucket = buckets.get(key);
+        if (bucket) bucket.push(sample);
+        else buckets.set(key, [sample]);
     });
-    const groups = [];
+    const groups: PlacementDecisionGroup[] = [];
     [...buckets.keys()].sort(compareCanonicalStrings).forEach(key => {
-        const candidates = buckets.get(key).slice().sort((left, right) => {
+        const bucket = buckets.get(key);
+        if (!bucket) return;
+        const candidates = bucket.slice().sort((left, right) => {
             return compareCanonicalStrings(getCanonicalPlacementKey(left), getCanonicalPlacementKey(right));
         });
         const failure = validateGroup(key, candidates);

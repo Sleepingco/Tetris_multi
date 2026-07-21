@@ -9,16 +9,26 @@ import { WALL_KICKS } from "../../state/config.ts";
 import {
     canPlacePlacement,
     normalizePlacement,
-} from "./placementGenerator.js";
+} from "./placementGenerator.ts";
+import type { Board } from "../../core/board.ts";
+import type { PlaceablePieceState } from "../../core/piece.ts";
+import type { PieceType } from "../../state/blocks.ts";
+import type { Placement } from "./placementGenerator.ts";
 
-export const REACHABLE_ACTION_ORDER = Object.freeze([
+export type ReachableAction = "move_left" | "move_right" | "rotate" | "soft_drop" | "hard_drop";
+export type ReachablePlacement = {
+    placement: Placement;
+    plannedActions: ReachableAction[];
+};
+
+export const REACHABLE_ACTION_ORDER: ReadonlyArray<Exclude<ReachableAction, "hard_drop">> = Object.freeze([
     "move_left",
     "move_right",
     "rotate",
     "soft_drop",
 ]);
 
-function isRectangularBoard(board) {
+function isRectangularBoard(board: Board): boolean {
     if (!Array.isArray(board) || board.length === 0) return false;
 
     const cols = board[0]?.length ?? 0;
@@ -27,17 +37,26 @@ function isRectangularBoard(board) {
     return board.every(row => Array.isArray(row) && row.length === cols);
 }
 
-function normalizeActivePiece(activePiece) {
-    if (!activePiece || typeof activePiece.pieceType !== "string") return null;
+function isPieceType(value: unknown): value is PieceType {
+    return typeof value === "string" && Object.hasOwn(BLOCKS, value);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeActivePiece(activePiece: unknown): PlaceablePieceState | null {
+    if (!isRecord(activePiece) || !isPieceType(activePiece.pieceType)) return null;
 
     const rotations = BLOCKS[activePiece.pieceType];
     if (!Array.isArray(rotations) || rotations.length === 0) return null;
     if (
+        typeof activePiece.rotation !== "number" ||
         !Number.isInteger(activePiece.rotation) ||
         activePiece.rotation < 0 ||
         activePiece.rotation >= rotations.length ||
-        !Number.isInteger(activePiece.row) ||
-        !Number.isInteger(activePiece.col)
+        typeof activePiece.row !== "number" || !Number.isInteger(activePiece.row) ||
+        typeof activePiece.col !== "number" || !Number.isInteger(activePiece.col)
     ) {
         return null;
     }
@@ -50,15 +69,18 @@ function normalizeActivePiece(activePiece) {
     };
 }
 
-function createStateKey(piece) {
+function createStateKey(piece: PlaceablePieceState): string {
     return `${piece.pieceType}:${piece.rotation}:${piece.row}:${piece.col}`;
 }
 
-function createPlacementKey(placement) {
+function createPlacementKey(placement: Placement): string {
     return `${placement.pieceType}:${placement.rotation}:${placement.row}:${placement.col}`;
 }
 
-function createPendingPiece(piece, action) {
+function createPendingPiece(
+    piece: PlaceablePieceState,
+    action: Exclude<ReachableAction, "hard_drop">,
+): PlaceablePieceState | null {
     const inputIntent = resolveInputMoveIntent(action);
     if (!inputIntent) return null;
 
@@ -81,7 +103,11 @@ function createPendingPiece(piece, action) {
     return null;
 }
 
-function resolveReachableState(board, piece, action) {
+function resolveReachableState(
+    board: Board,
+    piece: PlaceablePieceState,
+    action: Exclude<ReachableAction, "hard_drop">,
+): PlaceablePieceState | null {
     const inputIntent = resolveInputMoveIntent(action);
     const pendingPiece = createPendingPiece(piece, action);
     if (!inputIntent || !pendingPiece) return null;
@@ -95,12 +121,12 @@ function resolveReachableState(board, piece, action) {
         wallKicks: WALL_KICKS,
     });
 
-    return outcome.status === "ok"
+    return outcome.status === "ok" && outcome.active.pieceType
         ? { ...outcome.active }
         : null;
 }
 
-function createHardDropPlacement(board, piece) {
+function createHardDropPlacement(board: Board, piece: PlaceablePieceState): Placement | null {
     const row = getHardDropRow(piece, targetRow => {
         return canPlacePiece(board, {
             ...piece,
@@ -125,19 +151,22 @@ function createHardDropPlacement(board, piece) {
  * @param {{pieceType: string, rotation: number, row: number, col: number}} activePiece - 현재 조각
  * @returns {Array<{placement: Object, plannedActions: string[]}>} 도달 가능한 최종 후보
  */
-export function generateReachablePlacements(board, activePiece) {
+export function generateReachablePlacements(
+    board: Board,
+    activePiece: unknown,
+): ReachablePlacement[] {
     if (!isRectangularBoard(board)) return [];
 
     const initialState = normalizeActivePiece(activePiece);
     if (!initialState || !canPlacePiece(board, initialState, BLOCKS)) return [];
 
-    const queue = [{
+    const queue: Array<{ piece: PlaceablePieceState; actions: ReachableAction[] }> = [{
         piece: initialState,
         actions: [],
     }];
     const visited = new Set([createStateKey(initialState)]);
     const seenPlacements = new Set();
-    const candidates = [];
+    const candidates: ReachablePlacement[] = [];
 
     for (let queueIndex = 0; queueIndex < queue.length; queueIndex++) {
         const current = queue[queueIndex];

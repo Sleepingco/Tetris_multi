@@ -73,7 +73,7 @@ function assertExpectedScenario(result, expected) {
 
 test("V4 scorer는 Python fixture를 복제하지 않고 grouping, safety, tie-break를 재현한다", async () => {
     const { rankPlacementV4Candidates } = await import(
-        "../src/client/game/ai/ml/placementV4OfflineScorer.js"
+        "../src/client/game/ai/ml/placementV4OfflineScorer.ts"
     );
     const fixture = readJson(FIXTURE_PATH);
     const model = createModel();
@@ -96,7 +96,7 @@ test("V4 scorer는 Python fixture를 복제하지 않고 grouping, safety, tie-b
 
 test("linear score는 sigmoid 없이 coefficient dot standardized feature를 계산한다", async () => {
     const { rankPlacementV4Candidates } = await import(
-        "../src/client/game/ai/ml/placementV4OfflineScorer.js"
+        "../src/client/game/ai/ml/placementV4OfflineScorer.ts"
     );
     const fixture = readJson(FIXTURE_PATH);
     const candidate = structuredClone(getScenario(fixture, "alias-grouping").candidates[1]);
@@ -129,7 +129,7 @@ test("linear score는 sigmoid 없이 coefficient dot standardized feature를 계
 
 test("artifact validator는 V4 schema, vector, scaler와 frozen 상태를 강제한다", async () => {
     const { validatePlacementV4Model } = await import(
-        "../src/client/game/ai/ml/placementV4OfflineScorer.js"
+        "../src/client/game/ai/ml/placementV4OfflineScorer.ts"
     );
     const valid = createModel();
     const cases = [
@@ -158,7 +158,7 @@ test("artifact validator는 V4 schema, vector, scaler와 frozen 상태를 강제
 
 test("candidate validator는 malformed input과 class 내부 불일치를 명시적으로 거부한다", async () => {
     const { rankPlacementV4Candidates } = await import(
-        "../src/client/game/ai/ml/placementV4OfflineScorer.js"
+        "../src/client/game/ai/ml/placementV4OfflineScorer.ts"
     );
     const fixture = readJson(FIXTURE_PATH);
     const source = getScenario(fixture, "alias-grouping").candidates;
@@ -203,7 +203,7 @@ test("frozen artifact는 Python reference report와 class score 및 ranking이 �
     skip: !hasFrozenArtifacts,
 }, async () => {
     const { rankPlacementV4Candidates } = await import(
-        "../src/client/game/ai/ml/placementV4OfflineScorer.js"
+        "../src/client/game/ai/ml/placementV4OfflineScorer.ts"
     );
     const model = readJson(MODEL_PATH);
     const fixture = readJson(FIXTURE_PATH);

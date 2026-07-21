@@ -30,14 +30,14 @@ async function readJsonl(filePath) {
 async function evaluateDataset(options) {
     const datasetDir = path.resolve(options.datasetDir);
     const manifest = JSON.parse(await readFile(path.join(datasetDir, "manifest.json"), "utf8"));
-    const builder = await import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementDatasetBuilder.js")).href);
+    const builder = await import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementDatasetBuilder.ts")).href);
     if (manifest.datasetSchemaVersion !== builder.PLACEMENT_DATASET_SCHEMA_VERSION) {
         throw new Error("DATASET_SCHEMA_VERSION_MISMATCH");
     }
     const [{ groupPlacementDecisions }, ranking, features] = await Promise.all([
-        import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementDecisionGroups.js")).href),
-        import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementRankingEvaluator.js")).href),
-        import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementFeatureSchema.js")).href),
+        import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementDecisionGroups.ts")).href),
+        import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementRankingEvaluator.ts")).href),
+        import(pathToFileURL(path.resolve(__dirname, "../src/client/game/ai/dataset/placementFeatureSchema.ts")).href),
     ]);
     const rows = [...await readJsonl(path.join(datasetDir, "train.jsonl")), ...await readJsonl(path.join(datasetDir, "validation.jsonl"))];
     const grouped = groupPlacementDecisions(rows);

@@ -37,7 +37,7 @@ let placementV4AiPromise = null;
 function loadHeuristicAi() {
     if (!heuristicAiPromise) {
         heuristicAiPromise = Promise.all([
-            import("../../client/game/ai/heuristic/heuristicEvaluator.js"),
+            import("../../client/game/ai/heuristic/heuristicEvaluator.ts"),
             import("../../client/game/core/boardMetrics.ts"),
         ]).then(([heuristicEvaluator, boardMetrics]) => ({
             ...heuristicEvaluator,
@@ -50,8 +50,8 @@ function loadHeuristicAi() {
 function loadPlacementV4Ai() {
     if (!placementV4AiPromise) {
         placementV4AiPromise = Promise.all([
-            import("../../client/game/ai/ml/placementV4PveDecisionAdapter.js"),
-            import("../../client/game/ai/ml/placementV4OfflineScorer.js"),
+            import("../../client/game/ai/ml/placementV4PveDecisionAdapter.ts"),
+            import("../../client/game/ai/ml/placementV4OfflineScorer.ts"),
         ]).then(([pveAdapter, offlineScorer]) => ({
             getPlacementV4PveDecision: pveAdapter.getPlacementV4PveDecision,
             validatePlacementV4Model: offlineScorer.validatePlacementV4Model,

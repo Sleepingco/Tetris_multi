@@ -1,6 +1,54 @@
 import { getBoardMetrics } from "../../core/boardMetrics.ts";
-import { generateReachablePlacements } from "./reachablePlacementPlanner.js";
-import { simulatePlacement } from "./simulatePlacement.js";
+import { generateReachablePlacements } from "./reachablePlacementPlanner.ts";
+import { simulatePlacement } from "./simulatePlacement.ts";
+import type { Board } from "../../core/board.ts";
+import type { BoardMetrics } from "../../core/boardMetrics.ts";
+import type { Placement } from "./placementGenerator.ts";
+import type { ReachableAction } from "./reachablePlacementPlanner.ts";
+
+export type HeuristicReason = {
+    linesCleared: number;
+    holesDelta: number;
+    bumpinessDelta: number;
+    aggregateHeightDelta: number;
+    maxHeightDelta: number;
+};
+export type HeuristicEvaluation = {
+    placement: Placement;
+    boardAfter: Board;
+    linesCleared: number;
+    gameOver: boolean;
+    score: number;
+    metricsBefore: BoardMetrics;
+    metricsAfter: BoardMetrics;
+    reason: HeuristicReason;
+};
+export type HeuristicComparable = Pick<
+    HeuristicEvaluation,
+    "score" | "linesCleared" | "metricsAfter" | "placement"
+>;
+export type RankedHeuristicEvaluation = HeuristicEvaluation & {
+    plannedActions: ReachableAction[];
+};
+export type HeuristicDecision = {
+    ok: true;
+    source: "heuristic_ai";
+    modelType: "heuristic";
+    selectedPlacement: Placement;
+    plannedActions: ReachableAction[];
+    score: number;
+    candidateCount: number;
+    metricsBefore: BoardMetrics;
+    metricsAfter: BoardMetrics;
+    reason: HeuristicReason;
+} | {
+    ok: false;
+    source: "heuristic_ai";
+    modelType: "heuristic";
+    errorCode: string;
+    message: string;
+    candidateCount: number;
+};
 
 export const HEURISTIC_WEIGHTS = Object.freeze({
     linesCleared: 10,
@@ -13,7 +61,7 @@ export const HEURISTIC_WEIGHTS = Object.freeze({
 const DECISION_SOURCE = "heuristic_ai";
 const MODEL_TYPE = "heuristic";
 
-function calculateScore(linesCleared, metricsAfter) {
+function calculateScore(linesCleared: number, metricsAfter: BoardMetrics): number {
     return linesCleared * HEURISTIC_WEIGHTS.linesCleared +
         metricsAfter.holes * HEURISTIC_WEIGHTS.holes +
         metricsAfter.aggregateHeight * HEURISTIC_WEIGHTS.aggregateHeight +
@@ -21,7 +69,11 @@ function calculateScore(linesCleared, metricsAfter) {
         metricsAfter.maxHeight * HEURISTIC_WEIGHTS.maxHeight;
 }
 
-function createReason(linesCleared, metricsBefore, metricsAfter) {
+function createReason(
+    linesCleared: number,
+    metricsBefore: BoardMetrics,
+    metricsAfter: BoardMetrics,
+): HeuristicReason {
     return {
         linesCleared,
         holesDelta: metricsAfter.holes - metricsBefore.holes,
@@ -31,7 +83,10 @@ function createReason(linesCleared, metricsBefore, metricsAfter) {
     };
 }
 
-export function compareHeuristicEvaluations(left, right) {
+export function compareHeuristicEvaluations(
+    left: HeuristicComparable,
+    right: HeuristicComparable,
+): number {
     if (left.score !== right.score) return right.score - left.score;
     if (left.linesCleared !== right.linesCleared) {
         return right.linesCleared - left.linesCleared;
@@ -57,7 +112,7 @@ export function compareHeuristicEvaluations(left, right) {
     return left.placement.row - right.placement.row;
 }
 
-function isRectangularBoard(board) {
+function isRectangularBoard(board: unknown): board is Board {
     if (!Array.isArray(board) || board.length === 0) return false;
 
     const cols = board[0]?.length ?? 0;
@@ -66,7 +121,7 @@ function isRectangularBoard(board) {
     return board.every(row => Array.isArray(row) && row.length === cols);
 }
 
-function createFailure(errorCode, message, candidateCount = 0) {
+function createFailure(errorCode: string, message: string, candidateCount = 0): HeuristicDecision {
     return {
         ok: false,
         source: DECISION_SOURCE,
@@ -93,7 +148,7 @@ function createFailure(errorCode, message, candidateCount = 0) {
  *   reason: Object
  * }|null}
  */
-export function evaluatePlacement(board, placement) {
+export function evaluatePlacement(board: Board, placement: unknown): HeuristicEvaluation | null {
     const simulation = simulatePlacement(board, placement);
     if (!simulation) return null;
 
@@ -120,7 +175,7 @@ export function evaluatePlacement(board, placement) {
  * @param {{pieceType: string, rotation: number, row: number, col: number}} activePiece - 현재 활성 조각
  * @returns {Array<Object>} 점수 내림차순 평가 결과
  */
-export function rankPlacements(board, activePiece) {
+export function rankPlacements(board: Board, activePiece: unknown): RankedHeuristicEvaluation[] {
     return generateReachablePlacements(board, activePiece)
         .map(candidate => {
             const evaluation = evaluatePlacement(board, candidate.placement);
@@ -131,7 +186,7 @@ export function rankPlacements(board, activePiece) {
                 plannedActions: [...candidate.plannedActions],
             };
         })
-        .filter(Boolean)
+        .filter((evaluation): evaluation is RankedHeuristicEvaluation => evaluation !== null)
         .sort(compareHeuristicEvaluations);
 }
 
@@ -150,8 +205,12 @@ export function rankPlacements(board, activePiece) {
  * }} gameState - AI가 읽을 현재 게임 상태
  * @returns {Object} 성공 또는 실패 decision
  */
-export function getHeuristicDecision(gameState) {
-    if (!gameState || !isRectangularBoard(gameState.board) || !gameState.activePiece?.pieceType) {
+export function getHeuristicDecision(gameState: unknown): HeuristicDecision {
+    if (!gameState || typeof gameState !== "object" || Array.isArray(gameState) ||
+        !("board" in gameState) || !isRectangularBoard(gameState.board) ||
+        !("activePiece" in gameState) || !gameState.activePiece ||
+        typeof gameState.activePiece !== "object" || !("pieceType" in gameState.activePiece) ||
+        !gameState.activePiece.pieceType) {
         return createFailure(
             "INVALID_GAME_STATE",
             "gameState must include a rectangular board and activePiece.",

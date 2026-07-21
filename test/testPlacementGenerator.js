@@ -7,7 +7,7 @@ function createBoard(rows = 20, cols = 10) {
 
 test("canPlacePlacement는 locked block과 겹치는 placement를 거부한다", async () => {
     const { canPlacePlacement } = await import(
-        "../src/client/game/ai/heuristic/placementGenerator.js"
+        "../src/client/game/ai/heuristic/placementGenerator.ts"
     );
     const board = createBoard();
     board[19][0] = "bar";
@@ -18,7 +18,7 @@ test("canPlacePlacement는 locked block과 겹치는 placement를 거부한다",
 
 test("canPlacePlacement는 board 밖 cell을 가진 placement를 거부한다", async () => {
     const { canPlacePlacement } = await import(
-        "../src/client/game/ai/heuristic/placementGenerator.js"
+        "../src/client/game/ai/heuristic/placementGenerator.ts"
     );
     const board = createBoard();
 
@@ -29,7 +29,7 @@ test("canPlacePlacement는 board 밖 cell을 가진 placement를 거부한다", 
 
 test("normalizePlacement는 rotation과 절대 cell 좌표를 표준 형태로 만든다", async () => {
     const { normalizePlacement } = await import(
-        "../src/client/game/ai/heuristic/placementGenerator.js"
+        "../src/client/game/ai/heuristic/placementGenerator.ts"
     );
 
     assert.deepEqual(normalizePlacement({

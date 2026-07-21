@@ -5,9 +5,11 @@ import {
     lockPieceOnBoard,
 } from "../../core/board.ts";
 import BLOCKS from "../../state/blocks.ts";
-import { normalizePlacement } from "./placementGenerator.js";
+import { normalizePlacement } from "./placementGenerator.ts";
+import type { Board } from "../../core/board.ts";
+import type { Placement } from "./placementGenerator.ts";
 
-function cloneBoard(board) {
+function cloneBoard(board: Board): Board | null {
     if (!Array.isArray(board) || board.length === 0) return null;
 
     const cols = board[0]?.length ?? 0;
@@ -25,7 +27,12 @@ function cloneBoard(board) {
  * @param {Object} placement - 적용할 placement
  * @returns {{boardAfter: Array<Array<string|null>>, linesCleared: number, gameOver: boolean, placement: Object}|null}
  */
-export function simulatePlacement(board, placement) {
+export function simulatePlacement(board: Board, placement: unknown): {
+    boardAfter: Board;
+    linesCleared: number;
+    gameOver: boolean;
+    placement: Placement;
+} | null {
     const boardAfter = cloneBoard(board);
     const normalizedPlacement = normalizePlacement(placement);
     if (!boardAfter || !normalizedPlacement) return null;

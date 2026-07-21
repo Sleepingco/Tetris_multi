@@ -154,11 +154,11 @@ function evaluatePairwiseLogo(groups, ranking, ranker, features, compareCanonica
 async function loadModules() {
     const fromRoot = relativePath => pathToFileURL(path.resolve(__dirname, "..", relativePath)).href;
     const [builder, groups, ranking, ranker, features] = await Promise.all([
-        import(fromRoot("src/client/game/ai/dataset/placementDatasetBuilder.js")),
-        import(fromRoot("src/client/game/ai/dataset/placementDecisionGroups.js")),
-        import(fromRoot("src/client/game/ai/dataset/placementRankingEvaluator.js")),
-        import(fromRoot("src/client/game/ai/ml/placementPairwiseRanker.js")),
-        import(fromRoot("src/client/game/ai/dataset/placementFeatureSchema.js")),
+        import(fromRoot("src/client/game/ai/dataset/placementDatasetBuilder.ts")),
+        import(fromRoot("src/client/game/ai/dataset/placementDecisionGroups.ts")),
+        import(fromRoot("src/client/game/ai/dataset/placementRankingEvaluator.ts")),
+        import(fromRoot("src/client/game/ai/ml/placementPairwiseRanker.ts")),
+        import(fromRoot("src/client/game/ai/dataset/placementFeatureSchema.ts")),
     ]);
     return { builder, groups, ranking, ranker, features };
 }
@@ -206,10 +206,10 @@ async function buildArtifacts(options) {
     if (!finalTraining.ok) throw new Error(`FINAL_TRAINING_FAILED:${finalTraining.reason}`);
     const pipelineSourceNames = [
         "scripts/train-placement-ranker.js",
-        "src/client/game/ai/ml/placementPairwiseRanker.js",
-        "src/client/game/ai/dataset/placementFeatureSchema.js",
-        "src/client/game/ai/dataset/placementDecisionGroups.js",
-        "src/client/game/ai/dataset/placementRankingEvaluator.js",
+        "src/client/game/ai/ml/placementPairwiseRanker.ts",
+        "src/client/game/ai/dataset/placementFeatureSchema.ts",
+        "src/client/game/ai/dataset/placementDecisionGroups.ts",
+        "src/client/game/ai/dataset/placementRankingEvaluator.ts",
     ];
     const pipelineSourceFiles = await Promise.all(pipelineSourceNames.map(async name => ({
         name,

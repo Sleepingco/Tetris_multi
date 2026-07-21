@@ -435,7 +435,7 @@ function compareRejections(left, right) {
 async function loadDatasetBuilder() {
     const builderPath = path.resolve(
         __dirname,
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js",
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts",
     );
     return import(pathToFileURL(builderPath).href);
 }

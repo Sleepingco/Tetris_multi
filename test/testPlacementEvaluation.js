@@ -52,7 +52,7 @@ function createGroupSamples(gameId = "game-a") {
 
 test("feature schema는 고정 순서, boolean 변환, mutation 방지를 제공한다", async () => {
     const { extractPlacementFeatures, PLACEMENT_FEATURE_NAMES } = await import(
-        "../src/client/game/ai/dataset/placementFeatureSchema.js"
+        "../src/client/game/ai/dataset/placementFeatureSchema.ts"
     );
     const sample = createSample({ candidateResult: { linesCleared: 2, gameOver: true } });
     const original = structuredClone(sample);
@@ -65,7 +65,7 @@ test("feature schema는 고정 순서, boolean 변환, mutation 방지를 제공
 
 test("feature schema는 malformed result와 10열이 아닌 delta를 거부한다", async () => {
     const { extractPlacementFeatures } = await import(
-        "../src/client/game/ai/dataset/placementFeatureSchema.js"
+        "../src/client/game/ai/dataset/placementFeatureSchema.ts"
     );
     assert.equal(extractPlacementFeatures(createSample({ datasetSchemaVersion: 1 })).reason, "UNSUPPORTED_DATASET_SCHEMA_VERSION");
     assert.equal(extractPlacementFeatures(createSample({ candidateResult: { linesCleared: -1, gameOver: false } })).ok, false);
@@ -75,7 +75,7 @@ test("feature schema는 malformed result와 10열이 아닌 delta를 거부한�
 
 test("decision group은 exactly-one selected와 duplicate placement를 검증하고 순서를 고정한다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const samples = createGroupSamples();
     const forward = groupPlacementDecisions(samples);
@@ -91,7 +91,7 @@ test("decision group은 exactly-one selected와 duplicate placement를 검증하
 
 test("decision group은 AI 난이도와 결과 metadata 불일치를 거부한다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const samples = createGroupSamples();
     const difficultyConflict = groupPlacementDecisions(samples.map((sample, index) => {
@@ -111,10 +111,10 @@ test("decision group은 AI 난이도와 결과 metadata 불일치를 거부한�
 
 test("ranking evaluator는 fixture Top-1/Top-3/MRR와 seeded random 결정성을 계산한다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const { createHeuristicScorer, createSeededRandomScorer, evaluateRanking } = await import(
-        "../src/client/game/ai/dataset/placementRankingEvaluator.js"
+        "../src/client/game/ai/dataset/placementRankingEvaluator.ts"
     );
     const groups = groupPlacementDecisions(createGroupSamples()).groups;
     const heuristic = evaluateRanking(groups, createHeuristicScorer());
@@ -131,10 +131,10 @@ test("ranking evaluator는 fixture Top-1/Top-3/MRR와 seeded random 결정성을
 
 test("ranking evaluator는 canonical Top-1을 유지하며 top-score tie와 tie-aware Top-1을 함께 기록한다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const { evaluateRanking } = await import(
-        "../src/client/game/ai/dataset/placementRankingEvaluator.js"
+        "../src/client/game/ai/dataset/placementRankingEvaluator.ts"
     );
     const samples = createGroupSamples();
     const groups = groupPlacementDecisions(samples).groups;
@@ -151,10 +151,10 @@ test("ranking evaluator는 canonical Top-1을 유지하며 top-score tie와 tie-
 
 test("seeded random은 각 candidate를 독립 점수로 결정론적으로 순위화한다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const { createSeededRandomScorer } = await import(
-        "../src/client/game/ai/dataset/placementRankingEvaluator.js"
+        "../src/client/game/ai/dataset/placementRankingEvaluator.ts"
     );
     const group = groupPlacementDecisions(createGroupSamples()).groups[0];
     const firstScores = createSeededRandomScorer("fixed")(group);
@@ -166,10 +166,10 @@ test("seeded random은 각 candidate를 독립 점수로 결정론적으로 순�
 
 test("ranking evaluator는 누락, NaN, 불필요한 candidate score를 명시적으로 실패시킨다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const { evaluateRanking } = await import(
-        "../src/client/game/ai/dataset/placementRankingEvaluator.js"
+        "../src/client/game/ai/dataset/placementRankingEvaluator.ts"
     );
     const group = groupPlacementDecisions(createGroupSamples()).groups[0];
     const missing = evaluateRanking([group], () => new Map());
@@ -193,10 +193,10 @@ test("ranking evaluator는 누락, NaN, 불필요한 candidate score를 명시�
 
 test("Leave-One-Game-Out는 모든 game을 한 번 validation으로 사용하고 leakage가 없다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const { createHeuristicScorer, createLeaveOneGameOutFolds, evaluateLeaveOneGameOut } = await import(
-        "../src/client/game/ai/dataset/placementRankingEvaluator.js"
+        "../src/client/game/ai/dataset/placementRankingEvaluator.ts"
     );
     const groups = groupPlacementDecisions([...createGroupSamples("game-a"), ...createGroupSamples("game-b")]).groups;
     const folds = createLeaveOneGameOutFolds(groups);
@@ -210,10 +210,10 @@ test("Leave-One-Game-Out는 모든 game을 한 번 validation으로 사용하고
 
 test("LOGO aggregate는 fold별 held-out prediction만 합산한다", async () => {
     const { groupPlacementDecisions } = await import(
-        "../src/client/game/ai/dataset/placementDecisionGroups.js"
+        "../src/client/game/ai/dataset/placementDecisionGroups.ts"
     );
     const { evaluateLeaveOneGameOut } = await import(
-        "../src/client/game/ai/dataset/placementRankingEvaluator.js"
+        "../src/client/game/ai/dataset/placementRankingEvaluator.ts"
     );
     const groups = groupPlacementDecisions([
         ...createGroupSamples("game-a"),

@@ -3,9 +3,28 @@ import BLOCKS from "../../state/blocks.ts";
 import {
     evaluatePlacement,
     getHeuristicDecision,
-} from "./heuristicEvaluator.js";
+} from "./heuristicEvaluator.ts";
+import type { Board } from "../../core/board.ts";
+import type { BoardMetrics } from "../../core/boardMetrics.ts";
+import type { PlaceablePieceState } from "../../core/piece.ts";
+import type { PieceType } from "../../state/blocks.ts";
+import type { HeuristicReason } from "./heuristicEvaluator.ts";
+import type { Placement } from "./placementGenerator.ts";
 
-function isSamePlacement(left, right) {
+export type HumanPlacementLogAnalysis = {
+    metricsBefore: BoardMetrics;
+    metricsAfter: BoardMetrics;
+    evaluation: { score: number; reason: HeuristicReason; candidateCount: number };
+    aiComparison: {
+        heuristicPlacement: Placement;
+        heuristicScore: number;
+        userScore: number;
+        betterBy: number;
+        samePlacement: boolean;
+    };
+};
+
+function isSamePlacement(left: Placement | null, right: Placement | null): boolean {
     if (!left || !right) return false;
 
     return left.pieceType === right.pieceType &&
@@ -14,15 +33,27 @@ function isSamePlacement(left, right) {
         left.row === right.row;
 }
 
-function isValidDecisionStartPiece(piece) {
-    const rotations = BLOCKS[piece?.pieceType];
+function isPieceType(value: unknown): value is PieceType {
+    return typeof value === "string" && Object.hasOwn(BLOCKS, value);
+}
+
+function isValidDecisionStartPiece(piece: unknown): piece is PlaceablePieceState {
+    if (!piece || typeof piece !== "object" || Array.isArray(piece) ||
+        !("pieceType" in piece) || !isPieceType(piece.pieceType)) return false;
+    const rotations = BLOCKS[piece.pieceType];
 
     return Array.isArray(rotations) &&
+        "rotation" in piece &&
         Number.isInteger(piece.rotation) &&
+        typeof piece.rotation === "number" &&
         piece.rotation >= 0 &&
         piece.rotation < rotations.length &&
+        "row" in piece &&
         Number.isInteger(piece.row) &&
-        Number.isInteger(piece.col);
+        typeof piece.row === "number" &&
+        "col" in piece &&
+        Number.isInteger(piece.col) &&
+        typeof piece.col === "number";
 }
 
 /**
@@ -38,7 +69,12 @@ export function createHumanPlacementLogAnalysis({
     boardAfter,
     activePieceAtDecisionStart,
     selectedPlacement,
-}) {
+}: {
+    boardBefore: Board;
+    boardAfter: Board;
+    activePieceAtDecisionStart: unknown;
+    selectedPlacement: unknown;
+}): HumanPlacementLogAnalysis | null {
     try {
         if (!isValidDecisionStartPiece(activePieceAtDecisionStart)) return null;
 

@@ -58,7 +58,7 @@ function createGroup({ gameId = "game-a", pieceIndex = 5, selectedFeatures = [1]
 }
 
 test("pair 생성은 selected 대 모든 unselected pair와 decision별 동일 총 weight를 만든다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const groups = [
         createGroup({ gameId: "game-a", unselectedFeatures: [[0]] }),
         createGroup({ gameId: "game-b", unselectedFeatures: [[0], [0], [0]] }),
@@ -77,7 +77,7 @@ test("pair 생성은 selected 대 모든 unselected pair와 decision별 동일 �
 });
 
 test("pair 생성은 selected feature duplicate와 zero-difference pair를 집계한다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const groups = [createGroup({ selectedFeatures: [1], unselectedFeatures: [[1], [0]] })];
     const scaler = ranker.fitPlacementFeatureScaler(groups);
     const pairs = ranker.createPairwiseTrainingPairs(groups, scaler.scaler);
@@ -91,7 +91,7 @@ test("pair 생성은 selected feature duplicate와 zero-difference pair를 집�
 });
 
 test("pair 생성은 selected 누락을 거부하고 group과 sample을 변경하지 않는다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const validGroup = createGroup();
     const scaler = ranker.fitPlacementFeatureScaler([validGroup]).scaler;
     const missing = structuredClone(validGroup);
@@ -104,7 +104,7 @@ test("pair 생성은 selected 누락을 거부하고 group과 sample을 변경�
 });
 
 test("scaler는 train candidate만 사용하고 zero variance scale을 1로 유지한다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const trainGroups = [createGroup({ selectedFeatures: [2], unselectedFeatures: [[0]] })];
     const validationGroup = createGroup({ gameId: "validation", selectedFeatures: [100], unselectedFeatures: [[0]] });
     const trainScaler = ranker.fitPlacementFeatureScaler(trainGroups);
@@ -119,7 +119,7 @@ test("scaler는 train candidate만 사용하고 zero variance scale을 1로 유�
 });
 
 test("scaler는 non-finite feature를 명시적으로 거부한다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const group = createGroup();
     group.candidates[0].metricDelta.aggregateHeight = Number.NaN;
 
@@ -127,7 +127,7 @@ test("scaler는 non-finite feature를 명시적으로 거부한다", async () =>
 });
 
 test("optimizer는 synthetic loss를 낮추고 selected candidate에 더 높은 score를 준다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const groups = [
         createGroup({ gameId: "game-a", pieceIndex: 5, selectedFeatures: [1], unselectedFeatures: [[0], [0]] }),
         createGroup({ gameId: "game-b", pieceIndex: 6, selectedFeatures: [2], unselectedFeatures: [[0], [1]] }),
@@ -143,7 +143,7 @@ test("optimizer는 synthetic loss를 낮추고 selected candidate에 더 높은 
 });
 
 test("같은 config와 canonical content는 입력 순서와 무관하게 동일 model을 만든다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const groups = [createGroup({ gameId: "game-a" }), createGroup({ gameId: "game-b", pieceIndex: 6 })];
     const reversed = structuredClone(groups).reverse().map(group => ({ ...group, candidates: group.candidates.reverse() }));
     const config = { epochs: 30, learningRate: 0.03, l2: 0.02, seed: "fixed" };
@@ -154,7 +154,7 @@ test("같은 config와 canonical content는 입력 순서와 무관하게 동일
 });
 
 test("invalid training config는 학습 artifact 없이 실패한다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const groups = [createGroup()];
 
     for (const config of [{ epochs: 0 }, { learningRate: 0 }, { l2: -1 }, { seed: "" }]) {
@@ -165,7 +165,7 @@ test("invalid training config는 학습 artifact 없이 실패한다", async () 
 });
 
 test("model validator는 schema, feature 순서, vector 길이와 scale을 검증한다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
     const trained = ranker.trainPairwiseLinearRanker([createGroup()], { epochs: 5 });
     const cases = [
         ["MODEL_SCHEMA_VERSION_MISMATCH", { modelSchemaVersion: 2 }],
@@ -187,8 +187,8 @@ test("model validator는 schema, feature 순서, vector 길이와 scale을 검�
 });
 
 test("pairwise scorer는 evaluator 계약을 통과하고 candidate group을 변경하지 않는다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
-    const { evaluateRanking } = await import("../src/client/game/ai/dataset/placementRankingEvaluator.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
+    const { evaluateRanking } = await import("../src/client/game/ai/dataset/placementRankingEvaluator.ts");
     const group = createGroup();
     const original = structuredClone(group);
     const trained = ranker.trainPairwiseLinearRanker([group], { epochs: 20 });
@@ -201,8 +201,8 @@ test("pairwise scorer는 evaluator 계약을 통과하고 candidate group을 변
 });
 
 test("LOGO는 validation game을 scorerFactory와 fold scaler에 포함하지 않고 결정적이다", async () => {
-    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.js");
-    const { evaluateLeaveOneGameOut } = await import("../src/client/game/ai/dataset/placementRankingEvaluator.js");
+    const ranker = await import("../src/client/game/ai/ml/placementPairwiseRanker.ts");
+    const { evaluateLeaveOneGameOut } = await import("../src/client/game/ai/dataset/placementRankingEvaluator.ts");
     const groups = [
         createGroup({ gameId: "game-a", selectedFeatures: [1], unselectedFeatures: [[0]] }),
         createGroup({ gameId: "game-b", selectedFeatures: [2], unselectedFeatures: [[0]] }),

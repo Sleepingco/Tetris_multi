@@ -45,7 +45,7 @@ import {
     serializeGameState,
     deserializeGameState,
 } from "../state/stateSerialization.ts"
-import { createHumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.js"
+import { createHumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.ts"
 const NEXT_QUEUE_SIZE = 2
 
 // =============================

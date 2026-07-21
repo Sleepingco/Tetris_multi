@@ -25,7 +25,7 @@ function createGameState(board, pieceType = "bar") {
 
 test("HEURISTIC_WEIGHTS는 기본 scoring 계수를 공개한다", async () => {
     const { HEURISTIC_WEIGHTS } = await import(
-        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+        "../src/client/game/ai/heuristic/heuristicEvaluator.ts"
     );
 
     assert.deepEqual(HEURISTIC_WEIGHTS, {
@@ -39,7 +39,7 @@ test("HEURISTIC_WEIGHTS는 기본 scoring 계수를 공개한다", async () => {
 
 test("line clear 후보는 같은 board의 non-clear 후보보다 높은 점수를 받는다", async () => {
     const { evaluatePlacement } = await import(
-        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+        "../src/client/game/ai/heuristic/heuristicEvaluator.ts"
     );
     const board = createBoard();
     board[19] = [null, null, null, null, ...Array(6).fill("tree")];
@@ -67,7 +67,7 @@ test("line clear 후보는 같은 board의 non-clear 후보보다 높은 점수�
 
 test("holes가 늘어나는 후보를 더 크게 감점한다", async () => {
     const { evaluatePlacement } = await import(
-        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+        "../src/client/game/ai/heuristic/heuristicEvaluator.ts"
     );
     const board = createBoard();
     board[19][0] = "tree";
@@ -97,7 +97,7 @@ test("aggregateHeight는 0.5씩 점수에서 차감된다", async () => {
     const {
         evaluatePlacement,
         HEURISTIC_WEIGHTS,
-    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.ts");
     const evaluation = evaluatePlacement(createBoard(), {
         pieceType: "bar",
         rotation: 0,
@@ -123,7 +123,7 @@ test("aggregateHeight는 0.5씩 점수에서 차감된다", async () => {
 
 test("bumpiness가 높은 후보는 다른 metrics가 같을 때 더 낮은 점수를 받는다", async () => {
     const { evaluatePlacement } = await import(
-        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+        "../src/client/game/ai/heuristic/heuristicEvaluator.ts"
     );
     const board = createBoard();
     const edge = evaluatePlacement(board, {
@@ -152,7 +152,7 @@ test("maxHeight는 높이마다 1점씩 차감된다", async () => {
     const {
         evaluatePlacement,
         HEURISTIC_WEIGHTS,
-    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.ts");
     const evaluation = evaluatePlacement(createBoard(), {
         pieceType: "bar",
         rotation: 1,
@@ -178,7 +178,7 @@ test("maxHeight는 높이마다 1점씩 차감된다", async () => {
 
 test("rankPlacements는 최고 점수 후보를 결정적으로 선택한다", async () => {
     const { rankPlacements } = await import(
-        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+        "../src/client/game/ai/heuristic/heuristicEvaluator.ts"
     );
     const board = createBoard();
     board[19] = [null, null, null, null, ...Array(6).fill("tree")];
@@ -214,7 +214,7 @@ test("rankPlacements는 최고 점수 후보를 결정적으로 선택한다", a
 
 test("getHeuristicDecision은 안정적인 성공 schema와 reason을 반환한다", async () => {
     const { getHeuristicDecision } = await import(
-        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+        "../src/client/game/ai/heuristic/heuristicEvaluator.ts"
     );
     const board = createBoard();
     board[19] = [null, null, null, null, ...Array(6).fill("tree")];
@@ -253,7 +253,7 @@ test("decision의 selectedPlacement와 plannedActions는 같은 reachable 후보
     const {
         getHeuristicDecision,
         rankPlacements,
-    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.ts");
     const gameState = createGameState(createBoard(), "tree");
     const ranked = rankPlacements(gameState.board, gameState.activePiece);
     const decision = getHeuristicDecision(gameState);
@@ -267,9 +267,9 @@ test("heuristicEvaluator는 도달 불가능한 고득점 placement를 선택하
     const {
         evaluatePlacement,
         getHeuristicDecision,
-    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.ts");
     const { normalizePlacement } = await import(
-        "../src/client/game/ai/heuristic/placementGenerator.js"
+        "../src/client/game/ai/heuristic/placementGenerator.ts"
     );
     const board = createBoard();
     board[19] = Array(10).fill("stack");
@@ -307,7 +307,7 @@ test("heuristicEvaluator는 도달 불가능한 고득점 placement를 선택하
 
 test("후보가 없으면 안정적인 실패 decision을 반환한다", async () => {
     const { getHeuristicDecision } = await import(
-        "../src/client/game/ai/heuristic/heuristicEvaluator.js"
+        "../src/client/game/ai/heuristic/heuristicEvaluator.ts"
     );
     const board = createBoard().map(row => row.map(() => "garbage"));
 
@@ -327,7 +327,7 @@ test("평가와 decision 생성은 원본 board와 gameState를 mutate하지 않
     const {
         evaluatePlacement,
         getHeuristicDecision,
-    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.js");
+    } = await import("../src/client/game/ai/heuristic/heuristicEvaluator.ts");
     const board = createBoard();
     board[19][5] = "tree";
     const gameState = createGameState(board, "square");

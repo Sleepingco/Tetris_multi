@@ -10,8 +10,8 @@ test("human placement 분석은 heuristic 선택과 user 선택을 같은 board�
         { createHumanPlacementLogAnalysis },
         { rankPlacements },
     ] = await Promise.all([
-        import("../src/client/game/ai/heuristic/placementLogAnalysis.js"),
-        import("../src/client/game/ai/heuristic/heuristicEvaluator.js"),
+        import("../src/client/game/ai/heuristic/placementLogAnalysis.ts"),
+        import("../src/client/game/ai/heuristic/heuristicEvaluator.ts"),
     ]);
     const boardBefore = createBoard();
     boardBefore[18][3] = "tree";
@@ -70,7 +70,7 @@ test("human placement 분석은 heuristic 선택과 user 선택을 같은 board�
 
 test("human placement 분석은 평가 불가능한 placement를 안전하게 거부한다", async () => {
     const { createHumanPlacementLogAnalysis } = await import(
-        "../src/client/game/ai/heuristic/placementLogAnalysis.js"
+        "../src/client/game/ai/heuristic/placementLogAnalysis.ts"
     );
     const board = createBoard();
 
@@ -86,7 +86,7 @@ test("human placement 분석은 평가 불가능한 placement를 안전하게 �
 
 test("human placement 분석은 판단 시작 조각이 없거나 잘못되면 null을 반환한다", async () => {
     const { createHumanPlacementLogAnalysis } = await import(
-        "../src/client/game/ai/heuristic/placementLogAnalysis.js"
+        "../src/client/game/ai/heuristic/placementLogAnalysis.ts"
     );
     const board = createBoard();
     const selectedPlacement = {

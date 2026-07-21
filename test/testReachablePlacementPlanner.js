@@ -59,7 +59,7 @@ test("빈 board에서 기본 reachable placement와 hard_drop 계획을 생성�
         generateReachablePlacements,
         REACHABLE_ACTION_ORDER,
     } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const candidates = generateReachablePlacements(createBoard(), {
         pieceType: "tree",
@@ -82,7 +82,7 @@ test("빈 board에서 기본 reachable placement와 hard_drop 계획을 생성�
 
 test("좌우 이동과 회전 후보는 최단 plannedActions를 반환한다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const candidates = generateReachablePlacements(createBoard(), {
         pieceType: "tree",
@@ -117,7 +117,7 @@ test("좌우 이동과 회전 후보는 최단 plannedActions를 반환한다", 
 
 test("wall kick 회전은 resolveMoveAttempt와 같은 위치를 사용한다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const gameCore = await loadGameCore();
     const board = createBoard();
@@ -151,7 +151,7 @@ test("wall kick 회전은 resolveMoveAttempt와 같은 위치를 사용한다", 
 
 test("장애물에 고립된 activePiece가 도달할 수 없는 placement를 제외한다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const board = createBoard();
     board[19] = Array(10).fill("stack");
@@ -181,7 +181,7 @@ test("장애물에 고립된 activePiece가 도달할 수 없는 placement를 �
 
 test("soft_drop 뒤 좌우 이동해야 들어가는 낮은 공간을 탐색한다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const board = createBoard();
     board[17][0] = "stack";
@@ -214,7 +214,7 @@ test("soft_drop 뒤 좌우 이동해야 들어가는 낮은 공간을 탐색한�
 
 test("모든 빈 board 후보는 authoritative input replay 결과와 일치한다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const board = createBoard();
     const activePiece = {
@@ -232,7 +232,7 @@ test("모든 빈 board 후보는 authoritative input replay 결과와 일치한�
 
 test("동일 final placement는 최단 경로 하나만 유지한다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const candidates = generateReachablePlacements(createBoard(), {
         pieceType: "square",
@@ -251,7 +251,7 @@ test("동일 final placement는 최단 경로 하나만 유지한다", async () 
 
 test("동일 fixture 결과는 결정적이며 원본 입력을 변경하지 않는다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const board = createBoard();
     board[17][0] = "stack";
@@ -275,7 +275,7 @@ test("동일 fixture 결과는 결정적이며 원본 입력을 변경하지 않
 
 test("잘못된 입력이나 도달 가능한 lock이 없으면 빈 후보를 반환한다", async () => {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const fullBoard = createBoard().map(row => row.map(() => "garbage"));
 

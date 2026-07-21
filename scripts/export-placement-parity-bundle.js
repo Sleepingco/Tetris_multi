@@ -157,11 +157,11 @@ async function createExclusiveStagingFile({
 async function loadModules() {
     const fromRoot = relativePath => pathToFileURL(path.resolve(__dirname, "..", relativePath)).href;
     const [builder, groups, ranking, ranker, features] = await Promise.all([
-        import(fromRoot("src/client/game/ai/dataset/placementDatasetBuilder.js")),
-        import(fromRoot("src/client/game/ai/dataset/placementDecisionGroups.js")),
-        import(fromRoot("src/client/game/ai/dataset/placementRankingEvaluator.js")),
-        import(fromRoot("src/client/game/ai/ml/placementPairwiseRanker.js")),
-        import(fromRoot("src/client/game/ai/dataset/placementFeatureSchema.js")),
+        import(fromRoot("src/client/game/ai/dataset/placementDatasetBuilder.ts")),
+        import(fromRoot("src/client/game/ai/dataset/placementDecisionGroups.ts")),
+        import(fromRoot("src/client/game/ai/dataset/placementRankingEvaluator.ts")),
+        import(fromRoot("src/client/game/ai/ml/placementPairwiseRanker.ts")),
+        import(fromRoot("src/client/game/ai/dataset/placementFeatureSchema.ts")),
     ]);
     return { builder, groups, ranking, ranker, features };
 }

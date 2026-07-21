@@ -7,7 +7,7 @@ function createBoard(rows = 20, cols = 10) {
 
 test("simulatePlacement는 조각 고정과 line clear를 boardAfter에 반영한다", async () => {
     const { simulatePlacement } = await import(
-        "../src/client/game/ai/heuristic/simulatePlacement.js"
+        "../src/client/game/ai/heuristic/simulatePlacement.ts"
     );
     const board = createBoard();
     board[19] = [null, null, ...Array(8).fill("tree")];
@@ -37,7 +37,7 @@ test("simulatePlacement는 조각 고정과 line clear를 boardAfter에 반영�
 
 test("simulatePlacement는 원본 board와 placement를 mutate하지 않는다", async () => {
     const { simulatePlacement } = await import(
-        "../src/client/game/ai/heuristic/simulatePlacement.js"
+        "../src/client/game/ai/heuristic/simulatePlacement.ts"
     );
     const board = createBoard();
     board[19][5] = "bar";
@@ -62,7 +62,7 @@ test("simulatePlacement는 원본 board와 placement를 mutate하지 않는다",
 
 test("simulatePlacement는 상단을 넘은 lock을 game over로 반환한다", async () => {
     const { simulatePlacement } = await import(
-        "../src/client/game/ai/heuristic/simulatePlacement.js"
+        "../src/client/game/ai/heuristic/simulatePlacement.ts"
     );
     const board = createBoard();
     board[1][0] = "tree";
@@ -84,7 +84,7 @@ test("simulatePlacement는 상단을 넘은 lock을 game over로 반환한다", 
 
 test("simulatePlacement는 잘못됐거나 충돌하는 placement를 안전하게 거부한다", async () => {
     const { simulatePlacement } = await import(
-        "../src/client/game/ai/heuristic/simulatePlacement.js"
+        "../src/client/game/ai/heuristic/simulatePlacement.ts"
     );
     const board = createBoard();
     board[19][0] = "tree";

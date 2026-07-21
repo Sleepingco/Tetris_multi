@@ -84,7 +84,7 @@ function createState() {
 
 test("adapter는 한 번의 heuristic ranking을 정확한 candidate와 metric delta로 변환한다", async () => {
     const { getPlacementV4PveDecision } = await import(
-        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.js"
+        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts"
     );
     const evaluations = [
         createEvaluation({ col: 1, linesCleared: 0, score: 20 }),
@@ -145,7 +145,7 @@ test("adapter는 한 번의 heuristic ranking을 정확한 candidate와 metric d
 
 test("adapter는 실제 V4 scorer 결과를 evaluation과 결정적으로 다시 연결한다", async () => {
     const { getPlacementV4PveDecision } = await import(
-        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.js"
+        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts"
     );
     const evaluations = [
         createEvaluation({ col: 1, linesCleared: 0, score: 20 }),
@@ -167,7 +167,7 @@ test("adapter는 실제 V4 scorer 결과를 evaluation과 결정적으로 다시
 
 test("adapter 실패는 생성된 같은 ranking의 첫 heuristic 후보로 fallback한다", async (t) => {
     const { getPlacementV4PveDecision } = await import(
-        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.js"
+        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts"
     );
     const first = createEvaluation({ col: 1, linesCleared: 0, score: 20 });
     const validSecond = createEvaluation({ col: 3, linesCleared: 1, score: 10 });
@@ -221,7 +221,7 @@ test("adapter 실패는 생성된 같은 ranking의 첫 heuristic 후보로 fall
 
 test("reachable 후보가 없으면 기존 NO_LEGAL_PLACEMENT 실패를 반환한다", async () => {
     const { getPlacementV4PveDecision } = await import(
-        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.js"
+        "../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts"
     );
     let scorerCalled = false;
     const result = getPlacementV4PveDecision(createModel(), createState(), {

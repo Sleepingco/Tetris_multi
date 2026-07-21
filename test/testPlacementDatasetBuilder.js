@@ -18,7 +18,7 @@ function createMetrics(columnCount = 10) {
 
 async function createValidLog(overrides = {}) {
     const { generateReachablePlacements } = await import(
-        "../src/client/game/ai/heuristic/reachablePlacementPlanner.js"
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
     );
     const boardBefore = createBoard();
     const activePiece = {
@@ -93,7 +93,7 @@ async function createValidLog(overrides = {}) {
 
 test("valid human schemaVersion 2 로그에서 reachable candidate samples를 생성한다", async () => {
     const { buildPlacementDataset, PLACEMENT_DATASET_SCHEMA_VERSION } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const log = await createValidLog();
     const result = buildPlacementDataset([log]);
@@ -113,7 +113,7 @@ test("valid human schemaVersion 2 로그에서 reachable candidate samples를 �
 
 test("heuristic_ai normal과 hard metadata를 candidate마다 보존한다", async () => {
     const { buildPlacementDataset } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const normalLog = await createValidLog({
         gameId: "game-normal",
@@ -143,7 +143,7 @@ test("heuristic_ai normal과 hard metadata를 candidate마다 보존한다", asy
 
 test("원본 selectedPlacement와 일치하는 candidate 하나만 label이 true다", async () => {
     const { buildPlacementDataset } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const log = await createValidLog();
     const result = buildPlacementDataset([log]);
@@ -155,7 +155,7 @@ test("원본 selectedPlacement와 일치하는 candidate 하나만 label이 true
 
 test("candidateResult는 후보 simulation의 linesCleared와 gameOver를 사용한다", async () => {
     const { buildPlacementDataset, PLACEMENT_DATASET_SCHEMA_VERSION } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const result = buildPlacementDataset([await createValidLog()]);
 
@@ -173,7 +173,7 @@ test("candidateResult는 후보 simulation의 linesCleared와 gameOver를 사용
 
 test("inputSequence와 입력 객체를 변경하지 않고 metadata 복사본을 만든다", async () => {
     const { buildPlacementDataset } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const log = await createValidLog();
     const originalLog = structuredClone(log);
@@ -193,7 +193,7 @@ test("inputSequence 내부 항목의 action과 숫자 필드 타입 및 범위�
     const {
         buildPlacementDataset,
         DATASET_REJECTION_REASONS,
-    } = await import("../src/client/game/ai/dataset/placementDatasetBuilder.js");
+    } = await import("../src/client/game/ai/dataset/placementDatasetBuilder.ts");
     const validInput = {
         action: "hard_drop",
         tick: 10,
@@ -234,7 +234,7 @@ test("schemaVersion 1 로그는 명시적인 reason으로 제외한다", async (
     const {
         buildPlacementDataset,
         DATASET_REJECTION_REASONS,
-    } = await import("../src/client/game/ai/dataset/placementDatasetBuilder.js");
+    } = await import("../src/client/game/ai/dataset/placementDatasetBuilder.ts");
     const log = await createValidLog({ schemaVersion: 1 });
     const result = buildPlacementDataset([log]);
 
@@ -251,7 +251,7 @@ test("malformed board와 도달 불가능한 선택을 rejected reason으로 분
     const {
         buildPlacementDataset,
         DATASET_REJECTION_REASONS,
-    } = await import("../src/client/game/ai/dataset/placementDatasetBuilder.js");
+    } = await import("../src/client/game/ai/dataset/placementDatasetBuilder.ts");
     const malformedBoardLog = await createValidLog({
         gameId: "game-malformed",
         boardBefore: [[null], [null, null]],
@@ -281,7 +281,7 @@ test("malformed board와 도달 불가능한 선택을 rejected reason으로 분
 
 test("미래 결과와 원본 evaluation은 sample feature에 포함하지 않는다", async () => {
     const { buildPlacementDataset } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const log = await createValidLog({
         boardAfter: [["FUTURE_BOARD_LEAK"]],
@@ -312,7 +312,7 @@ test("미래 결과와 원본 evaluation은 sample feature에 포함하지 않�
 
 test("동일 로그 입력은 후보 순서, score, rejected reason까지 결정적이다", async () => {
     const { buildPlacementDataset } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const validLog = await createValidLog();
     const invalidLog = await createValidLog({
@@ -352,7 +352,7 @@ function createGameSplitMap(split) {
 
 test("gameId 단위 split은 train과 validation leakage를 막는다", async () => {
     const { splitDatasetByGameId } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const samples = createSplitSamples();
     const split = splitDatasetByGameId(samples, {
@@ -370,7 +370,7 @@ test("gameId 단위 split은 train과 validation leakage를 막는다", async ()
 
 test("같은 seed의 split 결과는 동일하다", async () => {
     const { splitDatasetByGameId } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const samples = createSplitSamples();
     const options = { validationRatio: 0.3, seed: 20260714 };
@@ -383,7 +383,7 @@ test("같은 seed의 split 결과는 동일하다", async () => {
 
 test("입력 sample 순서가 바뀌어도 gameId별 split과 출력 순서가 유지된다", async () => {
     const { splitDatasetByGameId } = await import(
-        "../src/client/game/ai/dataset/placementDatasetBuilder.js"
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
     );
     const samples = createSplitSamples();
     const options = { validationRatio: 0.35, seed: "order-independent" };

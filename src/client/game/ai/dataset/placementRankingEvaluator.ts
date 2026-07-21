@@ -1,5 +1,48 @@
-import { compareCanonicalStrings, getCanonicalPlacementKey } from "./placementDecisionGroups.js";
-import { compareHeuristicEvaluations } from "../heuristic/heuristicEvaluator.js";
+import { compareCanonicalStrings, getCanonicalPlacementKey } from "./placementDecisionGroups.ts";
+import { compareHeuristicEvaluations } from "../heuristic/heuristicEvaluator.ts";
+import type { PlacementDatasetSample } from "./placementDatasetBuilder.ts";
+import type { PlacementDecisionGroup } from "./placementDecisionGroups.ts";
+
+type RankingEntry = {
+    rank: number;
+    candidateCount: number;
+    gameId: string;
+    aiDifficulty: string;
+    outcome: "winner" | "loser";
+    topScoreTie: boolean;
+    tieAwareTop1: boolean;
+};
+type RankingSummary = {
+    decisionCount: number;
+    gameCount: number;
+    top1Accuracy: number;
+    tieAwareTop1Accuracy: number;
+    topScoreTieDecisionCount: number;
+    top3Accuracy: number;
+    mrr: number;
+    meanSelectedRank: number;
+    candidateCount: { mean: number; min: number; max: number };
+};
+export type RankingMetrics = RankingSummary & {
+    byGameId: Record<string, RankingSummary>;
+    byAiDifficulty: Record<string, RankingSummary>;
+    byOutcome: Record<string, RankingSummary>;
+};
+type RankingError = {
+    reason: string;
+    decisionKey: string;
+    placementKey?: string | null;
+    message?: string;
+};
+type CandidateComparator = (
+    left: PlacementDatasetSample,
+    right: PlacementDatasetSample,
+) => number;
+type PlacementScoreResult = Map<PlacementDatasetSample, number> | {
+    scores: Map<PlacementDatasetSample, number>;
+    compareCandidates?: CandidateComparator;
+};
+export type PlacementScorer = (group: PlacementDecisionGroup) => PlacementScoreResult;
 
 export const RANKING_EVALUATION_SCHEMA_VERSION = 1;
 
@@ -11,7 +54,7 @@ export const RANKING_EVALUATION_ERROR_REASONS = Object.freeze({
     SCORER_ERROR: "SCORER_ERROR",
 });
 
-function hashString(value) {
+function hashString(value: string): number {
     let hash = 2166136261;
     for (let index = 0; index < value.length; index++) {
         hash ^= value.charCodeAt(index);
@@ -20,11 +63,11 @@ function hashString(value) {
     return hash >>> 0;
 }
 
-function summarize(entries) {
+function summarize(entries: RankingEntry[]): RankingSummary {
     const ranks = entries.map(entry => entry.rank);
     const candidateCounts = entries.map(entry => entry.candidateCount);
     const count = ranks.length;
-    const sum = values => values.reduce((total, value) => total + value, 0);
+    const sum = (values: number[]) => values.reduce((total, value) => total + value, 0);
     return {
         decisionCount: count,
         gameCount: new Set(entries.map(entry => entry.gameId)).size,
@@ -42,14 +85,25 @@ function summarize(entries) {
     };
 }
 
-function createEvaluationError(group, reason, details = {}) {
+function createEvaluationError(
+    group: PlacementDecisionGroup,
+    reason: string,
+    details: { placementKey?: string | null; message?: string } = {},
+): { ok: false; error: RankingError } {
     return {
         ok: false,
         error: { reason, decisionKey: group.decisionKey, ...details },
     };
 }
 
-function normalizeScorerResult(group, scorerResult) {
+function normalizeScorerResult(
+    group: PlacementDecisionGroup,
+    scorerResult: PlacementScoreResult,
+): {
+    ok: true;
+    scores: Map<PlacementDatasetSample, number>;
+    compareCandidates?: CandidateComparator;
+} | { ok: false; error: RankingError } {
     const scores = scorerResult instanceof Map ? scorerResult : scorerResult?.scores;
     if (!(scores instanceof Map)) {
         return createEvaluationError(group, RANKING_EVALUATION_ERROR_REASONS.INVALID_SCORER_OUTPUT);
@@ -73,12 +127,31 @@ function normalizeScorerResult(group, scorerResult) {
             });
         }
     }
-    return { ok: true, scores, compareCandidates: scorerResult?.compareCandidates };
+    const compareCandidates = scorerResult instanceof Map
+        ? undefined
+        : scorerResult.compareCandidates;
+    return { ok: true, scores, compareCandidates };
 }
 
-function rankCandidates(group, scorerResult) {
+function getCandidateScore(
+    scores: Map<PlacementDatasetSample, number>,
+    candidate: PlacementDatasetSample,
+): number {
+    const score = scores.get(candidate);
+    if (typeof score !== "number") throw new Error("candidate score missing after validation");
+    return score;
+}
+
+function rankCandidates(
+    group: PlacementDecisionGroup,
+    scorerResult: {
+        scores: Map<PlacementDatasetSample, number>;
+        compareCandidates?: CandidateComparator;
+    },
+): PlacementDatasetSample[] {
     return group.candidates.slice().sort((left, right) => {
-        const scoreDelta = scorerResult.scores.get(right) - scorerResult.scores.get(left);
+        const scoreDelta = getCandidateScore(scorerResult.scores, right) -
+            getCandidateScore(scorerResult.scores, left);
         if (scoreDelta) return scoreDelta;
         if (scorerResult.compareCandidates) {
             const comparison = scorerResult.compareCandidates(left, right);
@@ -88,20 +161,20 @@ function rankCandidates(group, scorerResult) {
     });
 }
 
-function createMetrics(entries) {
-    const byGameId = new Map();
-    const byAiDifficulty = new Map();
-    const byOutcome = new Map();
+function createMetrics(entries: RankingEntry[]): RankingMetrics {
+    const byGameId = new Map<string, RankingEntry[]>();
+    const byAiDifficulty = new Map<string, RankingEntry[]>();
+    const byOutcome = new Map<string, RankingEntry[]>();
     entries.forEach(entry => {
-        const add = (map, key) => {
+        const add = (map: Map<string, RankingEntry[]>, key: string) => {
             if (!map.has(key)) map.set(key, []);
-            map.get(key).push(entry);
+            map.get(key)?.push(entry);
         };
         add(byGameId, entry.gameId);
         add(byAiDifficulty, entry.aiDifficulty);
         add(byOutcome, entry.outcome);
     });
-    const toBreakdown = map => Object.fromEntries([...map.entries()].sort(([left], [right]) => compareCanonicalStrings(left, right)).map(([key, values]) => {
+    const toBreakdown = (map: Map<string, RankingEntry[]>): Record<string, RankingSummary> => Object.fromEntries([...map.entries()].sort(([left], [right]) => compareCanonicalStrings(left, right)).map(([key, values]) => {
         return [key, summarize(values)];
     }));
     return {
@@ -112,8 +185,12 @@ function createMetrics(entries) {
     };
 }
 
-function evaluateRankingDetails(groups, scorer) {
-    const entries = [];
+function evaluateRankingDetails(
+    groups: PlacementDecisionGroup[],
+    scorer: PlacementScorer,
+): { ok: true; entries: RankingEntry[]; metrics: RankingMetrics } |
+    { ok: false; error: RankingError } {
+    const entries: RankingEntry[] = [];
     for (const group of groups) {
         let rawScorerResult;
         try {
@@ -127,10 +204,19 @@ function evaluateRankingDetails(groups, scorer) {
         if (!scorerResult.ok) return scorerResult;
         const ranked = rankCandidates(group, scorerResult);
         const selected = ranked.find(candidate => candidate.selectedBySource);
-        const rank = ranked.indexOf(selected) + 1;
-        const topScore = scorerResult.scores.get(ranked[0]);
-        const topScoreTieCount = ranked.filter(candidate => scorerResult.scores.get(candidate) === topScore).length;
+        const topCandidate = ranked[0];
         const candidate = group.candidates[0];
+        if (!selected || !topCandidate || !candidate) {
+            return createEvaluationError(
+                group,
+                RANKING_EVALUATION_ERROR_REASONS.INVALID_SCORER_OUTPUT,
+            );
+        }
+        const rank = ranked.indexOf(selected) + 1;
+        const topScore = getCandidateScore(scorerResult.scores, topCandidate);
+        const topScoreTieCount = ranked.filter(rankedCandidate => {
+            return getCandidateScore(scorerResult.scores, rankedCandidate) === topScore;
+        }).length;
         entries.push({
             rank,
             candidateCount: ranked.length,
@@ -138,14 +224,14 @@ function evaluateRankingDetails(groups, scorer) {
             aiDifficulty: candidate.aiDifficulty ?? "unknown",
             outcome: candidate.metadata?.isWinner === true ? "winner" : "loser",
             topScoreTie: topScoreTieCount > 1,
-            tieAwareTop1: scorerResult.scores.get(selected) === topScore,
+            tieAwareTop1: getCandidateScore(scorerResult.scores, selected) === topScore,
         });
     }
     return { ok: true, entries, metrics: createMetrics(entries) };
 }
 
 export function createHeuristicScorer() {
-    return group => ({
+    return (group: PlacementDecisionGroup): PlacementScoreResult => ({
         scores: new Map(group.candidates.map(candidate => [candidate, candidate.heuristicBaseline.score])),
         compareCandidates: (left, right) => compareHeuristicEvaluations({
             score: left.heuristicBaseline.score,
@@ -162,18 +248,18 @@ export function createHeuristicScorer() {
 }
 
 export function createSeededRandomScorer(seed = "placement-random-v1") {
-    return group => new Map(group.candidates.map(candidate => [candidate,
+    return (group: PlacementDecisionGroup): PlacementScoreResult => new Map(group.candidates.map(candidate => [candidate,
         hashString(`${seed}:${group.decisionKey}:${getCanonicalPlacementKey(candidate)}`),
     ]));
 }
 
 /** scorer는 group을 받아 모든 candidate object의 finite score Map을 반환한다. */
-export function evaluateRanking(groups, scorer) {
+export function evaluateRanking(groups: PlacementDecisionGroup[], scorer: PlacementScorer) {
     const result = evaluateRankingDetails(groups, scorer);
     return result.ok ? { ok: true, ...result.metrics } : result;
 }
 
-export function createLeaveOneGameOutFolds(groups) {
+export function createLeaveOneGameOutFolds(groups: PlacementDecisionGroup[]) {
     const gameIds = [...new Set(groups.map(group => group.candidates[0].gameId))].sort(compareCanonicalStrings);
     return gameIds.map(validationGameId => ({
         validationGameId,
@@ -182,9 +268,12 @@ export function createLeaveOneGameOutFolds(groups) {
     }));
 }
 
-export function evaluateLeaveOneGameOut(groups, scorerFactory) {
-    const heldOutEntries = [];
-    const folds = [];
+export function evaluateLeaveOneGameOut(
+    groups: PlacementDecisionGroup[],
+    scorerFactory: (groups: PlacementDecisionGroup[]) => PlacementScorer,
+) {
+    const heldOutEntries: RankingEntry[] = [];
+    const folds: Array<{ validationGameId: string; metrics: RankingMetrics }> = [];
     for (const fold of createLeaveOneGameOutFolds(groups)) {
         const result = evaluateRankingDetails(fold.validationGroups, scorerFactory(fold.trainGroups));
         if (!result.ok) {

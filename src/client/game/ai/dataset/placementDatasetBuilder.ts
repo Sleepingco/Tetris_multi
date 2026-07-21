@@ -1,5 +1,72 @@
-import { evaluatePlacement } from "../heuristic/heuristicEvaluator.js";
-import { generateReachablePlacements } from "../heuristic/reachablePlacementPlanner.js";
+import { evaluatePlacement } from "../heuristic/heuristicEvaluator.ts";
+import { generateReachablePlacements } from "../heuristic/reachablePlacementPlanner.ts";
+import type { Board } from "../../core/board.ts";
+import type { BoardMetrics } from "../../core/boardMetrics.ts";
+import type { HeuristicEvaluation, HeuristicReason } from "../heuristic/heuristicEvaluator.ts";
+import type { Placement, PlacementCell } from "../heuristic/placementGenerator.ts";
+import type { ReachablePlacement } from "../heuristic/reachablePlacementPlanner.ts";
+
+export type PlacementSource = "human" | "heuristic_ai";
+export type PlacementInputRecord = {
+    action: "move_left" | "move_right" | "soft_drop" | "rotate" | "hard_drop" | "hold";
+    tick: number;
+    pieceIndex: number;
+    sequence: number;
+    createdAt: number;
+};
+export type PlacementDecisionLog = {
+    eventType: "placement_decision";
+    schemaVersion: 2;
+    source: PlacementSource;
+    modelType: "heuristic" | null;
+    gameId: string;
+    playerId: string;
+    pieceIndex: number;
+    aiDifficulty?: "normal" | "hard" | null;
+    boardBefore: Board;
+    activePiece: Placement;
+    selectedPlacement: Placement;
+    inputSequence?: PlacementInputRecord[];
+};
+export type PlacementMetricDelta = BoardMetrics;
+export type PlacementDatasetSample = {
+    datasetSchemaVersion: 2;
+    gameId: string;
+    playerId: string;
+    pieceIndex: number;
+    source: PlacementSource;
+    modelType: "heuristic" | null;
+    aiDifficulty: "normal" | "hard" | null;
+    pieceType: Placement["pieceType"];
+    boardBefore: Board;
+    candidatePlacement: Placement;
+    plannedActions: string[];
+    metricsBefore: BoardMetrics;
+    candidateMetricsAfter: BoardMetrics;
+    metricDelta: PlacementMetricDelta;
+    candidateResult: { linesCleared: number; gameOver: boolean };
+    selectedBySource: boolean;
+    heuristicBaseline: { score: number; reason: HeuristicReason };
+    metadata: {
+        inputSequence: unknown;
+        isWinner?: boolean;
+        winnerPlayerId?: string | null;
+        finishType?: string | null;
+    };
+};
+export type RejectedPlacementLog = {
+    index: number;
+    gameId: string | null;
+    pieceIndex: number | null;
+    reason: string;
+};
+export type PlacementDatasetSummary = {
+    inputLogCount: number;
+    acceptedLogCount: number;
+    rejectedLogCount: number;
+    sampleCount: number;
+    sampleCountBySource: Record<PlacementSource, number>;
+};
 
 export const PLACEMENT_DATASET_SCHEMA_VERSION = 2;
 
@@ -22,8 +89,6 @@ export const DATASET_REJECTION_REASONS = Object.freeze({
     CANDIDATE_EVALUATION_FAILED: "CANDIDATE_EVALUATION_FAILED",
 });
 
-const SUPPORTED_SOURCES = new Set(["human", "heuristic_ai"]);
-const SUPPORTED_AI_DIFFICULTIES = new Set(["normal", "hard"]);
 const SUPPORTED_INPUT_ACTIONS = new Set([
     "move_left",
     "move_right",
@@ -33,15 +98,27 @@ const SUPPORTED_INPUT_ACTIONS = new Set([
     "hold",
 ]);
 
-function isPlainObject(value) {
+function isPlacementSource(value: unknown): value is PlacementSource {
+    return value === "human" || value === "heuristic_ai";
+}
+
+function isAiDifficulty(value: unknown): value is "normal" | "hard" {
+    return value === "normal" || value === "hard";
+}
+
+function isPlacementInputAction(value: unknown): value is PlacementInputRecord["action"] {
+    return typeof value === "string" && SUPPORTED_INPUT_ACTIONS.has(value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function isNonEmptyString(value) {
+function isNonEmptyString(value: unknown): value is string {
     return typeof value === "string" && value.trim() !== "";
 }
 
-function isValidBoard(board) {
+function isValidBoard(board: unknown): board is Board {
     if (!Array.isArray(board) || board.length === 0) return false;
 
     const columnCount = board[0]?.length ?? 0;
@@ -54,7 +131,7 @@ function isValidBoard(board) {
     });
 }
 
-function isValidCells(cells) {
+function isValidCells(cells: unknown): cells is PlacementCell[] {
     if (!Array.isArray(cells) || cells.length !== 4) return false;
 
     const cellKeys = new Set();
@@ -72,9 +149,10 @@ function isValidCells(cells) {
     return cellKeys.size === cells.length;
 }
 
-function isValidPiece(piece) {
+function isValidPiece(piece: unknown): piece is Placement {
     return isPlainObject(piece) &&
         isNonEmptyString(piece.pieceType) &&
+        typeof piece.rotation === "number" &&
         Number.isInteger(piece.rotation) &&
         piece.rotation >= 0 &&
         Number.isInteger(piece.row) &&
@@ -82,42 +160,46 @@ function isValidPiece(piece) {
         isValidCells(piece.cells);
 }
 
-function hasValidSourceModel(log) {
+function hasValidSourceModel(log: Record<string, unknown>): boolean {
     if (log.source === "human") return log.modelType === null;
     if (log.source === "heuristic_ai") return log.modelType === "heuristic";
     return false;
 }
 
-function isValidAiDifficulty(log) {
+function isValidAiDifficulty(log: Record<string, unknown>): boolean {
     if (log.aiDifficulty === undefined || log.aiDifficulty === null) return true;
-    return SUPPORTED_AI_DIFFICULTIES.has(log.aiDifficulty);
+    return isAiDifficulty(log.aiDifficulty);
 }
 
-function isValidInputSequence(inputSequence) {
+function isValidInputSequence(inputSequence: unknown): inputSequence is PlacementInputRecord[] {
     if (!Array.isArray(inputSequence)) return false;
 
     return inputSequence.every(input => {
         return isPlainObject(input) &&
-            SUPPORTED_INPUT_ACTIONS.has(input.action) &&
+            isPlacementInputAction(input.action) &&
+            typeof input.tick === "number" &&
             Number.isInteger(input.tick) &&
             input.tick >= 0 &&
+            typeof input.pieceIndex === "number" &&
             Number.isInteger(input.pieceIndex) &&
             input.pieceIndex >= 0 &&
+            typeof input.sequence === "number" &&
             Number.isInteger(input.sequence) &&
             input.sequence >= 1 &&
+            typeof input.createdAt === "number" &&
             Number.isFinite(input.createdAt) &&
             input.createdAt >= 0;
     });
 }
 
-function cloneSerializable(value) {
+function cloneSerializable(value: unknown): unknown {
     if (typeof structuredClone === "function") {
         return structuredClone(value);
     }
     return JSON.parse(JSON.stringify(value));
 }
 
-function clonePlacement(placement) {
+function clonePlacement(placement: Placement): Placement {
     return {
         pieceType: placement.pieceType,
         rotation: placement.rotation,
@@ -127,7 +209,7 @@ function clonePlacement(placement) {
     };
 }
 
-function cloneMetrics(metrics) {
+function cloneMetrics(metrics: BoardMetrics): BoardMetrics {
     return {
         columnHeights: [...metrics.columnHeights],
         aggregateHeight: metrics.aggregateHeight,
@@ -138,7 +220,10 @@ function cloneMetrics(metrics) {
     };
 }
 
-function calculateMetricDelta(metricsBefore, metricsAfter) {
+function calculateMetricDelta(
+    metricsBefore: BoardMetrics,
+    metricsAfter: BoardMetrics,
+): PlacementMetricDelta {
     return {
         columnHeights: metricsAfter.columnHeights.map((height, index) => {
             return height - metricsBefore.columnHeights[index];
@@ -151,65 +236,101 @@ function calculateMetricDelta(metricsBefore, metricsAfter) {
     };
 }
 
-function isSamePlacement(left, right) {
+function isSamePlacement(left: Placement, right: Placement): boolean {
     return left.pieceType === right.pieceType &&
         left.rotation === right.rotation &&
         left.row === right.row &&
         left.col === right.col;
 }
 
-function createRejectedLog(log, index, reason) {
+function createRejectedLog(
+    log: unknown,
+    index: number,
+    reason: string,
+): RejectedPlacementLog {
+    const record = isPlainObject(log) ? log : null;
     return {
         index,
-        gameId: isNonEmptyString(log?.gameId) ? log.gameId : null,
-        pieceIndex: Number.isInteger(log?.pieceIndex) ? log.pieceIndex : null,
+        gameId: isNonEmptyString(record?.gameId) ? record.gameId : null,
+        pieceIndex: typeof record?.pieceIndex === "number" && Number.isInteger(record.pieceIndex)
+            ? record.pieceIndex
+            : null,
         reason,
     };
 }
 
-function validateDecisionLog(log) {
-    if (!isPlainObject(log)) return DATASET_REJECTION_REASONS.LOG_REQUIRED;
+type DecisionLogValidation = {
+    ok: true;
+    log: PlacementDecisionLog;
+} | {
+    ok: false;
+    reason: string;
+};
+
+function validateDecisionLog(log: unknown): DecisionLogValidation {
+    if (!isPlainObject(log)) return { ok: false, reason: DATASET_REJECTION_REASONS.LOG_REQUIRED };
     if (log.eventType !== "placement_decision") {
-        return DATASET_REJECTION_REASONS.INVALID_EVENT_TYPE;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_EVENT_TYPE };
     }
     if (log.schemaVersion !== 2) {
-        return DATASET_REJECTION_REASONS.UNSUPPORTED_SCHEMA_VERSION;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.UNSUPPORTED_SCHEMA_VERSION };
     }
-    if (!SUPPORTED_SOURCES.has(log.source)) {
-        return DATASET_REJECTION_REASONS.INVALID_SOURCE;
+    if (!isPlacementSource(log.source)) {
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_SOURCE };
     }
     if (!hasValidSourceModel(log)) {
-        return DATASET_REJECTION_REASONS.INVALID_MODEL_TYPE;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_MODEL_TYPE };
     }
     if (!isNonEmptyString(log.gameId)) {
-        return DATASET_REJECTION_REASONS.GAME_ID_REQUIRED;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.GAME_ID_REQUIRED };
     }
     if (!isNonEmptyString(log.playerId)) {
-        return DATASET_REJECTION_REASONS.PLAYER_ID_REQUIRED;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.PLAYER_ID_REQUIRED };
     }
-    if (!Number.isInteger(log.pieceIndex) || log.pieceIndex < 0) {
-        return DATASET_REJECTION_REASONS.PIECE_INDEX_REQUIRED;
+    if (typeof log.pieceIndex !== "number" || !Number.isInteger(log.pieceIndex) || log.pieceIndex < 0) {
+        return { ok: false, reason: DATASET_REJECTION_REASONS.PIECE_INDEX_REQUIRED };
     }
     if (!isValidAiDifficulty(log)) {
-        return DATASET_REJECTION_REASONS.INVALID_AI_DIFFICULTY;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_AI_DIFFICULTY };
     }
     if (!isValidBoard(log.boardBefore)) {
-        return DATASET_REJECTION_REASONS.INVALID_BOARD;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_BOARD };
     }
     if (!isValidPiece(log.activePiece)) {
-        return DATASET_REJECTION_REASONS.INVALID_ACTIVE_PIECE;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_ACTIVE_PIECE };
     }
     if (!isValidPiece(log.selectedPlacement)) {
-        return DATASET_REJECTION_REASONS.INVALID_SELECTED_PLACEMENT;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_SELECTED_PLACEMENT };
     }
     if (log.inputSequence !== undefined && !isValidInputSequence(log.inputSequence)) {
-        return DATASET_REJECTION_REASONS.INVALID_INPUT_SEQUENCE;
+        return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_INPUT_SEQUENCE };
     }
 
-    return null;
+    return {
+        ok: true,
+        log: {
+            eventType: "placement_decision",
+            schemaVersion: 2,
+            source: log.source,
+            modelType: log.source === "human" ? null : "heuristic",
+            gameId: log.gameId,
+            playerId: log.playerId,
+            pieceIndex: log.pieceIndex,
+            aiDifficulty: isAiDifficulty(log.aiDifficulty) ? log.aiDifficulty : null,
+            boardBefore: log.boardBefore,
+            activePiece: log.activePiece,
+            selectedPlacement: log.selectedPlacement,
+            ...(log.inputSequence === undefined ? {} : { inputSequence: log.inputSequence }),
+        },
+    };
 }
 
-function createSample(log, candidate, evaluation, inputSequence) {
+function createSample(
+    log: PlacementDecisionLog,
+    candidate: ReachablePlacement,
+    evaluation: HeuristicEvaluation,
+    inputSequence: unknown,
+): PlacementDatasetSample {
     const metricsBefore = cloneMetrics(evaluation.metricsBefore);
     const candidateMetricsAfter = cloneMetrics(evaluation.metricsAfter);
 
@@ -243,7 +364,12 @@ function createSample(log, candidate, evaluation, inputSequence) {
     };
 }
 
-function createSummary(inputLogCount, acceptedLogCount, samples, rejected) {
+function createSummary(
+    inputLogCount: number,
+    acceptedLogCount: number,
+    samples: PlacementDatasetSample[],
+    rejected: RejectedPlacementLog[],
+): PlacementDatasetSummary {
     const sourceCounts = {
         human: 0,
         heuristic_ai: 0,
@@ -269,7 +395,7 @@ function createSummary(inputLogCount, acceptedLogCount, samples, rejected) {
  * @param {Object} options - 향후 builder 옵션을 위한 예약 인자
  * @returns {{samples: Object[], rejected: Object[], summary: Object}} dataset 생성 결과
  */
-export function buildPlacementDataset(logs, options = {}) {
+export function buildPlacementDataset(logs: unknown, options: unknown = {}) {
     void options;
 
     if (!Array.isArray(logs)) {
@@ -281,20 +407,21 @@ export function buildPlacementDataset(logs, options = {}) {
         };
     }
 
-    const samples = [];
-    const rejected = [];
+    const samples: PlacementDatasetSample[] = [];
+    const rejected: RejectedPlacementLog[] = [];
     let acceptedLogCount = 0;
 
     logs.forEach((log, index) => {
-        const validationReason = validateDecisionLog(log);
-        if (validationReason) {
-            rejected.push(createRejectedLog(log, index, validationReason));
+        const validation = validateDecisionLog(log);
+        if (!validation.ok) {
+            rejected.push(createRejectedLog(log, index, validation.reason));
             return;
         }
+        const validatedLog = validation.log;
 
         let inputSequence;
         try {
-            inputSequence = cloneSerializable(log.inputSequence ?? []);
+            inputSequence = cloneSerializable(validatedLog.inputSequence ?? []);
         } catch {
             rejected.push(createRejectedLog(
                 log,
@@ -304,7 +431,7 @@ export function buildPlacementDataset(logs, options = {}) {
             return;
         }
 
-        const candidates = generateReachablePlacements(log.boardBefore, log.activePiece);
+        const candidates = generateReachablePlacements(validatedLog.boardBefore, validatedLog.activePiece);
         if (candidates.length === 0) {
             rejected.push(createRejectedLog(
                 log,
@@ -315,7 +442,7 @@ export function buildPlacementDataset(logs, options = {}) {
         }
 
         if (!candidates.some(candidate => {
-            return isSamePlacement(candidate.placement, log.selectedPlacement);
+            return isSamePlacement(candidate.placement, validatedLog.selectedPlacement);
         })) {
             rejected.push(createRejectedLog(
                 log,
@@ -327,7 +454,7 @@ export function buildPlacementDataset(logs, options = {}) {
 
         const decisionSamples = [];
         for (const candidate of candidates) {
-            const evaluation = evaluatePlacement(log.boardBefore, candidate.placement);
+            const evaluation = evaluatePlacement(validatedLog.boardBefore, candidate.placement);
             if (!evaluation) {
                 rejected.push(createRejectedLog(
                     log,
@@ -336,7 +463,7 @@ export function buildPlacementDataset(logs, options = {}) {
                 ));
                 return;
             }
-            decisionSamples.push(createSample(log, candidate, evaluation, inputSequence));
+            decisionSamples.push(createSample(validatedLog, candidate, evaluation, inputSequence));
         }
 
         acceptedLogCount += 1;
@@ -350,7 +477,7 @@ export function buildPlacementDataset(logs, options = {}) {
     };
 }
 
-function hashString(value) {
+function hashString(value: string): number {
     let hash = 2166136261;
     for (let index = 0; index < value.length; index++) {
         hash ^= value.charCodeAt(index);
@@ -359,7 +486,7 @@ function hashString(value) {
     return hash >>> 0;
 }
 
-function compareSamples(left, right) {
+function compareSamples(left: PlacementDatasetSample, right: PlacementDatasetSample): number {
     const leftPlacement = left.candidatePlacement ?? {};
     const rightPlacement = right.candidatePlacement ?? {};
     const leftKey = [
@@ -390,10 +517,10 @@ function compareSamples(left, right) {
  * @param {{validationRatio?: number, seed?: string|number}} options - split 옵션
  * @returns {{train: Object[], validation: Object[], summary: Object}} split 결과
  */
-export function splitDatasetByGameId(samples, {
+export function splitDatasetByGameId(samples: PlacementDatasetSample[], {
     validationRatio = 0.2,
     seed = "placement-dataset-v1",
-} = {}) {
+}: { validationRatio?: number; seed?: string | number } = {}) {
     const safeSamples = Array.isArray(samples) ? samples : [];
     const safeRatio = Number.isFinite(validationRatio)
         ? Math.min(1, Math.max(0, validationRatio))
@@ -417,8 +544,8 @@ export function splitDatasetByGameId(samples, {
         validationGameIds.add(gameId);
     });
 
-    const train = [];
-    const validation = [];
+    const train: PlacementDatasetSample[] = [];
+    const validation: PlacementDatasetSample[] = [];
     safeSamples.forEach(sample => {
         if (validationGameIds.has(sample?.gameId)) {
             validation.push(sample);
