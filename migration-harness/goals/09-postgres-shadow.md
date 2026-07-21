@@ -6,7 +6,7 @@ JSONL 분석 경로를 유지하면서 versioned game event를 PostgreSQL에 비
 
 ## 선행조건
 
-- Goal 8의 main 반영
+- Goal 8C의 main 반영. 선택 Goal 8D는 선행조건이 아니다.
 - 현재 JSONL schema, exporter, lineage와 repository injection 경계 조사
 - PostgreSQL, Drizzle, driver와 migration tool의 호환 버전 결정
 - `TEST_DATABASE_URL`과 격리된 test DB 준비 방식 합의

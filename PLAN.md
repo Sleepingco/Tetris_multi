@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 7A SPA 실험을 보류하고 현재 MPA 기준으로 Goal 8을 준비한다.
+- Last update: 2026-07-21 기준. Goal 7A SPA 실험을 보류하고 Goal 8을 8A~8D의 독립 merge gate로 분할한다.
 
 ## Document Role
 
@@ -241,7 +241,17 @@
 - 현재 E2E는 leave 송신 1회는 확인하지만 ack와 최종 server room/match 제거 상태, multiplayer 구간의 same-document/Socket 유지, 반복 route 진입 뒤 runtime·subscription 단일성을 직접 증명하지 않는다. 필수 수동 PVP/PVE도 완료되지 않았다.
 - 브랜치 전체 변화는 net 644줄이며 production 183줄, test 353줄, docs 108줄이다. index Vite bundle은 gzip 13.45 kB 증가하고 모든 route가 classic Socket.IO script와 두 stylesheet를 연결해 현재 네 개의 큰 page에 비해 초기 전송과 lifecycle 비용이 크다.
 - 따라서 SPA 구현은 실험 브랜치에 보존하되 main에 병합하지 않는다. Goal 7A는 Goal 8 선행조건에서 제외하고, Goal 8은 Goal 7이 반영된 현재 four-entry MPA 기준에서 시작한다.
-- 다음 단계는 이 docs 변경을 main에 반영·검증한 뒤 `migration-harness/goals/08-typescript-completion.md`의 preflight와 설계 gate를 실행하는 것이다. SPA를 재개할 때는 Goal 7A 문서의 문제와 재개 조건을 먼저 해결한다.
+- 다음 단계는 Goal 8 분할 문서를 main에 반영·검증한 뒤 8A를 최신 main의 별도 branch에서 시작하는 것이다. SPA를 재개할 때는 Goal 7A 문서의 문제와 재개 조건을 먼저 해결한다.
+
+## Migration Goal 8 TypeScript 분할 설계 (2026-07-21)
+
+- 기존 단일 Goal 8은 production과 test/tooling을 한 diff에 묶지 않는다. 8A는 `core/state`, 8B는 client runtime/render/net/AI, 8C는 server와 compiled artifact 경계를 각각 독립 branch와 merge gate에서 전환한다.
+- 8D는 test/e2e/scripts 중 유지보수 이득이 분명한 파일만 정리하는 선택 Goal이다. PostgreSQL shadow storage인 Goal 9의 선행조건은 8D가 아니라 production 전환이 끝나는 8C main 반영이다.
+- 각 rename Goal은 아직 JavaScript인 consumer를 포함해 해당 모듈을 참조하는 source import/require 경로를 함께 갱신한다. client ESM은 `.ts`/`.tsx` source specifier와 `rewriteRelativeImportExtensions`를 사용해 output의 `.js` 경로를 보존한다.
+- server CommonJS TypeScript source는 직접 실행하지 않는다. build 뒤 `dist/server` JavaScript만 test, artifact, development와 production 검증에 사용한다. 8C 시작 전 compiled `app → init → sockets → services`, game core loader와 V4 model chain을 작은 interop gate로 고정한다.
+- root `type: module`, 새 loader와 runtime dependency는 추가하지 않는다. `socketContracts.mjs`는 shared Zod runtime의 명시적인 `allowJs` 예외이며 `allowJs: false`는 Goal 8 완료 조건이 아니다.
+- 모든 하위 Goal은 검증 전에 `.nvmrc`와 일치하는 Node `24.18.0`을 명시적으로 확인한다. dependency, lockfile, protocol/schema, gameplay, JSONL/Python parity와 보류된 SPA branch는 변경하지 않는다.
+- `codex/complete-typescript-migration`은 이 분할 문서만 소유한다. 문서가 main에 반영되기 전에는 8A 구현을 시작하지 않는다.
 
 ## Project Direction
 

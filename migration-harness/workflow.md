@@ -9,6 +9,7 @@
 - 전체 로드맵을 하나의 Goal로 만들거나 token budget을 임의로 지정하지 않는다.
 - Goal과 별도로 작은 실행 계획을 만들고 한 단계만 `in_progress`로 유지한다.
 - 상세 Goal 파일이 없으면 구현하지 않고 먼저 명세 작성과 사용자 검토를 요청한다.
+- 분할 인덱스는 구현 Goal로 실행하지 않는다. Goal 8은 `08-typescript-completion.md`가 아니라 8A~8D 중 승인된 상세 Goal 파일 하나만 선택한다.
 
 ## 2. Preflight
 
@@ -31,6 +32,14 @@ git merge-base --is-ancestor <previous-goal-commit> main
 
 실패하면 다음 Goal을 시작하지 않는다.
 
+`.nvmrc`가 있는 Goal은 버전을 출력하는 데 그치지 않고 다음처럼 현재 Node가 정확히 일치하는지 검사한다.
+
+```bash
+test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
+```
+
+불일치하면 dependency 설치, build와 구현을 시작하지 않는다.
+
 ## 3. 브랜치와 Worktree
 
 - 최신 main에서 현재 Goal 전용 `codex/` 브랜치를 만든다.
@@ -38,6 +47,7 @@ git merge-base --is-ancestor <previous-goal-commit> main
 - 기존 브랜치가 같은 이름으로 존재하면 강제로 이동하지 않고 base와 변경 상태를 보고한다.
 - 의존 관계가 있는 migration Goal을 병렬 실행하지 않는다. 무관한 작업이 진행 중이면 현재 Goal 전용 브랜치를 별도 worktree에 checkout한다.
 - 오래된 브랜치 전체 merge보다 필요한 고유 변경을 최신 main 위에 재적용하는 방식을 우선 검토한다.
+- Goal 8A, 8B와 8C는 각각 선행 Goal이 main에 반영된 뒤 새 전용 브랜치에서 시작한다. 8D는 8C 이후의 선택 Goal이며 Goal 9는 8C main 반영만 선행조건으로 사용한다.
 
 ## 4. 구현
 
@@ -45,6 +55,7 @@ git merge-base --is-ancestor <previous-goal-commit> main
 - 변경 전 이유, 영향 범위와 검증 방법을 짧게 보고한다.
 - 플레이 가능한 작은 checkpoint를 유지한다.
 - 대량 rename, 포맷 변경과 기능 변경을 동시에 수행하지 않는다.
+- rename은 파일만 옮겨 끝내지 않고, 아직 전환하지 않은 consumer를 포함한 모든 source import/require 경로 수정까지 같은 Goal에 포함한다.
 - 새 패키지 설치 전 버전 선택 근거를 확인한다.
 - 문서는 검증 이후 실제 상태만 기록한다.
 

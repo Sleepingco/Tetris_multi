@@ -12,8 +12,11 @@
 | [5](goals/05-react-shell.md) | React index/lobby shell | 4 | `codex/migrate-react-shell` |
 | [6](goals/06-react-single.md) | runtime display bridge와 single React | 5 | `codex/migrate-react-single` |
 | [7](goals/07-react-multiplayer.md) | multiplayer/PVE React | 6 | `codex/migrate-react-multiplayer` |
-| [8](goals/08-typescript-completion.md) | 남은 first-party TypeScript 전환 | 7 | `codex/complete-typescript-migration` |
-| [9](goals/09-postgres-shadow.md) | PostgreSQL append-only shadow storage | 8 | `codex/add-postgres-event-shadow` |
+| [8A](goals/08a-typescript-core-state.md) | production core/state TypeScript 전환 | 7 | `codex/migrate-typescript-core-state` |
+| [8B](goals/08b-typescript-client-runtime.md) | production client runtime/render/net/AI TypeScript 전환 | 8A | `codex/migrate-typescript-client-runtime` |
+| [8C](goals/08c-typescript-server.md) | production server TypeScript와 compiled artifact 경계 완성 | 8B | `codex/migrate-typescript-server` |
+| [8D](goals/08d-typescript-tests-tooling.md) | test/e2e/scripts 선택적 TypeScript 정리 | 8C, 선택 | `codex/cleanup-typescript-tests-tooling` |
+| [9](goals/09-postgres-shadow.md) | PostgreSQL append-only shadow storage | 8C | `codex/add-postgres-event-shadow` |
 | [10](goals/10-storage-cutover.md) | DB/JSONL 호환 export와 점진적 전환 | 9 | `codex/cutover-event-storage` |
 | [11A](goals/11a-csp-headers.md) | CSP와 security headers | 10 | `codex/harden-csp-headers` |
 | [11B](goals/11b-dependency-hardening.md) | dependency audit와 보안 업데이트 | 11A | `codex/harden-dependencies` |
@@ -34,7 +37,10 @@
 - 이전 Goal에서 미래 Goal 구현을 선행하지 않는다.
 - 목표가 달라지면 roadmap과 관련 Goal 파일을 문서 변경으로 먼저 갱신한다.
 - Goal 7A는 현재 제품 요구보다 route/session lifecycle 복잡도가 커서 선택 실험으로 보류한다. 재개 조건과 발견된 문제는 Goal 파일을 따른다.
-- Goal 8은 `core/state → runtime/render/net → server → tests` checkpoint로 나눈다.
+- [Goal 8](goals/08-typescript-completion.md)은 실행 Goal이 아니라 8A~8D 분할 정책의 인덱스다.
+- production 전환은 `8A core/state → 8B client runtime/render/net/AI → 8C server/artifact` 순서로 각각 main에 반영한다.
+- 8D test/e2e/scripts 정리는 선택 Goal이다. 8C main 반영 뒤 실행할 수 있지만 Goal 9의 선행조건은 아니다.
+- rename을 수행한 Goal은 아직 JavaScript인 consumer를 포함해 해당 파일을 참조하는 모든 source import/require 경로를 함께 갱신한다.
 - Goal 11은 하나의 큰 branch가 아니라 11A~11D의 독립 Goal로 수행한다.
 
 ## 변하지 않는 방향

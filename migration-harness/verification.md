@@ -7,11 +7,13 @@
 현재 Goal에 존재하는 명령만 실행하되, 생략한 항목은 이유를 기록한다.
 
 ```bash
-node --version
+test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
 npm --version
 git diff --check
 bash scripts/verify.sh
 ```
+
+Node 검사는 출력 기록이 아니라 실행 전 필수 gate다. 현재 migration 기준은 `.nvmrc`의 `24.18.0`이며, 다른 Node에서만 통과한 결과는 유효하지 않다.
 
 Goal 1에서 Vite/TypeScript 기반이 추가된 이후의 최소 자동 검증은 다음과 같다.
 
@@ -30,6 +32,16 @@ Playwright, production runtime smoke와 DB 통합 검증은 별도 full gate로 
 href 문자열, 키 입력 호출 또는 HTTP 200만으로 gameplay 동등성을 주장하지 않는다.
 
 Goal 1에서는 build environment에서 산출물을 만든 뒤 devDependencies가 없는 runtime 조건에서도 server가 기동되는지 확인한다. `/`, 네 page, 정적 asset과 `/socket.io/socket.io.js`를 production HTTP smoke로 검증한다.
+
+## Goal 8 TypeScript 검증
+
+- 8A/8B client ESM은 실제 `.ts`/`.tsx` source specifier를 사용하고 `rewriteRelativeImportExtensions`가 browser 및 `dist/server/client` output의 상대 경로를 `.js`로 바꾸는지 확인한다.
+- rename된 파일을 참조하는 미전환 JavaScript consumer도 같은 Goal에서 경로를 갱신했는지 검색과 runtime fixture로 확인한다.
+- 8C server CommonJS TypeScript는 source를 직접 실행하지 않는다. clean build 뒤 unit/integration, artifact, development와 production smoke가 모두 `dist/server/**/*.js`를 실행해야 한다.
+- 8C 시작 전 8B main에서 `npm run build:server`, `npm run test:artifact`와 compiled server HTTP smoke를 실행한다. artifact test는 `gameCoreLoader → core/state`와 `pveAiPlayerService → V4 scorer/model`, HTTP smoke는 `app → init → sockets → services` load chain을 담당한다.
+- `src/shared/socketContracts.mjs`와 인접 type projection은 명시적인 `allowJs` runtime 예외다. `allowJs: false` 자체를 완료 증거로 사용하지 않는다.
+- 8D는 선택한 test/e2e/scripts만 검증하며 Goal 8C production 완료나 Goal 9 시작을 막지 않는다.
+- 새 TypeScript runtime loader나 runtime dependency 없이 기존 Node 24, TypeScript, Vite와 Playwright 경로로만 실행한다.
 
 ## 서버와 프로토콜 검증
 
