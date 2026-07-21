@@ -34,12 +34,15 @@ async function waitForHttp(url) {
     throw lastError;
 }
 
-function assertSecurityHeaders(response) {
+function assertSecurityHeaders(response, mode) {
     const header = name => typeof response.headers.get === "function"
         ? response.headers.get(name)
         : response.headers[name];
-    assert.match(header("content-security-policy") || "", /default-src 'none'/);
-    assert.equal(header("content-security-policy-report-only") ?? null, null);
+    const enforcePolicy = header("content-security-policy") ?? null;
+    const reportOnlyPolicy = header("content-security-policy-report-only") ?? null;
+    assert.equal(enforcePolicy === null, mode === "report-only");
+    assert.equal(reportOnlyPolicy === null, mode === "enforce");
+    assert.match((mode === "enforce" ? enforcePolicy : reportOnlyPolicy) || "", /default-src 'none'/);
     assert.equal(header("x-content-type-options"), "nosniff");
     assert.equal(header("x-frame-options"), "DENY");
     assert.equal(header("referrer-policy"), "no-referrer");
@@ -58,7 +61,7 @@ async function rawGet(url, headers) {
     });
 }
 
-test("compiled server는 HTML, asset, 404, 304와 Socket.IO HTTP에 security header를 적용한다", {
+for (const mode of ["enforce", "report-only"]) test(`compiled server는 ${mode} CSP 하나만 모든 응답에 적용한다`, {
     timeout: 30_000,
 }, async () => {
     const port = await getFreePort();
@@ -70,6 +73,7 @@ test("compiled server는 HTML, asset, 404, 304와 Socket.IO HTTP에 security hea
             PORT: String(port),
             SOCKET_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
             CSP_CONNECT_ORIGINS: `ws://127.0.0.1:${port}`,
+            CSP_MODE: mode,
         },
         stdio: ["ignore", "pipe", "pipe"],
     });
@@ -79,44 +83,52 @@ test("compiled server는 HTML, asset, 404, 304와 Socket.IO HTTP에 security hea
 
     try {
         const rootResponse = await waitForHttp(`${baseUrl}/`);
-        assertSecurityHeaders(rootResponse);
+        assertSecurityHeaders(rootResponse, mode);
         const rootHtml = await rootResponse.text();
         const modulePath = rootHtml.match(/<script type="module"[^>]+src="([^"]+)"/)?.[1];
         assert.ok(modulePath);
 
         const assetResponse = await fetch(new URL(modulePath, baseUrl));
         assert.equal(assetResponse.status, 200);
-        assertSecurityHeaders(assetResponse);
+        assertSecurityHeaders(assetResponse, mode);
+        const directoryResponse = await fetch(`${baseUrl}/pages`, { redirect: "manual" });
+        assert.equal(directoryResponse.status, 404);
+        assertSecurityHeaders(directoryResponse, mode);
+        const rangeResponse = await fetch(new URL(modulePath, baseUrl), {
+            headers: { Range: "bytes=999999999-" },
+        });
+        assert.equal(rangeResponse.status, 416);
+        assertSecurityHeaders(rangeResponse, mode);
         const etag = assetResponse.headers.get("etag");
         assert.ok(etag);
         const cachedResponse = await rawGet(new URL(modulePath, baseUrl), {
             "If-None-Match": etag,
         });
         assert.equal(cachedResponse.status, 304);
-        assertSecurityHeaders(cachedResponse);
+        assertSecurityHeaders(cachedResponse, mode);
 
         const missingResponse = await fetch(`${baseUrl}/missing-goal11a`);
         assert.equal(missingResponse.status, 404);
-        assertSecurityHeaders(missingResponse);
+        assertSecurityHeaders(missingResponse, mode);
 
         const socketClientResponse = await fetch(`${baseUrl}/socket.io/socket.io.js`, {
             headers: { Origin: ALLOWED_ORIGIN },
         });
         assert.equal(socketClientResponse.status, 200);
         assert.match(socketClientResponse.headers.get("content-type") || "", /javascript/);
-        assertSecurityHeaders(socketClientResponse);
+        assertSecurityHeaders(socketClientResponse, mode);
         const socketMapResponse = await fetch(`${baseUrl}/socket.io/socket.io.js.map`, {
             headers: { Origin: ALLOWED_ORIGIN },
         });
         assert.equal(socketMapResponse.status, 200);
         assert.match(socketMapResponse.headers.get("content-type") || "", /json/);
-        assertSecurityHeaders(socketMapResponse);
+        assertSecurityHeaders(socketMapResponse, mode);
 
         const pollingUrl = `${baseUrl}/socket.io/?EIO=4&transport=polling`;
         const pollingGet = await fetch(pollingUrl, { headers: { Origin: ALLOWED_ORIGIN } });
         assert.equal(pollingGet.status, 200);
         assert.equal(pollingGet.headers.get("access-control-allow-origin"), ALLOWED_ORIGIN);
-        assertSecurityHeaders(pollingGet);
+        assertSecurityHeaders(pollingGet, mode);
         const openPacket = await pollingGet.text();
         const sessionId = JSON.parse(openPacket.slice(1)).sid;
         assert.equal(typeof sessionId, "string");
@@ -130,21 +142,21 @@ test("compiled server는 HTML, asset, 404, 304와 Socket.IO HTTP에 security hea
         });
         assert.equal(pollingPost.status, 200);
         assert.equal(pollingPost.headers.get("access-control-allow-origin"), ALLOWED_ORIGIN);
-        assertSecurityHeaders(pollingPost);
+        assertSecurityHeaders(pollingPost, mode);
 
         const rejectedOrigin = await fetch(pollingUrl, {
             headers: { Origin: "https://evil.example.com" },
         });
         assert.equal(rejectedOrigin.status, 400);
         assert.equal(rejectedOrigin.headers.get("access-control-allow-origin"), null);
-        assertSecurityHeaders(rejectedOrigin);
+        assertSecurityHeaders(rejectedOrigin, mode);
         const rejectedPost = await fetch(`${pollingUrl}&sid=${encodeURIComponent(sessionId)}`, {
             method: "POST",
             headers: { Origin: "https://evil.example.com" },
             body: "2",
         });
         assert.equal(rejectedPost.status, 400);
-        assertSecurityHeaders(rejectedPost);
+        assertSecurityHeaders(rejectedPost, mode);
     } finally {
         if (application.exitCode === null) {
             application.kill("SIGTERM");

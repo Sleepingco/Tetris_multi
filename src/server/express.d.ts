@@ -19,7 +19,7 @@ declare module "express" {
 
     type ExpressFactory = {
         (): Application;
-        static(root: string): unknown;
+        static(root: string, options?: { redirect?: boolean }): unknown;
     };
 
     const express: ExpressFactory;

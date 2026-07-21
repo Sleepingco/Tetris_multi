@@ -2,8 +2,6 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const {
-    CSP_INLINE_SCRIPT_HASHES,
-    CSP_INLINE_STYLE_HASHES,
     createHttpSecurityHeaders,
 } = require("../dist/server/server/httpSecurity.js");
 
@@ -12,17 +10,28 @@ test("CSP는 strict source와 검증된 inline hash만 허용한다", () => {
         CSP_CONNECT_ORIGINS: "wss://game.example.com,https://api.example.com:8443,wss://game.example.com",
     });
     const policy = headers["Content-Security-Policy"];
+    const expectedPolicy = [
+        "default-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+        "object-src 'none'",
+        "script-src 'self' 'sha256-dD0UYyHj6Sta8gSAF02VM8IfeQR0k7L4ZYIYWQgUBm0='",
+        "script-src-attr 'none'",
+        "style-src 'self' 'sha256-8WMI54/fYjLyQ+V0ZVpxKy2ddoWYIfTvf6INokq2xEo=' 'sha256-isAGgst8p0POY9YHnzg/K0CpLsdJtzLOcjeCXqEi6Q4=' 'sha256-IsVLBKuEy1m/EXcXkJQYt/4Hss2umZ0wV/cKhk8GzBs='",
+        "style-src-attr 'none'",
+        "img-src 'self' data:",
+        "font-src 'none'",
+        "media-src 'self'",
+        "connect-src 'self' wss://game.example.com https://api.example.com:8443",
+        "worker-src 'none'",
+    ].join("; ");
 
     assert.equal(headers["Content-Security-Policy-Report-Only"], undefined);
+    assert.equal(policy, expectedPolicy);
     assert.equal(headers["X-Content-Type-Options"], "nosniff");
     assert.equal(headers["X-Frame-Options"], "DENY");
     assert.equal(headers["Referrer-Policy"], "no-referrer");
-    assert.match(policy, /^default-src 'none';/);
-    assert.match(policy, /connect-src 'self' wss:\/\/game\.example\.com https:\/\/api\.example\.com:8443/);
-    assert.doesNotMatch(policy, /unsafe-inline|unsafe-eval|\*/);
-    for (const hash of [...CSP_INLINE_SCRIPT_HASHES, ...CSP_INLINE_STYLE_HASHES]) {
-        assert.match(policy, new RegExp(hash.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-    }
 });
 
 test("report-only와 enforce CSP header는 동시에 노출되지 않는다", () => {

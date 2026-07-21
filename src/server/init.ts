@@ -18,7 +18,7 @@ server.prependListener("request", (_request, response) => {
 const PORT = process.env.PORT || 5500
 const STATIC_ROOT = path.join(__dirname, "..", "..", "client")
 
-app.use(express.static(STATIC_ROOT))
+app.use(express.static(STATIC_ROOT, { redirect: false }))
 app.get("/", (_request, response) => {
     response.sendFile("pages/index.html", { root: STATIC_ROOT })
 })
@@ -26,6 +26,19 @@ app.use((_request: Request, response: Response) => {
     response.statusCode = 404
     response.setHeader("Content-Type", "text/plain; charset=utf-8")
     response.end("Not Found")
+})
+app.use((error: unknown, _request: Request, response: Response, _next: unknown) => {
+    const errorStatus = error && typeof error === "object"
+        ? ("statusCode" in error ? error.statusCode : "status" in error ? error.status : undefined)
+        : undefined
+    response.statusCode = typeof errorStatus === "number" && errorStatus >= 400 && errorStatus <= 599
+        ? errorStatus
+        : 500
+    response.removeHeader("Content-Security-Policy")
+    response.removeHeader("Content-Security-Policy-Report-Only")
+    Object.entries(securityHeaders).forEach(([name, value]) => response.setHeader(name, value))
+    response.setHeader("Content-Type", "text/plain; charset=utf-8")
+    response.end("Request Failed")
 })
 
 registerSocketHandlers(socketServer)
