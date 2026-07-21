@@ -10,11 +10,11 @@ import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes";
 import { roomPublicSchema } from "../../shared/socketContracts.mjs";
-import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.js";
+import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.ts";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.ts";
 import BLOCKS from "../game/state/blocks.ts";
-import { onPlacementDecisionLogResult } from "../net/logClient.js";
+import { onPlacementDecisionLogResult } from "../net/logClient.ts";
 import {
     getPlayerSession,
     leaveGame,
@@ -27,10 +27,11 @@ import {
     onSessionReady,
     requestJoinGameRoom,
     requestLeaveRoom,
-} from "../net/roomClient.js";
+} from "../net/roomClient.ts";
+import type { PlayerSession } from "../net/roomClient.ts";
 
 type PublicRoom = ServerToClientParsedPayload<"room:updated">;
-type SessionReady = ServerToClientParsedPayload<"session:ready">;
+type SessionReady = PlayerSession;
 type GameJoinResult = ServerToClientParsedPayload<"game:join:result">;
 type PveAiPolicy = ServerToClientParsedPayload<"pve:ai-policy">;
 type MatchFinish = ServerToClientParsedPayload<"match:finish">;
@@ -341,7 +342,7 @@ function MultiplayerGamePage() {
 
         applySavedTheme(themeToggle);
         const room = readStoredRoom();
-        const playerId = (getPlayerSession() as SessionReady | null)?.playerId;
+        const playerId = getPlayerSession()?.playerId ?? null;
         if (
             !room
             || !playerId

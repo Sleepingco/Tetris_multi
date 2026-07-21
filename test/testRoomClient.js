@@ -59,7 +59,7 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
         sendGameInput,
         sendPlacementDecisionLogEvent,
     } = await import(
-        "../src/client/net/roomClient.js?test=room-create-difficulty"
+        "../src/client/net/roomClient.ts?test=room-create-difficulty"
     );
     const player = { playerId: "client-player", nickname: "Player" };
     const disconnects = [];

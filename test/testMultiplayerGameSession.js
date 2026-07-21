@@ -248,7 +248,7 @@ function emitDocumentEvent(eventName, payload) {
 
 async function loadSession() {
     installBrowserStubs(sharedFakeSocket);
-    return import("../src/client/game/entry/multiplayerGameSession.js");
+    return import("../src/client/game/entry/multiplayerGameSession.ts");
 }
 
 function createSessionParams(overrides = {}) {

@@ -20,14 +20,15 @@ import {
     requestStartGame,
     sendGlobalChat,
     sendRoomChat,
-} from "../net/roomClient.js";
+} from "../net/roomClient.ts";
+import type { PlayerSession } from "../net/roomClient.ts";
 
 type Room = ServerToClientParsedPayload<"room:updated">;
 type RoomResult = ServerToClientParsedPayload<"room:result">;
 type RoomMessage = ServerToClientParsedPayload<"room:message">;
 type GlobalMessage = ServerToClientParsedPayload<"global:message">;
 type ChatResult = ServerToClientParsedPayload<"chat:result">;
-type Session = ServerToClientParsedPayload<"session:ready">;
+type Session = PlayerSession;
 type RequestType = "create" | "join" | "leave" | "start" | "sync" | null;
 type View = "join" | "create" | "pve" | "room";
 type DisplayMessage = {

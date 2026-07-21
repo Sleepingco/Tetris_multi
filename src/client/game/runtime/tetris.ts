@@ -66,7 +66,7 @@ type ActionResult = {
 };
 type PendingMove = { intent: MoveIntent; pendingPiece: PieceState };
 type MoveOptions = { automaticGravity?: boolean };
-type InputOutcomeRecord = {
+export type InputOutcomeRecord = {
     input: QueuedInput;
     applied: boolean;
     placementCommitted: boolean;
@@ -122,7 +122,7 @@ type PlacementContext = {
     inputSequence: AppliedInputLog[];
     selectedPlacement: PieceLog;
 };
-type PlacementDecisionLog = Omit<PlacementContext, "scoreBefore" | "schemaVersion"> & {
+export type PlacementDecisionLog = Omit<PlacementContext, "scoreBefore" | "schemaVersion"> & {
     schemaVersion: 1 | 2;
     boardAfter: Board;
     placementResult: PlacementResult;
@@ -149,7 +149,7 @@ type TetrisSnapshot = {
     pieceIndex: number;
     pendingGarbageLines: number;
 };
-type TetrisSnapshotInput = Partial<SerializedGameState> & {
+export type TetrisSnapshotInput = Partial<SerializedGameState> & {
     tick?: number;
     pieceIndex?: number;
     pendingGarbageLines?: number;

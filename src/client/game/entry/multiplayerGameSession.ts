@@ -8,9 +8,66 @@ import {
     receiveGameBagAppend,
     onGameBagResult,
     onSessionDisconnected,
-} from "../../net/roomClient.js"
-import { sendPlacementDecisionLog } from "../../net/logClient.js"
+} from "../../net/roomClient.ts"
+import { sendPlacementDecisionLog } from "../../net/logClient.ts"
 import { evaluateOwnSnapshotCorrection } from "../runtime/snapshotCorrection.ts"
+import type { SnapshotDriftState } from "../runtime/snapshotCorrection.ts"
+import type {
+    InputOutcomeRecord,
+    PlacementDecisionLog,
+    TetrisRuntime,
+    TetrisSnapshotInput,
+} from "../runtime/tetris.ts"
+import type { PieceType } from "../state/blocks.ts"
+import type { ServerToClientParsedPayload } from "../../../shared/socketContractTypes.d.ts"
+
+type GameJoinResult = ServerToClientParsedPayload<"game:join:result">;
+type Match = NonNullable<GameJoinResult["match"]>;
+type MatchSnapshot = ServerToClientParsedPayload<"game:authoritative:snapshot">["snapshot"];
+type PresentationEffect = NonNullable<
+    ServerToClientParsedPayload<"game:authoritative:snapshot">["presentationEffect"]
+>;
+type GameInputResult = ServerToClientParsedPayload<"game:input:result">;
+type ExpectedTransform = { pieceType: PieceType; rotation: number; col: number };
+type PendingServerInput = InputOutcomeRecord["input"] & { expectedTransform?: ExpectedTransform };
+type PlacementAttempt = {
+    pieceIndex: number;
+    tick: number;
+    log: PlacementDecisionLog | null;
+    clientSequence: number | null;
+    authoritativeCommitted: boolean;
+};
+export type MultiplayerGameOptions = {
+    roomId: string;
+    playerId: string;
+    opponentPlayerId: string;
+    mode?: "multi" | "pve";
+    match: Match;
+    myCanvas: HTMLCanvasElement;
+    opponentCanvas: HTMLCanvasElement;
+    myNextPreviewEl?: HTMLElement | null;
+    myHoldPreviewEl?: HTMLElement | null;
+    myScoreEl?: HTMLElement | null;
+    myLinesEl?: HTMLElement | null;
+    myPendingGarbageEl?: HTMLElement | null;
+    opponentNextPreviewEl?: HTMLElement | null;
+    opponentHoldPreviewEl?: HTMLElement | null;
+    opponentScoreEl?: HTMLElement | null;
+    opponentLinesEl?: HTMLElement | null;
+    opponentPendingGarbageEl?: HTMLElement | null;
+    onUserInteract?: (() => void) | null;
+};
+export type MultiplayerGameSession = {
+    myGame: TetrisRuntime;
+    opponentGame: TetrisRuntime;
+    heartbeatTimer: ReturnType<typeof setInterval>;
+    detachAuthoritativeSnapshot: () => void;
+    detachGameInputResult: () => void;
+    detachGameBagAppend: () => void;
+    detachGameBagResult: () => void;
+    detachSessionDisconnected: () => void;
+    destroy: () => void;
+};
 
 const AFTER_ACTION_TRANSFORM_INPUTS = new Set([
     "move_left",
@@ -22,12 +79,12 @@ const BEFORE_ACTION_TRANSFORM_INPUTS = new Set([
     "hard_drop",
 ])
 
-function getPlayerBagChunks(match, targetPlayerId) {
+function getPlayerBagChunks(match: Match, targetPlayerId: string): PieceType[][] | null {
     const matchPlayer = match?.players?.find(player => player.playerId === targetPlayerId)
     return Array.isArray(matchPlayer?.bagChunks) ? matchPlayer.bagChunks : null
 }
 
-function getPlayerInitialSnapshot(match, targetPlayerId) {
+function getPlayerInitialSnapshot(match: Match, targetPlayerId: string): MatchSnapshot | null {
     const matchPlayer = match?.players?.find(player => player.playerId === targetPlayerId)
     return Array.isArray(matchPlayer?.snapshot?.board) ? matchPlayer.snapshot : null
 }
@@ -59,15 +116,15 @@ export function startMultiplayerGame({
     opponentLinesEl,
     opponentPendingGarbageEl,
     onUserInteract,
-}) {
+}: MultiplayerGameOptions): MultiplayerGameSession {
     const myBagChunks = getPlayerBagChunks(match, playerId)
     const opponentBagChunks = getPlayerBagChunks(match, opponentPlayerId)
     const gameId = match?.createdAt
         ? `${roomId}-${match.createdAt}`
         : roomId
-    const pendingPlacementAttempts = new Map()
-    const placementAttemptKeyByClientSequence = new Map()
-    const settledPlacementAttemptKeys = new Set()
+    const pendingPlacementAttempts = new Map<string, PlacementAttempt>()
+    const placementAttemptKeyByClientSequence = new Map<number, string>()
+    const settledPlacementAttemptKeys = new Set<string>()
     let placementLogBufferClosed = false
     let hasAuthoritativeGameOver = false
     let destroyed = false
@@ -94,25 +151,34 @@ export function startMultiplayerGame({
     if (myInitialSnapshot) {
         myGame.applySnapshot(myInitialSnapshot, { resumeGravity: true })
     }
-    const initialClientSequence = Number.isInteger(myInitialSnapshot?.lastProcessedClientSequence)
-        && myInitialSnapshot.lastProcessedClientSequence >= 0
-        ? myInitialSnapshot.lastProcessedClientSequence
+    const initialSequence = myInitialSnapshot?.lastProcessedClientSequence
+    const initialClientSequence = typeof initialSequence === "number"
+        && Number.isInteger(initialSequence) && initialSequence >= 0
+        ? initialSequence
         : 0
     let nextClientSequence = initialClientSequence + 1
     let lastAcknowledgedClientSequence = initialClientSequence
-    const pendingServerInputs = new Map()
-    let deferredOwnSnapshot = null
-    let pendingOwnDriftState = null
+    const pendingServerInputs = new Map<number, PendingServerInput>()
+    let deferredOwnSnapshot: MatchSnapshot | null = null
+    let pendingOwnDriftState: SnapshotDriftState | null = null
     let lastForcedResyncClientSequence = -1
 
-    function createPlacementAttemptKey(pieceIndex, tick) {
-        if (!Number.isInteger(pieceIndex) || pieceIndex < 0) return null
-        if (!Number.isInteger(tick) || tick < 0) return null
+    function createPlacementAttemptKey(
+        pieceIndex: number | null | undefined,
+        tick: number | null | undefined,
+    ): string | null {
+        if (typeof pieceIndex !== "number" || !Number.isInteger(pieceIndex) || pieceIndex < 0) return null
+        if (typeof tick !== "number" || !Number.isInteger(tick) || tick < 0) return null
         return `${pieceIndex}:${tick}`
     }
 
-    function getOrCreatePlacementAttempt(key, pieceIndex, tick) {
+    function getOrCreatePlacementAttempt(
+        key: string | null,
+        pieceIndex: number | null | undefined,
+        tick: number | null | undefined,
+    ): PlacementAttempt | null {
         if (!key || placementLogBufferClosed || settledPlacementAttemptKeys.has(key)) return null
+        if (typeof pieceIndex !== "number" || typeof tick !== "number") return null
         if (!pendingPlacementAttempts.has(key)) {
             pendingPlacementAttempts.set(key, {
                 pieceIndex,
@@ -122,16 +188,17 @@ export function startMultiplayerGame({
                 authoritativeCommitted: false,
             })
         }
-        return pendingPlacementAttempts.get(key)
+        return pendingPlacementAttempts.get(key) ?? null
     }
 
-    function settlePlacementAttempt(key) {
+    function settlePlacementAttempt(key: string | null | undefined): void {
         if (!key) return
         pendingPlacementAttempts.delete(key)
         settledPlacementAttemptKeys.add(key)
     }
 
-    function flushPlacementAttempt(key) {
+    function flushPlacementAttempt(key: string | null | undefined): boolean {
+        if (!key) return false
         const attempt = pendingPlacementAttempts.get(key)
         if (!attempt?.log || !attempt.authoritativeCommitted) return false
         if (!Number.isInteger(attempt.clientSequence)) return false
@@ -146,7 +213,7 @@ export function startMultiplayerGame({
         return true
     }
 
-    function bufferLocalPlacementLog(log) {
+    function bufferLocalPlacementLog(log: PlacementDecisionLog): void {
         const key = createPlacementAttemptKey(log?.pieceIndex, log?.tick)
         const attempt = getOrCreatePlacementAttempt(key, log?.pieceIndex, log?.tick)
         if (!attempt || attempt.log) return
@@ -155,20 +222,23 @@ export function startMultiplayerGame({
         flushPlacementAttempt(key)
     }
 
-    function registerTerminalPlacementInput(outcome, clientSequence) {
+    function registerTerminalPlacementInput(
+        outcome: InputOutcomeRecord,
+        clientSequence: number,
+    ): void {
         if (outcome?.placementCommitted !== true) return
 
         const pieceIndex = outcome.input?.pieceIndex
         const tick = outcome.input?.tick
         const key = createPlacementAttemptKey(pieceIndex, tick)
         const attempt = getOrCreatePlacementAttempt(key, pieceIndex, tick)
-        if (!attempt) return
+        if (!attempt || !key) return
 
         attempt.clientSequence = clientSequence
         placementAttemptKeyByClientSequence.set(clientSequence, key)
     }
 
-    function discardPlacementLogBuffer({ close = false } = {}) {
+    function discardPlacementLogBuffer({ close = false }: { close?: boolean } = {}): void {
         for (const key of pendingPlacementAttempts.keys()) {
             settledPlacementAttemptKeys.add(key)
         }
@@ -177,9 +247,9 @@ export function startMultiplayerGame({
         if (close) placementLogBufferClosed = true
     }
 
-    function handlePlacementInputResult(result) {
+    function handlePlacementInputResult(result: GameInputResult): void {
         const clientSequence = result?.clientSequence
-        if (!Number.isInteger(clientSequence)) return
+        if (typeof clientSequence !== "number" || !Number.isInteger(clientSequence)) return
 
         const key = placementAttemptKeyByClientSequence.get(clientSequence)
         if (!key) return
@@ -198,7 +268,7 @@ export function startMultiplayerGame({
         flushPlacementAttempt(key)
     }
 
-    function maybeClosePlacementLogBufferAfterGameOver() {
+    function maybeClosePlacementLogBufferAfterGameOver(): void {
         if (!hasAuthoritativeGameOver || placementLogBufferClosed) return
         if (placementAttemptKeyByClientSequence.size > 0) return
         const awaitsDelayedLocalLog = [...pendingPlacementAttempts.values()].some(attempt => {
@@ -209,7 +279,7 @@ export function startMultiplayerGame({
         discardPlacementLogBuffer({ close: true })
     }
 
-    function createExpectedTransform(outcome) {
+    function createExpectedTransform(outcome: InputOutcomeRecord): ExpectedTransform | null {
         const piece = AFTER_ACTION_TRANSFORM_INPUTS.has(outcome.input.action)
             ? outcome.activePieceAfter
             : BEFORE_ACTION_TRANSFORM_INPUTS.has(outcome.input.action)
@@ -224,7 +294,7 @@ export function startMultiplayerGame({
         }
     }
 
-    function handleLocalInputOutcome(outcome) {
+    function handleLocalInputOutcome(outcome: InputOutcomeRecord): void {
         if (destroyed) return
         if (!outcome?.applied || !outcome.input) return
 
@@ -286,11 +356,11 @@ export function startMultiplayerGame({
 
     let hasPendingBagRequest = false
     let lastOpponentPresentationPieceIndex = -1
-    let lastOpponentPresentationEffectId = null
+    let lastOpponentPresentationEffectId: string | null = null
     const bagLowWatermark = 7
 
-    function acknowledgeServerInputs(clientSequence) {
-        if (!Number.isInteger(clientSequence) || clientSequence < 0) return
+    function acknowledgeServerInputs(clientSequence: number | undefined): void {
+        if (typeof clientSequence !== "number" || !Number.isInteger(clientSequence) || clientSequence < 0) return
         if (clientSequence >= nextClientSequence) return
         if (clientSequence <= lastAcknowledgedClientSequence) return
 
@@ -302,18 +372,20 @@ export function startMultiplayerGame({
         }
     }
 
-    function updateOwnPendingGarbage(snapshot) {
+    function updateOwnPendingGarbage(snapshot: MatchSnapshot): void {
         if (Number.isInteger(snapshot.pendingGarbageLines)) {
             myGame.setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines)
         }
     }
 
-    function deferOwnSnapshot(snapshot) {
+    function deferOwnSnapshot(snapshot: MatchSnapshot): void {
         const incomingSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
             ? snapshot.lastProcessedClientSequence
             : 0
-        const deferredSequence = Number.isInteger(deferredOwnSnapshot?.lastProcessedClientSequence)
-            ? deferredOwnSnapshot.lastProcessedClientSequence
+        const currentDeferredSnapshot = deferredOwnSnapshot
+        const deferredSequence = currentDeferredSnapshot
+            && Number.isInteger(currentDeferredSnapshot.lastProcessedClientSequence)
+            ? currentDeferredSnapshot.lastProcessedClientSequence
             : -1
 
         if (!deferredOwnSnapshot || incomingSequence >= deferredSequence) {
@@ -322,7 +394,10 @@ export function startMultiplayerGame({
         pendingOwnDriftState = null
     }
 
-    function evaluateOwnSnapshot(snapshot, localSnapshot = myGame.getSnapshot()) {
+    function evaluateOwnSnapshot(
+        snapshot: MatchSnapshot,
+        localSnapshot = myGame.getSnapshot(),
+    ): boolean {
         const correctionDecision = evaluateOwnSnapshotCorrection(
             snapshot,
             localSnapshot,
@@ -339,7 +414,7 @@ export function startMultiplayerGame({
         return false
     }
 
-    function applyDeferredOwnSnapshotIfReady() {
+    function applyDeferredOwnSnapshotIfReady(): void {
         if (!deferredOwnSnapshot) return
         if (pendingServerInputs.size > 0 || myGame.getPendingInputCount() > 0) return
 
@@ -354,16 +429,19 @@ export function startMultiplayerGame({
         evaluateOwnSnapshot(snapshot)
     }
 
-    function applyForcedOwnSnapshot(result) {
+    function applyForcedOwnSnapshot(result: GameInputResult): boolean {
         const snapshot = result?.snapshot
         const clientSequence = result?.clientSequence
         if (!snapshot || !Array.isArray(snapshot.board)) return false
-        if (!Number.isInteger(clientSequence) || clientSequence < 0) return false
+        if (typeof clientSequence !== "number"
+            || !Number.isInteger(clientSequence) || clientSequence < 0) return false
         if (clientSequence >= nextClientSequence) return false
         if (clientSequence <= lastForcedResyncClientSequence) return false
 
-        const snapshotClientSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
-            ? snapshot.lastProcessedClientSequence
+        const processedSequence = snapshot.lastProcessedClientSequence
+        const snapshotClientSequence = typeof processedSequence === "number"
+            && Number.isInteger(processedSequence)
+            ? processedSequence
             : clientSequence
         if (snapshotClientSequence < lastAcknowledgedClientSequence) return false
 
@@ -380,7 +458,7 @@ export function startMultiplayerGame({
         return true
     }
 
-    function handleOwnAuthoritativeSnapshot(snapshot) {
+    function handleOwnAuthoritativeSnapshot(snapshot: MatchSnapshot): void {
         const localSnapshot = myGame.getSnapshot()
         const snapshotClientSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
             && snapshot.lastProcessedClientSequence >= 0
@@ -420,7 +498,7 @@ export function startMultiplayerGame({
      *
      * @returns {void}
      */
-    function requestBagIfNeeded() {
+    function requestBagIfNeeded(): void {
         if (!hasPendingBagRequest && myGame.getServerBagRemainingCount() <= bagLowWatermark) {
             hasPendingBagRequest = requestGameBagChunk(roomId, playerId)
         }
@@ -442,7 +520,7 @@ export function startMultiplayerGame({
 
         if (remotePlayerId === opponentPlayerId) {
             opponentGame.applySnapshot(snapshot)
-            if (shouldPlayOpponentPresentation(presentationEffect)) {
+            if (presentationEffect && shouldPlayOpponentPresentation(presentationEffect)) {
                 const didPlay = opponentGame.playLineClearPresentation({
                     rows: presentationEffect.rows,
                     board: presentationEffect.boardBeforeClear,
@@ -460,7 +538,7 @@ export function startMultiplayerGame({
         }
     })
 
-    function shouldPlayOpponentPresentation(effect) {
+    function shouldPlayOpponentPresentation(effect: PresentationEffect): boolean {
         if (!effect || effect.type !== "line_clear") return false
         if (typeof effect.id !== "string" || effect.id.length === 0) return false
         if (!Number.isInteger(effect.pieceIndex) || effect.pieceIndex < 0) return false
@@ -523,7 +601,7 @@ export function startMultiplayerGame({
         hasPendingBagRequest = false
     })
 
-    function destroy() {
+    function destroy(): void {
         if (destroyed) return
         destroyed = true
         clearInterval(heartbeatTimer)
