@@ -188,6 +188,16 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
         terminal: true,
     });
     assert.equal(sessionStorage.getItem("tetris:playerSession"), storedSession);
+    const lateTerminalDisconnects = [];
+    const detachLateTerminal = onSessionDisconnected(disconnect => {
+        lateTerminalDisconnects.push(disconnect);
+    });
+    await Promise.resolve();
+    assert.deepEqual(lateTerminalDisconnects, [{
+        reason: "io server disconnect",
+        terminal: true,
+    }]);
+    detachLateTerminal();
 
     fakeSocket.connected = false;
     handlers.get("connect_error")?.({});
@@ -254,6 +264,115 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     });
     assert.equal(sessionStorage.getItem("tetris:playerSession"), credentialBeforeProtocolError);
 
+    delete global.io;
+    delete global.sessionStorage;
+});
+
+test("SPA route leave는 reconnect ready 전에 한 번만 flush되고 result와 terminal에서 정리된다", async () => {
+    const emitted = [];
+    const handlers = new Map();
+    const fakeSocket = {
+        connected: false,
+        id: null,
+        sendBuffer: [],
+        io: { reconnection() {} },
+        emit(eventName, payload) {
+            emitted.push({ eventName, payload });
+        },
+        on(eventName, handler) {
+            if (!handlers.has(eventName)) handlers.set(eventName, new Set());
+            handlers.get(eventName).add(handler);
+        },
+        off(eventName, handler) {
+            handlers.get(eventName)?.delete(handler);
+        },
+        trigger(eventName, payload) {
+            [...(handlers.get(eventName) || [])].forEach(handler => handler(payload));
+        },
+        connect() {
+            this.connected = true;
+            this.id = `socket-${Number(this.id?.split("-")[1] || 0) + 1}`;
+            this.trigger("connect");
+            this.trigger("session:ready", {
+                version: 1,
+                playerId: "00000000-0000-4000-8000-000000000001",
+                token: "a".repeat(43),
+                nickname: "Player",
+                expiresAt: Date.now() + 60_000,
+                resumed: this.id !== "socket-1",
+            });
+        },
+        disconnect(reason = "io client disconnect") {
+            const wasConnected = this.connected;
+            this.connected = false;
+            if (wasConnected) this.trigger("disconnect", reason);
+        },
+    };
+    global.io = () => fakeSocket;
+    global.sessionStorage = {
+        values: new Map([["tetris:nickname", "Player"]]),
+        getItem(key) {
+            return this.values.get(key) ?? null;
+        },
+        setItem(key, value) {
+            this.values.set(key, value);
+        },
+        removeItem(key) {
+            this.values.delete(key);
+        },
+    };
+
+    const {
+        onSessionReady,
+        requestRouteLeave,
+    } = await import("../src/client/net/roomClient.js?test=spa-route-leave");
+    fakeSocket.disconnect("transport close");
+    const readyOrder = [];
+    const detachReady = onSessionReady(() => {
+        readyOrder.push(emitted.at(-1)?.eventName || null);
+    });
+
+    assert.equal(requestRouteLeave("ROOM1234", "game"), false);
+    assert.equal(emitted.length, 0);
+    fakeSocket.connect();
+    assert.deepEqual(emitted, [{
+        eventName: "game:leave",
+        payload: { roomId: "ROOM1234" },
+    }]);
+    assert.deepEqual(readyOrder, ["game:leave"]);
+
+    fakeSocket.trigger("game:leave:result", {
+        ok: true,
+        room: null,
+        reason: null,
+    });
+    fakeSocket.disconnect("transport close");
+    fakeSocket.connect();
+    assert.equal(emitted.length, 1);
+
+    fakeSocket.disconnect("transport close");
+    requestRouteLeave("ROOM0001", "room");
+    requestRouteLeave("ROOM0002", "room");
+    fakeSocket.connect();
+    assert.deepEqual(emitted.at(-1), {
+        eventName: "room:leave",
+        payload: { roomId: "ROOM0002" },
+    });
+    assert.equal(emitted.filter(event => event.eventName === "room:leave").length, 1);
+
+    fakeSocket.trigger("room:result", {
+        ok: false,
+        room: null,
+        reason: "NOT_AUTHORIZED",
+    });
+    fakeSocket.disconnect("transport close");
+    requestRouteLeave("ROOM0003", "game");
+    fakeSocket.trigger("disconnect", "io server disconnect");
+    const emittedBeforeTerminalResume = emitted.length;
+    fakeSocket.connect();
+    assert.equal(emitted.length, emittedBeforeTerminalResume);
+
+    detachReady();
     delete global.io;
     delete global.sessionStorage;
 });

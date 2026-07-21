@@ -26,6 +26,10 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
 
     const allFiles = await listFiles(DIST_ROOT);
     assert.deepEqual(
+        allFiles.filter(file => file.startsWith("client/") && file.endsWith(".html")),
+        ["client/pages/index.html"],
+    );
+    assert.deepEqual(
         allFiles.filter(file => /(?:^|\/)(?:test|tests|e2e|fixtures?)(?:\/|$)/i.test(file)),
         [],
     );
