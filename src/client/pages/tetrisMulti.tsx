@@ -175,6 +175,8 @@ function PlayerHud({
                         className={`stat stat--incoming${snapshot.pendingGarbageLines > 0
                             ? " is-danger"
                             : ""}`}
+                        aria-live="polite"
+                        aria-atomic="true"
                     >
                         <span className="label">Incoming</span>
                         <span className="pending-garbage" data-player={playerNumber}>
@@ -242,6 +244,7 @@ function PlayerColumn({
                     <span
                         id={`player${playerNumber}RoleBadge`}
                         title={badge.title}
+                        aria-live={playerNumber === 2 ? "polite" : undefined}
                     >
                         {badge.text}
                     </span>
@@ -257,7 +260,7 @@ function PlayerColumn({
                                 <span className="label">Lines</span>
                                 <span className="lines">0</span>
                             </div>
-                            <div className="stat stat--incoming">
+                            <div className="stat stat--incoming" aria-live="polite" aria-atomic="true">
                                 <span className="label">Incoming</span>
                                 <span className="pending-garbage" data-player={playerNumber}>0</span>
                             </div>

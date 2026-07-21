@@ -55,6 +55,8 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
                 await expect(column.locator(".next-preview .next-cell")).toHaveCount(32);
                 await expect(column.locator(".next-preview .next-cell.preview")).toHaveCount(8);
                 await expect(column.locator(".hold-preview .next-cell")).toHaveCount(16);
+                await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-live", "polite");
+                await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-atomic", "true");
                 const overlay = column.locator(".game-text");
                 if (playerNumber === myPlayer) {
                     await expect(overlay).toHaveAttribute("aria-live", "polite");
