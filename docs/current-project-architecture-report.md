@@ -49,9 +49,9 @@ DOM 없이 판정                   브라우저에서 조율                   
 ### 2.1 현재 싱글플레이의 책임 분리
 
 - `src/client/game/core/`
-  - 순수 규칙 계층이다. `board.js`는 보드 생성, 배치 가능 여부, 고정, 줄 삭제를 맡고, `step.js`는 입력을 이동 시도로 바꾸고 결과를 판정한다.
-  - `tSpin.js`, `attackState.js`, `garbage.js`는 점수/공격처럼 게임 규칙에 속한 계산을 분리한다.
-  - `boardMetrics.js`는 보드 높이, 구멍, 울퉁불퉁함 등 AI와 분석에 쓸 수치를 DOM 없이 계산한다.
+  - 순수 규칙 계층이다. `board.ts`는 보드 생성, 배치 가능 여부, 고정, 줄 삭제를 맡고, `step.ts`는 입력을 이동 시도로 바꾸고 결과를 판정한다.
+  - `tSpin.ts`, `attackState.ts`, `garbage.ts`는 점수/공격처럼 게임 규칙에 속한 계산을 분리한다.
+  - `boardMetrics.ts`는 보드 높이, 구멍, 울퉁불퉁함 등 AI와 분석에 쓸 수치를 DOM 없이 계산한다.
 - `src/client/game/state/`
   - 조각 정의, 큐, 초기 상태, snapshot 직렬화를 담당한다. 여기의 데이터 형태가 런타임·서버·AI 사이의 공통 언어가 된다.
 - `src/client/game/runtime/tetris.js`

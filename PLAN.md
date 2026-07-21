@@ -260,7 +260,7 @@
 - state deserialize는 기존 fallback을 유지하는 `Partial<SerializedGameState>` 입력을 허용한다. board와 row, active/pending piece 및 queue/bag/inputQueue 배열 컨테이너의 기존 복제 범위만 고정했고 inputQueue 원소의 deep clone이나 serialization schema 변경은 추가하지 않았다.
 - `rewriteRelativeImportExtensions`를 기존 shared tsconfig 경계에 적용해 source의 `.ts` specifier를 browser/server artifact의 `.js`로 emit한다. client/test의 Node source 경계는 `erasableSyntaxOnly`, `verbatimModuleSyntax`와 `import type`을 검사하며 root CommonJS, client ESM marker, `allowJs`와 compiled-only server 실행 계약은 유지한다.
 - clean artifact test는 compiled `loadGameCore()`의 `BLOCKS`, 빈 board와 대표 move/step fixture를 실제 실행한다. 별도 parity framework, dependency, lockfile, loader, gameplay/Socket/SPA 변경은 없다.
-- Node `24.18.0`/npm `11.16.0`에서 typecheck, build, artifact 1/1, targeted core/state 46/46, fast gate의 Node 581개 중 580 pass·기존 조건부 1 skip과 production Playwright 34/34가 통과했다. Single/PVP/PVE 수동 검증에서도 Canvas 입력, hold/restart, authoritative 양방향 보드와 PVE AI line/garbage를 확인했고 네 page의 console error는 0개였다.
+- Node `24.18.0`/npm `11.16.0`에서 typecheck, build, artifact 1/1, targeted core/state 49/49, fast gate의 Node 584개 중 584 pass·기존 조건부 1 skip과 production Playwright 34/34가 통과했다. Single/PVP/PVE 수동 검증에서도 Canvas 입력, hold/restart, authoritative 양방향 보드와 PVE AI line/garbage를 확인했고 네 page의 console error는 0개였다.
 - shared tetris bundle은 기준 34.82 kB(gzip 10.90 kB)에서 34.93 kB(gzip 10.93 kB)로 소폭 증가했다. package manifest와 lockfile checksum은 기준과 동일하다.
 - Goal 8A는 local branch merge gate에서 멈춘다. main 반영 전에는 Goal 8B를 시작하지 않으며 push, SPA 재개와 branch 삭제도 별도 승인 없이는 수행하지 않는다.
 
