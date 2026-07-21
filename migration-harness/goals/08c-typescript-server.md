@@ -82,7 +82,7 @@ npm run test:release
 git diff --check <base>..HEAD
 ```
 
-별도 임시 디렉터리에서 production dependency만 설치하고 미리 생성한 `dist`로 HTTP, Socket.IO, authoritative PVP/PVE와 V4 decision smoke를 실행한다.
+별도 임시 디렉터리에서 production dependency만 설치하고 미리 생성한 `dist`로 HTTP와 Socket.IO client asset, authoritative PVP/PVE와 V4 decision smoke를 실행한다. 실제 Socket.IO auth/handshake는 compiled security test와 Playwright에서 검증한다.
 
 ## 수동 검증
 
@@ -91,11 +91,11 @@ git diff --check <base>..HEAD
 
 ## 보안·데이터 검토
 
-Zod validation → authorization → service 순서, token redaction, JSONL append와 Python parity를 변경하지 않는다. 타입은 인증이나 validation을 대체하지 않는다.
+handshake는 raw auth·remote address·credential 유무 판별 → credential 없는 신규 session rate-limit → `handshakeAuthSchema.safeParse` → malformed resume rate-limit → session authenticate → 인증 실패 resume rate-limit → 성공한 SocketData 설정 순서를 유지한다. mutation은 active-session/rate-limit precheck → event별 Zod parse → ownership → service 순서를 유지한다. token redaction, JSONL append와 Python parity를 변경하지 않으며 타입은 인증이나 validation을 대체하지 않는다.
 
 ## Rollback
 
-구현 rollback은 `docs: record Goal 8C TypeScript migration` → `test: verify Goal 8C compiled release boundary` → `refactor: type Socket.IO server boundaries` → `refactor: type authoritative server gameplay` → `refactor: type server domain and persistence services` → `test: run server suites against compiled artifacts` 순서로 역순 revert한다. pre-interop 문서 commit은 구현 rollback에 포함하지 않으며 Goal 8A/8B client 타입 경계는 유지한다.
+구현 rollback은 `docs: finalize Goal 8C review gate` → `fix: address Goal 8C review` → `docs: record Goal 8C TypeScript migration` → `test: verify Goal 8C compiled release boundary` → `refactor: type Socket.IO server boundaries` → `refactor: type authoritative server gameplay` → `refactor: type server domain and persistence services` → `test: run server suites against compiled artifacts` 순서로 역순 revert한다. pre-interop 문서 commit은 구현 rollback에 포함하지 않으며 Goal 8A/8B client 타입 경계는 유지한다.
 
 ## Merge Gate
 

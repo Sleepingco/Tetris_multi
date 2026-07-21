@@ -139,10 +139,10 @@ authoritative game state
   - complete line은 보상하고, aggregate height·max height·holes·bumpiness는 위험도로 감점한다. 결과는 숫자뿐 아니라 이유와 후보 수를 제공해 설명·디버깅에 쓸 수 있다.
 - `placementLogAnalysis.ts`
   - 사람의 실제 배치를 같은 상태에서 계산한 heuristic 최선안과 비교한다. “AI가 더 높은 점수를 준 정도”와 같은 배치인지 여부를 로그에 남긴다.
-- `pveAiPlayerService.js`
+- `pveAiPlayerService.ts`
   - server authoritative snapshot을 AI 판단 입력으로 사용한다. 선택한 계획을 `move_left`, `rotate`, `soft_drop`, `hard_drop` 같은 authoritative input으로 한 단계씩 실행하고, 실제 실행된 input만 placement log로 저장한다.
   - 조각 순번이 바뀌어 계획이 오래되었거나 실행 결과가 선택한 배치와 달라지면 계획을 버리고 다시 판단한다.
-- `aiDifficulty.js`
+- `aiDifficulty.ts`
   - AI의 판단 규칙은 그대로 두고, hard drop 직전의 terminal soft drop 수만 난이도별 실행 프로필로 분리한다. normal은 내려오는 모습이 보이고, hard는 즉시 hard drop한다.
 
 초기에는 AI가 선택한 최종 placement를 서버에 직접 적용하는 임시 경로가 있었지만, 현재는 제거됐다. AI도 사람과 같은 authoritative input 경로를 지나므로, 별도 규칙으로 보드를 바꾸지 않는다. 이는 PVE의 공정성·가시성·리플레이 가능성을 함께 지키는 설계다.
