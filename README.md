@@ -8,7 +8,7 @@ Vanilla JS, Express, Socket.IO 기반으로 싱글플레이 엔진을 정리하�
 - 멀티플레이 MVP는 `server authoritative state + authoritative snapshot + server garbage/gameOver` 흐름으로 main에 들어와 있다.
 - 서버는 player별 `authoritativeState`를 기준으로 input, gravity tick, lock, garbage, game over를 처리한다.
 - 상대 보드는 `game:authoritative:snapshot`을 기준으로 표시하고, 내 보드는 조작감을 위해 client prediction을 유지하면서 제한된 correction만 적용한다.
-- `src/client/game/core/boardMetrics.js`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현되어 있다.
+- `src/client/game/core/boardMetrics.ts`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현되어 있다.
 - `test/testBoardMetrics.js`가 empty board, line count, hole, bumpiness, height, mutation 방지를 검증한다.
 - 런타임 변경은 `npm test` 전체 회귀 테스트로 검증한다.
 

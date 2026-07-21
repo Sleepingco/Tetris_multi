@@ -17,7 +17,7 @@ runtime, AI와 server authoritative 경로가 같은 board/piece/state 계약을
 
 ## 범위
 
-- `src/client/game/core/*.js`와 `src/client/game/state/*.js`를 `.ts`로 rename한다.
+- 기존 JavaScript core/state 파일은 현재 `src/client/game/core/*.ts`와 `src/client/game/state/*.ts` 경로로 rename한다.
 - board, piece, rotation, move outcome, mutable game state와 serialized snapshot의 public 타입을 각 값을 소유하는 기존 모듈에서 export한다.
 - rename된 모듈을 참조하는 runtime, AI, server loader, test와 script가 아직 JavaScript여도 source import/dynamic import 경로를 실제 `.ts` 확장자로 함께 갱신한다.
 - client ESM 상대 specifier는 `.ts`를 사용하고 build emit에는 `rewriteRelativeImportExtensions`를 적용해 output의 `.js` 경로를 유지한다.

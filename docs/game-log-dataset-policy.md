@@ -3,7 +3,7 @@
 현재 우선순위는 ML 학습이 아니라 휴리스틱 PVE AI와 로그 축적이다.
 로그 정책은 나중에 ML 데이터셋으로 확장할 수 있게 정리하되, 지금 단계에서는 `placement_decision`과 board metric 기반 비교가 안정적으로 남는지를 먼저 본다.
 
-`src/client/game/core/boardMetrics.js`는 이미 구현된 순수 metric 계층이다.
+`src/client/game/core/boardMetrics.ts`는 이미 구현된 순수 metric 계층이다.
 현재 위치는 core board 표현과 같은 경계에 있어 DOM, runtime, socket 없이 Node 테스트로 검증할 수 있기 때문이다.
 서버 AI, 클라이언트 분석, 별도 학습 파이프라인이 같은 metric을 더 넓게 공유해야 하는 시점에는 `shared` 계층으로 이동할 수 있다.
 

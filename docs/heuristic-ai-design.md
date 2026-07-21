@@ -15,7 +15,7 @@ Current implementation:
 
 - Core board functions exist for collision, locking, and line clearing.
 - Runtime currently handles lock flow and placement logging on the client.
-- `src/client/game/core/boardMetrics.js` exists as a pure module with Node tests in `test/testBoardMetrics.js`.
+- `src/client/game/core/boardMetrics.ts` exists as a pure module with Node tests in `test/testBoardMetrics.js`.
 - A first server authoritative input, ticker, state, and snapshot flow exists.
 - No placement generator, simulator, evaluator, or AI controller exists yet.
 - Final two-browser regression for the authoritative flow is still pending.
@@ -37,7 +37,7 @@ Future implementation:
 ### boardMetrics
 
 `boardMetrics` reads a board and returns numeric features.
-It is already implemented at `src/client/game/core/boardMetrics.js`.
+It is already implemented at `src/client/game/core/boardMetrics.ts`.
 
 Implemented metrics:
 

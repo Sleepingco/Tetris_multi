@@ -294,7 +294,7 @@
 - client DTO에는 표시용 `pendingGarbageLines` scalar를 내려준다.
 - server gameOver가 match finish의 원천이다.
 - match cleanup, client sequence acknowledgment, roomId collision retry가 보강됐다.
-- `src/client/game/core/boardMetrics.js`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현됐다.
+- `src/client/game/core/boardMetrics.ts`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현됐다.
 - `test/testBoardMetrics.js`가 board metric 계산과 원본 board mutation 방지를 검증한다.
 - 자동 테스트 기준으로 멀티 MVP 핵심 구현은 완료에 가깝다.
 - 포트폴리오 시연 완료 판정은 2탭 수동 회귀 통과 후로 둔다.
@@ -305,10 +305,10 @@
 - [x] `src/client/pages/tetrisSingle.html` module script에서 싱글 런타임 bootstrap
 - [x] `src/client/pages/tetrisMulti.html` 멀티 게임 local/remote runtime 연결
 - [x] tick-tagged input queue 도입
-- [x] `src/client/game/core/board.js`에 보드 생성, 충돌, 고정, 줄 삭제 순수 함수 존재
-- [x] `src/client/game/core/step.js`에 `resolveMoveAttempt`, `resolveMoveIntent` 존재
-- [x] `src/client/game/state/stateSerialization.js`에 snapshot serialize/deserialize 보조 함수 존재
-- [x] `src/client/game/state/pieceQueue.js`에 7-bag/next queue 유틸리티 존재
+- [x] `src/client/game/core/board.ts`에 보드 생성, 충돌, 고정, 줄 삭제 순수 함수 존재
+- [x] `src/client/game/core/step.ts`에 `resolveMoveAttempt`, `resolveMoveIntent` 존재
+- [x] `src/client/game/state/stateSerialization.ts`에 snapshot serialize/deserialize 보조 함수 존재
+- [x] `src/client/game/state/pieceQueue.ts`에 7-bag/next queue 유틸리티 존재
 - [x] `src/client/game/runtime/snapshotCorrection.js`에 원격 snapshot 보정 판단 유틸리티 존재
 - [x] `src/server/services/roomService.js`에 room 생성/참가/퇴장/시작/종료/동기화 로직 존재
 - [x] `src/server/services/matchService.js`에 match 생성, player별 server bag chunk와 authoritative state 로직 존재
@@ -323,9 +323,9 @@
 - [x] `game:bag:request` / `game:bag:append` 1차 배관 추가: 서버가 player별 bag chunk를 생성해 room에 전달
 - [x] `match:finish` 배관: server authoritative top-out 기준 승패 결과 broadcast. client `game:over` handler는 제거됐다.
 - [x] 멀티플레이 garbage cancel / combo / back-to-back / T-Spin attack 규칙 1차 추가
-- [x] `src/client/game/core/tSpin.js`에 T-Spin lock 판정 pure function 추가
-- [x] `src/client/game/core/attackState.js`에 combo/back-to-back 상태 전이 pure function 추가
-- [x] `src/client/game/core/garbage.js`에 garbage cancel/apply/attack 계산 pure function 정리
+- [x] `src/client/game/core/tSpin.ts`에 T-Spin lock 판정 pure function 추가
+- [x] `src/client/game/core/attackState.ts`에 combo/back-to-back 상태 전이 pure function 추가
+- [x] `src/client/game/core/garbage.ts`에 garbage cancel/apply/attack 계산 pure function 정리
 - [x] 상대 보드 score/lines drift를 snapshot correction에서 보정하도록 수정
 - [x] runtime 통합 테스트로 T-Spin, back-to-back, combo, 일반 line clear의 B2B reset이 `placementResult`에 반영되는지 검증
 - [x] `npm test`로 roomService, matchService, multiplayerSocket, runtime, move step, snapshot correction 주요 흐름 검증 가능
@@ -342,7 +342,7 @@
 - [x] server authoritative match finish 공통 helper 추가
 - [x] 정상 gameOver와 `game:leave`에서 match cleanup 수행
 - [x] roomId 충돌 재시도와 client sequence acknowledgment 추가
-- [x] `src/client/game/core/boardMetrics.js`에 `columnHeights`, `aggregateHeight`, `maxHeight`, `holes`, `bumpiness`, `completeLines` 계산 순수 함수 추가
+- [x] `src/client/game/core/boardMetrics.ts`에 `columnHeights`, `aggregateHeight`, `maxHeight`, `holes`, `bumpiness`, `completeLines` 계산 순수 함수 추가
 - [x] `test/testBoardMetrics.js`로 board metric과 mutation 방지 검증
 
 ### 부분 완료
@@ -480,19 +480,19 @@
 
 ### Core engine layer
 
-- `src/client/game/core/board.js`
+- `src/client/game/core/board.ts`
   - `createEmptyBoard`
   - `canPlacePiece`
   - `lockPieceOnBoard`
   - `clearFilledLines`
-- `src/client/game/core/step.js`
+- `src/client/game/core/step.ts`
   - `resolveMoveAttempt`
   - `resolveMoveIntent`
-- `src/client/game/core/tSpin.js`
+- `src/client/game/core/tSpin.ts`
   - `isTSpinLock`
-- `src/client/game/core/attackState.js`
+- `src/client/game/core/attackState.ts`
   - `resolveAttackState`
-- `src/client/game/core/garbage.js`
+- `src/client/game/core/garbage.ts`
   - `calculateGarbageAttack`
   - `resolveGarbageCancel`
   - `applyGarbageLines`
@@ -501,10 +501,10 @@
 
 ### State and snapshot layer
 
-- `src/client/game/state/stateSerialization.js`
+- `src/client/game/state/stateSerialization.ts`
   - `serializeGameState`
   - `deserializeGameState`
-- `src/client/game/state/pieceQueue.js`
+- `src/client/game/state/pieceQueue.ts`
   - `pickRandomPiece`
   - `ensureQueueFilled`
   - `takeNextFromQueue`
@@ -1239,7 +1239,7 @@
 
 - AI는 DOM이 아니라 game state를 읽는다.
 - AI 출력은 사람과 같은 `action` 형식을 사용한다.
-- 현재 구현된 AI 기반은 `src/client/game/core/boardMetrics.js`다.
+- 현재 구현된 AI 기반은 `src/client/game/core/boardMetrics.ts`다.
 - 현재 다음 구현 순서는 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player다.
 - PVE AI는 추천 코치가 아니라 실제 AI 상대다.
 - rule-based PVE AI를 먼저 만들고, 이후 ML/RL은 비교 가능한 지표와 로그 위에서 확장한다.
