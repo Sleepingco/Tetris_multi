@@ -16,7 +16,7 @@ Goal 8A/8B의 typed client core와 AI를 server가 소비하는 마지막 produc
 
 ### Pre-8C compiled interop gate
 
-1. `npm run build:server`로 clean `dist/server`를 만든다.
+1. `npm run build`로 기존 `dist` 전체를 제거하고 clean `dist/client`와 `dist/server`를 함께 만든다. artifact test와 compiled HTTP smoke가 deployable full client/server artifact를 같은 clean build에서 검증하므로 server-only output이나 이전 client artifact에 의존하지 않는다.
 2. 기존 `npm run test:artifact`로 `gameCoreLoader → client core/state`와 `pveAiPlayerService → placement V4 scorer/model`을 실제 compiled output에서 실행한다.
 3. `node dist/server/app.js`를 local test 설정으로 기동하고 `/`와 `/socket.io/socket.io.js`의 HTTP 200을 확인한다. 이 기동은 `app → init → sockets → services` CommonJS dependency chain이 load되는지 검증한다.
 4. `.ts`, `.tsx`, declaration, source map, test fixture와 secret이 artifact에 없는지 확인한다.
