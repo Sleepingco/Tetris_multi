@@ -266,16 +266,17 @@
 
 ## Migration Goal 8B Client Runtime TypeScript merge gate (2026-07-21)
 
-- 기준은 `main@7286ab6`이며 `codex/migrate-typescript-client-runtime`에서 production client AI 12개, Canvas entry/render/runtime/UI 8개, network/session 3개 등 기존 JavaScript 23개(전환 전 5,566 LOC)를 strict TypeScript로 전환했다. 최종 전환 source는 타입 선언을 포함해 6,811 LOC이며 기존 `entry/theme.ts`는 rename 수치에서 제외했다.
+- 기준은 `main@7286ab6`이며 `codex/migrate-typescript-client-runtime`에서 production client AI 12개, Canvas entry/render/runtime/UI 8개, network/session 3개 등 기존 JavaScript 23개(전환 전 5,566 LOC)를 strict TypeScript로 전환했다. 리뷰 수정 후 최종 전환 source는 타입 선언을 포함해 6,863 LOC이며 기존 `entry/theme.ts`는 rename 수치에서 제외했다.
 - 각 값 모듈이 runtime handle/display snapshot, DOM/Canvas adapter, placement dataset·heuristic·V4 result와 multiplayer lifecycle 타입을 직접 소유한다. Goal 8A의 `PieceType`, `Board`, `PieceState`, `GameState`, `BoardMetrics`를 재사용하고 별도 type registry, manager, framework와 dependency는 추가하지 않았다.
 - `roomClient.ts` 내부에 browser Socket.IO global의 private structural type을 두고 기존 `socketContractTypes.d.ts`와 Zod parsed output을 재사용한다. page-facing session 타입은 공개 `playerId`와 `nickname`만 제공하며 token, socketId와 server-private session 필드는 React state, DOM, URL, console 또는 공개 타입에 포함하지 않는다.
+- 리뷰 수정 `386c853`, `842d23b`에서 malformed ranker 입력의 BASE 실패 이유를 복구하고 `INPUT_ACTION` literal union을 고정했다. C2S emit은 event별 wire payload generic으로 연결했고 persisted credential은 `resumed`를 요구하지 않으며 각 session-ready subscriber는 독립 public projection을 받는다. multiplayer page는 display/session/Piece 타입을 소유 모듈에서 직접 import한다.
 - rename commit에서 page TSX, server dynamic import, test와 script consumer를 실제 `.ts` source specifier로 함께 갱신했다. `rewriteRelativeImportExtensions`를 통해 Vite와 compiled server artifact는 `.js` import를 사용하며, build artifact에는 `.ts`, `.tsx`, declaration과 source map이 남지 않는다.
-- Node `24.18.0`/npm `11.16.0`에서 typecheck, build 134 modules, artifact 1/1, 지정 targeted 93/93, ML Node 34/34·Python 115/115, fast gate의 Node tests 584 pass·기존 조건부 1 skip, Vite-dev 8 pass·production-only 2 skip과 production Playwright 34/34가 통과했다. 첫 기준선 PVE hold 시나리오는 한 번 timeout됐지만 격리 재실행과 전체 재실행에서 통과했으며 최종 production gate도 34/34다.
-- 수동 Single에서 이동·회전·soft/hard drop·hold·restart·sound/BFCache 경계를, PVP에서 양쪽 HUD·overlay·입력·reload reconnect를, PVE V4에서 visible descent·score·line 진행을 확인했다. 확인한 page의 console error/pageerror는 0개였고 URL과 HTML에 token이 없었다.
+- Node `24.18.0`/npm `11.16.0`에서 typecheck, build 134 modules, artifact 1/1, ranker 14/14와 room/session/runtime targeted 84/84, ML Node 35/35·Python 115/115, fast gate의 Node tests 586 pass·기존 조건부 1 skip, Vite-dev 8 pass·production-only 2 skip과 production Playwright 34/34가 통과했다. 첫 기준선 PVE hold 시나리오는 한 번 timeout됐지만 격리 재실행과 전체 재실행에서 통과했으며 최종 production gate도 34/34다.
+- 수동 Single에서 이동·회전·soft/hard drop·hold·restart·sound/BFCache 경계를, PVP에서 양쪽 HUD·overlay·입력·reload reconnect를 확인했다. 최종 production E2E는 heuristic PVE, 명시적 V4 선택, PVE `match:finish` 결과와 Host/Guest token의 URL·HTML·console 비노출을 직접 검증했다.
 - production HTTP에서 대표 runtime/net `.ts` source와 bundle source map은 404, root와 Socket.IO client는 200이었다. package manifest와 lockfile checksum은 기준과 동일하다.
-- shared tetris bundle은 직전 문서 기준 34.93 kB(gzip 10.93 kB)에서 36.31 kB(gzip 11.29 kB), roomClient chunk는 76.86 kB(gzip 21.19 kB)에서 77.33 kB(gzip 21.32 kB)로 증가했다. 새 dependency나 runtime chunk는 없다.
+- shared tetris bundle은 직전 문서 기준 34.93 kB(gzip 10.93 kB)에서 36.31 kB(gzip 11.29 kB), roomClient chunk는 76.86 kB(gzip 21.19 kB)에서 77.39 kB(gzip 21.31 kB)로 증가했다. 새 dependency나 runtime chunk는 없다.
 - Chromium local dev/production과 수동 시나리오는 검증했지만 WebKit/Firefox, 장시간 soak와 외부 network 조건은 실행하지 않았다. server TypeScript는 Goal 8C, test/e2e/script 선택 전환은 Goal 8D 범위로 남는다.
-- rollback은 최종 문서 commit → `0ee3736` → `189faf5` → `cda715e` → `7ca30b3` 순서로 역순 revert한다. rename과 consumer specifier를 같은 경계에서 되돌리고 일부 output만 복구하지 않는다.
+- rollback은 최종 문서 commit → `842d23b` → `386c853` → `9a45ab7` → `0ee3736` → `189faf5` → `cda715e` → `7ca30b3` 순서로 역순 revert한다. rename과 consumer specifier를 같은 경계에서 되돌리고 일부 output만 복구하지 않는다.
 - Goal 8B는 local branch merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 8C/8D와 SPA 작업은 별도 승인 없이는 수행하지 않는다.
 
 ## Project Direction

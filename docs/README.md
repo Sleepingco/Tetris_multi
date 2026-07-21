@@ -16,15 +16,15 @@ placement imitation을 눈으로 확인하는 사용자 선택형 Experimental P
 2. 로그와 dataset 경계: [logService.js](../src/server/services/logService.js),
    [gameLogValidator.js](../src/server/validators/gameLogValidator.js),
    [export-placement-dataset.js](../scripts/export-placement-dataset.js).
-3. candidate/feature/metric 계약: [placementDatasetBuilder.js](../src/client/game/ai/dataset/placementDatasetBuilder.js),
-   [placementFeatureSchema.js](../src/client/game/ai/dataset/placementFeatureSchema.js),
+3. candidate/feature/metric 계약: [placementDatasetBuilder.ts](../src/client/game/ai/dataset/placementDatasetBuilder.ts),
+   [placementFeatureSchema.ts](../src/client/game/ai/dataset/placementFeatureSchema.ts),
    [placement-ml-evaluation-contract.md](placement-ml-evaluation-contract.md).
-4. 기본 gameplay 정책: [heuristicEvaluator.js](../src/client/game/ai/heuristic/heuristicEvaluator.js),
-   [reachablePlacementPlanner.js](../src/client/game/ai/heuristic/reachablePlacementPlanner.js).
+4. 기본 gameplay 정책: [heuristicEvaluator.ts](../src/client/game/ai/heuristic/heuristicEvaluator.ts),
+   [reachablePlacementPlanner.ts](../src/client/game/ai/heuristic/reachablePlacementPlanner.ts).
 5. V4 artifact와 reference: [train_placement_v4.py](../scripts/ml/train_placement_v4.py),
    [placement_v4_reference_inference.py](../scripts/ml/placement_v4_reference_inference.py).
-6. dev-only runtime 경계: [placementV4OfflineScorer.js](../src/client/game/ai/ml/placementV4OfflineScorer.js),
-   [placementV4PveDecisionAdapter.js](../src/client/game/ai/ml/placementV4PveDecisionAdapter.js),
+6. dev-only runtime 경계: [placementV4OfflineScorer.ts](../src/client/game/ai/ml/placementV4OfflineScorer.ts),
+   [placementV4PveDecisionAdapter.ts](../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts),
    [pveAiPlayerService.js](../src/server/services/pveAiPlayerService.js).
 7. 마지막으로 historical evidence와 run record를 읽어 현재 정책의 근거를 확인한다.
 
@@ -32,13 +32,13 @@ placement imitation을 눈으로 확인하는 사용자 선택형 Experimental P
 
 | 역할 | 입력 | 출력 | 재사용 | 실제 경로 |
 |---|---|---|---|---|
-| 로그 수집·검증 | server placement event | append-only placement log, schema rejection | 예 | [logService.js](../src/server/services/logService.js), [gameLogValidator.js](../src/server/validators/gameLogValidator.js), [placementLogAnalysis.js](../src/client/game/ai/heuristic/placementLogAnalysis.js) |
-| Dataset exporter와 builder | JSONL game events | train/validation/rejected JSONL와 manifest, in-memory dataset | 예 | [export-placement-dataset.js](../scripts/export-placement-dataset.js), [placementDatasetBuilder.js](../src/client/game/ai/dataset/placementDatasetBuilder.js), [game-log-dataset-policy.md](game-log-dataset-policy.md) |
-| Feature·decision·metric 계약 | dataset candidate/decision | 16-feature vector, selected contract, ranking metric | 예 | [placementFeatureSchema.js](../src/client/game/ai/dataset/placementFeatureSchema.js), [placementDecisionGroups.js](../src/client/game/ai/dataset/placementDecisionGroups.js), [placementRankingEvaluator.js](../src/client/game/ai/dataset/placementRankingEvaluator.js), [placement-ml-evaluation-contract.md](placement-ml-evaluation-contract.md) |
-| Heuristic 기본 정책 | board와 active piece | reachable placement ranking과 plan | 예, production 기본 | [heuristicEvaluator.js](../src/client/game/ai/heuristic/heuristicEvaluator.js), [reachablePlacementPlanner.js](../src/client/game/ai/heuristic/reachablePlacementPlanner.js), [simulatePlacement.js](../src/client/game/ai/heuristic/simulatePlacement.js) |
+| 로그 수집·검증 | server placement event | append-only placement log, schema rejection | 예 | [logService.js](../src/server/services/logService.js), [gameLogValidator.js](../src/server/validators/gameLogValidator.js), [placementLogAnalysis.ts](../src/client/game/ai/heuristic/placementLogAnalysis.ts) |
+| Dataset exporter와 builder | JSONL game events | train/validation/rejected JSONL와 manifest, in-memory dataset | 예 | [export-placement-dataset.js](../scripts/export-placement-dataset.js), [placementDatasetBuilder.ts](../src/client/game/ai/dataset/placementDatasetBuilder.ts), [game-log-dataset-policy.md](game-log-dataset-policy.md) |
+| Feature·decision·metric 계약 | dataset candidate/decision | 16-feature vector, selected contract, ranking metric | 예 | [placementFeatureSchema.ts](../src/client/game/ai/dataset/placementFeatureSchema.ts), [placementDecisionGroups.ts](../src/client/game/ai/dataset/placementDecisionGroups.ts), [placementRankingEvaluator.ts](../src/client/game/ai/dataset/placementRankingEvaluator.ts), [placement-ml-evaluation-contract.md](placement-ml-evaluation-contract.md) |
+| Heuristic 기본 정책 | board와 active piece | reachable placement ranking과 plan | 예, production 기본 | [heuristicEvaluator.ts](../src/client/game/ai/heuristic/heuristicEvaluator.ts), [reachablePlacementPlanner.ts](../src/client/game/ai/heuristic/reachablePlacementPlanner.ts), [simulatePlacement.ts](../src/client/game/ai/heuristic/simulatePlacement.ts) |
 | V4 trainer | immutable 125-game dataset | non-canonical candidate model과 training report | 예, 재학습은 새 승인 필요 | [train_placement_v4.py](../scripts/ml/train_placement_v4.py), [placement-v4-125g-final-trainer.md](../ai-harness/ml-experiments/experiments/placement-v4-125g-final-trainer.md) |
 | V4 reference inference·safety | frozen model과 candidate fixture | deterministic physical-class ranking, game-over safety diagnostic | 예, Python reference | [placement_v4_reference_inference.py](../scripts/ml/placement_v4_reference_inference.py), [placement-v4-reference-inference-safety.md](../ai-harness/ml-experiments/experiments/placement-v4-reference-inference-safety.md) |
-| Experimental PVE runtime | existing heuristic evaluations와 server-owned V4 model | 사용자 opt-in V4 decision 또는 explicit heuristic fallback | 예, 실험 기능 | [placementV4OfflineScorer.js](../src/client/game/ai/ml/placementV4OfflineScorer.js), [placementV4PveDecisionAdapter.js](../src/client/game/ai/ml/placementV4PveDecisionAdapter.js), [pveAiPlayerService.js](../src/server/services/pveAiPlayerService.js), [experimental model](../src/server/assets/placement-v4-125g-experimental-model.json) |
+| Experimental PVE runtime | existing heuristic evaluations와 server-owned V4 model | 사용자 opt-in V4 decision 또는 explicit heuristic fallback | 예, 실험 기능 | [placementV4OfflineScorer.ts](../src/client/game/ai/ml/placementV4OfflineScorer.ts), [placementV4PveDecisionAdapter.ts](../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts), [pveAiPlayerService.js](../src/server/services/pveAiPlayerService.js), [experimental model](../src/server/assets/placement-v4-125g-experimental-model.json) |
 | Gameplay benchmark runner | frozen model, deterministic 7-bag stream | canonical gameplay report와 non-canonical timing report | 예, evaluation only | [run-placement-v4-pve-gameplay-benchmark.js](../scripts/run-placement-v4-pve-gameplay-benchmark.js) |
 | 공통 experiment harness | experiment spec과 MODE | smoke/full/analyze-result workflow와 run record | 예 | [ml-experiments README](../ai-harness/ml-experiments/README.md), [constraints](../ai-harness/ml-experiments/constraints.md), [workflow](../ai-harness/ml-experiments/workflow.md), [verification](../ai-harness/ml-experiments/verification.md) |
 
