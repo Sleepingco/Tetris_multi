@@ -1,5 +1,4 @@
 import {
-    StrictMode,
     useEffect,
     useRef,
     useState,
@@ -7,7 +6,6 @@ import {
     type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
-import { createRoot } from "react-dom/client";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes";
 import { roomPublicSchema } from "../../shared/socketContracts.mjs";
 import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.js";
@@ -17,7 +15,6 @@ import BLOCKS from "../game/state/blocks.js";
 import { onPlacementDecisionLogResult } from "../net/logClient.js";
 import {
     getPlayerSession,
-    leaveGame,
     onGameJoinResult,
     onGameOpponentLeft,
     onMatchFinish,
@@ -26,8 +23,9 @@ import {
     onSessionError,
     onSessionReady,
     requestJoinGameRoom,
-    requestLeaveRoom,
+    requestRouteLeave,
 } from "../net/roomClient.js";
+import { navigate, registerRouteExit } from "./spaNavigation";
 
 type PublicRoom = ServerToClientParsedPayload<"room:updated">;
 type SessionReady = ServerToClientParsedPayload<"session:ready">;
@@ -320,7 +318,7 @@ function PlayerColumn({
     );
 }
 
-function MultiplayerGamePage() {
+export function MultiplayerGamePage() {
     const player1CanvasRef = useRef<HTMLCanvasElement>(null);
     const player2CanvasRef = useRef<HTMLCanvasElement>(null);
     const soundToggleRef = useRef<HTMLButtonElement>(null);
@@ -348,7 +346,7 @@ function MultiplayerGamePage() {
             || !room.players.some(player => player.playerId === playerId)
         ) {
             clearRoomSession();
-            window.location.replace("./multiLobby.html");
+            navigate("/pages/multiLobby.html", { replace: true });
             return;
         }
 
@@ -359,7 +357,7 @@ function MultiplayerGamePage() {
         const isPveMode = room.mode === "pve";
         if (!hostPlayer || !guestPlayer) {
             clearRoomSession();
-            window.location.replace("./multiLobby.html");
+            navigate("/pages/multiLobby.html", { replace: true });
             return;
         }
 
@@ -385,7 +383,7 @@ function MultiplayerGamePage() {
         let joinPending = false;
         let isSessionReady = false;
         let activeGameSession: GameSession | null = null;
-        let navigationTimer: number | null = null;
+        let preserveMembershipOnExit = false;
         const disposers: Disposer[] = [];
         const cleanupSound = initGameSound(soundToggle);
 
@@ -414,8 +412,6 @@ function MultiplayerGamePage() {
             if (disposed) return;
             disposed = true;
             joinPending = false;
-            if (navigationTimer !== null) window.clearTimeout(navigationTimer);
-            navigationTimer = null;
             disposers.splice(0).forEach(dispose => dispose());
             themeToggle?.removeEventListener("click", handleThemeToggle);
             homeButton?.removeEventListener("click", handleHomeClick);
@@ -425,7 +421,7 @@ function MultiplayerGamePage() {
         const redirectToLobby = () => {
             disposePageEffects();
             clearRoomSession();
-            window.location.replace("./multiLobby.html");
+            navigate("/pages/multiLobby.html", { replace: true });
         };
 
         function handleThemeToggle() {
@@ -437,16 +433,7 @@ function MultiplayerGamePage() {
             terminal = true;
             joinPending = false;
             isSessionReady = false;
-            if (matchFinished) {
-                requestLeaveRoom(roomId, playerId);
-            } else {
-                leaveGame(roomId, playerId);
-            }
-            destroyGameSession();
-            clearRoomSession();
-            navigationTimer = window.setTimeout(() => {
-                window.location.replace("./index.html");
-            }, 50);
+            navigate("/pages/index.html");
         }
         themeToggle?.addEventListener("click", handleThemeToggle);
         homeButton?.addEventListener("click", handleHomeClick);
@@ -455,6 +442,12 @@ function MultiplayerGamePage() {
             if (!result.ok) {
                 console.warn("placement_decision log save failed:", result.reason);
             }
+        }));
+        disposers.push(registerRouteExit((nextUrl) => {
+            if (preserveMembershipOnExit) return;
+            if (matchFinished && nextUrl.pathname === "/pages/multiLobby.html") return;
+            requestRouteLeave(roomId, matchFinished ? "room" : "game");
+            clearRoomSession();
         }));
         disposers.push(onGameJoinResult((result: GameJoinResult) => {
             if (disposed || !joinPending) return;
@@ -521,7 +514,8 @@ function MultiplayerGamePage() {
             joinPending = false;
             destroyGameSession();
             if (updatedRoom) storeRoom(updatedRoom);
-            window.location.replace("./multiLobby.html");
+            preserveMembershipOnExit = true;
+            navigate("/pages/multiLobby.html", { replace: true });
         }));
         disposers.push(onSessionReady((session: SessionReady) => {
             if (
@@ -581,7 +575,7 @@ function MultiplayerGamePage() {
         };
     }, []);
 
-    const returnToLobby = () => window.location.replace("./multiLobby.html");
+    const returnToLobby = () => navigate("/pages/multiLobby.html", { replace: true });
 
     return (
         <div className="multi-wrapper">
@@ -653,7 +647,3 @@ function MultiplayerGamePage() {
         </div>
     );
 }
-
-const root = document.getElementById("multiplayerRoot");
-if (!root) throw new Error("Missing #multiplayerRoot");
-createRoot(root).render(<StrictMode><MultiplayerGamePage /></StrictMode>);

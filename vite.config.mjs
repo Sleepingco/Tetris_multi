@@ -11,10 +11,20 @@ export default defineConfig({
     publicDir: false,
     plugins: [
         {
-            name: "serve-index-at-root",
+            name: "serve-spa-route-shell",
             configureServer(server) {
                 server.middlewares.use((request, _response, next) => {
-                    if (request.url === "/") request.url = "/pages/index.html";
+                    const requestUrl = new URL(request.url || "/", "http://localhost");
+                    const spaRoutes = new Set([
+                        "/",
+                        "/pages/index.html",
+                        "/pages/multiLobby.html",
+                        "/pages/tetrisSingle.html",
+                        "/pages/tetrisMulti.html",
+                    ]);
+                    if (spaRoutes.has(requestUrl.pathname)) {
+                        request.url = `/pages/index.html${requestUrl.search}`;
+                    }
                     next();
                 });
             },
@@ -36,12 +46,7 @@ export default defineConfig({
         emptyOutDir: true,
         sourcemap: false,
         rollupOptions: {
-            input: [
-                resolve(clientRoot, "pages/index.html"),
-                resolve(clientRoot, "pages/multiLobby.html"),
-                resolve(clientRoot, "pages/tetrisSingle.html"),
-                resolve(clientRoot, "pages/tetrisMulti.html"),
-            ],
+            input: resolve(clientRoot, "pages/index.html"),
         },
     },
 });

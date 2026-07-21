@@ -1,6 +1,5 @@
-import { StrictMode, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { createRoot } from "react-dom/client";
 import BLOCKS from "../game/state/blocks.js";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { attachKeyboardInput } from "../game/runtime/input.js";
@@ -103,7 +102,7 @@ function SingleHud({
     );
 }
 
-function SingleGamePage() {
+export function SingleGamePage() {
     const boardCanvasRef = useRef<HTMLCanvasElement>(null);
     const scoreRootRef = useRef<HTMLSpanElement>(null);
     const nextRootRef = useRef<HTMLDivElement>(null);
@@ -225,7 +224,3 @@ function SingleGamePage() {
         </div>
     );
 }
-
-const root = document.getElementById("singleRoot");
-if (!root) throw new Error("Missing #singleRoot");
-createRoot(root).render(<StrictMode><SingleGamePage /></StrictMode>);

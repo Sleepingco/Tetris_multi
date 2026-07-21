@@ -11,6 +11,19 @@
             const savedTheme = localStorage.getItem("theme")
             const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)")?.matches
             document.documentElement.dataset.theme = savedTheme || (prefersDark ? "dark" : "light")
+            const gameRoutes = new Set([
+                "/pages/tetrisSingle.html",
+                "/pages/tetrisMulti.html",
+            ])
+            const titles = {
+                "/pages/multiLobby.html": "멀티플레이 로비 - Tetris Multi",
+                "/pages/tetrisSingle.html": "Single Player Tetris",
+                "/pages/tetrisMulti.html": "Multiplayer Tetris",
+            }
+            document.documentElement.dataset.pageStyle = gameRoutes.has(location.pathname)
+                ? "game"
+                : "shell"
+            document.title = titles[location.pathname] || "Tetris Multi"
         })()
     </script>
     <style>
@@ -18,6 +31,7 @@
             color-scheme: light;
             --initial-bg: #f8fafc;
             --initial-bg-soft: #f1f5f9;
+            --initial-game-bg: #f8fafc;
             background: #f8fafc;
         }
 
@@ -25,6 +39,7 @@
             color-scheme: dark;
             --initial-bg: #0f172a;
             --initial-bg-soft: #1e293b;
+            --initial-game-bg: #0f172a;
             background: #0f172a;
         }
 
@@ -33,13 +48,43 @@
             min-height: 100%;
             background: linear-gradient(135deg, var(--initial-bg-soft) 0%, var(--initial-bg) 100%);
         }
+
+        :root[data-page-style="game"],
+        :root[data-page-style="game"] body {
+            background: var(--initial-game-bg);
+        }
+
+        #appRoot {
+            width: 100%;
+        }
+
+        .route-announcement {
+            position: fixed;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border: 0;
+        }
     </style>
-    <link rel="stylesheet" href="../styles/style.css">
+    <link id="shellStyles" rel="stylesheet" href="../styles/style.css" media="not all">
+    <link id="gameStyles" rel="stylesheet" href="../styles/tetris.css" media="not all">
+    <script>
+        (() => {
+            const gameStyle = document.documentElement.dataset.pageStyle === "game"
+            document.getElementById("shellStyles").media = gameStyle ? "not all" : "all"
+            document.getElementById("gameStyles").media = gameStyle ? "all" : "not all"
+        })()
+    </script>
 </head>
 
 <body>
-    <div id="indexRoot"></div>
-    <script type="module" src="./index.tsx"></script>
+    <div id="appRoot" tabindex="-1"></div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="./spa.tsx"></script>
 </body>
 
 </html>

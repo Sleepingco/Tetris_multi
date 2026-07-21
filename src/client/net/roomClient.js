@@ -25,6 +25,10 @@ let activeSocketId = null
 let terminalRetryUsed = false
 let recoveringWithNewSession = false
 let terminalDisconnectPending = false
+let connectionRevision = 0
+let pendingRouteLeave = null
+let pendingRouteLeaveAttemptRevision = null
+let lastSessionDisconnect = null
 
 function readNickname() {
     return sessionStorage.getItem("tetris:nickname")?.trim() || "Guest"
@@ -87,8 +91,32 @@ function notifySessionDisconnected(reason, terminal) {
     }))
 }
 
+function clearPendingRouteLeave() {
+    pendingRouteLeave = null
+    pendingRouteLeaveAttemptRevision = null
+}
+
+function flushPendingRouteLeave() {
+    if (
+        !pendingRouteLeave
+        || pendingRouteLeaveAttemptRevision === connectionRevision
+    ) {
+        return false
+    }
+
+    const { roomId, kind } = pendingRouteLeave
+    if (kind === "room") lastRoomRequestType = "leave"
+    const sent = emitAuthenticated(
+        kind === "room" ? "room:leave" : "game:leave",
+        { roomId },
+    )
+    if (sent) pendingRouteLeaveAttemptRevision = connectionRevision
+    return sent
+}
+
 function stopForProtocolError() {
     activeSession = null
+    clearPendingRouteLeave()
     const wasConnected = serverConnection.connected
     terminalDisconnectPending = wasConnected
     serverConnection.io?.reconnection?.(false)
@@ -120,8 +148,10 @@ function onValidatedServerEvent(eventName, handler) {
 }
 
 serverConnection.on("connect", () => {
+    connectionRevision += 1
     activeSocketId = serverConnection.id
     activeSession = null
+    lastSessionDisconnect = null
 })
 
 onValidatedServerEvent("session:ready", (session) => {
@@ -133,11 +163,13 @@ onValidatedServerEvent("session:ready", (session) => {
     }
 
     activeSession = { ...session }
+    lastSessionDisconnect = null
     terminalRetryUsed = false
     recoveringWithNewSession = false
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(activeSession))
     sessionStorage.setItem("tetris:nickname", activeSession.nickname)
     sessionStorage.removeItem("tetris:playerId")
+    flushPendingRouteLeave()
     sessionReadyHandlers.forEach(handler => handler({ ...activeSession }))
 })
 
@@ -157,6 +189,7 @@ serverConnection.on("connect_error", (error) => {
     }
 
     const { code, terminal } = validation.data
+    if (terminal) clearPendingRouteLeave()
     sessionErrorHandlers.forEach(handler => handler({ code, terminal }))
 
     if (recoveringWithNewSession) {
@@ -181,8 +214,22 @@ serverConnection.on("disconnect", (reason) => {
     }
     const terminal = terminalDisconnectPending || reason === "io server disconnect"
     terminalDisconnectPending = false
+    if (terminal) clearPendingRouteLeave()
+    lastSessionDisconnect = { reason, terminal }
     notifySessionDisconnected(reason, terminal)
 })
+
+onValidatedServerEvent("room:result", () => {
+    if (pendingRouteLeave?.kind === "room") clearPendingRouteLeave()
+})
+
+onValidatedServerEvent("game:leave:result", () => {
+    if (pendingRouteLeave?.kind === "game") clearPendingRouteLeave()
+})
+
+if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", clearPendingRouteLeave)
+}
 
 serverConnection.connect()
 
@@ -234,6 +281,18 @@ export function onSessionError(handler) {
 export function onSessionDisconnected(handler) {
     const wrappedHandler = (disconnect) => handler(disconnect)
     sessionDisconnectedHandlers.add(wrappedHandler)
+    const capturedDisconnect = lastSessionDisconnect
+    if (capturedDisconnect) {
+        queueMicrotask(() => {
+            if (
+                sessionDisconnectedHandlers.has(wrappedHandler)
+                && lastSessionDisconnect === capturedDisconnect
+            ) {
+                wrappedHandler({ ...capturedDisconnect })
+            }
+        })
+    }
+
     return () => sessionDisconnectedHandlers.delete(wrappedHandler)
 }
 
@@ -292,7 +351,13 @@ export function onChatResult(handler) {
 
 export function requestLeaveRoom(roomId, playerId) {
     lastRoomRequestType = "leave"
-    emitAuthenticated("room:leave", { roomId })
+    return emitAuthenticated("room:leave", { roomId })
+}
+
+export function requestRouteLeave(roomId, kind) {
+    pendingRouteLeave = { roomId, kind }
+    pendingRouteLeaveAttemptRevision = null
+    return flushPendingRouteLeave()
 }
 
 // 게임 화면에서 이미 시작된 room/match 상태와 server bag 정보를 다시 받는다.
@@ -372,8 +437,7 @@ export function receiveAuthoritativeSnapshot(handler) {
 }
 
 export function leaveGame(roomId, playerId) {
-    emitAuthenticated("game:leave", { roomId })
-
+    return emitAuthenticated("game:leave", { roomId })
 }
 
 export function onGameOpponentLeft(handler) {

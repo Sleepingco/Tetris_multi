@@ -1,13 +1,13 @@
-import { StrictMode, useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
+import { useEffect, useRef, useState } from "react";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { initLobbySound } from "../game/runtime/sound.js";
+import { navigate } from "./spaNavigation";
 
 function createGuestNickname(): string {
     return `Guest${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
-function IndexPage() {
+export function IndexPage() {
     const [nickname, setNickname] = useState("");
     const themeToggleRef = useRef<HTMLButtonElement>(null);
     const soundToggleRef = useRef<HTMLButtonElement>(null);
@@ -39,7 +39,7 @@ function IndexPage() {
             "tetris:nickname",
             nickname.trim() || createGuestNickname(),
         );
-        window.location.href = "./multiLobby.html";
+        navigate("/pages/multiLobby.html");
     };
     const enterSingleGame = () => {
         if (nickname.trim()) {
@@ -122,7 +122,3 @@ function IndexPage() {
         </div>
     );
 }
-
-const root = document.getElementById("indexRoot");
-if (!root) throw new Error("Missing #indexRoot");
-createRoot(root).render(<StrictMode><IndexPage /></StrictMode>);

@@ -1,6 +1,5 @@
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { createRoot } from "react-dom/client";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { initLobbySound } from "../game/runtime/sound.js";
@@ -16,11 +15,13 @@ import {
     requestCreateRoom,
     requestJoinRoom,
     requestLeaveRoom,
+    requestRouteLeave,
     requestRoomSync,
     requestStartGame,
     sendGlobalChat,
     sendRoomChat,
 } from "../net/roomClient.js";
+import { navigate, registerRouteExit } from "./spaNavigation";
 
 type Room = ServerToClientParsedPayload<"room:updated">;
 type RoomResult = ServerToClientParsedPayload<"room:result">;
@@ -62,7 +63,7 @@ function clearRoomSession(): void {
 
 const initialNickname = getSavedNickname();
 
-function MultiLobbyPage() {
+export function MultiLobbyPage() {
     const [playerId, setPlayerId] = useState<string | null>(null);
     const [nickname, setNickname] = useState(initialNickname);
     const [room, setRoom] = useState<Room | null>(null);
@@ -114,10 +115,17 @@ function MultiLobbyPage() {
         applySavedTheme(themeToggleRef.current);
         const cleanupSound = initLobbySound(soundToggleRef.current);
         const disposers = [
+            registerRouteExit((nextUrl) => {
+                if (nextUrl.pathname === "/pages/tetrisMulti.html") return;
+                const roomId = sessionStorage.getItem("tetris:roomId");
+                if (!roomId) return;
+                requestRouteLeave(roomId, "room");
+                clearRoomSession();
+            }),
             onRoomUpdated((nextRoom: Room) => {
                 if (nextRoom.status === "playing") {
                     saveRoomSession(nextRoom);
-                    window.location.href = `/pages/tetrisMulti.html?roomId=${nextRoom.roomId}`;
+                    navigate(`/pages/tetrisMulti.html?roomId=${nextRoom.roomId}`);
                     return;
                 }
                 renderRoom(nextRoom);
@@ -443,7 +451,3 @@ function MultiLobbyPage() {
         </div>
     );
 }
-
-const root = document.getElementById("multiLobbyRoot");
-if (!root) throw new Error("Missing #multiLobbyRoot");
-createRoot(root).render(<StrictMode><MultiLobbyPage /></StrictMode>);
