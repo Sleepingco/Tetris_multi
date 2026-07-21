@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-22 기준. Goal 8C를 local main에 반영했고 DB Goal 9·10은 보류한다.
+- Last update: 2026-07-22 기준. Goal 11A CSP/security headers가 전용 branch의 merge gate에 있으며 DB Goal 9·10은 보류한다.
 
 ## Document Role
 
@@ -303,6 +303,17 @@
 - 현재 단일 서버와 ML 분석에는 JSONL 경로로 충분하므로 Goal 9 PostgreSQL shadow storage를 main에 병합하지 않는다. 검증된 실험 구현은 `codex/add-postgres-event-shadow`에 보존한다.
 - Goal 10 DB/JSONL cutover도 함께 보류한다. 중앙 SQL 조회, 사용자 기록·대시보드 또는 다중 서버 event 수집 요구가 생기면 JSONL batch import부터 다시 판단한다.
 - Goal 8D와 SPA는 계속 선택·보류 상태다. 다음 migration 작업은 DB와 무관한 Goal 11A CSP/security headers이며 Goal 8C main 반영만 선행조건으로 사용한다.
+
+## Migration Goal 11A CSP/security headers merge gate (2026-07-22)
+
+- 기준은 `main@1ab2237`이며 `codex/harden-csp-headers`에서 compiled production HTTP 응답에 CSP, `nosniff`, `X-Frame-Options: DENY`와 `Referrer-Policy: no-referrer`를 적용한다. Express `x-powered-by`는 비활성화했고 새 dependency는 추가하지 않았다.
+- CSP는 `default-src 'none'`에서 시작한다. 네 page의 동일한 theme pre-paint script hash 하나와 세 종류의 inline theme style hash만 허용하고, script/style attribute, eval과 wildcard origin은 허용하지 않는다. HTML의 유일한 정적 style attribute는 기존 CSS로 이동했다.
+- `CSP_MODE=report-only`는 `Content-Security-Policy-Report-Only`, 기본 enforce mode는 `Content-Security-Policy`만 보낸다. 최초 report-only 관찰에서 Zod runtime의 eval probe를 확인해 shared Socket contract에 공식 `jitless` 설정을 적용했고 이후 네 page의 `securitypolicyviolation`, console error와 pageerror는 0건이다. React style prop과 개별 `element.style` property는 위반이 없어 변경하지 않았다.
+- `roomClient`의 same-origin `io()`와 `/socket.io/socket.io.js`, Vite proxy와 Socket.IO built-in client serving은 유지한다. CSP의 추가 connect destination은 `SOCKET_ALLOWED_ORIGINS`와 분리된 `CSP_CONNECT_ORIGINS`만 사용하며 WHATWG URL로 protocol, credentials, path, query, fragment와 wildcard를 검사한다.
+- first-party TS/TSX와 bundle source map은 HTTP 404를 유지한다. Socket.IO가 공개하는 third-party client map은 기존 built-in serving을 보존하기 위한 승인된 200 예외이며 first-party source를 포함하지 않는다.
+- Node `24.18.0`/npm `11.16.0`에서 header/hash targeted 4/4, artifact 1/1, source-less release 1/1과 report-only/enforce CSP browser gate 각각 1/1이 통과했다. `bash scripts/verify.sh`는 Node tests 591 pass·기존 조건부 1 skip, Vite-dev는 8 pass·production-only 2 skip, enforce production Playwright는 Single/PVP/PVE를 포함해 35/35다.
+- HSTS, COOP/COEP/CORP, report collector, dependency hardening과 외부 TLS/reverse proxy는 이번 Goal 범위가 아니다. WebKit/Firefox와 실제 배포 origin은 미검증이며 production에서 외부 connect destination이 필요하면 exact `CSP_CONNECT_ORIGINS`를 별도로 설정해야 한다.
+- Goal 11A는 local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 11B와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
 
 ## Project Direction
 
