@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 6 single React HUD와 runtime display bridge를 `0cdc3cee`로 main에 반영하고 검증했다.
+- Last update: 2026-07-21 기준. Goal 7 multiplayer/PVE React 전환을 전용 branch에서 구현·검증하고 merge gate에 두었다.
 
 ## Document Role
 
@@ -204,6 +204,27 @@
 - current production bundle은 single entry 4.75 kB(gzip 1.76 kB), gameplay runtime chunk 34.58 kB(gzip 10.84 kB), shared React runtime 189.66 kB(gzip 59.65 kB)다. Goal 5 shared React 기준 증가는 0.06 kB(gzip 0.02 kB)이며 dependency와 lockfile 변화는 없다.
 - 실제 browser history 기반 BFCache eligibility, WebKit/Firefox, 장시간 timer/animation soak는 이번 local Chromium gate에서 검증하지 않았다.
 - `main`은 `cc62f3e`에서 Goal 6 최종 commit `0cdc3ce`까지 fast-forward 되었고, Node 24.18.0 기준 `bash scripts/verify.sh`를 다시 통과했다. Goal 6 branch는 보존하며 Goal 7은 시작하지 않았다.
+
+## Migration Goal 7 Multiplayer React merge gate (2026-07-21)
+
+### Runtime display와 React 소유권
+
+- 기준은 `main@b11e10c7190b52751d9e60a737a5a52645844a3d`이며 Goal 6 main 통합 기록까지 포함한다.
+- cached display snapshot에 표시 전용 `pendingGarbageLines`만 추가했다. 같은 값은 기존 snapshot reference와 알림 0회를 유지하고 pending-only 변경은 1회만 알린다. `applySnapshot`은 pending 갱신과 최종 publish를 한 번으로 합친다.
+- `startMultiplayerGame()`의 idempotent `destroy()`가 heartbeat, Socket disposer 5개, pending/deferred input, placement log, bag request와 두 runtime을 한 경계에서 정리한다. 기존 반환 필드는 rollback과 test 호환을 위해 유지한다.
+- `tetrisMulti.html`은 기존 head, theme pre-paint, CSS와 Socket.IO classic script 순서를 유지하고 `tetrisMulti.tsx`의 단일 `React.StrictMode` root를 mount한다. Host/Guest·AI의 두 Canvas만 runtime에 전달하며 score, lines, pending garbage, hold/next preview, badge와 overlay는 React가 소유한다.
+- gameplay state와 authoritative match는 기존 runtime/server가 단일 진실 원천이다. React state에는 좁은 공개 page 정보, display handle과 overlay만 두며 token, socketId, raw match/snapshot, board와 bag은 저장하거나 렌더링하지 않는다.
+
+### Reconnect, cleanup과 검증
+
+- page effect는 placement result, game join, PVE policy, match finish, opponent left와 session ready/error/disconnected의 8개 disposer를 보관한다. disconnect와 match finish에서 현재 session은 즉시 destroy하되 마지막 display handle을 유지하고, reconnect join 성공 시 새 handle로 교체한다.
+- `session:ready`의 disposed/terminal/match-finished/join-pending/active-session gate로 최초 `game:join` 1회와 transport reconnect 뒤 정확히 1회 추가만 허용한다. current-token 중복 연결은 마지막 HUD 위에 terminal 안내를 표시하고 입력을 차단하며 stale credential을 지우지 않는다.
+- Node 24.18.0/npm 11.16.0에서 관련 display/runtime/session test 85/85가 통과했다. `bash scripts/verify.sh`는 typecheck, 134-module clean build, artifact 1/1과 Node test 579개 중 578 pass, 기존 조건부 1 skip으로 통과했다.
+- Vite development StrictMode gate는 기존 shell/single과 multiplayer lifecycle을 함께 실행해 8 pass, production-only 2 skip이었다. compiled production 전체 Chromium Playwright는 기존 PVP/PVE/session/rollback/single과 신규 multiplayer lifecycle을 포함해 34/34 통과했다.
+- production에서 `/pages/tetrisMulti.tsx`와 built multiplayer module source map은 HTTP 404였다. Host/Guest token은 URL, HTML과 수집한 console message에 없었고 browser console error와 pageerror는 0개였다.
+- 기준 multiplayer entry는 12,963 bytes(gzip 4,839), 최종은 17,244 bytes(gzip 6,161)로 4,281 bytes(gzip 1,322) 증가했다. shared React chunk는 189,660 bytes(gzip 58,971)에서 192,260 bytes(gzip 60,025)로 2,600 bytes(gzip 1,054) 증가해 합계 증가는 6,881 bytes(gzip 2,376)다.
+- dependency, lockfile, server runtime/Socket contract, roomClient session 정책, core/renderer/AI 규칙과 single page는 변경하지 않았다. 실제 browser history 기반 BFCache eligibility, WebKit/Firefox와 장시간 reconnect/gameplay soak는 미검증 범위다.
+- Goal 7은 local branch merge gate에 있으며 push, PR, main merge, branch 삭제와 Goal 8은 별도 승인 전 수행하지 않는다.
 
 ## Project Direction
 

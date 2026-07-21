@@ -8,7 +8,7 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 
 ## 🛠 기술 스택
 - 백엔드: `Node.js`
-- 프론트엔드: Vite multi-page + index/lobby React·TypeScript shell + Vanilla JS Canvas game runtime
+- 프론트엔드: Vite multi-page + page-local React·TypeScript shell + Vanilla JS Canvas game runtime
 - 현재 실행 구조: React page shell + Vanilla Canvas game + Express + Socket.IO + server authoritative multiplayer
 - 실무형 확장 단계: Express + Socket.IO 경계를 유지하며 frontend/build/type/data 계층을 단계적으로 마이그레이션
 - 실행: `npm start` (`src/app.ts` source entry → `dist/server/app.js` production entry)
@@ -79,7 +79,7 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 
 이 프로젝트는 기존 DOM 중심의 Tetris.js에서 출발했지만,  
 현재는 **배열 기반 상태 관리 + 모듈 분리된 실행 구조**로 상당 부분 정리된 상태입니다.  
-싱글플레이 진입점은 `src/client/pages/tetrisSingle.html`의 module script이며,  
+싱글·멀티 게임 진입점은 기존 HTML mount와 page-local TSX shell이며,
 런타임 / 상태 / 코어 판정 / UI / 렌더 / 네트워크 / 서버 room·match 계층이 나뉘어 있습니다.
 목표는 단순히 Tetris를 완성하는 것이 아니라,  
 개발자가 모든 컴포넌트를 직접 설계하고 구현하며  
@@ -116,8 +116,8 @@ src/
     ├── pages/
     │   ├── index.html / index.tsx            # React index shell
     │   ├── multiLobby.html / multiLobby.tsx  # React lobby shell
-    │   ├── tetrisSingle.html
-    │   └── tetrisMulti.html
+    │   ├── tetrisSingle.html / tetrisSingle.tsx  # React single shell + Canvas runtime
+    │   └── tetrisMulti.html / tetrisMulti.tsx    # React multiplayer shell + Canvas runtimes
     └── styles/
         ├── style.css
         └── tetris.css
@@ -293,7 +293,7 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 🧭 프레임워크 / 실무형 구조 기준
 
 현재 단계의 기본 원칙:
-- index/lobby만 React shell로 사용하고 Vanilla Canvas game + Express + Socket.IO 기반 server authoritative 멀티플레이를 보존한다.
+- 네 Vite page는 page-local React shell을 사용하고 game core/runtime/renderer는 Vanilla Canvas 모듈로 보존한다.
 - Socket.IO 이벤트 흐름, roomService/matchService 상태 변화와 클라이언트 통신 어댑터의 책임 경계를 유지한다.
 - 프레임워크가 없어도 계층은 나눈다: `src/app.ts` → `server/init` → `server/sockets` → `server/services` → `client/net` → `client/pages` / `client/game/ui`. production은 compiled `dist/server/app.js`에서 시작한다.
 
@@ -304,9 +304,9 @@ React/Vite, NestJS 같은 도입은 기능 구현 중간에 섞지 않는다.
 - 팀 단위 개발이나 기능별 소유 경계가 필요해진다.
 
 권장 전환 방향:
-- 프론트엔드: 현재 `Vite + React`는 index/lobby의 독립 page entry에만 적용한다.
+- 프론트엔드: 현재 `Vite + React`는 index/lobby/single/multiplayer의 독립 page entry에 적용한다.
   - 공용 component/hook/context는 실제 중복이 생기기 전까지 추가하지 않는다.
-  - 게임 판정 로직은 React 컴포넌트에 넣지 않고 기존 `client/game/core`, `client/game/runtime`, `client/game/render` 경계를 유지한다.
+  - React는 HUD와 page lifecycle만 소유하고, 게임 판정과 Canvas drawing은 기존 `client/game/core`, `client/game/runtime`, `client/game/render` 경계를 유지한다.
 - 백엔드: 당장은 `Express + Socket.IO`를 유지하되 `sockets / services / validators / repositories`로 나누는 방식을 우선한다.
   - 이벤트가 많아지고 인증, DB, 매치메이킹, 세션 관리가 커지면 `NestJS + Socket.IO Gateway`를 검토할 수 있다.
 
