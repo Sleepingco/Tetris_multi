@@ -33,11 +33,11 @@ function shutdownApplication(): Promise<void> {
     hardExitTimer.unref();
     shutdownPromise = new Promise<void>((resolve) => {
         socketServer.close(() => resolve());
-    }).then(() => shutdownLogStorage()).catch(() => {
+    }).then(() => shutdownLogStorage()).then(() => {
+        clearTimeout(hardExitTimer);
+    }).catch(() => {
         console.error("server shutdown failed");
         process.exitCode = 1;
-    }).finally(() => {
-        clearTimeout(hardExitTimer);
     });
     return shutdownPromise;
 }

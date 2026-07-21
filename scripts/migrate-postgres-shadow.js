@@ -66,11 +66,12 @@ async function migratePostgresEvents({
     } catch {
         failure = new Error("POSTGRES_MIGRATION_FAILED");
     }
-    pool.off("error", handleIdlePoolError);
     try {
         await pool.end();
     } catch {
         failure ||= new Error("POSTGRES_MIGRATION_CLOSE_FAILED");
+    } finally {
+        pool.off("error", handleIdlePoolError);
     }
     if (failure) throw failure;
 }

@@ -262,11 +262,12 @@ export function createPostgresEventRepository({
         async close(): Promise<void> {
             if (closed) return;
             closed = true;
-            pool.off("error", handleIdlePoolError);
             try {
                 await pool.end();
             } catch {
                 throw new Error("POSTGRES_EVENT_CLOSE_FAILED");
+            } finally {
+                pool.off("error", handleIdlePoolError);
             }
         },
     };
