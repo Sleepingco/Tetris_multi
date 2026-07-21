@@ -9,8 +9,10 @@
     "typecheck": "tsc -p tsconfig.client.json && tsc -p tsconfig.server.json && tsc -p tsconfig.test.json",
     "build": "node scripts/build.js",
     "build:server": "node scripts/build.js --server",
+    "db:migrate:shadow": "node scripts/migrate-postgres-shadow.js",
     "test": "npm run build:server && npm run test:compiled",
     "test:compiled": "node --test",
+    "test:db": "npm run build:server && node --test test-integration/postgresEventRepository.js",
     "test:artifact": "node --test test-artifact/serverBuildArtifact.js",
     "test:release": "node --test test-artifact/productionRelease.js",
     "pretest:e2e": "npm run build",
@@ -31,7 +33,9 @@
     "node": ">=24.18.0 <25"
   },
   "dependencies": {
+    "drizzle-orm": "0.45.2",
     "express": "^5.2.1",
+    "pg": "8.22.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "socket.io": "^4.8.3",
@@ -40,6 +44,7 @@
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "@types/node": "24.13.3",
+    "@types/pg": "8.20.0",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "typescript": "7.0.2",
