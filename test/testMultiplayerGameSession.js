@@ -516,6 +516,12 @@ test("game session destroy는 timer와 handler를 한 번만 정리하고 stale 
     const heartbeat = [...intervals.values()].find(timer => timer.delayMs === 500);
     const inputTimer = [...intervals.values()].find(timer => timer.delayMs === 16);
     const keyboardHandler = [...globalThis.__documentHandlers.get("keydown")][0];
+    const gameHandlerEvents = [
+        "game:authoritative:snapshot",
+        "game:input:result",
+        "game:bag:append",
+        "game:bag:result",
+    ];
     const authoritativeHandler = [
         ...sharedFakeSocket.handlers.get("game:authoritative:snapshot"),
     ][0];
@@ -531,6 +537,10 @@ test("game session destroy는 timer와 handler를 한 번만 정리하고 stale 
     assert.equal(typeof keyboardHandler, "function");
     assert.equal(typeof authoritativeHandler, "function");
     assert.equal(typeof animationCallback, "function");
+    assert.deepEqual(
+        gameHandlerEvents.map(eventName => sharedFakeSocket.handlers.get(eventName)?.size ?? 0),
+        [1, 1, 1, 1],
+    );
 
     let displayCalls = 0;
     session.myGame.subscribeDisplay(() => {
@@ -558,7 +568,10 @@ test("game session destroy는 timer와 handler를 한 번만 정리하고 stale 
 
     assert.equal(intervals.size, 0);
     assert.equal(globalThis.__documentHandlers.get("keydown")?.size ?? 0, 0);
-    assert.equal(sharedFakeSocket.handlers.get("game:authoritative:snapshot")?.size ?? 0, 0);
+    assert.deepEqual(
+        gameHandlerEvents.map(eventName => sharedFakeSocket.handlers.get(eventName)?.size ?? 0),
+        [0, 0, 0, 0],
+    );
     assert.equal(JSON.stringify(session.myGame.getSnapshot()), snapshotAfterDestroy);
     assert.equal(session.myGame.getPendingInputCount(), 0);
     assert.equal(session.myGame.getPlacementDecisionLog().length, logCountAfterDestroy);

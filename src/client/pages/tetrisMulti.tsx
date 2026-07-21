@@ -52,9 +52,10 @@ type DisplayHandle = {
     getDisplaySnapshot: () => DisplaySnapshot;
     subscribeDisplay: (callback: () => void) => () => void;
 };
+type DisplaySource = Pick<DisplayHandle, "getDisplaySnapshot" | "subscribeDisplay">;
 type GameSession = {
-    myGame: DisplayHandle;
-    opponentGame: DisplayHandle;
+    myGame: DisplaySource;
+    opponentGame: DisplaySource;
     destroy: () => void;
 };
 type DisplayHandles = {
@@ -84,6 +85,13 @@ const WAITING_OVERLAYS: [Overlay, Overlay] = [
     { text: "대기중", showLobby: false },
     { text: "대기중", showLobby: false },
 ];
+
+function createDisplayHandle(game: DisplaySource): DisplayHandle {
+    return {
+        getDisplaySnapshot: () => game.getDisplaySnapshot(),
+        subscribeDisplay: callback => game.subscribeDisplay(callback),
+    };
+}
 
 function clearRoomSession() {
     sessionStorage.removeItem("tetris:roomId");
@@ -167,8 +175,6 @@ function PlayerHud({
                         className={`stat stat--incoming${snapshot.pendingGarbageLines > 0
                             ? " is-danger"
                             : ""}`}
-                        aria-live="polite"
-                        aria-atomic="true"
                     >
                         <span className="label">Incoming</span>
                         <span className="pending-garbage" data-player={playerNumber}>
@@ -236,7 +242,6 @@ function PlayerColumn({
                     <span
                         id={`player${playerNumber}RoleBadge`}
                         title={badge.title}
-                        aria-live={playerNumber === 2 ? "polite" : undefined}
                     >
                         {badge.text}
                     </span>
@@ -252,7 +257,7 @@ function PlayerColumn({
                                 <span className="label">Lines</span>
                                 <span className="lines">0</span>
                             </div>
-                            <div className="stat stat--incoming" aria-live="polite" aria-atomic="true">
+                            <div className="stat stat--incoming">
                                 <span className="label">Incoming</span>
                                 <span className="pending-garbage" data-player={playerNumber}>0</span>
                             </div>
@@ -278,6 +283,8 @@ function PlayerColumn({
                         className="game-text"
                         data-player={playerNumber}
                         style={{ display: overlay ? "flex" : "none" }}
+                        aria-live={isMine ? "polite" : undefined}
+                        aria-atomic={isMine ? true : undefined}
                     >
                         <span>{overlay?.text ?? ""}</span>
                         {overlay?.showLobby && (
@@ -477,8 +484,14 @@ function MultiplayerGamePage() {
             }) as GameSession;
             activeGameSession = session;
             setDisplayHandles(myRole === "host"
-                ? { player1: session.myGame, player2: session.opponentGame }
-                : { player1: session.opponentGame, player2: session.myGame });
+                ? {
+                    player1: createDisplayHandle(session.myGame),
+                    player2: createDisplayHandle(session.opponentGame),
+                }
+                : {
+                    player1: createDisplayHandle(session.opponentGame),
+                    player2: createDisplayHandle(session.myGame),
+                });
             setOverlays([null, null]);
             setHomeDisabled(false);
         }));

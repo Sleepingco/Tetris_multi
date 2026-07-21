@@ -46,14 +46,23 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
         expect(hostMonitor.getSentEventCount("game:join")).toBe(1);
         expect(guestMonitor.getSentEventCount("game:join")).toBe(1);
 
-        for (const page of [hostPage, guestPage]) {
+        for (const { page, myPlayer } of [
+            { page: hostPage, myPlayer: 1 },
+            { page: guestPage, myPlayer: 2 },
+        ]) {
             for (const playerNumber of [1, 2]) {
                 const column = page.locator(`.player-column[data-player="${playerNumber}"]`);
                 await expect(column.locator(".next-preview .next-cell")).toHaveCount(32);
                 await expect(column.locator(".next-preview .next-cell.preview")).toHaveCount(8);
                 await expect(column.locator(".hold-preview .next-cell")).toHaveCount(16);
-                await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-live", "polite");
-                await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-atomic", "true");
+                const overlay = column.locator(".game-text");
+                if (playerNumber === myPlayer) {
+                    await expect(overlay).toHaveAttribute("aria-live", "polite");
+                    await expect(overlay).toHaveAttribute("aria-atomic", "true");
+                } else {
+                    await expect(overlay).not.toHaveAttribute("aria-live");
+                    await expect(overlay).not.toHaveAttribute("aria-atomic");
+                }
                 expect(await column.locator("canvas").evaluate(canvas => ({
                     width: canvas.width,
                     height: canvas.height,
@@ -83,18 +92,25 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
         await expect(
             guestPage.locator('.hold-preview[data-player="2"] .next-cell.preview'),
         ).toHaveCount(4);
+        await expect(
+            hostPage.locator('.hold-preview[data-player="2"] .next-cell.preview'),
+        ).toHaveCount(4);
 
         const sessionBeforeReconnect = await readPlayerSession(hostPage);
         await hostContext.setOffline(true);
         await expect(hostPage.locator('.game-text[data-player="1"] > span')).toHaveText(
             "재연결 중",
         );
+        await expect(
+            hostPage.locator('.hold-preview[data-player="2"] .next-cell.preview'),
+        ).toHaveCount(4);
         await hostContext.setOffline(false);
         await expect.poll(async () => (await readPlayerSession(hostPage))?.token).not.toBe(
             sessionBeforeReconnect.token,
         );
         await expect.poll(() => hostMonitor.getSentEventCount("game:join")).toBe(2);
         await expect(hostPage.locator('.game-text[data-player="1"]')).not.toBeVisible();
+        await expect(hostPage.locator('.game-text[data-player="2"]')).not.toBeVisible();
         await hostPage.waitForTimeout(200);
         expect(hostMonitor.getSentEventCount("game:join")).toBe(2);
 
