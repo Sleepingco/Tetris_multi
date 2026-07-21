@@ -333,6 +333,10 @@
   `597 pass / 기존 조건부 1 skip`, source-less release는 1/1이다. Vite-dev는 8 pass·
   production-only 2 skip, production Playwright는 34/34, ML parity는 Node 35/35·
   Python 115/115다. client bundle은 기존 Goal 8C 출력과 동일하다.
+- 최종 review fix `b3bfbf6`은 Pool error handler를 `pool.end()` 완료까지 유지하고,
+  cleanup 실패 시 65초 hard-exit timer를 보존한다. 보정 뒤 targeted 16/16,
+  source-less release 1/1, 실제 PostgreSQL 1/1과 canonical fast gate를 다시 통과했고
+  독립 재리뷰에서 추가 P0~P3는 없었다.
 - `npm audit`은 Goal 9 신규 dependency advisory가 0건이고 기준 lockfile에도 있던
   transitive `body-parser@2.2.2` low 1건만 보고했다. 범위 밖 자동 update는 적용하지
   않고 Goal 11B dependency hardening에 남긴다.
