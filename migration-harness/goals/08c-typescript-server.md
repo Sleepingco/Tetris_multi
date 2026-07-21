@@ -74,8 +74,11 @@ npm run typecheck
 npm run build
 npm run test:artifact
 node --test test/testGameCoreLoader.js test/testMultiplayerSocket.js test/testPlayerSessionSocket.js test/testAuthoritativeTickerService.js test/testPveAiPlayerService.js
+npm run verify:ml
 bash scripts/verify.sh
+npm run test:e2e:vite-dev
 npm run test:e2e
+npm run test:release
 git diff --check <base>..HEAD
 ```
 
@@ -92,7 +95,7 @@ Zod validation → authorization → service 순서, token redaction, JSONL appe
 
 ## Rollback
 
-Goal 8C commit을 revert하면 server `.js` source, consumer 경로와 기존 compiled build 계약으로 함께 돌아간다. Goal 8A/8B client 타입 경계는 유지한다.
+구현 rollback은 `docs: record Goal 8C TypeScript migration` → `test: verify Goal 8C compiled release boundary` → `refactor: type Socket.IO server boundaries` → `refactor: type authoritative server gameplay` → `refactor: type server domain and persistence services` → `test: run server suites against compiled artifacts` 순서로 역순 revert한다. pre-interop 문서 commit은 구현 rollback에 포함하지 않으며 Goal 8A/8B client 타입 경계는 유지한다.
 
 ## Merge Gate
 

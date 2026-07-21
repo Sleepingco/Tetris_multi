@@ -92,15 +92,15 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 src/
 ├── app.ts                   # TypeScript source server entry
 ├── server/                 # Node.js only
-│   ├── init.js              # Express / HTTP / Socket.IO server assembly
+│   ├── init.ts              # Express / HTTP / Socket.IO server assembly
 │   ├── services/
-│   │   ├── roomService.js   # Room lifecycle / lobby state
-│   │   ├── matchService.js  # Match state / server bag / authoritative player state
-│   │   └── authoritativeTickerService.js # Room gravity tick / snapshot lifecycle
+│   │   ├── roomService.ts   # Room lifecycle / lobby state
+│   │   ├── matchService.ts  # Match state / server bag / authoritative player state
+│   │   └── authoritativeTickerService.ts # Room gravity tick / snapshot lifecycle
 │   └── sockets/
-│       ├── index.js             # Socket.IO connection composition
-│       ├── chatHandlers.js      # Chat event handlers
-│       └── multiplayerHandlers.js # Room / game event handlers
+│       ├── index.ts             # Socket.IO connection composition
+│       ├── chatHandlers.ts      # Chat event handlers
+│       └── multiplayerHandlers.ts # Room / game event handlers
 └── client/                # Browser static root
     ├── assets/
     │   └── sound/           # BGM / SFX assets

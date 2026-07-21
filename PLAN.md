@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-22 기준. Goal 8B client runtime/render/net/AI TypeScript 전환의 최종 리뷰 gate를 검증하고 branch merge gate에서 멈춘다.
+- Last update: 2026-07-22 기준. Goal 8C production server TypeScript와 compiled release 경계를 검증하고 branch merge gate에서 멈춘다.
 
 ## Document Role
 
@@ -276,11 +276,26 @@
 - 자동 production Playwright 34/34는 normal/hard heuristic, V4 runtime badge, server `match:finish` 결과·같은 방 재시작과 Host/Guest token의 URL·HTML·console 비노출을 별도로 검증했다.
 - production HTTP에서 대표 runtime/net `.ts` source와 bundle source map은 404, root와 Socket.IO client는 200이었다. package manifest와 lockfile checksum은 기준과 동일하다.
 - shared tetris bundle은 직전 문서 기준 34.93 kB(gzip 10.93 kB)에서 36.31 kB(gzip 11.29 kB), roomClient chunk는 76.86 kB(gzip 21.19 kB)에서 77.39 kB(gzip 21.31 kB)로 증가했다. 새 dependency나 runtime chunk는 없다.
-- Chromium local dev/production과 수동 시나리오는 검증했지만 WebKit/Firefox, 장시간 soak와 외부 network 조건은 실행하지 않았다. server TypeScript는 Goal 8C, test/e2e/script 선택 전환은 Goal 8D 범위로 남는다.
+- Chromium local dev/production과 수동 시나리오는 검증했지만 WebKit/Firefox, 장시간 soak와 외부 network 조건은 실행하지 않았다. server TypeScript는 Goal 8C에서 완료했으며 test/e2e/script 자체의 선택 전환은 Goal 8D 범위로 남는다.
 - rollback은 최종 문서 commit → `047347c` → `f93f7b8` → `842d23b` → `386c853` → `9a45ab7` → `0ee3736` → `189faf5` → `cda715e` → `7ca30b3` 순서로 역순 revert한다. rename과 consumer specifier를 같은 경계에서 되돌리고 일부 output만 복구하지 않는다.
 - `codex/migrate-typescript-client-runtime@bead1b7`를 clean한 local `main@7286ab6`에 `--ff-only`로 병합해 `main@bead1b7`로 통합했다. Goal branch와 worktree는 보존한다.
 - 병합 후 Node `24.18.0`에서 `bash scripts/verify.sh`를 재실행해 typecheck, clean build, artifact 1/1과 Node 586 pass·기존 조건부 1 skip을 확인했고 `git diff --check 7286ab6..HEAD`도 통과했다.
 - 동일한 Goal HEAD에서 이미 production Playwright 34/34와 Vite-dev 8 pass·2 production-only skip이 통과했으므로 main에서 전체 E2E는 코드 변경이 없어 반복하지 않았다. push 후 Goal 8C/8D, Goal 9와 SPA 작업은 별도 승인으로 남긴다.
+
+## Migration Goal 8C Server TypeScript merge gate (2026-07-22)
+
+- 기준은 `main@b4960ad`이며 `codex/migrate-typescript-server`에서 `src/server`의 production JavaScript를 strict TypeScript로 전환했다. source server `.js`는 0개이며 `socketContracts.mjs`만 shared production `allowJs` runtime 예외로 유지한다.
+- root CommonJS와 `module: NodeNext`를 유지한다. server의 정적 source import는 `.js`, client ESM dynamic import는 `.ts`를 사용하고 build output에서 `.js`로 rewrite한다. root `type: module`, TypeScript runtime loader와 새 dependency는 추가하지 않았다.
+- Room, Match, authoritative player state, session, limiter, DTO, repository와 Socket handler가 값을 소유하는 모듈에서 type-aware export를 제공한다. production Socket.IO `Server`/`Socket` 타입을 유지하고 raw C2S payload는 `unknown`에서 기존 event별 Zod schema로 parse한 `validation.data`만 service에 전달한다.
+- handshake의 신규 session/invalid resume rate-limit 순서와 mutation의 active-session/rate-limit → Zod → ownership → service 순서를 보존했다. SocketData에는 token, digest나 internal session을 추가하지 않았고 protocol, gameplay, session/reconnect, JSONL/Python 의미를 변경하지 않았다.
+- `npm test`는 clean `build:server` 뒤 compiled suite를 실행하고 `test:compiled`는 기존 artifact를 재사용한다. `scripts/verify.sh`는 typecheck → full build → artifact → build-free compiled test 순서여서 full client/server artifact 사이에 server-only rebuild를 끼우지 않는다. production `npm start`는 prebuilt `dist/server/app.js`만 실행한다.
+- artifact gate는 source/dist V4 model byte equality와 SHA-256 `ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d`, default copied model의 실제 `placement_v4` decision, compiled client loader와 source-map 없는 expected stack trace를 검증한다.
+- hermetic release test는 별도 임시 디렉터리의 `dist`, package manifests와 `npm ci --omit=dev --ignore-scripts` production dependencies만으로 HTTP, Socket.IO client, authoritative PVP와 PVE V4 decision을 실행한다. child cwd와 환경 allowlist를 고정하고 workspace dependency, source, test, script, devDependency, source map과 model override 유입을 금지한다.
+- Node `24.18.0`/npm `11.16.0`에서 targeted authoritative gameplay 129/129, Socket/security 105/105, artifact 1/1과 hermetic release 1/1이 통과했다. `bash scripts/verify.sh`는 Node tests 586 pass·기존 조건부 1 skip, ML은 Node 35/35·Python 115/115, Vite-dev는 8 pass·production-only 2 skip, production Playwright는 34/34다.
+- package dependency와 lockfile은 기준과 동일하다. client source와 dependency를 변경하지 않았으며 final build의 기존 client bundle 구성을 유지했다.
+- Chromium local과 hermetic release를 검증했지만 WebKit/Firefox, 외부 TLS/reverse proxy와 장시간 soak는 실행하지 않았다. Express vendor surface는 현재 사용 API만 local declaration으로 좁혔으므로 사용 범위가 커지면 별도 type dependency 판단이 필요하다. test/e2e/script 자체의 선택적 TypeScript 전환은 Goal 8D, storage는 Goal 9 범위다.
+- rollback은 현재 Goal 8C 문서 commit → `978398c` → `c8cdb9d` → `3a60750` → `e67ecf5` → `49187e4` 순서로 역순 revert한다. pre-interop 문서 commit `7680229`는 구현 rollback 대상이 아니다.
+- Goal 8C만 완료 처리하고 local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 8D/9와 SPA 작업은 수행하지 않는다.
 
 ## Project Direction
 
@@ -328,10 +343,10 @@
 - [x] `src/client/game/state/stateSerialization.ts`에 snapshot serialize/deserialize 보조 함수 존재
 - [x] `src/client/game/state/pieceQueue.ts`에 7-bag/next queue 유틸리티 존재
 - [x] `src/client/game/runtime/snapshotCorrection.ts`에 원격 snapshot 보정 판단 유틸리티 존재
-- [x] `src/server/services/roomService.js`에 room 생성/참가/퇴장/시작/종료/동기화 로직 존재
-- [x] `src/server/services/matchService.js`에 match 생성, player별 server bag chunk와 authoritative state 로직 존재
-- [x] `src/server/sockets/multiplayerHandlers.js`에 `room:create`, `room:join`, `room:leave`, `room:start`, `game:join`, `game:input`, `game:bag:request`, `disconnect` 흐름 존재
-- [x] `src/server/sockets/chatHandlers.js`에 `global:chat`, `room:chat` 흐름 분리
+- [x] `src/server/services/roomService.ts`에 room 생성/참가/퇴장/시작/종료/동기화 로직 존재
+- [x] `src/server/services/matchService.ts`에 match 생성, player별 server bag chunk와 authoritative state 로직 존재
+- [x] `src/server/sockets/multiplayerHandlers.ts`에 `room:create`, `room:join`, `room:leave`, `room:start`, `game:join`, `game:input`, `game:bag:request`, `disconnect` 흐름 존재
+- [x] `src/server/sockets/chatHandlers.ts`에 `global:chat`, `room:chat` 흐름 분리
 - [x] `src/client/net/roomClient.ts`에 room/chat/game 이벤트 adapter 함수 존재
 - [x] `src/client/pages/multiLobby.html`에서 방 코드, 상태, player 수 표시와 방 입장/나가기 UI 연결
 - [x] 로비 채팅을 `global:chat` / `room:chat`으로 분리
@@ -540,28 +555,28 @@
 
 - `src/app.ts`
   - TypeScript source 진입점이며 production은 compiled `dist/server/app.js`를 실행한다.
-  - `src/server/init.js`를 로드한다.
-- `src/server/init.js`
+  - `src/server/init.ts`를 source `.js` specifier로 로드하며 NodeNext build가 compiled `init.js`를 만든다.
+- `src/server/init.ts`
   - Express static server, HTTP server, Socket.IO server를 조립한다.
   - production static root는 `dist/client`다.
-- `src/server/services/roomService.js`
+- `src/server/services/roomService.ts`
   - `Map` 기반 메모리 room 상태를 관리한다.
   - `createRoom`, `joinRoom`, `removePlayer`, `removePlayerBySocketId`, `leaveRoom`, `startGame`, `leaveGame`, `syncRoom`, `finishGame`, `getRoomState`를 제공한다.
-- `src/server/services/matchService.js`
+- `src/server/services/matchService.ts`
   - `Map` 기반 메모리 match 상태를 관리한다.
   - `createMatch`, `getMatchState`, `deleteMatch`, `appendPlayerBagChunk`, `getAuthoritativePlayerSnapshotDto`, `resetMatches`를 제공한다.
   - player별 `lastProcessedClientSequence`, `bagChunks`, `authoritativeState`를 갖는다.
-- `src/server/services/authoritativeTickerService.js`
+- `src/server/services/authoritativeTickerService.ts`
   - room별 authoritative gravity ticker lifecycle을 관리한다.
   - 100ms interval에서 500ms 누적 기준으로 gravity step과 snapshot emit을 처리한다.
-- `src/server/services/authoritativeMatchFinish.js`
+- `src/server/services/authoritativeMatchFinish.ts`
   - input 경로와 ticker 경로의 authoritative gameOver side effect를 공통 처리한다.
   - ticker stop, `match:finish`, `deleteMatch`, `game_over` log 저장을 한 곳에서 관리한다.
-- `src/server/sockets/multiplayerHandlers.js`
+- `src/server/sockets/multiplayerHandlers.ts`
   - room/game Socket.IO 이벤트 입구다.
   - `room:create`, `room:join`, `room:leave`, `room:sync`, `room:start`, `game:*`, `disconnect`를 등록한다.
   - room 단위 join/broadcast를 수행한다.
-- `src/server/sockets/chatHandlers.js`
+- `src/server/sockets/chatHandlers.ts`
   - chat Socket.IO 이벤트 입구다.
   - `global:chat`, `room:chat`, `chat:result` 흐름을 담당한다.
   - 채팅 입력 검증, 1초 rate limit, room 채팅 권한 확인을 담당한다.

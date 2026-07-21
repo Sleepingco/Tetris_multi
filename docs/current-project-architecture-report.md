@@ -86,22 +86,22 @@ DOM 없이 판정                   브라우저에서 조율                   
 
 ### 3.2 서버 측 계층
 
-- `src/app.js` → `src/server/init.js`
-  - Express 정적 서버, HTTP 서버, Socket.IO 서버를 조립하는 실행 입구다.
+- `src/app.ts` → `src/server/init.ts`
+  - Express 정적 서버, HTTP 서버, Socket.IO 서버를 조립하는 source 실행 계층이며 production은 compiled `dist/server/app.js`에서 시작한다.
 - `src/server/sockets/`
-  - Socket.IO 이벤트의 입구다. `multiplayerHandlers.js`는 room/game 이벤트를 받아 서비스 호출과 room broadcast를 담당하고, `chatHandlers.js`는 채팅 입력 검증과 rate limit을 맡는다.
+  - Socket.IO 이벤트의 입구다. `multiplayerHandlers.ts`는 room/game 이벤트를 받아 서비스 호출과 room broadcast를 담당하고, `chatHandlers.ts`는 채팅 입력 검증과 rate limit을 맡는다.
   - 소켓 핸들러는 규칙을 직접 구현하지 않고, 메시지 경계와 권한 확인에 집중한다.
-- `src/server/services/roomService.js`
+- `src/server/services/roomService.ts`
   - 방 생성·입장·퇴장·시작·종료·로비 복귀를 `Map` 기반 메모리 상태로 관리한다.
   - 현재 PVP와 PVE mode, human과 `heuristic_ai` player type을 구분한다. PVE 방은 인간 1명과 AI 1명을 자동 구성하고, 다른 인간의 입장은 막는다.
-- `src/server/services/matchService.js`
+- `src/server/services/matchService.ts`
   - 실제 경기 단위 상태를 관리한다. 플레이어마다 `authoritativeState`, client sequence acknowledgment, server bag chunk를 보관한다.
   - authoritative state에는 board, active/pending piece, queue, hold, score, lines, combo, back-to-back, piece index, pending garbage가 들어간다.
-- `src/server/services/playerGameplayStep.js`
+- `src/server/services/playerGameplayStep.ts`
   - 서버 상태에 human과 AI 모두의 authoritative input을 적용한다. lock 이후 line clear, T-Spin, 공격 상쇄·적용, top-out, 다음 조각 spawn까지 같은 경로에서 처리한다.
-- `src/server/services/authoritativeTickerService.js`
+- `src/server/services/authoritativeTickerService.ts`
   - room별 ticker가 중력 진행을 책임진다. 100ms 간격으로 깨어나고 500ms 누적 기준으로 gravity step을 최대 한 번 적용해 event loop 지연 중 과도한 진행을 피한다.
-- `src/server/services/authoritativeMatchFinish.js`
+- `src/server/services/authoritativeMatchFinish.ts`
   - 입력 경로와 ticker 경로에 흩어질 수 있는 종료 부수 효과를 한 곳으로 모은다. room 종료, ticker 정지, `match:finish` emit, match 삭제, game-over 로그 저장 순서를 통일한다.
 
 ### 3.3 클라이언트의 멀티 역할
