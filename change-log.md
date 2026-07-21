@@ -2053,6 +2053,12 @@ client input
 
 # 2026년 7월 17일
 
+## Migration harness 운영 기반
+
+- `AGENTS.md`와 `migration-harness/`에 공통 제약, workflow, verification, roadmap, Goal별 범위와 merge gate 운영 절차를 추가했다.
+- migration은 Goal마다 최신 main에서 전용 `codex/` 브랜치와 독립 worktree를 사용하고, 검증·로컬 커밋 후 사용자 승인 전에는 push, main 병합과 다음 Goal을 수행하지 않는 방식으로 고정했다.
+- harness는 runtime 기능을 변경하지 않는 문서 기반 governance이며 `35093cc`, `ad85ee4`, `3b1329e`를 통해 main에 반영했다.
+
 ## Migration Goal 0 기준선 안정화
 
 - 최신 main `3b1329e84c8269c984e23e10eaf7f11c8b170690`에서 `codex/stabilize-migration-baseline-v2`를 만들었다.
@@ -2390,8 +2396,49 @@ client input
 - leave result 상관관계, membership 보존, hash navigation과 server cleanup 검증 문제가 남아 Goal 7A를 선택 실험으로 보류했다.
 - 현재 four-entry MPA를 유지하며 Goal 8의 선행조건을 Goal 7로 복구했다. 상세 문제와 재개 조건은 `PLAN.md`와 `migration-harness/goals/07a-react-spa.md`를 따른다.
 
+---
+
+# 2026년 7월 22일
+
+## Migration Goal 8A core/state TypeScript main 통합
+
+- Goal 8을 production `core/state`, client runtime, server와 선택적 test/tooling의 8A~8D로 분할한 뒤, Goal 8A에서 gameplay core 7개와 state 5개를 strict TypeScript로 전환했다.
+- `blocks.ts`가 `PieceType`을 단독 소유하고 serialization의 기존 fallback과 복제 범위를 유지했다. 아직 JavaScript인 consumer도 같은 rename 경계에서 실제 `.ts` source specifier로 갱신했다.
+- Node `24.18.0`에서 targeted core/state 49/49, Node 584 pass·기존 조건부 1 skip, artifact 1/1과 production Playwright 34/34를 통과했다. package manifest와 lockfile, gameplay·Socket 계약은 변경하지 않았다.
+- 최종 `7286ab6`까지 main과 origin/main에 반영했으며 8D는 production hardening을 막지 않는 선택 Goal로 보류했다.
+
 ## Migration Goal 8B client runtime TypeScript main 통합 (2026-07-22)
 
 - `codex/migrate-typescript-client-runtime@bead1b7`를 local main에 `--ff-only`로 병합했다. production client runtime/render/net/AI의 23개 JavaScript 경계를 TypeScript로 전환하고 consumer specifier, Socket/session 타입 경계와 PVE AI parity를 유지한 결과다.
 - main Node `24.18.0`에서 `bash scripts/verify.sh`가 typecheck, clean build, artifact 1/1과 Node 586 pass·기존 조건부 1 skip으로 통과했다. 동일 Goal HEAD의 Vite-dev 8 pass·2 production-only skip과 production Playwright 34/34 결과를 통합 근거로 사용했으며 main E2E는 중복 실행하지 않았다.
 - Goal branch는 보존하고 package/lockfile, gameplay·protocol·security와 보류 SPA는 변경하지 않았다. WebKit/Firefox, 장시간 soak와 외부 네트워크 조건은 남은 위험이며 Goal 8C/8D와 Goal 9는 시작하지 않았다.
+
+## Migration Goal 8C server TypeScript main 통합
+
+- `src/server`의 production JavaScript를 strict TypeScript로 전환해 server source `.js`를 0개로 만들었다. shared `socketContracts.mjs`만 Zod runtime의 명시적인 `allowJs` 예외로 유지했다.
+- production은 source TypeScript를 직접 실행하지 않고 `dist/server/app.js`에서 시작한다. Socket.IO의 raw payload는 계속 `unknown`에서 event별 Zod schema로 검증한 뒤 typed service 경계로 전달된다.
+- compiled server test, artifact test와 source-less production release를 고정해 workspace source, devDependency, source map과 model override가 runtime에 유입되지 않게 했다.
+- Node `24.18.0`에서 authoritative gameplay 129/129, Socket/security 105/105, Node 587 pass·기존 조건부 1 skip, artifact와 release 각각 1/1, Vite-dev 8 pass·2 skip, production Playwright 34/34와 ML Node 35/35·Python 115/115를 통과했다.
+- Goal 8C 최종 `4d5bcd5`까지 main에 반영했고 dependency, lockfile, client behavior와 protocol 의미는 유지했다.
+
+## Storage migration 보류 결정
+
+- 현재 단일 server와 ML 분석에는 append-only JSONL 경로로 충분하다고 판단해 PostgreSQL shadow storage Goal 9 구현은 `codex/add-postgres-event-shadow@2245fef`에만 보존하고 main에는 병합하지 않았다.
+- DB/JSONL cutover Goal 10도 함께 보류했다. 중앙 SQL 조회, 사용자 기록·대시보드 또는 다중 server event 수집 요구가 생기면 JSONL batch import부터 다시 검토한다.
+- main에는 보류 결정 문서만 `1ab2237`까지 반영했으며 Goal 7A, 8D, 9와 10은 production hardening의 선행조건이 아니다.
+
+## Migration Goal 11A CSP와 HTTP security headers main 통합
+
+- `default-src 'none'`에서 시작하는 CSP와 고정 inline hash, exact `CSP_CONNECT_ORIGINS` 검증을 추가하고 `nosniff`, frame deny, no-referrer와 Express 식별자 비노출을 적용했다.
+- report-only 관찰에서 확인한 Zod eval probe는 공식 `jitless` 설정으로 제거했다. static directory redirect를 끄고 404/416과 Express 오류에서도 선택한 CSP mode 하나만 유지하며 raw 오류는 노출하지 않는다.
+- 기존 Socket.IO client serving과 same-origin 연결은 유지하고 first-party TS/TSX와 source map은 계속 404로 차단했다.
+- Node `24.18.0`에서 targeted header/integration 5/5, artifact와 release 각각 1/1, Node 592 pass·기존 조건부 1 skip, Vite-dev 8 pass·2 skip과 production Playwright 35/35를 통과했으며 CSP 위반, console error와 pageerror는 0건이었다.
+- Goal 11A 최종 `5a2bb22`까지 main에 반영했다. 외부 TLS·reverse proxy와 WebKit/Firefox 검증은 남은 운영 범위다.
+
+## Migration Goal 11B dependency hardening main 통합
+
+- fresh npm audit의 유일한 low advisory를 제거하기 위해 lockfile의 `body-parser 2.2.2 → 2.3.0`, `type-is 2.0.1 → 2.1.0`과 필요한 nested `content-type 2.0.0`만 갱신했다.
+- production code, `package.json`, `environment-ml.yml`, script와 engine 설정은 변경하지 않았다. 변경 package의 registry URL과 integrity를 확인했고 install-script allowlist는 optional `fsevents` 두 개로 유지했다.
+- production/full npm audit는 취약점 0건이었다. Node `24.18.0`에서 Node 592 pass·기존 조건부 1 skip, release 1/1, Vite-dev 8 pass·2 skip, production Playwright 35/35와 기존 ML Node 35/35·Python 115/115를 통과했다.
+- 별도 임시 Conda prefix에서도 exact top-level 환경을 clean resolve해 Python 115/115를 통과한 뒤 제거했다. `environment-ml.yml`이 전체 transitive build lockfile은 아니라는 재현성 한계는 남아 있다.
+- Goal 11B 최종 `a18801c`까지 main과 origin/main에 반영했으며 rollback은 문서 commit 뒤 dependency commit `3fe121e` 순서다.
