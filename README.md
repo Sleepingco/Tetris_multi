@@ -10,6 +10,7 @@ Vanilla JS, Express, Socket.IO 기반으로 싱글플레이 엔진을 정리하�
 - 상대 보드는 `game:authoritative:snapshot`을 기준으로 표시하고, 내 보드는 조작감을 위해 client prediction을 유지하면서 제한된 correction만 적용한다.
 - `src/client/game/core/boardMetrics.ts`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현되어 있다.
 - `test/testBoardMetrics.js`가 empty board, line count, hole, bumpiness, height, mutation 방지를 검증한다.
+- 분석 event는 JSONL을 canonical 경로로 유지하며, opt-in PostgreSQL shadow write를 제공한다.
 - 런타임 변경은 `npm test` 전체 회귀 테스트로 검증한다.
 
 ## 실행과 검증
@@ -84,4 +85,5 @@ Python AI 서버, 강화학습, LLM 코칭은 현재 구현 대상이 아니다.
 - [docs/heuristic-ai-design.md](docs/heuristic-ai-design.md)
 - [docs/README.md](docs/README.md)
 - [docs/game-log-dataset-policy.md](docs/game-log-dataset-policy.md)
+- [docs/postgres-shadow-storage.md](docs/postgres-shadow-storage.md)
 - [change-log.md](change-log.md)

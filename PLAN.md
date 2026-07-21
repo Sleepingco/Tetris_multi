@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-22 기준. Goal 8C production server TypeScript와 compiled release 경계를 검증하고 branch merge gate에서 멈춘다.
+- Last update: 2026-07-22 기준. Goal 9 PostgreSQL append-only shadow storage를 검증하고 branch merge gate에서 멈춘다.
 
 ## Document Role
 
@@ -297,6 +297,52 @@
 - Chromium local과 hermetic release를 검증했지만 WebKit/Firefox, 외부 TLS/reverse proxy와 장시간 soak는 실행하지 않았다. Express vendor surface는 현재 사용 API만 local declaration으로 좁혔으므로 사용 범위가 커지면 별도 type dependency 판단이 필요하다. test/e2e/script 자체의 선택적 TypeScript 전환은 Goal 8D, storage는 Goal 9 범위다.
 - rollback은 현재 리뷰 문서 commit → `0fa4f39` → `785dcf0` → `978398c` → `c8cdb9d` → `3a60750` → `e67ecf5` → `49187e4` 순서로 역순 revert한다. pre-interop 문서 commit `7680229`는 구현 rollback 대상이 아니다.
 - Goal 8C만 완료 처리하고 local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 8D/9와 SPA 작업은 수행하지 않는다.
+
+## Migration Goal 9 PostgreSQL shadow storage merge gate (2026-07-22)
+
+- 기준은 Goal 8C를 fast-forward 반영한 local `main@4d5bcd5`다. Goal 8D는 선택
+  작업으로 보류했고 SPA branch도 main 계보에 넣지 않았다. Goal 9 branch는
+  `codex/add-postgres-event-shadow`다.
+- Node `24.18.0`을 유지하고 PostgreSQL `18.4`, exact `drizzle-orm@0.45.2`,
+  `pg@8.22.0`, dev-only `@types/pg@8.20.0`을 사용한다. `drizzle-kit`은 runtime에
+  필요하지 않고 검토 중 advisory chain이 확인돼 제거했다. 검토된 SQL migration은
+  `drizzle-orm` built-in migrator가 source checkout/CI에서만 실행한다.
+- JSONL append가 계속 canonical 성공 경계다. `POSTGRES_SHADOW_WRITE_ENABLED=true`일
+  때만 validated event snapshot을 bounded queue에 넣어 PostgreSQL `game_events`에
+  비차단 append한다. DB failure, timeout과 overflow는 gameplay/JSONL 결과를 바꾸지
+  않으며 static redacted warning만 남긴다.
+- `game_start`/`game_over`는 event type과 game id, `placement_decision`은 event type,
+  game/player/piece identity의 SHA-256을 primary key로 사용한다. retry는
+  `ON CONFLICT DO NOTHING`으로 first-write-wins이며 raw JSONB, 원래 JSON bytes hash,
+  schema version, 검색 column과 occurred/stored time을 보존한다.
+- 공통 log validator는 256 KiB 상한과 함께 token/credential/cookie/password/secret,
+  reconnect/session private-field 변형을 JSONL 이전에 재귀적으로 거부한다. repository가
+  같은 검사를 반복하고 원격 URL은 `sslmode=verify-full`이 아니면 fail closed한다.
+  runtime·migration·test credential은 분리하며 runtime role은 INSERT와 idempotency-key
+  SELECT만 허용하고 UPDATE/DELETE/TRUNCATE/schema CREATE를 금지한다.
+- queue capacity는 in-flight를 포함한 기본 256이고 newest overflow를 버린다. connection과
+  query는 기본 각 1초이며 합계와 250ms margin이 5초 shutdown deadline 안에 있어야 한다.
+  driver timeout을 넘긴 writer는 비활성화하고 pending event를 버린다. SIGINT/SIGTERM은
+  flush와 Pool close를 수행하고 전체 shutdown에는 65초 fail-fast 상한이 있다.
+- Homebrew PostgreSQL `18.4`를 background service 없이 loopback `55439`에서 임시 기동해
+  `npm run test:db` 1/1을 통과했다. empty migration, 두 번째 migration history 1개,
+  duplicate retry 1 row, JSONB/hash/time과 임시 NOLOGIN role의 허용·금지 권한을 실제
+  DB에서 확인했다. CLI도 같은 schema에 두 번 적용해 history 1/event 0을 확인했으며
+  임시 schema·role과 server process를 모두 정리했다.
+- 장애/보안/queue 대상 회귀는 최종 16/16, canonical fast gate는 artifact 1/1과 Node
+  `597 pass / 기존 조건부 1 skip`, source-less release는 1/1이다. Vite-dev는 8 pass·
+  production-only 2 skip, production Playwright는 34/34, ML parity는 Node 35/35·
+  Python 115/115다. client bundle은 기존 Goal 8C 출력과 동일하다.
+- `npm audit`은 Goal 9 신규 dependency advisory가 0건이고 기준 lockfile에도 있던
+  transitive `body-parser@2.2.2` low 1건만 보고했다. 범위 밖 자동 update는 적용하지
+  않고 Goal 11B dependency hardening에 남긴다.
+- PostgreSQL payload에는 public nickname, player/room id와 행동 telemetry가 포함될 수
+  있다. 자동 purge는 이번 Goal에 넣지 않으며 보존 기간과 maintenance owner가 승인되기
+  전에는 production feature flag를 켜지 않는다. rollback은 flag를 끄고 server를
+  재시작하는 JSONL-only 복귀이며 DB row를 자동 삭제하지 않는다.
+- WebKit/Firefox, 외부 TLS/managed PostgreSQL, 장시간 queue/DB soak는 미검증이다.
+  Goal 9만 merge gate에서 멈추며 push, main merge, branch 삭제, Goal 8D/10/SPA는
+  수행하지 않는다.
 
 ## Project Direction
 

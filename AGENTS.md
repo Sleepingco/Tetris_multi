@@ -7,7 +7,8 @@ PVE 규칙 기반 AI와 placement 로그·평가·Python parity 경로도 존재
 LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결과를 사용자에게 설명하는 **보조 코칭 계층**으로 검토합니다.
 
 ## 🛠 기술 스택
-- 백엔드: `Node.js`
+- 백엔드: `Node.js + Express + Socket.IO`
+- 분석 영속: JSONL canonical write + feature flag 기반 PostgreSQL append-only shadow
 - 프론트엔드: Vite multi-page + page-local React·TypeScript shell + TypeScript Canvas game runtime
 - 현재 실행 구조: React page shell + TypeScript Canvas game + Express + Socket.IO + server authoritative multiplayer
 - 실무형 확장 단계: Express + Socket.IO 경계를 유지하며 frontend/build/type/data 계층을 단계적으로 마이그레이션
@@ -356,7 +357,8 @@ AI / ML 모델 구현	✅ (단계 도달 시)
 - 싱글플레이 엔진과 Canvas renderer가 동작한다.
 - 멀티플레이는 server authoritative player state, input/ticker, snapshot, garbage와 game-over 흐름을 사용한다.
 - PVE 규칙 기반 AI와 placement decision log, dataset/export, Python parity 검증 경로가 존재한다.
-- 실시간 room/match 상태는 Node process memory를 사용하고, 분석 로그는 JSONL 경로를 유지한다.
+- 실시간 room/match 상태는 Node process memory를 사용한다. 분석 로그는 JSONL을
+  canonical 경로로 유지하고, PostgreSQL은 feature flag 기반 append-only shadow로만 쓴다.
 - 기술 마이그레이션은 `migration-harness/roadmap.md`의 Goal과 merge gate를 따라 진행한다.
 - LLM 코칭은 게임 판단 원천이 아니라 분석 결과 설명 계층으로 계속 후순위 검토한다.
 
