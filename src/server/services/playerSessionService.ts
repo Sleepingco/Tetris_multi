@@ -1,17 +1,61 @@
-const {
+import {
     createHash,
     randomBytes,
     randomUUID,
     timingSafeEqual,
-} = require("node:crypto")
+} from "node:crypto";
 
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000
-const RECOVERY_TTL_MS = 60 * 1000
+export const SESSION_TTL_MS = 8 * 60 * 60 * 1000
+export const RECOVERY_TTL_MS = 60 * 1000
 const TOKEN_BYTES = 32
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/
 const PLAYER_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-function normalizeNickname(nickname) {
+export type PlayerSessionContext = { playerId: string; generation: number };
+export type PlayerSessionReady = {
+    version: 1;
+    playerId: string;
+    token: string;
+    nickname: string;
+    expiresAt: number;
+    resumed: boolean;
+};
+export type PlayerSessionAuthentication = {
+    ok: true;
+    context: PlayerSessionContext;
+    ready: PlayerSessionReady;
+    replacedSocketId: string | null;
+} | { ok: false; reason: string };
+export type PlayerSessionService = {
+    authenticate(auth: unknown, socketId: string): PlayerSessionAuthentication;
+    cleanupExpired(): Array<{
+        playerId: string;
+        generation: number;
+        activeSocketId: string | null;
+    }>;
+    isActiveSocket(context: PlayerSessionContext | null | undefined, socketId: string): boolean;
+    isDisconnectedSession(context: PlayerSessionContext | null | undefined): boolean;
+    markDisconnected(context: PlayerSessionContext | null | undefined, socketId: string): boolean;
+};
+type Session = PlayerSessionContext & {
+    tokenDigest: Buffer;
+    activeSocketId: string | null;
+    nickname: string;
+    expiresAt: number;
+};
+type Dependencies = {
+    now?: () => number;
+    createPlayerId?: () => string;
+    createTokenBytes?: () => Buffer;
+    sessionTtlMs?: number;
+    recoveryTtlMs?: number;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function normalizeNickname(nickname: unknown): string | null {
     if (typeof nickname !== "string") return null
 
     const normalized = nickname.trim()
@@ -20,28 +64,32 @@ function normalizeNickname(nickname) {
     return normalized
 }
 
-function hashToken(token) {
+function hashToken(token: string): Buffer {
     return createHash("sha256").update(token).digest()
 }
 
-function matchesToken(token, digest) {
-    if (!TOKEN_PATTERN.test(token) || !Buffer.isBuffer(digest)) return false
+function matchesToken(token: unknown, digest: unknown): boolean {
+    if (typeof token !== "string" || !TOKEN_PATTERN.test(token) || !Buffer.isBuffer(digest)) {
+        return false;
+    }
 
     const candidateDigest = hashToken(token)
     return candidateDigest.length === digest.length
         && timingSafeEqual(candidateDigest, digest)
 }
 
-function createPlayerSessionService(dependencies = {}) {
+export function createPlayerSessionService(
+    dependencies: Dependencies = {},
+): PlayerSessionService {
     const now = dependencies.now || Date.now
     const createPlayerId = dependencies.createPlayerId || randomUUID
     const createTokenBytes = dependencies.createTokenBytes || (() => randomBytes(TOKEN_BYTES))
     const sessionTtlMs = dependencies.sessionTtlMs || SESSION_TTL_MS
     const recoveryTtlMs = dependencies.recoveryTtlMs || RECOVERY_TTL_MS
-    const sessions = new Map()
-    const recoveryTokens = new Map()
+    const sessions = new Map<string, Session>()
+    const recoveryTokens = new Map<string, { tokenDigest: Buffer; expiresAt: number }>()
 
-    function createToken() {
+    function createToken(): string {
         const tokenBytes = createTokenBytes()
         if (!Buffer.isBuffer(tokenBytes) || tokenBytes.length !== TOKEN_BYTES) {
             throw new Error("SESSION_TOKEN_GENERATOR_INVALID")
@@ -50,7 +98,11 @@ function createPlayerSessionService(dependencies = {}) {
         return tokenBytes.toString("base64url")
     }
 
-    function createReadyPayload(session, token, resumed) {
+    function createReadyPayload(
+        session: Session,
+        token: string,
+        resumed: boolean,
+    ): PlayerSessionReady {
         return {
             version: 1,
             playerId: session.playerId,
@@ -61,10 +113,10 @@ function createPlayerSessionService(dependencies = {}) {
         }
     }
 
-    function issueSession(nickname, socketId) {
+    function issueSession(nickname: string, socketId: string): PlayerSessionAuthentication {
         const issuedAt = now()
         const token = createToken()
-        const session = {
+        const session: Session = {
             playerId: createPlayerId(),
             tokenDigest: hashToken(token),
             generation: 1,
@@ -85,7 +137,12 @@ function createPlayerSessionService(dependencies = {}) {
         }
     }
 
-    function rotateSession(session, socketId, nickname, usedRecoveryToken = false) {
+    function rotateSession(
+        session: Session,
+        socketId: string,
+        nickname: string,
+        usedRecoveryToken = false,
+    ): PlayerSessionAuthentication {
         const rotatedAt = now()
         const token = createToken()
         const replacedSocketId = session.activeSocketId
@@ -115,17 +172,18 @@ function createPlayerSessionService(dependencies = {}) {
         }
     }
 
-    function authenticate(auth, socketId) {
-        if (auth?.credentialError) {
+    function authenticate(auth: unknown, socketId: string): PlayerSessionAuthentication {
+        const credentials = isRecord(auth) ? auth : {};
+        if (credentials.credentialError) {
             return { ok: false, reason: "SESSION_CREDENTIALS_MALFORMED" }
         }
-        const nickname = normalizeNickname(auth?.nickname)
+        const nickname = normalizeNickname(credentials.nickname)
         if (!nickname) {
             return { ok: false, reason: "SESSION_NICKNAME_INVALID" }
         }
 
-        const hasPlayerId = auth?.playerId !== undefined && auth?.playerId !== null
-        const hasToken = auth?.token !== undefined && auth?.token !== null
+        const hasPlayerId = credentials.playerId !== undefined && credentials.playerId !== null
+        const hasToken = credentials.token !== undefined && credentials.token !== null
         if (!hasPlayerId && !hasToken) {
             return issueSession(nickname, socketId)
         }
@@ -133,33 +191,33 @@ function createPlayerSessionService(dependencies = {}) {
             return { ok: false, reason: "SESSION_CREDENTIALS_INCOMPLETE" }
         }
         if (
-            typeof auth.playerId !== "string"
-            || !PLAYER_ID_PATTERN.test(auth.playerId)
-            || typeof auth.token !== "string"
-            || !TOKEN_PATTERN.test(auth.token)
+            typeof credentials.playerId !== "string"
+            || !PLAYER_ID_PATTERN.test(credentials.playerId)
+            || typeof credentials.token !== "string"
+            || !TOKEN_PATTERN.test(credentials.token)
         ) {
             return { ok: false, reason: "SESSION_CREDENTIALS_MALFORMED" }
         }
 
-        const session = sessions.get(auth.playerId)
+        const session = sessions.get(credentials.playerId)
         if (!session) {
             return { ok: false, reason: "SESSION_INVALID" }
         }
         if (session.expiresAt <= now()) {
-            sessions.delete(auth.playerId)
-            recoveryTokens.delete(auth.playerId)
+            sessions.delete(credentials.playerId)
+            recoveryTokens.delete(credentials.playerId)
             return { ok: false, reason: "SESSION_EXPIRED" }
         }
-        if (matchesToken(auth.token, session.tokenDigest)) {
+        if (matchesToken(credentials.token, session.tokenDigest)) {
             return rotateSession(session, socketId, nickname)
         }
 
-        const recovery = recoveryTokens.get(auth.playerId)
+        const recovery = recoveryTokens.get(credentials.playerId)
         if (
             session.activeSocketId === null
             && recovery
             && recovery.expiresAt > now()
-            && matchesToken(auth.token, recovery.tokenDigest)
+            && matchesToken(credentials.token, recovery.tokenDigest)
         ) {
             return rotateSession(session, socketId, nickname, true)
         }
@@ -172,7 +230,10 @@ function createPlayerSessionService(dependencies = {}) {
         }
     }
 
-    function isActiveSocket(context, socketId) {
+    function isActiveSocket(
+        context: PlayerSessionContext | null | undefined,
+        socketId: string,
+    ): boolean {
         const session = context?.playerId
             ? sessions.get(context.playerId)
             : null
@@ -180,19 +241,27 @@ function createPlayerSessionService(dependencies = {}) {
         return Boolean(
             session
             && session.expiresAt > now()
+            && context
             && session.generation === context.generation
             && session.activeSocketId === socketId
         )
     }
 
-    function markDisconnected(context, socketId) {
+    function markDisconnected(
+        context: PlayerSessionContext | null | undefined,
+        socketId: string,
+    ): boolean {
         if (!isActiveSocket(context, socketId)) return false
 
-        sessions.get(context.playerId).activeSocketId = null
+        const session = context ? sessions.get(context.playerId) : null;
+        if (!session) return false;
+        session.activeSocketId = null
         return true
     }
 
-    function isDisconnectedSession(context) {
+    function isDisconnectedSession(
+        context: PlayerSessionContext | null | undefined,
+    ): boolean {
         const session = context?.playerId
             ? sessions.get(context.playerId)
             : null
@@ -200,12 +269,13 @@ function createPlayerSessionService(dependencies = {}) {
         return Boolean(
             session
             && session.expiresAt > now()
+            && context
             && session.generation === context.generation
             && session.activeSocketId === null
         )
     }
 
-    function cleanupExpired() {
+    function cleanupExpired(): ReturnType<PlayerSessionService["cleanupExpired"]> {
         const currentTime = now()
         const expiredSessions = []
         for (const [playerId, session] of sessions) {
@@ -234,11 +304,4 @@ function createPlayerSessionService(dependencies = {}) {
         isDisconnectedSession,
         markDisconnected,
     }
-}
-
-module.exports = {
-    RECOVERY_TTL_MS,
-    SESSION_TTL_MS,
-    createPlayerSessionService,
-    normalizeNickname,
 }

@@ -1,10 +1,26 @@
-const DEFAULT_MAX_LOG_BYTES = 256 * 1024;
-const {
+import {
     isValidAiDifficulty,
     isValidAiPolicy,
-} = require("../services/aiDifficulty.js");
+} from "../services/aiDifficulty.js";
 
-function createSuccess(log) {
+export const DEFAULT_MAX_LOG_BYTES = 256 * 1024;
+
+export type ValidatedLog = Record<string, unknown>;
+export type LogValidationResult = {
+    ok: true;
+    log: ValidatedLog;
+    reason: null;
+} | {
+    ok: false;
+    log: null;
+    reason: string;
+};
+type ValidationOptions = {
+    maxBytes?: number;
+    allowedSchemaVersions?: number[];
+};
+
+function createSuccess(log: ValidatedLog): LogValidationResult {
     return {
         ok: true,
         log,
@@ -12,7 +28,7 @@ function createSuccess(log) {
     };
 }
 
-function createFailure(reason) {
+function createFailure(reason: string): LogValidationResult {
     return {
         ok: false,
         log: null,
@@ -20,12 +36,15 @@ function createFailure(reason) {
     };
 }
 
-function validatePlacementDecisionLog(log, options = {}) {
+export function validatePlacementDecisionLog(
+    log: unknown,
+    options: ValidationOptions = {},
+): LogValidationResult {
     const baseResult = validateBaseLog(log, {
         ...options,
         allowedSchemaVersions: [1, 2],
     });
-    if (!baseResult.ok) return baseResult;
+    if (!baseResult.ok || !isPlainObject(log)) return baseResult;
 
     if (log.eventType !== "placement_decision") {
         return createFailure("INVALID_EVENT_TYPE");
@@ -39,7 +58,7 @@ function validatePlacementDecisionLog(log, options = {}) {
         return createFailure("GAME_ID_REQUIRED");
     }
 
-    if (!Number.isInteger(log.pieceIndex) || log.pieceIndex < 0) {
+    if (!isNonNegativeInteger(log.pieceIndex)) {
         return createFailure("PIECE_INDEX_REQUIRED");
     }
 
@@ -65,8 +84,9 @@ function validatePlacementDecisionLog(log, options = {}) {
     return validatePlacementDecisionLogV2(log);
 }
 
-function validateLegacyPlacementDecisionLog(log) {
-    if (log.source !== undefined && !["human", "heuristic_ai", "ml_ai"].includes(log.source)) {
+function validateLegacyPlacementDecisionLog(log: ValidatedLog): LogValidationResult {
+    if (log.source !== undefined && log.source !== "human"
+        && log.source !== "heuristic_ai" && log.source !== "ml_ai") {
         return createFailure("INVALID_SOURCE");
     }
 
@@ -74,15 +94,11 @@ function validateLegacyPlacementDecisionLog(log) {
         if (log.modelType !== "heuristic") {
             return createFailure("INVALID_MODEL_TYPE");
         }
-        if (
-            !log.evaluation ||
-            !Number.isFinite(log.evaluation.score) ||
-            !Number.isInteger(log.evaluation.candidateCount) ||
-            log.evaluation.candidateCount < 0 ||
-            !log.evaluation.reason ||
-            typeof log.evaluation.reason !== "object" ||
-            Array.isArray(log.evaluation.reason)
-        ) {
+        const evaluation = log.evaluation;
+        if (!isPlainObject(evaluation)
+            || !isFiniteNumber(evaluation.score)
+            || !isNonNegativeInteger(evaluation.candidateCount)
+            || !isPlainObject(evaluation.reason)) {
             return createFailure("INVALID_AI_EVALUATION");
         }
     }
@@ -90,14 +106,14 @@ function validateLegacyPlacementDecisionLog(log) {
     return createSuccess(log);
 }
 
-function validatePlacementDecisionLogV2(log) {
+function validatePlacementDecisionLogV2(log: ValidatedLog): LogValidationResult {
     if (!isNonEmptyString(log.roomId)) {
         return createFailure("ROOM_ID_REQUIRED");
     }
-    if (!Number.isInteger(log.tick) || log.tick < 0) {
+    if (!isNonNegativeInteger(log.tick)) {
         return createFailure("TICK_REQUIRED");
     }
-    if (!Number.isFinite(log.createdAt) || log.createdAt < 0) {
+    if (!isNonNegativeNumber(log.createdAt)) {
         return createFailure("CREATED_AT_REQUIRED");
     }
     if (!isValidBoard(log.boardBefore) || !isValidBoard(log.boardAfter)) {
@@ -149,9 +165,12 @@ function validatePlacementDecisionLogV2(log) {
     return createSuccess(log);
 }
 
-function validateGameStartLog(log, options = {}) {
+export function validateGameStartLog(
+    log: unknown,
+    options: ValidationOptions = {},
+): LogValidationResult {
     const baseResult = validateBaseLog(log, options);
-    if (!baseResult.ok) return baseResult;
+    if (!baseResult.ok || !isPlainObject(log)) return baseResult;
 
     if (log.eventType !== "game_start") {
         return createFailure("INVALID_EVENT_TYPE");
@@ -169,7 +188,7 @@ function validateGameStartLog(log, options = {}) {
         return createFailure("MODE_REQUIRED");
     }
 
-    if (!Number.isFinite(log.startedAt)) {
+    if (!isFiniteNumber(log.startedAt)) {
         return createFailure("STARTED_AT_REQUIRED");
     }
 
@@ -182,7 +201,7 @@ function validateGameStartLog(log, options = {}) {
     }
 
     const hasInvalidPlayer = log.players.some(player => {
-        return !player || !isNonEmptyString(player.playerId);
+        return !isPlainObject(player) || !isNonEmptyString(player.playerId);
     });
 
     if (hasInvalidPlayer) {
@@ -192,9 +211,12 @@ function validateGameStartLog(log, options = {}) {
     return createSuccess(log);
 }
 
-function validateGameOverLog(log, options = {}) {
+export function validateGameOverLog(
+    log: unknown,
+    options: ValidationOptions = {},
+): LogValidationResult {
     const baseResult = validateBaseLog(log, options);
-    if (!baseResult.ok) return baseResult;
+    if (!baseResult.ok || !isPlainObject(log)) return baseResult;
 
     if (log.eventType !== "game_over") {
         return createFailure("INVALID_EVENT_TYPE");
@@ -212,7 +234,7 @@ function validateGameOverLog(log, options = {}) {
         return createFailure("MODE_REQUIRED");
     }
 
-    if (!Number.isFinite(log.endedAt)) {
+    if (!isFiniteNumber(log.endedAt)) {
         return createFailure("ENDED_AT_REQUIRED");
     }
 
@@ -240,7 +262,7 @@ function validateGameOverLog(log, options = {}) {
     }
     if (
         log.aiPolicyFallbackCount !== undefined
-        && (!Number.isInteger(log.aiPolicyFallbackCount) || log.aiPolicyFallbackCount < 0)
+        && !isNonNegativeInteger(log.aiPolicyFallbackCount)
     ) {
         return createFailure("INVALID_AI_POLICY_FALLBACK_COUNT");
     }
@@ -252,7 +274,7 @@ function validateGameOverLog(log, options = {}) {
     }
     if (
         log.aiModelSha256 != null
-        && !/^[0-9a-f]{64}$/.test(log.aiModelSha256)
+        && (!isNonEmptyString(log.aiModelSha256) || !/^[0-9a-f]{64}$/.test(log.aiModelSha256))
     ) {
         return createFailure("INVALID_AI_MODEL_SHA256");
     }
@@ -260,8 +282,11 @@ function validateGameOverLog(log, options = {}) {
     return createSuccess(log);
 }
 
-function validateGameEventLog(log, options = {}) {
-    if (!log || typeof log !== "object" || Array.isArray(log)) {
+export function validateGameEventLog(
+    log: unknown,
+    options: ValidationOptions = {},
+): LogValidationResult {
+    if (!isPlainObject(log)) {
         return createFailure("LOG_REQUIRED");
     }
 
@@ -280,11 +305,14 @@ function validateGameEventLog(log, options = {}) {
     return createFailure("INVALID_EVENT_TYPE");
 }
 
-function validateBaseLog(log, options = {}) {
+function validateBaseLog(
+    log: unknown,
+    options: ValidationOptions = {},
+): LogValidationResult {
     const maxBytes = options.maxBytes ?? DEFAULT_MAX_LOG_BYTES;
     const allowedSchemaVersions = options.allowedSchemaVersions || [1];
 
-    if (!log || typeof log !== "object" || Array.isArray(log)) {
+    if (!isPlainObject(log)) {
         return createFailure("LOG_REQUIRED");
     }
 
@@ -298,36 +326,53 @@ function validateBaseLog(log, options = {}) {
         return createFailure("LOG_PAYLOAD_TOO_LARGE");
     }
 
-    if (!allowedSchemaVersions.includes(log.schemaVersion)) {
+    if (typeof log.schemaVersion !== "number"
+        || !allowedSchemaVersions.includes(log.schemaVersion)) {
         return createFailure("INVALID_SCHEMA_VERSION");
     }
 
     return createSuccess(log);
 }
 
-function isNonEmptyString(value) {
+function isNonEmptyString(value: unknown): value is string {
     return typeof value === "string" && value.trim().length > 0;
 }
 
-function isPlainObject(value) {
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === "number" && Number.isFinite(value);
+}
+
+function isNonNegativeNumber(value: unknown): value is number {
+    return isFiniteNumber(value) && value >= 0;
+}
+
+function isInteger(value: unknown): value is number {
+    return typeof value === "number" && Number.isInteger(value);
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+    return isInteger(value) && value >= 0;
+}
+
+function isPlainObject(value: unknown): value is ValidatedLog {
     return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function isValidAuthoritativeLineage(log) {
+function isValidAuthoritativeLineage(log: ValidatedLog): boolean {
     const hasClientSequence = Object.hasOwn(log, "authoritativeClientSequence");
     const hasPieceIndex = Object.hasOwn(log, "authoritativePieceIndex");
     if (!hasClientSequence && !hasPieceIndex) return true;
 
     return hasClientSequence &&
         hasPieceIndex &&
-        Number.isInteger(log.authoritativeClientSequence) &&
+        isInteger(log.authoritativeClientSequence) &&
         log.authoritativeClientSequence >= 1 &&
-        Number.isInteger(log.authoritativePieceIndex) &&
+        isInteger(log.authoritativePieceIndex) &&
         log.authoritativePieceIndex >= 0 &&
         log.authoritativePieceIndex === log.pieceIndex;
 }
 
-function isValidBoard(board) {
+function isValidBoard(board: unknown): board is unknown[][] {
     if (!Array.isArray(board) || board.length === 0) return false;
 
     const columnCount = board[0]?.length ?? 0;
@@ -340,23 +385,23 @@ function isValidBoard(board) {
     });
 }
 
-function hasSameBoardDimensions(left, right) {
+function hasSameBoardDimensions(left: unknown[][], right: unknown[][]): boolean {
     return left.length === right.length && left[0].length === right[0].length;
 }
 
-function isValidPlacement(placement) {
+function isValidPlacement(placement: unknown): boolean {
     if (!isPlainObject(placement)) return false;
     if (!isNonEmptyString(placement.pieceType)) return false;
-    if (!Number.isInteger(placement.rotation) || placement.rotation < 0) return false;
-    if (!Number.isInteger(placement.row) || !Number.isInteger(placement.col)) return false;
+    if (!isNonNegativeInteger(placement.rotation)) return false;
+    if (!isInteger(placement.row) || !isInteger(placement.col)) return false;
     if (!Array.isArray(placement.cells) || placement.cells.length !== 4) return false;
 
     const cellKeys = new Set();
     const hasValidCells = placement.cells.every(cell => {
         if (
             !isPlainObject(cell) ||
-            !Number.isInteger(cell.row) ||
-            !Number.isInteger(cell.col)
+            !isInteger(cell.row) ||
+            !isInteger(cell.col)
         ) {
             return false;
         }
@@ -367,20 +412,19 @@ function isValidPlacement(placement) {
     return hasValidCells && cellKeys.size === 4;
 }
 
-function isValidPlacementResult(result) {
+function isValidPlacementResult(result: unknown): boolean {
     return isPlainObject(result) &&
-        Number.isInteger(result.linesCleared) &&
-        result.linesCleared >= 0 &&
-        Number.isFinite(result.scoreDelta) &&
+        isNonNegativeInteger(result.linesCleared) &&
+        isFiniteNumber(result.scoreDelta) &&
         typeof result.gameOver === "boolean";
 }
 
-function isValidMetrics(metrics, columnCount) {
+function isValidMetrics(metrics: unknown, columnCount: number): boolean {
     if (!isPlainObject(metrics)) return false;
     if (!Array.isArray(metrics.columnHeights) || metrics.columnHeights.length !== columnCount) {
         return false;
     }
-    if (!metrics.columnHeights.every(value => Number.isInteger(value) && value >= 0)) {
+    if (!metrics.columnHeights.every(isNonNegativeInteger)) {
         return false;
     }
 
@@ -390,50 +434,41 @@ function isValidMetrics(metrics, columnCount) {
         "holes",
         "bumpiness",
         "completeLines",
-    ].every(field => Number.isInteger(metrics[field]) && metrics[field] >= 0);
+    ].every(field => isNonNegativeInteger(metrics[field]));
 }
 
-function isValidEvaluation(evaluation) {
+function isValidEvaluation(evaluation: unknown): boolean {
     if (!isPlainObject(evaluation)) return false;
-    if (!Number.isFinite(evaluation.score)) return false;
-    if (!Number.isInteger(evaluation.candidateCount) || evaluation.candidateCount <= 0) {
+    if (!isFiniteNumber(evaluation.score)) return false;
+    if (!isInteger(evaluation.candidateCount) || evaluation.candidateCount <= 0) {
         return false;
     }
 
     const reason = evaluation.reason;
     return isPlainObject(reason) &&
-        Number.isInteger(reason.linesCleared) &&
-        reason.linesCleared >= 0 &&
+        isNonNegativeInteger(reason.linesCleared) &&
         [
             "holesDelta",
             "bumpinessDelta",
             "aggregateHeightDelta",
             "maxHeightDelta",
-        ].every(field => Number.isFinite(reason[field]));
+        ].every(field => isFiniteNumber(reason[field]));
 }
 
-function isValidSourceModelPair(source, modelType) {
+function isValidSourceModelPair(source: unknown, modelType: unknown): boolean {
     if (source === "human") return modelType === null;
     if (source === "heuristic_ai") return modelType === "heuristic";
     return false;
 }
 
-function isValidAiComparison(comparison) {
+function isValidAiComparison(comparison: unknown): boolean {
     if (!isPlainObject(comparison)) return false;
     if (!isValidPlacement(comparison.heuristicPlacement)) return false;
-    if (!Number.isFinite(comparison.heuristicScore)) return false;
-    if (!Number.isFinite(comparison.userScore)) return false;
-    if (!Number.isFinite(comparison.betterBy)) return false;
+    if (!isFiniteNumber(comparison.heuristicScore)) return false;
+    if (!isFiniteNumber(comparison.userScore)) return false;
+    if (!isFiniteNumber(comparison.betterBy)) return false;
     if (typeof comparison.samePlacement !== "boolean") return false;
 
     const expectedBetterBy = comparison.heuristicScore - comparison.userScore;
     return Math.abs(comparison.betterBy - expectedBetterBy) <= Number.EPSILON * 10;
 }
-
-module.exports = {
-    DEFAULT_MAX_LOG_BYTES,
-    validateGameEventLog,
-    validateGameOverLog,
-    validateGameStartLog,
-    validatePlacementDecisionLog,
-};

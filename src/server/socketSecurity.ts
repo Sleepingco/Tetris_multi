@@ -1,7 +1,9 @@
 type Environment = NodeJS.ProcessEnv;
-type SocketServerOptions = Partial<import("socket.io").ServerOptions>;
+import type { ServerOptions } from "socket.io";
 
-const DEFAULT_DEVELOPMENT_ORIGINS = Object.freeze([
+type SocketServerOptions = Partial<ServerOptions>;
+
+export const DEFAULT_DEVELOPMENT_ORIGINS = Object.freeze([
     "http://127.0.0.1:5173",
     "http://localhost:5173",
     "http://127.0.0.1:5500",
@@ -10,7 +12,7 @@ const DEFAULT_DEVELOPMENT_ORIGINS = Object.freeze([
     "http://localhost:5510",
 ]);
 
-function readAllowedOrigins(environment: Environment = process.env): Set<string> {
+export function readAllowedOrigins(environment: Environment = process.env): Set<string> {
     const configured = environment.SOCKET_ALLOWED_ORIGINS
         ?.split(",")
         .map(origin => origin.trim())
@@ -23,7 +25,7 @@ function readAllowedOrigins(environment: Environment = process.env): Set<string>
     return new Set(configured.length > 0 ? configured : DEFAULT_DEVELOPMENT_ORIGINS);
 }
 
-function createSocketServerOptions(
+export function createSocketServerOptions(
     environment: Environment = process.env,
 ): SocketServerOptions {
     const allowedOrigins = readAllowedOrigins(environment);
@@ -49,9 +51,3 @@ function createSocketServerOptions(
         },
     };
 }
-
-module.exports = {
-    DEFAULT_DEVELOPMENT_ORIGINS,
-    createSocketServerOptions,
-    readAllowedOrigins,
-};

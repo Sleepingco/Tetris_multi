@@ -5,10 +5,22 @@
  *
  * @returns {{enqueueAuthoritativePlayerMutation: Function}} mutation queue API
  */
-function createAuthoritativePlayerMutationQueue() {
-    const mutationTails = new Map();
+export type AuthoritativePlayerMutationQueue = {
+    enqueueAuthoritativePlayerMutation<T>(
+        roomId: string,
+        playerId: string,
+        mutation: () => T | PromiseLike<T>,
+    ): Promise<T>;
+};
 
-    function enqueueAuthoritativePlayerMutation(roomId, playerId, mutation) {
+export function createAuthoritativePlayerMutationQueue(): AuthoritativePlayerMutationQueue {
+    const mutationTails = new Map<string, Promise<void>>();
+
+    function enqueueAuthoritativePlayerMutation<T>(
+        roomId: string,
+        playerId: string,
+        mutation: () => T | PromiseLike<T>,
+    ): Promise<T> {
         if (typeof mutation !== "function") {
             return Promise.reject(new TypeError("mutation must be a function"));
         }
@@ -35,7 +47,3 @@ function createAuthoritativePlayerMutationQueue() {
         enqueueAuthoritativePlayerMutation,
     };
 }
-
-module.exports = {
-    createAuthoritativePlayerMutationQueue,
-};

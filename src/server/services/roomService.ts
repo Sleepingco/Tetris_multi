@@ -1,29 +1,72 @@
-const { randomUUID } = require("crypto")
-const {
+import { randomUUID } from "node:crypto";
+import {
     AI_DIFFICULTY,
     AI_POLICY,
     DEFAULT_AI_DIFFICULTY,
     DEFAULT_AI_POLICY,
     isValidAiDifficulty,
     isValidAiPolicy,
-} = require("./aiDifficulty.js")
+} from "./aiDifficulty.js";
+import type { AiDifficulty, AiPolicy } from "./aiDifficulty.js";
 
 // =============================
 // In-memory Room Store
 // 현재 MVP에서는 단일 Node 프로세스 메모리에 room lifecycle을 저장한다.
 // =============================
-const rooms = new Map()
+const rooms = new Map<string, RoomState>()
 const MAX_ROOM_ID_GENERATION_ATTEMPTS = 5
-const ROOM_MODE = Object.freeze({
+export const ROOM_MODE = Object.freeze({
     PVP: "pvp",
     PVE: "pve",
-})
-const PLAYER_TYPE = Object.freeze({
+} as const)
+export const PLAYER_TYPE = Object.freeze({
     HUMAN: "human",
     HEURISTIC_AI: "heuristic_ai",
-})
+} as const)
 
-function success(room, meta = {}) {
+export type RoomMode = typeof ROOM_MODE[keyof typeof ROOM_MODE];
+export type PlayerType = typeof PLAYER_TYPE[keyof typeof PLAYER_TYPE];
+export type RoomStatus = "waiting" | "playing" | "finished";
+export type RoomPlayer = {
+    playerId: string;
+    nickname: string;
+    playerType: "human";
+} | {
+    playerId: string;
+    nickname: "Heuristic AI" | "My Imitation AI (Experimental)";
+    playerType: "heuristic_ai";
+};
+export type RoomState = {
+    roomId: string;
+    mode: RoomMode;
+    aiDifficulty: AiDifficulty | null;
+    aiPolicy: AiPolicy | null;
+    hostPlayerId: string;
+    players: RoomPlayer[];
+    status: RoomStatus;
+    createdAt: number;
+    lobbyPlayerIds?: string[];
+};
+export type RoomResult = {
+    ok: boolean;
+    room: RoomState | null;
+    reason: string | null;
+    roomId?: string | null;
+    player?: RoomPlayer | null;
+    winnerPlayerId?: string | null;
+    loserPlayerId?: string | null;
+    finishReason?: string;
+};
+export type RoomMembership = { room: RoomState; player: RoomPlayer };
+type PlayerIdentity = { playerId: string; nickname: string };
+type RoomOptions = {
+    mode?: unknown;
+    aiDifficulty?: unknown;
+    aiPolicy?: unknown;
+    generateRoomId?: () => string;
+};
+
+function success(room: RoomState | null, meta: Partial<RoomResult> = {}): RoomResult {
     return {
         ok: true,
         room,
@@ -32,7 +75,7 @@ function success(room, meta = {}) {
     }
 }
 
-function failure(reason, meta = {}) {
+function failure(reason: string, meta: Partial<RoomResult> = {}): RoomResult {
     return {
         ok: false,
         room: null,
@@ -41,19 +84,19 @@ function failure(reason, meta = {}) {
     }
 }
 
-function getRoomState(roomId) {
+export function getRoomState(roomId: string): RoomState | null {
     return rooms.get(roomId) || null
 }
 
-function clearRoomsForTest() {
+export function clearRoomsForTest(): void {
     rooms.clear()
 }
 
-function generateRoomId() {
+function generateRoomId(): string {
     return randomUUID().slice(0, 8).toUpperCase()
 }
 
-function createUniqueRoomId(roomIdGenerator = generateRoomId) {
+function createUniqueRoomId(roomIdGenerator = generateRoomId): string | null {
     for (let attempt = 0; attempt < MAX_ROOM_ID_GENERATION_ATTEMPTS; attempt += 1) {
         const roomId = roomIdGenerator()
 
@@ -65,11 +108,11 @@ function createUniqueRoomId(roomIdGenerator = generateRoomId) {
     return null
 }
 
-function normalizeRoomMode(mode) {
+function normalizeRoomMode(mode: unknown): RoomMode {
     return mode === ROOM_MODE.PVE ? ROOM_MODE.PVE : ROOM_MODE.PVP
 }
 
-function createHumanPlayer(player) {
+function createHumanPlayer(player: PlayerIdentity): RoomPlayer {
     return {
         playerId: player.playerId,
         nickname: player.nickname,
@@ -77,7 +120,7 @@ function createHumanPlayer(player) {
     }
 }
 
-function createHeuristicAiPlayer(roomId, aiPolicy) {
+function createHeuristicAiPlayer(roomId: string, aiPolicy: AiPolicy): RoomPlayer {
     return {
         playerId: `heuristic-ai-${roomId}`,
         nickname: aiPolicy === AI_POLICY.PLACEMENT_V4
@@ -87,7 +130,17 @@ function createHeuristicAiPlayer(roomId, aiPolicy) {
     }
 }
 
-function getRoomPlayerContext(roomId, playerId) {
+function getRoomPlayerContext(roomId: string, playerId: string): {
+    ok: true;
+    roomState: RoomState;
+    player: RoomPlayer;
+    reason: null;
+} | {
+    ok: false;
+    roomState: RoomState | null;
+    player: null;
+    reason: string;
+} {
     const roomState = getRoomState(roomId)
     if (!roomId || !roomState) {
         return {
@@ -125,7 +178,10 @@ function getRoomPlayerContext(roomId, playerId) {
     }
 }
 
-function createRoom(hostPlayer, options = {}) {
+export function createRoom(
+    hostPlayer: PlayerIdentity | null | undefined,
+    options: RoomOptions = {},
+): RoomResult {
     if (!hostPlayer) {
         return failure("HOST_PLAYER_REQUIRED")
     }
@@ -137,17 +193,20 @@ function createRoom(hostPlayer, options = {}) {
     }
 
     const mode = normalizeRoomMode(options.mode)
-    const aiDifficulty = mode === ROOM_MODE.PVE
-        ? options.aiDifficulty ?? DEFAULT_AI_DIFFICULTY
-        : null
-    const aiPolicy = mode === ROOM_MODE.PVE
-        ? options.aiPolicy ?? DEFAULT_AI_POLICY
-        : null
-    if (mode === ROOM_MODE.PVE && !isValidAiDifficulty(aiDifficulty)) {
-        return failure("INVALID_AI_DIFFICULTY")
-    }
-    if (mode === ROOM_MODE.PVE && !isValidAiPolicy(aiPolicy)) {
-        return failure("INVALID_AI_POLICY")
+    let aiDifficulty: AiDifficulty | null = null;
+    let aiPolicy: AiPolicy | null = null;
+    if (mode === ROOM_MODE.PVE) {
+        const requestedDifficulty = options.aiDifficulty ?? DEFAULT_AI_DIFFICULTY;
+        if (!isValidAiDifficulty(requestedDifficulty)) {
+            return failure("INVALID_AI_DIFFICULTY")
+        }
+        aiDifficulty = requestedDifficulty;
+
+        const requestedPolicy = options.aiPolicy ?? DEFAULT_AI_POLICY;
+        if (!isValidAiPolicy(requestedPolicy)) {
+            return failure("INVALID_AI_POLICY")
+        }
+        aiPolicy = requestedPolicy;
     }
 
     const roomId = createUniqueRoomId(options.generateRoomId)
@@ -157,9 +216,9 @@ function createRoom(hostPlayer, options = {}) {
 
     const humanHost = createHumanPlayer(hostPlayer)
     const players = mode === ROOM_MODE.PVE
-        ? [humanHost, createHeuristicAiPlayer(roomId, aiPolicy)]
+        ? [humanHost, createHeuristicAiPlayer(roomId, aiPolicy ?? DEFAULT_AI_POLICY)]
         : [humanHost]
-    const room = {
+    const room: RoomState = {
         roomId,
         mode,
         aiDifficulty,
@@ -175,7 +234,10 @@ function createRoom(hostPlayer, options = {}) {
     return success(room)
 }
 
-function joinRoom(roomId, guestPlayer) {
+export function joinRoom(
+    roomId: string,
+    guestPlayer: PlayerIdentity | null | undefined,
+): RoomResult {
     if (!guestPlayer) {
         return failure("GUEST_PLAYER_REQUIRED")
     }
@@ -224,7 +286,7 @@ function joinRoom(roomId, guestPlayer) {
  * @param {string} playerId - 제거할 player id
  * @returns {{ok: boolean, room: Object|null, reason: string|null}} 제거 결과
  */
-function removePlayer(roomId, playerId) {
+export function removePlayer(roomId: string, playerId: string): RoomResult {
     const roomState = getRoomState(roomId)
 
     if (!roomState) {
@@ -254,7 +316,8 @@ function removePlayer(roomId, playerId) {
     }
 
     if (roomState.hostPlayerId === removedPlayer.playerId) {
-        roomState.hostPlayerId = roomState.players[0].playerId
+        const nextHost = roomState.players[0];
+        if (nextHost) roomState.hostPlayerId = nextHost.playerId
     }
 
     roomState.status = "waiting"
@@ -262,7 +325,7 @@ function removePlayer(roomId, playerId) {
     return success(roomState)
 }
 
-function findRoomByPlayerId(playerId) {
+export function findRoomByPlayerId(playerId: string): RoomMembership | null {
     for (const room of rooms.values()) {
         const player = room.players.find(player => player.playerId === playerId)
 
@@ -277,7 +340,7 @@ function findRoomByPlayerId(playerId) {
     return null
 }
 
-function leaveRoom(roomId, playerId) {
+export function leaveRoom(roomId: string, playerId: string): RoomResult {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
         return failure(context.reason, {
@@ -300,10 +363,10 @@ function leaveRoom(roomId, playerId) {
 
     return result.ok
         ? success(result.room, meta)
-        : failure(result.reason, meta)
+        : failure(result.reason ?? "UNKNOWN_ERROR", meta)
 }
 
-function startGame(roomId, playerId) {
+export function startGame(roomId: string, playerId: string): RoomResult {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
         return failure(context.reason)
@@ -335,7 +398,7 @@ function startGame(roomId, playerId) {
     return success(roomState)
 }
 
-function leaveGame(roomId, playerId) {
+export function leaveGame(roomId: string, playerId: string): RoomResult {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
         return failure(context.reason)
@@ -363,26 +426,28 @@ function leaveGame(roomId, playerId) {
  * @param {{location?: string}} options - 요청 위치 정보
  * @returns {{ok: boolean, room: Object|null, reason: string|null}} 동기화 결과
  */
-function syncRoom(roomId, playerId, options = {}) {
+export function syncRoom(
+    roomId: string,
+    playerId: string,
+    options: { location?: string } = {},
+): RoomResult {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
         return failure(context.reason)
     }
 
     if (options.location === "lobby" && context.roomState.status === "finished") {
-        if (!Array.isArray(context.roomState.lobbyPlayerIds)) {
-            context.roomState.lobbyPlayerIds = []
-        }
+        const lobbyPlayerIds = context.roomState.lobbyPlayerIds ??= []
 
-        if (!context.roomState.lobbyPlayerIds.includes(playerId)) {
-            context.roomState.lobbyPlayerIds.push(playerId)
+        if (!lobbyPlayerIds.includes(playerId)) {
+            lobbyPlayerIds.push(playerId)
         }
 
         const lobbyPlayers = context.roomState.mode === ROOM_MODE.PVE
             ? context.roomState.players.filter(player => player.playerType === PLAYER_TYPE.HUMAN)
             : context.roomState.players
         const allPlayersReturnedToLobby = lobbyPlayers.every(player => {
-            return context.roomState.lobbyPlayerIds.includes(player.playerId)
+            return lobbyPlayerIds.includes(player.playerId)
         })
 
         if (allPlayersReturnedToLobby) {
@@ -403,7 +468,11 @@ function syncRoom(roomId, playerId, options = {}) {
  * @param {string} [finishReason="top_out"] - 종료 사유
  * @returns {{ok: boolean, room: Object|null, reason: string|null, winnerPlayerId?: string|null, loserPlayerId?: string|null, finishReason?: string}} 종료 결과
  */
-function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
+export function finishGame(
+    roomId: string,
+    loserPlayerId: string,
+    finishReason = "top_out",
+): RoomResult {
     const context = getRoomPlayerContext(roomId, loserPlayerId)
     if (!context.ok) {
         return failure(context.reason, {
@@ -432,6 +501,13 @@ function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
     }
 
     const winnerPlayer = roomState.players.find(player => player.playerId !== loserPlayerId)
+    if (!winnerPlayer) {
+        return failure("NOT_ENOUGH_PLAYERS", {
+            winnerPlayerId: null,
+            loserPlayerId,
+            finishReason,
+        })
+    }
 
     roomState.status = "finished"
     roomState.lobbyPlayerIds = []
@@ -443,20 +519,4 @@ function finishGame(roomId, loserPlayerId, finishReason = "top_out") {
     })
 }
 
-module.exports = {
-    AI_DIFFICULTY,
-    AI_POLICY,
-    PLAYER_TYPE,
-    ROOM_MODE,
-    clearRoomsForTest,
-    createRoom,
-    findRoomByPlayerId,
-    getRoomState,
-    joinRoom,
-    removePlayer,
-    startGame,
-    leaveGame,
-    syncRoom,
-    leaveRoom,
-    finishGame,
-}
+export { AI_DIFFICULTY, AI_POLICY };
