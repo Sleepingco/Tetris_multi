@@ -221,9 +221,23 @@ function parseGameInputFrame(payload) {
 function createAuthoritativeSnapshotMonitor(page) {
     const events = [];
     const sentGameInputs = [];
+    const sentEventNames = [];
     let sentBagRequestCount = 0;
     let receivedBagAppendCount = 0;
     const socketListeners = new Map();
+
+    const recordSentPayload = (payload) => {
+        const [eventName] = parseSocketIoFrame(payload) || [];
+        if (!eventName) return;
+        sentEventNames.push(eventName);
+        if (sentEventNames.length > 500) sentEventNames.shift();
+        if (eventName === GAME_BAG_REQUEST_EVENT) sentBagRequestCount += 1;
+        const inputEvent = parseGameInputFrame(payload);
+        if (!inputEvent) return;
+
+        sentGameInputs.push(inputEvent);
+        if (sentGameInputs.length > 100) sentGameInputs.shift();
+    };
 
     const onWebSocket = (webSocket) => {
         const onFrameReceived = ({ payload }) => {
@@ -236,21 +250,20 @@ function createAuthoritativeSnapshotMonitor(page) {
             if (events.length > 100) events.shift();
         };
         const onFrameSent = ({ payload }) => {
-            const [eventName] = parseSocketIoFrame(payload) || [];
-            if (eventName === GAME_BAG_REQUEST_EVENT) sentBagRequestCount += 1;
-            const inputEvent = parseGameInputFrame(payload);
-            if (!inputEvent) return;
-
-            sentGameInputs.push(inputEvent);
-            if (sentGameInputs.length > 100) sentGameInputs.shift();
+            recordSentPayload(payload);
         };
 
         socketListeners.set(webSocket, { onFrameReceived, onFrameSent });
         webSocket.on("framereceived", onFrameReceived);
         webSocket.on("framesent", onFrameSent);
     };
+    const onRequest = (request) => {
+        if (request.method() !== "POST" || !request.url().includes("/socket.io/")) return;
+        request.postData()?.split("\x1e").forEach(recordSentPayload);
+    };
 
     page.on("websocket", onWebSocket);
+    page.on("request", onRequest);
 
     return {
         getLatestTick(playerId) {
@@ -275,6 +288,9 @@ function createAuthoritativeSnapshotMonitor(page) {
         getSentGameInputs() {
             return [...sentGameInputs];
         },
+        getSentEventCount(eventName) {
+            return sentEventNames.filter(sentEventName => sentEventName === eventName).length;
+        },
         getSentBagRequestCount() {
             return sentBagRequestCount;
         },
@@ -283,6 +299,7 @@ function createAuthoritativeSnapshotMonitor(page) {
         },
         dispose() {
             page.off("websocket", onWebSocket);
+            page.off("request", onRequest);
             socketListeners.forEach((listeners, webSocket) => {
                 webSocket.off("framereceived", listeners.onFrameReceived);
                 webSocket.off("framesent", listeners.onFrameSent);

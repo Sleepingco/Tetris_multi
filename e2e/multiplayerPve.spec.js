@@ -388,11 +388,15 @@ test("PVE AI attack은 human pending 표시 후 다음 lock에 적용된다", as
             return playerId !== aiPlayerId;
         });
         const pendingGarbage = page.locator('.pending-garbage[data-player="1"]');
+        const incomingStatus = page.locator(
+            '.player-column[data-player="1"] .stat--incoming',
+        );
 
         await expect.poll(async () => Number(await pendingGarbage.textContent()), {
             timeout: 20_000,
             intervals: [100, 150, 250],
         }).toBeGreaterThan(0);
+        await expect(incomingStatus).toHaveClass(/is-danger/);
 
         const pendingSnapshot = monitor.getSnapshots(humanPlayerId).findLast(snapshot => {
             return snapshot.pendingGarbageLines > 0;
@@ -406,6 +410,7 @@ test("PVE AI attack은 human pending 표시 후 다음 lock에 적용된다", as
             timeout: 5_000,
             intervals: [100, 150, 250],
         }).toBe(0);
+        await expect(incomingStatus).not.toHaveClass(/is-danger/);
         await expect.poll(() => {
             return monitor.getSnapshots(humanPlayerId).some(snapshot => {
                 return snapshot.sequence > pendingSnapshot.sequence &&
