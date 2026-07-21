@@ -15,19 +15,19 @@
 | [8A](goals/08a-typescript-core-state.md) | production core/state TypeScript 전환 | 7 | `codex/migrate-typescript-core-state` |
 | [8B](goals/08b-typescript-client-runtime.md) | production client runtime/render/net/AI TypeScript 전환 | 8A | `codex/migrate-typescript-client-runtime` |
 | [8C](goals/08c-typescript-server.md) | production server TypeScript와 compiled artifact 경계 완성 | 8B | `codex/migrate-typescript-server` |
-| [8D](goals/08d-typescript-tests-tooling.md) | test/e2e/scripts 선택적 TypeScript 정리 | 8C, 선택 | `codex/cleanup-typescript-tests-tooling` |
-| [9](goals/09-postgres-shadow.md) | PostgreSQL append-only shadow storage | 8C | `codex/add-postgres-event-shadow` |
-| [10](goals/10-storage-cutover.md) | DB/JSONL 호환 export와 점진적 전환 | 9 | `codex/cutover-event-storage` |
-| [11A](goals/11a-csp-headers.md) | CSP와 security headers | 10 | `codex/harden-csp-headers` |
+| [11A](goals/11a-csp-headers.md) | CSP와 security headers | 8C | `codex/harden-csp-headers` |
 | [11B](goals/11b-dependency-hardening.md) | dependency audit와 보안 업데이트 | 11A | `codex/harden-dependencies` |
 | [11C](goals/11c-production-docker.md) | production Docker image | 11B | `codex/add-production-docker` |
-| [11D](goals/11d-ci.md) | Node/DB/browser CI gate | 11C | `codex/add-migration-ci` |
+| [11D](goals/11d-ci.md) | Node/browser CI gate | 11C | `codex/add-migration-ci` |
 
-## 보류된 선택 실험
+## 보류된 선택 Goal
 
 | Goal | 목적 | 상태 | 보존 브랜치 |
 | --- | --- | --- | --- |
 | [7A](goals/07a-react-spa.md) | 단일 React SPA shell과 기존 URL 호환 | 보류, Goal 8 선행조건 아님 | `codex/migrate-react-spa` |
+| [8D](goals/08d-typescript-tests-tooling.md) | test/e2e/scripts 선택적 TypeScript 정리 | 보류, production hardening 선행조건 아님 | 생성하지 않음 |
+| [9](goals/09-postgres-shadow.md) | PostgreSQL append-only shadow storage | 보류, production hardening 선행조건 아님 | `codex/add-postgres-event-shadow` |
+| [10](goals/10-storage-cutover.md) | DB/JSONL 호환 export와 점진적 전환 | 보류, Goal 9 재개 전 실행 금지 | 생성하지 않음 |
 
 ## 상세 Goal 문서 정책
 
@@ -39,7 +39,9 @@
 - Goal 7A는 현재 제품 요구보다 route/session lifecycle 복잡도가 커서 선택 실험으로 보류한다. 재개 조건과 발견된 문제는 Goal 파일을 따른다.
 - [Goal 8](goals/08-typescript-completion.md)은 실행 Goal이 아니라 8A~8D 분할 정책의 인덱스다.
 - production 전환은 `8A core/state → 8B client runtime/render/net/AI → 8C server/artifact` 순서로 각각 main에 반영한다.
-- 8D test/e2e/scripts 정리는 선택 Goal이다. 8C main 반영 뒤 실행할 수 있지만 Goal 9의 선행조건은 아니다.
+- 8D test/e2e/scripts 정리는 유지보수 이득이 확인될 때까지 보류하며 production hardening을 막지 않는다.
+- Goal 9와 10은 현재 JSONL 분석 경로로 충분하다는 판단에 따라 보류한다. 중앙 SQL 조회나 사용자 기록 요구가 생기기 전에는 구현 브랜치를 main에 병합하거나 DB 전환을 시작하지 않는다.
+- production hardening은 Goal 8C 이후 Goal 11A부터 진행하며 Goal 9와 10을 선행조건으로 요구하지 않는다.
 - rename을 수행한 Goal은 아직 JavaScript인 consumer를 포함해 해당 파일을 참조하는 모든 source import/require 경로를 함께 갱신한다.
 - Goal 11은 하나의 큰 branch가 아니라 11A~11D의 독립 Goal로 수행한다.
 
@@ -50,5 +52,5 @@
 - runtime 계약을 만든 뒤 React 화면을 이동한다.
 - 현재 네 React page entry와 full-document navigation을 유지한다. SPA는 구체적인 사용자 요구가 생겼을 때만 다시 검토한다.
 - first-party TypeScript 전환은 기능 변화와 분리한다.
-- PostgreSQL은 shadow storage로 시작하고 JSONL parity 이후 점진적으로 전환한다.
+- 분석 로그는 JSONL을 유지한다. PostgreSQL은 중앙 조회·대시보드·다중 인스턴스 수집 같은 구체적인 요구가 생겼을 때만 다시 검토한다.
 - production hardening은 기능 마이그레이션이 안정된 뒤 수행한다.

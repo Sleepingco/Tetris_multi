@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-22 기준. Goal 8C production server TypeScript와 compiled release 경계를 검증하고 branch merge gate에서 멈춘다.
+- Last update: 2026-07-22 기준. Goal 8C를 local main에 반영했고 DB Goal 9·10은 보류한다.
 
 ## Document Role
 
@@ -246,7 +246,7 @@
 ## Migration Goal 8 TypeScript 분할 설계 (2026-07-21)
 
 - 기존 단일 Goal 8은 production과 test/tooling을 한 diff에 묶지 않는다. 8A는 `core/state`, 8B는 client runtime/render/net/AI, 8C는 server와 compiled artifact 경계를 각각 독립 branch와 merge gate에서 전환한다.
-- 8D는 test/e2e/scripts 중 유지보수 이득이 분명한 파일만 정리하는 선택 Goal이다. PostgreSQL shadow storage인 Goal 9의 선행조건은 8D가 아니라 production 전환이 끝나는 8C main 반영이다.
+- 8D는 test/e2e/scripts 중 유지보수 이득이 분명한 파일만 정리하는 선택 Goal이며 production hardening을 막지 않는다.
 - 각 rename Goal은 아직 JavaScript인 consumer를 포함해 해당 모듈을 참조하는 source import/require 경로를 함께 갱신한다. client ESM은 `.ts`/`.tsx` source specifier와 `rewriteRelativeImportExtensions`를 사용해 output의 `.js` 경로를 보존한다.
 - server CommonJS TypeScript source는 직접 실행하지 않는다. build 뒤 `dist/server` JavaScript만 test, artifact, development와 production 검증에 사용한다. 8C 시작 전 compiled `app → init → sockets → services`, game core loader와 V4 model chain을 작은 interop gate로 고정한다.
 - root `type: module`, 새 loader와 runtime dependency는 추가하지 않는다. `socketContracts.mjs`는 shared Zod runtime의 명시적인 `allowJs` 예외이며 `allowJs: false`는 Goal 8 완료 조건이 아니다.
@@ -282,7 +282,7 @@
 - 병합 후 Node `24.18.0`에서 `bash scripts/verify.sh`를 재실행해 typecheck, clean build, artifact 1/1과 Node 586 pass·기존 조건부 1 skip을 확인했고 `git diff --check 7286ab6..HEAD`도 통과했다.
 - 동일한 Goal HEAD에서 이미 production Playwright 34/34와 Vite-dev 8 pass·2 production-only skip이 통과했으므로 main에서 전체 E2E는 코드 변경이 없어 반복하지 않았다. push 후 Goal 8C/8D, Goal 9와 SPA 작업은 별도 승인으로 남긴다.
 
-## Migration Goal 8C Server TypeScript merge gate (2026-07-22)
+## Migration Goal 8C Server TypeScript main integration (2026-07-22)
 
 - 기준은 `main@b4960ad`이며 `codex/migrate-typescript-server`에서 `src/server`의 production JavaScript를 strict TypeScript로 전환했다. source server `.js`는 0개이며 `socketContracts.mjs`만 shared production `allowJs` runtime 예외로 유지한다.
 - root CommonJS와 `module: NodeNext`를 유지한다. server의 정적 source import는 `.js`, client ESM dynamic import는 `.ts`를 사용하고 build output에서 `.js`로 rewrite한다. root `type: module`, TypeScript runtime loader와 새 dependency는 추가하지 않았다.
@@ -296,7 +296,13 @@
 - package dependency와 lockfile은 기준과 동일하다. client source와 dependency를 변경하지 않았으며 final build의 기존 client bundle 구성을 유지했다.
 - Chromium local과 hermetic release를 검증했지만 WebKit/Firefox, 외부 TLS/reverse proxy와 장시간 soak는 실행하지 않았다. Express vendor surface는 현재 사용 API만 local declaration으로 좁혔으므로 사용 범위가 커지면 별도 type dependency 판단이 필요하다. test/e2e/script 자체의 선택적 TypeScript 전환은 Goal 8D, storage는 Goal 9 범위다.
 - rollback은 현재 리뷰 문서 commit → `0fa4f39` → `785dcf0` → `978398c` → `c8cdb9d` → `3a60750` → `e67ecf5` → `49187e4` 순서로 역순 revert한다. pre-interop 문서 commit `7680229`는 구현 rollback 대상이 아니다.
-- Goal 8C만 완료 처리하고 local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 8D/9와 SPA 작업은 수행하지 않는다.
+- Goal 8C는 local `main@4d5bcd5`에 반영됐다. `origin/main` push, branch 삭제, Goal 8D와 SPA 작업은 수행하지 않았다.
+
+## Storage roadmap decision (2026-07-22)
+
+- 현재 단일 서버와 ML 분석에는 JSONL 경로로 충분하므로 Goal 9 PostgreSQL shadow storage를 main에 병합하지 않는다. 검증된 실험 구현은 `codex/add-postgres-event-shadow`에 보존한다.
+- Goal 10 DB/JSONL cutover도 함께 보류한다. 중앙 SQL 조회, 사용자 기록·대시보드 또는 다중 서버 event 수집 요구가 생기면 JSONL batch import부터 다시 판단한다.
+- Goal 8D와 SPA는 계속 선택·보류 상태다. 다음 migration 작업은 DB와 무관한 Goal 11A CSP/security headers이며 Goal 8C main 반영만 선행조건으로 사용한다.
 
 ## Project Direction
 

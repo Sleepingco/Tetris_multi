@@ -8,10 +8,10 @@
 | --- | --- | --- | --- |
 | [8A](08a-typescript-core-state.md) | production `core/state` TypeScript | Goal 7 | 8B |
 | [8B](08b-typescript-client-runtime.md) | production client runtime/render/net/AI TypeScript | 8A | 8C |
-| [8C](08c-typescript-server.md) | production server TypeScript와 compiled artifact 경계 | 8B | Goal 9 |
-| [8D](08d-typescript-tests-tooling.md) | test/e2e/scripts 선택적 TypeScript 정리 | 8C | 선택, Goal 9에는 불필요 |
+| [8C](08c-typescript-server.md) | production server TypeScript와 compiled artifact 경계 | 8B | Goal 11A |
+| [8D](08d-typescript-tests-tooling.md) | test/e2e/scripts 선택적 TypeScript 정리 | 8C | 선택, Goal 11A에는 불필요 |
 
-8A~8C는 각각 최신 main에서 독립 브랜치로 시작하고 검증·merge gate를 통과한 뒤 다음 production Goal을 시작한다. 8D는 8C 이후 별도로 판단하며 Goal 9를 막지 않는다.
+8A~8C는 각각 최신 main에서 독립 브랜치로 시작하고 검증·merge gate를 통과한 뒤 다음 production Goal을 시작한다. 8D는 8C 이후 별도로 판단하며 production hardening을 막지 않는다.
 
 ## 공통 전환 계약
 

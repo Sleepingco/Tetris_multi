@@ -47,7 +47,7 @@ test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
 - 기존 브랜치가 같은 이름으로 존재하면 강제로 이동하지 않고 base와 변경 상태를 보고한다.
 - 의존 관계가 있는 migration Goal을 병렬 실행하지 않는다. 무관한 작업이 진행 중이면 현재 Goal 전용 브랜치를 별도 worktree에 checkout한다.
 - 오래된 브랜치 전체 merge보다 필요한 고유 변경을 최신 main 위에 재적용하는 방식을 우선 검토한다.
-- Goal 8A, 8B와 8C는 각각 선행 Goal이 main에 반영된 뒤 새 전용 브랜치에서 시작한다. 8D는 8C 이후의 선택 Goal이며 Goal 9는 8C main 반영만 선행조건으로 사용한다.
+- Goal 8A, 8B와 8C는 각각 선행 Goal이 main에 반영된 뒤 새 전용 브랜치에서 시작한다. 보류된 8D, 9와 10은 별도 문서 승인 전에는 시작하지 않으며 production hardening을 막지 않는다.
 
 ## 4. 구현
 

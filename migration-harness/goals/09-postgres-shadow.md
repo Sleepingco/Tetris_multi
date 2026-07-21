@@ -1,5 +1,18 @@
 # Goal 9 — PostgreSQL Append-only Shadow Storage
 
+## 상태
+
+보류한다. 현재 단일 서버의 분석·ML 경로는 JSONL로 충분하며, 검증된 실험 구현은
+`codex/add-postgres-event-shadow` 브랜치에만 보존하고 main에 병합하지 않는다.
+
+다음 중 실제 요구가 생긴 뒤 별도 문서 승인으로 재개한다.
+
+- 여러 서버의 event를 중앙에서 조회해야 한다.
+- 사용자 기록이나 운영 분석 대시보드가 SQL 조회를 요구한다.
+- 관리형 PostgreSQL, credential, backup과 retention 운영 주체가 정해진다.
+
+재개 시에는 실시간 dual-write보다 JSONL batch import가 요구를 충족하는지 먼저 판단한다.
+
 ## 목적
 
 JSONL 분석 경로를 유지하면서 versioned game event를 PostgreSQL에 비차단 shadow write하는 최소 영속 계층을 추가한다.

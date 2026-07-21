@@ -18,7 +18,7 @@
 - client/server build artifact만 runtime stage에 복사
 - health/readiness check
 - `.dockerignore`, environment와 secret injection 경계
-- 필요하면 PostgreSQL을 포함한 local production-like Compose
+- Goal 9가 별도 승인으로 재개된 경우에만 PostgreSQL을 포함한 local production-like Compose
 
 ## 제외 범위
 
@@ -30,10 +30,10 @@
 
 - clean Docker build가 고정된 lockfile로 성공한다.
 - runtime image에 dev tool과 source secret이 없다.
-- non-root로 server, 네 page, Socket.IO와 DB 연결이 동작한다.
+- non-root로 server, 네 page와 Socket.IO가 동작한다.
 - SIGTERM graceful shutdown과 health check가 동작한다.
 - container 기반 PVP/PVE smoke와 rollback image 실행이 검증된다.
 
 ## Rollback과 Merge Gate
 
-이전 image tag와 migration-compatible DB 상태로 복귀할 수 있어야 한다. image publish/deploy는 별도 사용자 승인 대상이다.
+이전 image tag로 복귀할 수 있어야 한다. image publish/deploy는 별도 사용자 승인 대상이다.

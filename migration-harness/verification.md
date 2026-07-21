@@ -19,7 +19,7 @@ Goal 1에서 Vite/TypeScript 기반이 추가된 이후의 최소 자동 검증�
 
 `scripts/verify.sh`는 Goal 1에서 `typecheck`, `build`, unit test를 포함하는 canonical fast gate로 강화한다. 개별 명령은 실패 원인 분석에 사용하고 같은 검증을 불필요하게 두 번 실행하지 않는다.
 
-Playwright, production runtime smoke와 DB 통합 검증은 별도 full gate로 실행할 수 있지만 관련 Goal 완료 전에는 반드시 실행한다.
+Playwright와 production runtime smoke는 별도 full gate로 실행할 수 있지만 관련 Goal 완료 전에는 반드시 실행한다. DB 통합 검증은 보류된 Goal 9 또는 10을 다시 승인한 경우에만 적용한다.
 
 ## 브라우저 검증
 
@@ -42,7 +42,7 @@ Goal 1에서는 build environment에서 산출물을 만든 뒤 devDependencies�
 - 8C는 raw `require()`/`module.exports` rename으로 `any`가 된 module boundary, 광범위한 `any`, `@ts-ignore`, 오류를 숨기는 assertion을 완료로 인정하지 않는다. representative service/socket chain의 compile-time argument, return과 exported boundary 검증을 artifact interop gate와 함께 실행한다.
 - 8C 시작 전 8B main에서 `npm run build`, `npm run test:artifact`와 compiled server HTTP smoke를 실행한다. full build는 기존 `dist`를 제거하고 clean `dist/client`와 `dist/server`를 함께 만들어 artifact test와 HTTP smoke가 server-only output이나 이전 client artifact에 의존하지 않게 한다. artifact test는 `gameCoreLoader → core/state`와 `pveAiPlayerService → V4 scorer/model`, HTTP smoke는 `app → init → sockets → services` load chain을 담당한다.
 - `src/shared/socketContracts.mjs`와 인접 type projection은 명시적인 `allowJs` runtime 예외다. `allowJs: false` 자체를 완료 증거로 사용하지 않는다.
-- 8D는 선택한 test/e2e/scripts만 검증하며 Goal 8C production 완료나 Goal 9 시작을 막지 않는다.
+- 보류된 8D를 다시 승인하면 선택한 test/e2e/scripts만 검증하며 Goal 8C production 완료나 production hardening을 막지 않는다.
 - 새 TypeScript runtime loader나 runtime dependency 없이 기존 Node 24, TypeScript, Vite와 Playwright 경로로만 실행한다.
 
 ## 서버와 프로토콜 검증
@@ -53,6 +53,8 @@ Goal 1에서는 build environment에서 산출물을 만든 뒤 devDependencies�
 - authoritative input, ticker, garbage, game over와 lobby 복귀를 확인한다.
 
 ## DB와 데이터 검증
+
+이 절은 Goal 9 또는 10을 별도 승인으로 재개한 경우에만 적용한다.
 
 - migration empty bootstrap과 재실행 안전성을 확인한다.
 - idempotency와 unique constraint를 검증한다.

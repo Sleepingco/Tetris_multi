@@ -6,7 +6,7 @@ production HTTP 응답에 적용할 CSP와 보안 header를 gameplay, Socket.IO�
 
 ## 선행조건
 
-- Goal 10의 main 반영
+- Goal 8C의 main 반영. 보류된 Goal 9와 10은 선행조건이 아니다.
 - inline script/style, external asset, worker와 WebSocket origin inventory 완료
 - controlled preview에서 CSP report 관찰 가능
 

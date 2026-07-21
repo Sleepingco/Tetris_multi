@@ -1,5 +1,10 @@
 # Goal 10 — DB/JSONL Compatible Export and Cutover
 
+## 상태
+
+Goal 9와 함께 보류한다. Goal 9 구현이 main과 실제 운영 환경에서 다시 승인되기 전에는
+이 Goal의 branch, backfill, adapter 또는 read-source flag를 만들지 않는다.
+
 ## 목적
 
 PostgreSQL과 JSONL의 데이터 동등성을 증명하고 분석 read source를 feature flag로 점진 전환한다.
