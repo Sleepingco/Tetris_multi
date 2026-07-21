@@ -21,6 +21,7 @@ runtime, AI와 server authoritative 경로가 같은 board/piece/state 계약을
 - board, piece, rotation, move outcome, mutable game state와 serialized snapshot의 public 타입을 각 값을 소유하는 기존 모듈에서 export한다.
 - rename된 모듈을 참조하는 runtime, AI, server loader, test와 script가 아직 JavaScript여도 source import/dynamic import 경로를 실제 `.ts` 확장자로 함께 갱신한다.
 - client ESM 상대 specifier는 `.ts`를 사용하고 build emit에는 `rewriteRelativeImportExtensions`를 적용해 output의 `.js` 경로를 유지한다.
+- Node가 직접 읽는 renamed client source와 관련 test 경계는 `erasableSyntaxOnly`와 `verbatimModuleSyntax`를 검사한다. type-only import는 `import type`으로 쓰고 enum, namespace, parameter property는 사용하지 않는다.
 - `src/client/package.json`의 `type: module`과 `dist/server/client/package.json` 복사 계약을 유지한다.
 - 이 단계에서는 필요한 `.ts`와 기존 `.js` consumer가 공존하므로 `allowJs`를 유지한다.
 
@@ -47,6 +48,7 @@ runtime, AI와 server authoritative 경로가 같은 board/piece/state 계약을
 
 - core/state production source가 strict TypeScript 검사에 포함된다.
 - client ESM source import는 `.ts`, emitted browser/server artifact import는 `.js`다.
+- Node source execution 경계가 type-stripping 가능한 문법과 type-only import 규칙을 통과한다.
 - board/state serialization fixture와 client/server shared core 결과가 기준선과 같다.
 - 미전환 consumer에 존재하지 않는 `.js` source 경로가 남지 않는다.
 

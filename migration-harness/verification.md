@@ -36,8 +36,10 @@ Goal 1에서는 build environment에서 산출물을 만든 뒤 devDependencies�
 ## Goal 8 TypeScript 검증
 
 - 8A/8B client ESM은 실제 `.ts`/`.tsx` source specifier를 사용하고 `rewriteRelativeImportExtensions`가 browser 및 `dist/server/client` output의 상대 경로를 `.js`로 바꾸는지 확인한다.
+- Node가 source TypeScript를 읽는 client/test 경계는 `erasableSyntaxOnly`와 `verbatimModuleSyntax`를 검사한다. type-only import는 `import type`으로 제한하고 enum, namespace, parameter property처럼 type stripping 변환이 필요한 문법은 금지한다. compiled-only server CommonJS에는 이 정책을 전역 적용하지 않는다.
 - rename된 파일을 참조하는 미전환 JavaScript consumer도 같은 Goal에서 경로를 갱신했는지 검색과 runtime fixture로 확인한다.
 - 8C server CommonJS TypeScript는 source를 직접 실행하지 않는다. clean build 뒤 unit/integration, artifact, development와 production smoke가 모두 `dist/server/**/*.js`를 실행해야 한다.
+- 8C는 raw `require()`/`module.exports` rename으로 `any`가 된 module boundary, 광범위한 `any`, `@ts-ignore`, 오류를 숨기는 assertion을 완료로 인정하지 않는다. representative service/socket chain의 compile-time argument, return과 exported boundary 검증을 artifact interop gate와 함께 실행한다.
 - 8C 시작 전 8B main에서 `npm run build:server`, `npm run test:artifact`와 compiled server HTTP smoke를 실행한다. artifact test는 `gameCoreLoader → core/state`와 `pveAiPlayerService → V4 scorer/model`, HTTP smoke는 `app → init → sockets → services` load chain을 담당한다.
 - `src/shared/socketContracts.mjs`와 인접 type projection은 명시적인 `allowJs` runtime 예외다. `allowJs: false` 자체를 완료 증거로 사용하지 않는다.
 - 8D는 선택한 test/e2e/scripts만 검증하며 Goal 8C production 완료나 Goal 9 시작을 막지 않는다.

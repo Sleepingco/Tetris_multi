@@ -29,6 +29,8 @@ Goal 8A/8B의 typed client core와 AI를 server가 소비하는 마지막 produc
 - `src/app.ts`, 미전환 test/script와 다른 consumer가 참조하는 server 경로를 함께 갱신한다.
 - root CommonJS와 `module: NodeNext`를 유지한다. root `"type": "module"`은 추가하지 않는다.
 - server source를 `node`, `tsx`, `ts-node` 또는 다른 runtime loader로 직접 실행하지 않는다.
+- raw `require()`/`module.exports`를 단순 rename해 module 결과가 `any`가 되는 전환은 완료로 인정하지 않는다. emitted runtime은 CommonJS로 유지하되, TypeScript가 module 간 argument, return과 exported service/socket 경계를 검사하는 type-aware import/export 방식을 사용한다.
+- 광범위한 `any`, `@ts-ignore`와 assertion으로 전환 오류를 숨기지 않는다. 필요한 assertion은 실제 runtime 검증을 좁게 반영하고 이유를 남긴다.
 - server 대상 unit/integration test는 먼저 build한 뒤 `dist/server/**/*.js`를 import/require한다. clean checkout의 test script와 `scripts/verify.sh`도 이 순서를 보장한다.
 - production start와 development server는 계속 `dist/server/app.js`를 실행한다.
 - `src/shared/socketContracts.mjs`는 Zod production runtime이므로 명시적인 `allowJs` 예외로 server build에 포함하고 `dist/server/shared/socketContracts.mjs`를 검증한다.
@@ -60,6 +62,7 @@ Goal 8A/8B의 typed client core와 AI를 server가 소비하는 마지막 produc
 - source server TypeScript를 직접 실행하는 package script와 test가 없다.
 - production, unit/integration과 dependency-only smoke가 compiled JavaScript만 실행한다.
 - `socketContracts.mjs`가 유일한 production `allowJs` runtime 예외다. shared Socket contract boundary가 owner이며 browser/server Zod runtime 공유가 유지 이유다.
+- representative server module chain이 compile-time에서 typed service/socket argument, return과 exported boundary를 검증한다. 이 검증은 8C pre-interop artifact gate와 별도이며 둘 다 필요하다.
 - clean artifact가 기존 server/client/shared/model whitelist와 source 비배포 경계를 유지한다.
 - Goal 9 시작에 필요한 production TypeScript 경계가 완료된다. Goal 8D는 선행조건이 아니다.
 

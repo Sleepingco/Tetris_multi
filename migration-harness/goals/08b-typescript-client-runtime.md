@@ -20,6 +20,7 @@ Goal 8A의 core/state 타입을 Canvas runtime, Socket adapter와 PVE AI가 직�
 - runtime handle/display snapshot, DOM adapter, multiplayer session, Socket subscription과 placement AI의 기존 public boundary를 타입화한다.
 - page TSX, server PVE/core loader, test와 script 등 모든 consumer의 source import/dynamic import 경로를 실제 `.ts` 확장자로 함께 갱신한다.
 - client ESM은 `.ts`/`.tsx` source specifier와 `rewriteRelativeImportExtensions`를 사용한다. Vite browser output과 `dist/server/client` output은 `.js`를 유지한다.
+- Node가 직접 읽는 client/test source는 `erasableSyntaxOnly`와 `verbatimModuleSyntax`를 검사한다. type-only import는 `import type`으로 쓰고 enum, namespace, parameter property는 사용하지 않는다.
 - shared Socket 타입은 기존 `socketContractTypes.d.ts`에서 가져오고 Zod runtime schema는 수정하지 않는다.
 - 미전환 server/test/script JavaScript와 `socketContracts.mjs`를 위해 `allowJs`를 유지한다.
 
@@ -47,6 +48,7 @@ Goal 8A의 core/state 타입을 Canvas runtime, Socket adapter와 PVE AI가 직�
 - React는 표시와 lifecycle만, runtime/gameState는 gameplay 상태를 계속 소유한다.
 - Socket event, session/reconnect와 placement AI 결과가 기준선과 같다.
 - source `.ts` specifier가 emitted artifact에서 `.js`로 바뀌며 raw `.ts`/source map은 배포되지 않는다.
+- Node source execution 경계가 type-stripping 가능한 문법과 type-only import 규칙을 통과한다.
 
 ## 자동 검증
 

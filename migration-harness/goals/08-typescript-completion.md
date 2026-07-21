@@ -17,6 +17,8 @@
 
 - rename 대상 파일뿐 아니라 그 파일을 참조하는 미전환 JavaScript consumer의 source import/require 경로도 같은 Goal에서 갱신한다.
 - client ESM의 상대 source specifier는 실제 `.ts`/`.tsx` 확장자를 사용한다. TypeScript emit은 `rewriteRelativeImportExtensions`로 production `.js` 경로를 만든다.
+- Node가 source TypeScript를 직접 읽는 client/test 경계는 `erasableSyntaxOnly`와 `verbatimModuleSyntax` 검사를 통과한다. type-only import는 반드시 `import type`을 사용하며 enum, namespace, parameter property처럼 Node type stripping에 변환을 요구하는 문법은 사용하지 않는다.
+- 이 Node source 실행 정책은 client/test 경계에만 적용한다. compiled-only server CommonJS에는 무조건 전역 적용하지 않고 Goal 8C의 build/type boundary로 검증한다.
 - server CommonJS TypeScript source는 직접 실행하지 않는다. clean build 뒤 `dist/server/**/*.js`만 unit/integration/artifact/production 검증에 사용한다.
 - root `"type": "module"`, TypeScript runtime loader, 새 runtime dependency를 추가하지 않는다.
 - `src/shared/socketContracts.mjs`는 browser ESM과 server CommonJS가 공유하는 Zod runtime 계약이므로 명시적인 `allowJs` 예외로 유지한다. 인접한 `socketContractTypes.d.ts`가 타입 projection을 소유한다.
