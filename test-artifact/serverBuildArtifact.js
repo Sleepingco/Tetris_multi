@@ -6,6 +6,14 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 const DIST_ROOT = path.join(ROOT, "dist");
 const SERVER_ROOT = path.join(DIST_ROOT, "server");
+const CLIENT_RUNTIME_SOURCE_ROOTS = [
+    "src/client/game/ai",
+    "src/client/game/entry",
+    "src/client/game/render",
+    "src/client/game/runtime",
+    "src/client/game/ui",
+    "src/client/net",
+];
 
 async function listFiles(directory, prefix = "") {
     const files = [];
@@ -46,6 +54,30 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
             || /^client\/game\/(?:ai|core|state)\/.+\.js$/.test(file);
     };
     assert.deepEqual(serverFiles.filter(file => !allowedServerArtifact(file)), []);
+
+    const remainingClientRuntimeJavaScript = [];
+    for (const sourceRoot of CLIENT_RUNTIME_SOURCE_ROOTS) {
+        const sourceFiles = await listFiles(path.join(ROOT, sourceRoot));
+        remainingClientRuntimeJavaScript.push(
+            ...sourceFiles
+                .filter(file => file.endsWith(".js"))
+                .map(file => path.posix.join(sourceRoot, file)),
+        );
+    }
+    assert.deepEqual(remainingClientRuntimeJavaScript, []);
+
+    const compiledLoaderSource = await readFile(
+        path.join(SERVER_ROOT, "server", "services", "gameCoreLoader.js"),
+        "utf8",
+    );
+    const compiledPveSource = await readFile(
+        path.join(SERVER_ROOT, "server", "services", "pveAiPlayerService.js"),
+        "utf8",
+    );
+    assert.doesNotMatch(compiledLoaderSource, /client\/game\/.+\.ts["']/);
+    assert.doesNotMatch(compiledPveSource, /client\/game\/.+\.ts["']/);
+    assert.match(compiledLoaderSource, /client\/game\/core\/step\.js/);
+    assert.match(compiledPveSource, /client\/game\/ai\/ml\/placementV4PveDecisionAdapter\.js/);
 
     const sourceManifest = await readFile(
         path.join(ROOT, "src", "client", "package.json"),
