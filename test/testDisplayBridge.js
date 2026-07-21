@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 test("display bridge는 변경된 표시 값만 새 snapshot으로 알린다", async () => {
     const { createRuntimeDisplayBridge } = await import(
-        "../src/client/game/runtime/displayBridge.js"
+        "../src/client/game/runtime/displayBridge.ts"
     );
     const values = {
         score: 0,
@@ -48,7 +48,7 @@ test("display bridge는 변경된 표시 값만 새 snapshot으로 알린다", a
 
 test("display bridge는 pending garbage가 바뀔 때만 한 번 알린다", async () => {
     const { createRuntimeDisplayBridge } = await import(
-        "../src/client/game/runtime/displayBridge.js"
+        "../src/client/game/runtime/displayBridge.ts"
     );
     const values = {
         score: 0,

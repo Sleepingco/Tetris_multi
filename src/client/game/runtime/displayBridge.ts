@@ -4,12 +4,14 @@
  * @param {Function} readDisplayValues - 현재 runtime 표시 값을 읽는 함수
  * @returns {Object} React 외부 store 계약과 runtime publish/destroy 경계
  */
-export function createRuntimeDisplayBridge(readDisplayValues) {
-    const listeners = new Set();
+export function createRuntimeDisplayBridge(
+    readDisplayValues: () => RuntimeDisplayValues,
+): RuntimeDisplayHandle {
+    const listeners = new Set<() => void>();
     let destroyed = false;
     let snapshot = createSnapshot(readDisplayValues());
 
-    function createSnapshot(values) {
+    function createSnapshot(values: RuntimeDisplayValues): RuntimeDisplaySnapshot {
         return {
             score: values.score,
             lines: values.lines,
@@ -23,7 +25,7 @@ export function createRuntimeDisplayBridge(readDisplayValues) {
         };
     }
 
-    function isSameSnapshot(next) {
+    function isSameSnapshot(next: RuntimeDisplaySnapshot): boolean {
         return snapshot.score === next.score
             && snapshot.lines === next.lines
             && snapshot.holdPieceType === next.holdPieceType
@@ -37,7 +39,7 @@ export function createRuntimeDisplayBridge(readDisplayValues) {
         return snapshot;
     }
 
-    function subscribeDisplay(callback) {
+    function subscribeDisplay(callback: () => void): () => void {
         if (destroyed) return () => {};
 
         const listener = () => callback();
@@ -51,7 +53,7 @@ export function createRuntimeDisplayBridge(readDisplayValues) {
         };
     }
 
-    function publishDisplay() {
+    function publishDisplay(): boolean {
         if (destroyed) return false;
 
         const next = createSnapshot(readDisplayValues());
@@ -64,7 +66,7 @@ export function createRuntimeDisplayBridge(readDisplayValues) {
         return true;
     }
 
-    function destroyDisplay() {
+    function destroyDisplay(): void {
         if (destroyed) return;
         destroyed = true;
         listeners.clear();
@@ -77,3 +79,28 @@ export function createRuntimeDisplayBridge(readDisplayValues) {
         destroyDisplay,
     };
 }
+import type { GamePhase } from "../state/stateFactory.ts";
+import type { PieceType } from "../state/blocks.ts";
+
+export type RuntimeDisplayValues = {
+    score: number;
+    lines: number;
+    holdPieceType?: PieceType | null;
+    nextPieceTypes?: readonly (PieceType | null)[];
+    pendingGarbageLines?: number;
+    phase: GamePhase;
+};
+export type RuntimeDisplaySnapshot = {
+    score: number;
+    lines: number;
+    holdPieceType: PieceType | null;
+    nextPieceTypes: [PieceType | null, PieceType | null];
+    pendingGarbageLines: number;
+    phase: GamePhase;
+};
+export type RuntimeDisplayHandle = {
+    getDisplaySnapshot: () => RuntimeDisplaySnapshot;
+    subscribeDisplay: (callback: () => void) => () => void;
+    publishDisplay: () => boolean;
+    destroyDisplay: () => void;
+};

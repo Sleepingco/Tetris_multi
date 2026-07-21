@@ -1,4 +1,58 @@
 // =============================
+
+import type { BlockDefinitions, PieceType } from "../state/blocks.ts";
+import type { NextPreviewCells, PreviewCells } from "../render/tetrisRender.ts";
+
+type ClassElement = { classList?: Pick<DOMTokenList, "add" | "remove"> };
+type TextElement = ClassElement & {
+        innerText: string | number;
+        classList?: DOMTokenList;
+        closest?: (selector: string) => Element | null;
+        parentElement?: ClassElement | null;
+};
+type GameOverElement = { style: { display: string } };
+
+type GameUiOptions = {
+        scoreEl: TextElement | null;
+        linesEl: TextElement | null;
+        pendingGarbageEl: TextElement | null;
+        gameOverEl: GameOverElement | null;
+        nextPreviewEl: HTMLElement | null;
+        holdPreviewEl: HTMLElement | null;
+        nextQueueSize: number;
+        previewSize: number;
+        buildNextPreview: (options: {
+                nextPreviewEl: HTMLElement | null;
+                nextQueueSize: number;
+                previewSize: number;
+        }) => NextPreviewCells;
+        buildHoldPreview: (options: {
+                holdPreviewEl: HTMLElement | null;
+                previewSize: number;
+        }) => PreviewCells | null;
+        renderNextPieces: (options: {
+                nextPreviewCells: NextPreviewCells;
+                pieceQueue: PieceType[];
+                blocks: BlockDefinitions;
+        }) => void;
+        renderHoldPiece: (options: {
+                holdPreviewCells: PreviewCells | null;
+                holdPieceType: PieceType | null;
+                blocks: BlockDefinitions;
+        }) => void;
+};
+
+export type GameUi = {
+        renderScore: (score: number) => void;
+        renderLines: (lines: number) => void;
+        renderPendingGarbage: (lines: number) => void;
+        showGameOver: () => void;
+        hideGameOver: () => void;
+        buildNextPreview: () => void;
+        buildHoldPreview: () => void;
+        renderNextPieces: (pieceQueue: PieceType[], blocks: BlockDefinitions) => void;
+        renderHoldPiece: (pieceType: PieceType | null, blocks: BlockDefinitions) => void;
+};
 // UI Adapter
 // 런타임이 DOM 세부 구현을 몰라도 되도록 화면 조작을 묶어 둔다.
 // =============================
@@ -34,26 +88,27 @@ export function createGameUi({
         buildHoldPreview,
         renderNextPieces,
         renderHoldPiece,
-}) {
-        let nextPreviewCells = []
-        let holdPreviewCells = null
+}: GameUiOptions): GameUi {
+        let nextPreviewCells: NextPreviewCells = []
+        let holdPreviewCells: PreviewCells | null = null
 
-        function getIncomingStatusEl() {
+        function getIncomingStatusEl(): ClassElement | null {
                 return pendingGarbageEl?.closest?.(".stat--incoming")
                         ?? pendingGarbageEl?.parentElement
                         ?? pendingGarbageEl
                         ?? null
         }
 
-        function setElementClass(element, className, enabled) {
-                if (!element?.classList) return
+        function setElementClass(element: ClassElement | null, className: string, enabled: boolean): void {
+                const classList = element?.classList
+                if (!classList) return
 
                 if (enabled) {
-                        element.classList.add(className)
+                        classList.add(className)
                         return
                 }
 
-                element.classList.remove(className)
+                classList.remove(className)
         }
 
         return {

@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 async function loadSnapshotCorrection() {
-    return import("../src/client/game/runtime/snapshotCorrection.js");
+    return import("../src/client/game/runtime/snapshotCorrection.ts");
 }
 
 function createBoard() {

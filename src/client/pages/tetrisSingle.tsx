@@ -2,33 +2,17 @@ import { StrictMode, useEffect, useRef, useState, useSyncExternalStore } from "r
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import BLOCKS from "../game/state/blocks.ts";
+import type { PieceType } from "../game/state/blocks.ts";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
-import { attachKeyboardInput } from "../game/runtime/input.js";
-import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js";
-import { createTetrisRuntime } from "../game/runtime/tetris.js";
+import { attachKeyboardInput } from "../game/runtime/input.ts";
+import { initGameSound, tryPlayMusic } from "../game/runtime/sound.ts";
+import { createTetrisRuntime } from "../game/runtime/tetris.ts";
+import type { TetrisRuntime } from "../game/runtime/tetris.ts";
+import type { RuntimeDisplayHandle, RuntimeDisplaySnapshot } from "../game/runtime/displayBridge.ts";
 
-type DisplaySnapshot = {
-    score: number;
-    lines: number;
-    holdPieceType: string | null;
-    nextPieceTypes: [string | null, string | null];
-    phase: "playing" | "lineClearing" | "gameOver";
-};
-type DisplayHandle = {
-    getDisplaySnapshot: () => DisplaySnapshot;
-    subscribeDisplay: (callback: () => void) => () => void;
-};
-type GameRuntime = DisplayHandle & {
-    init: () => void;
-    destroy: () => void;
-    render: () => void;
-    enqueueInput: (action: string) => unknown;
-    runtime: { detachKeyboard: (() => void) | null };
-};
-
-function PiecePreview({ pieceType }: { pieceType: string | null }) {
+function PiecePreview({ pieceType }: { pieceType: PieceType | null }) {
     const offsets = pieceType
-        ? BLOCKS[pieceType as keyof typeof BLOCKS]?.[0]
+        ? BLOCKS[pieceType][0]
         : null;
     const occupied = new Set<string>();
     if (offsets) {
@@ -58,14 +42,14 @@ function SingleHud({
     gameOverRoot,
     onRestart,
 }: {
-    handle: DisplayHandle;
+    handle: Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "subscribeDisplay">;
     scoreRoot: HTMLElement;
     nextRoot: HTMLElement;
     holdRoot: HTMLElement;
     gameOverRoot: HTMLElement;
     onRestart: () => void;
 }) {
-    const snapshot: DisplaySnapshot = useSyncExternalStore(
+    const snapshot: RuntimeDisplaySnapshot = useSyncExternalStore(
         handle.subscribeDisplay,
         handle.getDisplaySnapshot,
     );
@@ -111,20 +95,20 @@ function SingleGamePage() {
     const gameOverRootRef = useRef<HTMLDivElement>(null);
     const soundToggleRef = useRef<HTMLButtonElement>(null);
     const themeToggleRef = useRef<HTMLButtonElement>(null);
-    const runtimeRef = useRef<GameRuntime | null>(null);
-    const [displayHandle, setDisplayHandle] = useState<DisplayHandle | null>(null);
+    const runtimeRef = useRef<TetrisRuntime | null>(null);
+    const [displayHandle, setDisplayHandle] = useState<TetrisRuntime | null>(null);
 
     useEffect(() => {
         const boardCanvasEl = boardCanvasRef.current;
         if (!boardCanvasEl) return;
 
         applySavedTheme(themeToggleRef.current);
-        const game = createTetrisRuntime({ boardCanvasEl }) as GameRuntime;
+        const game = createTetrisRuntime({ boardCanvasEl });
         const cleanupSound = initGameSound(soundToggleRef.current);
         game.runtime.detachKeyboard = attachKeyboardInput({
             enqueueAction: game.enqueueInput,
             onUserInteract: tryPlayMusic,
-        }) as () => void;
+        });
         runtimeRef.current = game;
         game.init();
         setDisplayHandle(game);

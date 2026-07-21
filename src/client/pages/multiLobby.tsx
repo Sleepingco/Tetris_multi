@@ -3,7 +3,7 @@ import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
-import { initLobbySound } from "../game/runtime/sound.js";
+import { initLobbySound } from "../game/runtime/sound.ts";
 import {
     onChatResult,
     onGlobalMessage,

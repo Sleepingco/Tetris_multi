@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
-import { initLobbySound } from "../game/runtime/sound.js";
+import { initLobbySound } from "../game/runtime/sound.ts";
 
 function createGuestNickname(): string {
     return `Guest${Math.floor(1000 + Math.random() * 9000)}`;

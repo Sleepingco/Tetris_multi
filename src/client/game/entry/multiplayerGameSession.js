@@ -1,5 +1,5 @@
-import { createTetrisRuntime } from "../runtime/tetris.js"
-import { attachKeyboardInput } from "../runtime/input.js"
+import { createTetrisRuntime } from "../runtime/tetris.ts"
+import { attachKeyboardInput } from "../runtime/input.ts"
 import {
     receiveAuthoritativeSnapshot,
     sendGameInput,
@@ -10,7 +10,7 @@ import {
     onSessionDisconnected,
 } from "../../net/roomClient.js"
 import { sendPlacementDecisionLog } from "../../net/logClient.js"
-import { evaluateOwnSnapshotCorrection } from "../runtime/snapshotCorrection.js"
+import { evaluateOwnSnapshotCorrection } from "../runtime/snapshotCorrection.ts"
 
 const AFTER_ACTION_TRANSFORM_INPUTS = new Set([
     "move_left",

@@ -5,9 +5,9 @@ const gameMusic = createAudio(new URL("../../assets/sound/tetris_game_music.mp3"
 const lineClearSfx = createAudio(new URL("../../assets/sound/tetris_lineclear_sfx.mp3", import.meta.url).href, { loop: false, volume: 0.2 })
 
 let soundEnabled = loadSoundPref()
-let currentMusic = null
-const toggleButtons = new Set()
-const toggleButtonHandlers = new WeakMap()
+let currentMusic: HTMLAudioElement | null = null
+const toggleButtons = new Set<HTMLButtonElement>()
+const toggleButtonHandlers = new WeakMap<HTMLButtonElement, () => void>()
 
 /**
   * 로비 페이지에서 BGM과 토글 버튼을 초기화한다.
@@ -15,7 +15,7 @@ const toggleButtonHandlers = new WeakMap()
   * @param {HTMLButtonElement|null} toggleBtn - 온/오프 토글 버튼
   * @returns {Function} 등록한 토글 버튼 리스너를 제거하는 정리 함수
   */
-export function initLobbySound(toggleBtn) {
+export function initLobbySound(toggleBtn: HTMLButtonElement | null): () => void {
     pause(gameMusic)
     currentMusic = lobbyMusic
     const cleanupToggle = registerToggle(toggleBtn)
@@ -30,7 +30,7 @@ export function initLobbySound(toggleBtn) {
   * @param {HTMLButtonElement|null} toggleBtn - 온/오프 토글 버튼
   * @returns {Function} 등록한 토글 버튼 리스너를 제거하는 정리 함수
   */
-export function initGameSound(toggleBtn) {
+export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
     pause(lobbyMusic)
     currentMusic = gameMusic
     const cleanupToggle = registerToggle(toggleBtn)
@@ -69,7 +69,10 @@ export function playLineClearSfx() {
   * @param {{loop?: boolean, volume?: number}} options - 반복 재생 여부와 기본 볼륨
   * @returns {HTMLAudioElement} 설정이 적용된 오디오 객체
   */
-function createAudio(src, { loop = false, volume = 1 }) {
+function createAudio(
+    src: string,
+    { loop = false, volume = 1 }: { loop?: boolean; volume?: number },
+): HTMLAudioElement {
     const audio = new Audio(src)
     audio.loop = loop
     audio.volume = volume
@@ -82,7 +85,7 @@ function createAudio(src, { loop = false, volume = 1 }) {
   *
   * @returns {boolean} 사운드 활성화 여부
   */
-function loadSoundPref() {
+function loadSoundPref(): boolean {
     const saved = localStorage.getItem(SOUND_KEY)
     return saved === null ? true : saved === "true"
 }
@@ -93,7 +96,7 @@ function loadSoundPref() {
   * @param {HTMLButtonElement|null} toggleBtn - 등록할 토글 버튼
   * @returns {Function} 등록한 토글 버튼 리스너를 제거하는 정리 함수
   */
-function registerToggle(toggleBtn) {
+function registerToggle(toggleBtn: HTMLButtonElement | null): () => void {
     if (!toggleBtn) return () => {}
     if (toggleButtonHandlers.has(toggleBtn)) {
         return () => unregisterToggle(toggleBtn)
@@ -109,7 +112,7 @@ function registerToggle(toggleBtn) {
     return () => unregisterToggle(toggleBtn)
 }
 
-function unregisterToggle(toggleBtn) {
+function unregisterToggle(toggleBtn: HTMLButtonElement): void {
     const handler = toggleButtonHandlers.get(toggleBtn)
     if (!handler) return
 
@@ -118,7 +121,7 @@ function unregisterToggle(toggleBtn) {
     toggleButtons.delete(toggleBtn)
 }
 
-function cleanupDetachedToggleButtons() {
+function cleanupDetachedToggleButtons(): void {
     toggleButtons.forEach((btn) => {
         if (!btn.isConnected) unregisterToggle(btn)
     })
@@ -131,7 +134,10 @@ function cleanupDetachedToggleButtons() {
   * @param {{initial?: boolean}} [options={}] - 초기 로드 여부
   * @returns {void}
   */
-function applySoundSetting(enabled, { initial = false } = {}) {
+function applySoundSetting(
+    enabled: boolean,
+    { initial = false }: { initial?: boolean } = {},
+): void {
     cleanupDetachedToggleButtons()
     soundEnabled = enabled
     if (!initial) {
@@ -158,6 +164,6 @@ function applySoundSetting(enabled, { initial = false } = {}) {
   * @param {HTMLAudioElement} audio - 일시정지할 오디오 객체
   * @returns {void}
   */
-function pause(audio) {
+function pause(audio: HTMLAudioElement): void {
     audio.pause()
 }

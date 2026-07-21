@@ -2,7 +2,11 @@
 // Renderer Helpers (DOM only)
 // =============================
 
-const BLOCK_COLORS = {
+import type { Board } from "../core/board.ts";
+import type { PieceState } from "../core/piece.ts";
+import type { BlockDefinitions, PieceType } from "../state/blocks.ts";
+
+const BLOCK_COLORS: Record<string, string> = {
         tree: "#8B5CF6",   // Violet
         bar: "#0EA5E9",    // Sky
         square: "#F59E0B", // Amber
@@ -15,6 +19,20 @@ const BLOCK_COLORS = {
 
 const CELL_SIZE = 30; // 300px width / 10 cols
 const BREAK_START_PROGRESS = 0.45;
+
+export type PreviewCells = HTMLLIElement[][];
+export type NextPreviewCells = PreviewCells[];
+
+export type LineClearFragment = {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        alpha: number;
+};
+
+type FlashRow = number | { row: number; progress: number };
+type RenderedPiece = PieceState & { ghostRow?: number };
 
 /**
   * 라인 클리어 후반부에 블록이 깨지는 파편 좌표를 계산한다.
@@ -31,7 +49,12 @@ export function createLineClearFragments({
         col,
         progress,
         cellSize = CELL_SIZE,
-} = {}) {
+}: {
+        row: number;
+        col: number;
+        progress: number;
+        cellSize?: number;
+}): LineClearFragment[] {
         const safeProgress = Number.isFinite(progress)
                 ? Math.max(0, Math.min(progress, 1))
                 : 0;
@@ -66,7 +89,7 @@ export function createLineClearFragments({
   * @param {HTMLCanvasElement} canvasEl - 대상 캔버스
   * @returns {CanvasRenderingContext2D|null} 2D 컨텍스트
   */
-export function getBoardContext(canvasEl) {
+export function getBoardContext(canvasEl: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
         if (!canvasEl) return null;
         return canvasEl.getContext("2d");
 }
@@ -80,7 +103,7 @@ export function getBoardContext(canvasEl) {
   * @param {string} color - 채울 색상
   * @returns {void}
   */
-function drawBlock(ctx, col, row, color) {
+function drawBlock(ctx: CanvasRenderingContext2D, col: number, row: number, color: string): void {
         const x = col * CELL_SIZE;
         const y = row * CELL_SIZE;
         const padding = 1;
@@ -108,7 +131,11 @@ function drawBlock(ctx, col, row, color) {
         }
 }
 
-function drawBlockFragment(ctx, fragment, color) {
+function drawBlockFragment(
+        ctx: CanvasRenderingContext2D,
+        fragment: LineClearFragment,
+        color: string,
+): void {
         ctx.save();
         const inheritedAlpha = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
         ctx.globalAlpha = inheritedAlpha * Math.max(0, Math.min(fragment.alpha, 1));
@@ -127,7 +154,13 @@ function drawBlockFragment(ctx, fragment, color) {
         ctx.restore();
 }
 
-function drawBreakingBlock(ctx, col, row, color, progress) {
+function drawBreakingBlock(
+        ctx: CanvasRenderingContext2D,
+        col: number,
+        row: number,
+        color: string,
+        progress: number,
+): void {
         const fragments = createLineClearFragments({ row, col, progress });
         if (fragments.length === 0) {
                 drawBlock(ctx, col, row, color);
@@ -147,10 +180,14 @@ function drawBreakingBlock(ctx, col, row, color, progress) {
   * @param {number} params.previewSize - 미리보기 그리드 크기(보통 4)
   * @returns {Array<Array<Array<HTMLLIElement>>>} 미리보기 셀 참조
   */
-export function buildNextPreview({ nextPreviewEl, nextQueueSize, previewSize }) {
+export function buildNextPreview({ nextPreviewEl, nextQueueSize, previewSize }: {
+        nextPreviewEl: HTMLElement | null;
+        nextQueueSize: number;
+        previewSize: number;
+}): NextPreviewCells {
         if (!nextPreviewEl) return []
         nextPreviewEl.innerHTML = ""
-        const previewCells = []
+        const previewCells: NextPreviewCells = []
 
         for (let i = 0; i < nextQueueSize; i++) {
                 const slot = document.createElement("div")
@@ -174,7 +211,10 @@ export function buildNextPreview({ nextPreviewEl, nextQueueSize, previewSize }) 
   * @param {number} params.previewSize - 미리보기 그리드 크기(보통 4)
   * @returns {Array<Array<HTMLLIElement>>|null} 홀드 셀 참조
   */
-export function buildHoldPreview({ holdPreviewEl, previewSize }) {
+export function buildHoldPreview({ holdPreviewEl, previewSize }: {
+        holdPreviewEl: HTMLElement | null;
+        previewSize: number;
+}): PreviewCells | null {
         if (!holdPreviewEl) return null
         holdPreviewEl.innerHTML = ""
         return buildPreviewGrid(holdPreviewEl, previewSize)
@@ -193,7 +233,24 @@ export function buildHoldPreview({ holdPreviewEl, previewSize }) {
   * @param {Array<number>} params.flashRows - 라인 클리어 시 번쩍임 효과를 줄 행 인덱스 배열
   * @returns {void}
   */
-export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks, flashRows }) {
+export function renderBoardCanvas({
+        ctx,
+        board,
+        activePiece,
+        rows,
+        cols,
+        blocks,
+        flashRows,
+}: {
+        ctx: CanvasRenderingContext2D | null;
+        board: Board;
+        activePiece: RenderedPiece | null;
+        rows: number;
+        cols: number;
+        blocks: BlockDefinitions;
+        flashRows: FlashRow[];
+        isFlash?: boolean;
+}): void {
         if (!ctx) return;
 
         const width = cols * CELL_SIZE;
@@ -220,7 +277,7 @@ export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks,
 
                 if (isFlashing) {
                         const flashData = flashRows.find(fr => typeof fr === 'object' ? fr.row === row : fr === row);
-                        const progress = flashData.progress || 0;
+                        const progress = typeof flashData === "object" ? flashData.progress : 0;
 
                         // line clear flash의 밝기 변화를 계산한다.
                         let scale = 1;
@@ -286,11 +343,12 @@ export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks,
         const color = BLOCK_COLORS[activePiece.pieceType];
 
         // === 고스트 피스(도착 지점) 그리기 ===
-        if (activePiece.ghostRow !== undefined && activePiece.pieceType) {
+        const ghostRow = activePiece.ghostRow;
+        if (ghostRow !== undefined && activePiece.pieceType) {
                 ctx.globalAlpha = 0.25; // 반투명
                 currentOffsets.forEach(([offsetX, offsetY]) => {
                         const targetCol = activePiece.col + offsetX;
-                        const targetRow = activePiece.ghostRow + offsetY;
+                        const targetRow = ghostRow + offsetY;
                         if (targetRow >= 0) {
                                 drawBlock(ctx, targetCol, targetRow, color);
                         }
@@ -317,7 +375,11 @@ export function renderBoardCanvas({ ctx, board, activePiece, rows, cols, blocks,
   * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 블록 정의
   * @returns {void}
   */
-export function renderNextPieces({ nextPreviewCells, pieceQueue, blocks }) {
+export function renderNextPieces({ nextPreviewCells, pieceQueue, blocks }: {
+        nextPreviewCells: NextPreviewCells;
+        pieceQueue: PieceType[];
+        blocks: BlockDefinitions;
+}): void {
         if (!nextPreviewCells) return
 
         nextPreviewCells.forEach((cells, idx) => {
@@ -335,7 +397,11 @@ export function renderNextPieces({ nextPreviewCells, pieceQueue, blocks }) {
   * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 블록 정의
   * @returns {void}
   */
-export function renderHoldPiece({ holdPreviewCells, holdPieceType, blocks }) {
+export function renderHoldPiece({ holdPreviewCells, holdPieceType, blocks }: {
+        holdPreviewCells: PreviewCells | null;
+        holdPieceType: PieceType | null;
+        blocks: BlockDefinitions;
+}): void {
         resetPreviewCells(holdPreviewCells)
         renderPieceOnCells(holdPreviewCells, holdPieceType, blocks)
 }
@@ -347,8 +413,8 @@ export function renderHoldPiece({ holdPreviewCells, holdPieceType, blocks }) {
   * @param {number} size - 그리드 크기
   * @returns {Array<Array<HTMLLIElement>>} 생성된 셀 참조
   */
-function buildPreviewGrid(container, size) {
-        const cells = Array.from({ length: size }, () => [])
+function buildPreviewGrid(container: HTMLElement, size: number): PreviewCells {
+        const cells: PreviewCells = Array.from({ length: size }, () => [])
         const grid = document.createElement("ul")
         grid.classList.add("next-grid")
 
@@ -371,7 +437,7 @@ function buildPreviewGrid(container, size) {
   * @param {Array<Array<HTMLLIElement>>|null} cells - 초기화할 셀 배열
   * @returns {void}
   */
-function resetPreviewCells(cells) {
+function resetPreviewCells(cells: PreviewCells | null): void {
         if (!cells) return
         cells.flat().forEach(cell => {
                 cell.className = "next-cell"
@@ -386,7 +452,11 @@ function resetPreviewCells(cells) {
   * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 정의
   * @returns {void}
   */
-function renderPieceOnCells(cells, pieceType, blocks) {
+function renderPieceOnCells(
+        cells: PreviewCells | null,
+        pieceType: PieceType | null | undefined,
+        blocks: BlockDefinitions,
+): void {
         if (!cells || !pieceType) return
         const offsets = blocks[pieceType][0]
         const minX = Math.min(...offsets.map(([x]) => x))

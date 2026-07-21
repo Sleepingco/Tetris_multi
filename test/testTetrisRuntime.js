@@ -33,8 +33,8 @@ function installBrowserStubs() {
 async function loadRuntime() {
     installBrowserStubs();
     const [{ createTetrisRuntime }, { INPUT_ACTION }] = await Promise.all([
-        import("../src/client/game/runtime/tetris.js"),
-        import("../src/client/game/runtime/input.js"),
+        import("../src/client/game/runtime/tetris.ts"),
+        import("../src/client/game/runtime/input.ts"),
     ]);
 
     return { createTetrisRuntime, INPUT_ACTION };

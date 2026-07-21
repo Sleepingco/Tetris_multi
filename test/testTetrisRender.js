@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 test("createLineClearFragments는 line clear 후반부에 블록 파편 좌표를 반환한다", async () => {
-    const { createLineClearFragments } = await import("../src/client/game/render/tetrisRender.js");
+    const { createLineClearFragments } = await import("../src/client/game/render/tetrisRender.ts");
 
     assert.deepEqual(createLineClearFragments({
         row: 10,

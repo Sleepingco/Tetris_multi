@@ -1,4 +1,5 @@
 import BLOCKS from "../state/blocks.ts"
+import type { BlockDefinitions, PieceType } from "../state/blocks.ts"
 import {
     createEmptyBoard as createEngineBoard,
     canPlacePiece,
@@ -13,11 +14,16 @@ import {
     resolveMoveAttempt,
     resolveMoveIntent,
 } from "../core/step.ts"
+import type { MoveIntent } from "../core/step.ts"
 import { createSpawnedPiece, getHardDropRow } from "../core/piece.ts"
+import type { PieceState, PlaceablePieceState } from "../core/piece.ts"
+import type { Board } from "../core/board.ts"
 import { isTSpinLock } from "../core/tSpin.ts"
-import { playLineClearSfx } from "./sound.js"
-import { createRuntimeDisplayBridge } from "./displayBridge.js"
-import { INPUT_ACTION } from "./input.js"
+import { playLineClearSfx } from "./sound.ts"
+import { createRuntimeDisplayBridge } from "./displayBridge.ts"
+import type { RuntimeDisplayHandle } from "./displayBridge.ts"
+import { INPUT_ACTION } from "./input.ts"
+import type { InputAction } from "./input.ts"
 import {
     BOARD_ROWS,
     BOARD_COLS,
@@ -34,26 +40,193 @@ import {
     renderHoldPiece as renderHoldPieceDom,
     buildHoldPreview as buildHoldPreviewDom,
     buildNextPreview as buildNextPreviewDom,
-} from "../render/tetrisRender.js"
+} from "../render/tetrisRender.ts"
 import { createGameState } from "../state/stateFactory.ts"
+import type { GamePhase, QueuedInput } from "../state/stateFactory.ts"
 import {
     ensureQueueFilled as fillPieceQueue,
     takeNextFromQueue,
 } from "../state/pieceQueue.ts"
-import { createGameUi } from "../ui/ui.js"
+import { createGameUi } from "../ui/ui.ts"
 import {
     serializeGameState,
     deserializeGameState,
 } from "../state/stateSerialization.ts"
+import type { SerializedGameState } from "../state/stateSerialization.ts"
 import { createHumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.ts"
+import type { HumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.ts"
+import type { AttackStateResult } from "../core/attackState.ts"
 const NEXT_QUEUE_SIZE = 2
+
+type RuntimeMode = "single" | "multiplayer" | "pvp" | "pve" | string;
+type ActionResult = {
+    applied: boolean;
+    placementCommitted?: boolean;
+    reason: string | null;
+};
+type PendingMove = { intent: MoveIntent; pendingPiece: PieceState };
+type MoveOptions = { automaticGravity?: boolean };
+type InputOutcomeRecord = {
+    input: QueuedInput;
+    applied: boolean;
+    placementCommitted: boolean;
+    reason: string | null;
+    activePieceBefore: PieceState | null;
+    activePieceAfter: PieceState | null;
+};
+type AppliedInputLog = QueuedInput & {
+    playerId: string | null;
+    sequence: number;
+    createdAt: number;
+};
+type PieceLog = {
+    type: PieceType;
+    pieceType: PieceType;
+    rotation: number;
+    row: number;
+    col: number;
+    x: number;
+    y: number;
+    cells: Array<{ row: number; col: number; x: number; y: number }>;
+};
+type PlacementResult = {
+    linesCleared: number;
+    isTSpin: boolean;
+    combo: number;
+    backToBack: boolean;
+    rawAttackLines: number;
+    attackLines: number;
+    canceledGarbageLines: number;
+    incomingGarbageLines: number;
+    appliedGarbageLines: number;
+    scoreBefore: number;
+    scoreAfter: number;
+    scoreDelta: number;
+    gameOver: boolean;
+};
+type PlacementContext = {
+    eventType: "placement_decision";
+    schemaVersion: 1;
+    mode: RuntimeMode;
+    gameId: string | null;
+    roomId: string | null;
+    playerId: string | null;
+    tick: number;
+    pieceIndex: number;
+    createdAt: number;
+    scoreBefore: number;
+    boardBefore: Board;
+    activePiece?: PieceLog;
+    nextQueue: PieceType[];
+    holdPiece: PieceType | null;
+    inputSequence: AppliedInputLog[];
+    selectedPlacement: PieceLog;
+};
+type PlacementDecisionLog = Omit<PlacementContext, "scoreBefore" | "schemaVersion"> & {
+    schemaVersion: 1 | 2;
+    boardAfter: Board;
+    placementResult: PlacementResult;
+    source?: "human";
+    modelType?: null;
+    metricsBefore?: HumanPlacementLogAnalysis["metricsBefore"];
+    metricsAfter?: HumanPlacementLogAnalysis["metricsAfter"];
+    evaluation?: HumanPlacementLogAnalysis["evaluation"];
+    aiComparison?: HumanPlacementLogAnalysis["aiComparison"];
+};
+type TetrisSnapshot = {
+    score: number;
+    lines: number;
+    fallIntervalMs: number;
+    board: Board | null;
+    pieceQueue: PieceType[];
+    holdPieceType: PieceType | null;
+    holdUsedThisDrop: boolean;
+    activePiece: PieceState;
+    phase: GamePhase;
+    combo: number;
+    backToBack: boolean;
+    tick: number;
+    pieceIndex: number;
+    pendingGarbageLines: number;
+};
+type TetrisSnapshotInput = Partial<SerializedGameState> & {
+    tick?: number;
+    pieceIndex?: number;
+    pendingGarbageLines?: number;
+};
+type RuntimeState = {
+    boardCtx: CanvasRenderingContext2D | null;
+    inputTimer: ReturnType<typeof setInterval> | undefined;
+    animationFrameId: number | null;
+    animationVersion: number;
+    detachKeyboard: (() => void) | null;
+    bagMode: "local" | "server";
+    serverBagQueue: PieceType[];
+    gravityRunning: boolean;
+    gravityAccumulatorMs: number;
+    automaticGroundedPieceIndex: number | null;
+    lastTickAt: number;
+    currentTick: number;
+    pieceIndex: number;
+    inputLog: AppliedInputLog[];
+    placementDecisionLog: PlacementDecisionLog[];
+    decisionStartPiece: PlaceablePieceState | null;
+    pendingLockScoreBefore: number | null;
+    authoritativePendingGarbageLines: number;
+    mode: RuntimeMode;
+    gameId: string | null;
+    roomId: string | null;
+    playerId: string | null;
+};
+export type TetrisRuntimeOptions = {
+    boardCanvasEl?: HTMLCanvasElement | null;
+    gameOverEl?: HTMLElement | null;
+    scoreEl?: HTMLElement | null;
+    linesEl?: HTMLElement | null;
+    pendingGarbageEl?: HTMLElement | null;
+    nextPreviewEl?: HTMLElement | null;
+    holdPreviewEl?: HTMLElement | null;
+    rng?: () => number;
+    mode?: RuntimeMode;
+    gameId?: string | null;
+    roomId?: string | null;
+    playerId?: string | null;
+    placementDecisionRecorder?: ((log: PlacementDecisionLog) => void) | null;
+    inputOutcomeRecorder?: ((record: InputOutcomeRecord) => void) | null;
+};
+export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "subscribeDisplay"> & {
+    init: (options?: { autoStart?: boolean; serverBagChunks?: PieceType[][] | null }) => void;
+    enqueueInput: (action: InputAction | string | null, scheduledTick?: number | null, inputPieceIndex?: number | null) => QueuedInput | null;
+    render: () => void;
+    stop: () => void;
+    destroy: () => void;
+    getSnapshot: () => TetrisSnapshot;
+    applySnapshot: (snapshot: TetrisSnapshotInput | null, options?: {
+        resumeGravity?: boolean;
+        clearInputQueue?: boolean;
+        cancelPresentation?: boolean;
+    }) => void;
+    playLineClearPresentation: (effect?: { rows?: number[]; board?: Board }) => boolean;
+    getPendingInputCount: () => number;
+    setAuthoritativePendingGarbageLines: (lines: number | undefined, options?: { publish?: boolean }) => number;
+    appendServerBag: (chunk: PieceType[]) => void;
+    getServerBagRemainingCount: () => number;
+    hideGameOver: () => void;
+    showGameOver: () => void;
+    getPlacementDecisionLog: () => PlacementDecisionLog[];
+    runtime: RuntimeState;
+};
 
 // =============================
 // 싱글 플레이 런타임
 // 보드 상태, 입력, 중력, 고정 판정, UI 렌더링을 조율한다.
 // =============================
 
-const PIECE_TYPES = Object.keys(BLOCKS)
+function isPieceType(value: string): value is PieceType {
+    return Object.hasOwn(BLOCKS, value)
+}
+
+const PIECE_TYPES = Object.keys(BLOCKS).filter(isPieceType)
 const ROWS = BOARD_ROWS
 const COLS = BOARD_COLS
 const SPAWN_ROW = SPAWN_POSITION.row
@@ -65,7 +238,7 @@ const GAME_PHASE = {
     PLAYING: "playing",
     LINE_CLEARING: "lineClearing",
     GAME_OVER: "gameOver",
-}
+} satisfies Record<string, GamePhase>
 
 /**
   * 테트리스 게임 런타임을 생성한다.
@@ -91,7 +264,7 @@ export function createTetrisRuntime({
     playerId = null,
     placementDecisionRecorder = null,
     inputOutcomeRecorder = null,
-}) {
+}: TetrisRuntimeOptions = {}): TetrisRuntime {
     const gameState = createGameState({
         spawnRow: SPAWN_ROW,
         spawnCol: SPAWN_COL,
@@ -101,7 +274,7 @@ export function createTetrisRuntime({
 
     // gameState는 보드/점수/현재 조각 같은 게임 규칙의 원천 상태다.
     // runtime은 타이머, 입력 로그, 서버 bag, 멀티 동기화처럼 실행 중에만 필요한 상태다.
-    const runtime = {
+    const runtime: RuntimeState = {
         boardCtx: null,
         inputTimer: undefined,
         animationFrameId: null,
@@ -164,7 +337,10 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function init({ autoStart = true, serverBagChunks = null } = {}) {
+    function init({ autoStart = true, serverBagChunks = null }: {
+        autoStart?: boolean;
+        serverBagChunks?: PieceType[][] | null;
+    } = {}): void {
         resetSessionState()
         if (Array.isArray(serverBagChunks)) {
             setServerBagQueue(serverBagChunks)
@@ -193,7 +369,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function resetSessionState() {
+    function resetSessionState(): void {
         stopGameLoops()
         gameState.score = 0
         gameState.lines = 0
@@ -221,7 +397,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function preparePreviewUi() {
+    function preparePreviewUi(): void {
         initBoardContext()
         ui.buildHoldPreview()
         ui.buildNextPreview()
@@ -236,7 +412,7 @@ export function createTetrisRuntime({
       * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 반영할 조각 상태
       * @returns {void}
       */
-    function activateSpawnedPiece(piece) {
+    function activateSpawnedPiece(piece: PlaceablePieceState): void {
         runtime.automaticGroundedPieceIndex = null
         setActivePiece(piece)
         gameState.pendingPiece = { ...piece }
@@ -248,7 +424,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function startNextTurn() {
+    function startNextTurn(): void {
         gameState.phase = GAME_PHASE.PLAYING
         startGravity()
 
@@ -273,7 +449,7 @@ export function createTetrisRuntime({
       *
       * @returns {{applied: boolean, reason: string|null}} 홀드 적용 결과
       */
-    function holdPiece() {
+    function holdPiece(): ActionResult {
         const { activePiece, holdPieceType, holdUsedThisDrop } = gameState
         const currentType = activePiece.pieceType
         if (!currentType || holdUsedThisDrop) {
@@ -282,7 +458,7 @@ export function createTetrisRuntime({
 
         stopGravity()
 
-        let incomingType
+        let incomingType: PieceType | undefined
         if (holdPieceType) {
             incomingType = holdPieceType
             gameState.holdPieceType = currentType
@@ -320,13 +496,17 @@ export function createTetrisRuntime({
       * @param {number|null} inputPieceIndex - 입력이 발생한 조각 순번
       * @returns {{tick: number, action: string, pieceIndex: number|null}|null} 큐에 들어간 입력 또는 거부 시 null
       */
-    function enqueueInput(action, scheduledTick = null, inputPieceIndex = null) {
+    function enqueueInput(
+        action: InputAction | string | null,
+        scheduledTick: number | null = null,
+        inputPieceIndex: number | null = null,
+    ): QueuedInput | null {
         if (!action) return null
         if (!canProcessPlayerInput()) return null
-        const nextTick = Number.isFinite(scheduledTick)
+        const nextTick = typeof scheduledTick === "number" && Number.isFinite(scheduledTick)
             ? scheduledTick
             : runtime.currentTick + 1
-        const pieceIndex = Number.isFinite(inputPieceIndex)
+        const pieceIndex = typeof inputPieceIndex === "number" && Number.isFinite(inputPieceIndex)
             ? inputPieceIndex
             : runtime.pieceIndex
 
@@ -334,7 +514,7 @@ export function createTetrisRuntime({
             return null
         }
 
-        const queuedInput = {
+        const queuedInput: QueuedInput = {
             tick: nextTick,
             action,
             pieceIndex,
@@ -351,13 +531,13 @@ export function createTetrisRuntime({
       * @param {number|null} pieceIndex - 입력 대상 조각 순번
       * @returns {number} 같은 처리 슬롯에 쌓인 입력 수
       */
-    function countQueuedInputs(tick, pieceIndex) {
+    function countQueuedInputs(tick: number, pieceIndex: number | null): number {
         return gameState.inputQueue.filter((input) => {
             return input.tick === tick && input.pieceIndex === pieceIndex
         }).length
     }
 
-    function getPendingInputCount() {
+    function getPendingInputCount(): number {
         return gameState.inputQueue.length
     }
 
@@ -368,7 +548,7 @@ export function createTetrisRuntime({
       * @param {number} [maxPerTick=8] - 이번 틱에서 처리할 최대 액션 수
       * @returns {void}
       */
-    function drainInputQueue(currentTick, maxPerTick = 8) {
+    function drainInputQueue(currentTick: number, maxPerTick = 8): void {
         if (!canProcessPlayerInput()) return
         let count = 0
         while (gameState.inputQueue.length > 0 && count < maxPerTick) {
@@ -401,7 +581,7 @@ export function createTetrisRuntime({
       * @param {{pieceIndex?: number|null}} input - 큐에서 꺼낸 입력
       * @returns {boolean} 현재 active piece에 적용 가능한 입력이면 true
       */
-    function isInputForCurrentPiece(input) {
+    function isInputForCurrentPiece(input: Pick<QueuedInput, "pieceIndex">): boolean {
         if (!Number.isFinite(input.pieceIndex)) return true
         return input.pieceIndex === runtime.pieceIndex
     }
@@ -418,7 +598,7 @@ export function createTetrisRuntime({
       * @param {number} colDelta - 적용할 열 이동량
       * @returns {void}
       */
-    function shiftActivePiece(rowDelta, colDelta) {
+    function shiftActivePiece(rowDelta: number, colDelta: number): void {
         if (!gameState.pendingPiece) {
             gameState.pendingPiece = { ...gameState.activePiece }
         }
@@ -431,7 +611,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function rotatePendingPiece() {
+    function rotatePendingPiece(): void {
         const { pendingPiece } = gameState
         if (!pendingPiece) return
         const rotation = pendingPiece.rotation
@@ -443,7 +623,7 @@ export function createTetrisRuntime({
       *
       * @returns {boolean} 현재 조각이 실제로 고정됐으면 true
       */
-    function hardDrop() {
+    function hardDrop(): boolean {
         const { activePiece } = gameState
         if (!activePiece.pieceType) return false
         stopGravity()
@@ -472,7 +652,7 @@ export function createTetrisRuntime({
       * @param {string} action - 입력 계층에서 넘어온 액션 식별자
       * @returns {string|null} 이동 판정에 사용할 moveType
       */
-    function applyInputAction(action) {
+    function applyInputAction(action: string): string | null {
         const intent = resolveInputMoveIntent(action)
         if (!intent) return null
 
@@ -495,7 +675,7 @@ export function createTetrisRuntime({
       * @param {string} action - 입력 계층에서 넘어온 액션 식별자
       * @returns {{applied: boolean, placementCommitted: boolean, reason: string|null}} 실제 action 적용 결과
       */
-    function handleAction(action) {
+    function handleAction(action: string): ActionResult {
         const moveType = applyInputAction(action)
         if (moveType) {
             const moveResult = renderBlocks(moveType)
@@ -544,7 +724,7 @@ export function createTetrisRuntime({
       * @param {number} deltaMs - 직전 tick 이후 경과 시간
       * @returns {void}
       */
-    function processTick(deltaMs) {
+    function processTick(deltaMs: number): void {
         if (!canProcessPlayerInput()) return
         runtime.currentTick++
         drainInputQueue(runtime.currentTick, 4)
@@ -575,10 +755,11 @@ export function createTetrisRuntime({
       * @param {string} [moveType=""] - 이동 시도 원인 (`fall`, `horizontal`, `rotate`, `spawn` 등)
       * @returns {{intent: Object, pendingPiece: Object}|null} 런타임에서 실행할 이동 결과
       */
-    function resolvePendingMove(moveType = "") {
+    function resolvePendingMove(moveType = ""): PendingMove | null {
         const { pendingPiece } = gameState
         if (!pendingPiece) return null
         if (!pendingPiece.pieceType) return null
+        if (!gameState.board) return null
 
         const outcome = resolveMoveAttempt({
             board: gameState.board,
@@ -607,7 +788,7 @@ export function createTetrisRuntime({
       * @param {{automaticGravity?: boolean}} options - automatic gravity lock grace 적용 여부
       * @returns {void}
       */
-    function applyMoveIntent(moveResult, options = {}) {
+    function applyMoveIntent(moveResult: PendingMove | null, options: MoveOptions = {}): void {
         if (!moveResult) return
 
         gameState.pendingPiece = { ...moveResult.pendingPiece }
@@ -669,7 +850,7 @@ export function createTetrisRuntime({
       * @param {{automaticGravity?: boolean}} options - automatic gravity 실행 문맥
       * @returns {{intent: Object, pendingPiece: Object}|null} 적용한 이동 판정 결과
       */
-    function renderBlocks(moveType = "", options = {}) {
+    function renderBlocks(moveType = "", options: MoveOptions = {}): PendingMove | null {
         const moveResult = resolvePendingMove(moveType)
         applyMoveIntent(moveResult, options)
         displayBridge.publishDisplay()
@@ -688,13 +869,13 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function seizeBlock() {
+    function seizeBlock(): void {
         runtime.automaticGroundedPieceIndex = null
         const { activePiece, board } = gameState
         const { pieceType, rotation, row, col } = activePiece
-        if (!pieceType) return
+        if (!pieceType || !board) return
 
-        const lockedPiece = clonePendingPiece(activePiece)
+        const lockedPiece: PlaceablePieceState = { ...activePiece }
         const placementContext = createPlacementDecisionContext(lockedPiece)
         runtime.decisionStartPiece = null
         const touchesAboveTop = isPieceAboveTop(activePiece, BLOCKS)
@@ -719,7 +900,13 @@ export function createTetrisRuntime({
       * @param {number} params.col - 현재 조각 열 위치
       * @returns {void}
       */
-    function commitLockedPiece({ board, piece, rotation, row, col }) {
+    function commitLockedPiece({ board, piece, rotation, row, col }: {
+        board: Board;
+        piece: PlaceablePieceState;
+        rotation: number;
+        row: number;
+        col: number;
+    }): void {
         lockPieceOnBoard(board, piece, BLOCKS)
         setActivePiece({
             pieceType: "",
@@ -737,7 +924,10 @@ export function createTetrisRuntime({
       * @param {Object|null} placementContext - lock 직전 생성한 placement_decision 로그 문맥
       * @returns {void}
       */
-    function handlePostLockFlow(touchesAboveTop, placementContext) {
+    function handlePostLockFlow(
+        touchesAboveTop: boolean,
+        placementContext: PlacementContext | null,
+    ): void {
         if (touchesAboveTop) {
             gameState.phase = GAME_PHASE.GAME_OVER
             gameState.inputQueue = []
@@ -765,8 +955,10 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function checkMatch(placementContext) {
-        const { fullRows } = findFullRows(gameState.board)
+    function checkMatch(placementContext: PlacementContext | null): void {
+        const board = gameState.board
+        if (!board) return
+        const { fullRows } = findFullRows(board)
         if (fullRows.length === 0) {
             const isTSpin = gameState.isTSpin
             if (gameState.isTSpin) {
@@ -791,7 +983,7 @@ export function createTetrisRuntime({
         playLineClearSfx()
 
         addLineClearEffect(fullRows, () => {
-            const clearedLines = clearFilledLines(gameState.board)
+            const clearedLines = clearFilledLines(board)
             if (clearedLines > 0) {
                 let points = clearedLines * 10
                 if (gameState.isTSpin) points *= 5
@@ -827,7 +1019,8 @@ export function createTetrisRuntime({
       * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 검사할 조각 상태
       * @returns {boolean} 모든 블록 칸이 유효하면 true
       */
-    function canPlace({ pieceType, rotation, row, col }) {
+    function canPlace({ pieceType, rotation, row, col }: PlaceablePieceState): boolean {
+        if (!gameState.board) return false
         return canPlacePiece(gameState.board, { pieceType, rotation, row, col }, BLOCKS);
     }
 
@@ -836,7 +1029,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function startGravity() {
+    function startGravity(): void {
         runtime.gravityRunning = true
         runtime.gravityAccumulatorMs = 0
     }
@@ -846,7 +1039,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function stopGravity() {
+    function stopGravity(): void {
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
     }
@@ -856,7 +1049,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function startInputLoop() {
+    function startInputLoop(): void {
         clearInterval(runtime.inputTimer)
         runtime.lastTickAt = performance.now()
         runtime.inputTimer = setInterval(() => {
@@ -873,7 +1066,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function stopGameLoops() {
+    function stopGameLoops(): void {
         clearInterval(runtime.inputTimer)
         cancelLineClearEffect()
         runtime.currentTick = 0
@@ -890,7 +1083,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function destroy() {
+    function destroy(): void {
         displayBridge.destroyDisplay()
         stopGameLoops()
         runtime.detachKeyboard?.()
@@ -906,7 +1099,7 @@ export function createTetrisRuntime({
       *
       * @returns {boolean} 실제 플레이 중인 상태일 때만 true
       */
-    function canProcessPlayerInput() {
+    function canProcessPlayerInput(): boolean {
         return gameState.phase === GAME_PHASE.PLAYING
     }
 
@@ -919,7 +1112,7 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function initBoardContext() {
+    function initBoardContext(): void {
         runtime.boardCtx = getBoardContext(boardCanvasEl);
     }
 
@@ -928,7 +1121,8 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function renderBoard() {
+    function renderBoard(): void {
+        if (!gameState.board) return
         renderBoardCanvas({
             ctx: runtime.boardCtx,
             board: gameState.board,
@@ -936,6 +1130,7 @@ export function createTetrisRuntime({
             rows: ROWS,
             cols: COLS,
             blocks: BLOCKS,
+            flashRows: [],
             isFlash: false,
         });
     }
@@ -948,7 +1143,7 @@ export function createTetrisRuntime({
       *
       * @returns {{pieceType: string, rotation: number, row: number, col: number, ghostRow?: number}|null}
       */
-    function getRenderableActivePiece() {
+    function getRenderableActivePiece(): (PieceState & { ghostRow?: number }) | null {
         const { activePiece } = gameState
         if (!activePiece || !activePiece.pieceType) return activePiece
 
@@ -972,9 +1167,17 @@ export function createTetrisRuntime({
       * @param {Function} onComplete - 애니메이션 종료 후 실행할 콜백
       * @returns {void}
       */
-    function addLineClearEffect(rows, onComplete, board = gameState.board) {
+    function addLineClearEffect(
+        rows: number[],
+        onComplete: (() => void) | null,
+        board: Board | null = gameState.board,
+    ): void {
+        if (!board) {
+            onComplete?.()
+            return
+        }
         if (!runtime.boardCtx) {
-            if (onComplete) onComplete()
+            onComplete?.()
             return
         }
 
@@ -984,7 +1187,8 @@ export function createTetrisRuntime({
         const DURATION = 350
         const startTime = performance.now()
 
-        function animate(currentTime) {
+        const presentationBoard = board
+        function animate(currentTime: number): void {
             if (animationVersion !== runtime.animationVersion) return
 
             let elapsed = currentTime - startTime
@@ -994,7 +1198,7 @@ export function createTetrisRuntime({
 
             renderBoardCanvas({
                 ctx: runtime.boardCtx,
-                board,
+                board: presentationBoard,
                 activePiece: null,
                 rows: ROWS,
                 cols: COLS,
@@ -1013,7 +1217,7 @@ export function createTetrisRuntime({
         runtime.animationFrameId = requestAnimationFrame(animate)
     }
 
-    function cancelLineClearEffect() {
+    function cancelLineClearEffect(): void {
         runtime.animationVersion += 1
         if (runtime.animationFrameId !== null) cancelAnimationFrame(runtime.animationFrameId)
         runtime.animationFrameId = null
@@ -1027,7 +1231,10 @@ export function createTetrisRuntime({
       * @param {{rows: number[], board: Array<Array<string|null>>}} effect - 표시할 줄과 clear 전 보드
       * @returns {boolean} 유효한 presentation을 시작했으면 true
       */
-    function playLineClearPresentation({ rows, board } = {}) {
+    function playLineClearPresentation({ rows, board }: {
+        rows?: number[];
+        board?: Board;
+    } = {}): boolean {
         if (!Array.isArray(rows)) return false
         if (!Array.isArray(board) || board.length !== ROWS) return false
         if (!board.every(row => Array.isArray(row) && row.length === COLS)) return false
@@ -1052,7 +1259,7 @@ export function createTetrisRuntime({
       * @param {{action: string, tick: number, pieceIndex: number|null}} input - 실제 적용된 입력
       * @returns {void}
       */
-    function recordAppliedInput(input) {
+    function recordAppliedInput(input: QueuedInput): void {
         runtime.inputLog.push({
             playerId: runtime.playerId,
             action: input.action,
@@ -1072,7 +1279,11 @@ export function createTetrisRuntime({
       * @param {Object|null} activePieceBefore - action 적용 전 조각
       * @returns {void}
       */
-    function recordInputOutcome(input, result, activePieceBefore) {
+    function recordInputOutcome(
+        input: QueuedInput,
+        result: ActionResult,
+        activePieceBefore: PieceState | null,
+    ): void {
         if (typeof inputOutcomeRecorder !== "function") return
 
         inputOutcomeRecorder({
@@ -1095,9 +1306,14 @@ export function createTetrisRuntime({
       * @param {{pieceType: string, rotation: number, row: number, col: number}} lockedPiece - 고정될 조각
       * @returns {Object} boardAfter와 placementResult를 제외한 로그 문맥
       */
-    function createPlacementDecisionContext(lockedPiece) {
-        const scoreBefore = Number.isFinite(runtime.pendingLockScoreBefore)
-            ? runtime.pendingLockScoreBefore
+    function createPlacementDecisionContext(
+        lockedPiece: PlaceablePieceState,
+    ): PlacementContext | null {
+        const boardBefore = serializeGameState(gameState).board
+        if (!boardBefore) return null
+        const pendingScoreBefore = runtime.pendingLockScoreBefore
+        const scoreBefore = typeof pendingScoreBefore === "number" && Number.isFinite(pendingScoreBefore)
+            ? pendingScoreBefore
             : gameState.score
         const decisionStartPiece = runtime.decisionStartPiece
 
@@ -1112,7 +1328,7 @@ export function createTetrisRuntime({
             pieceIndex: runtime.pieceIndex,
             createdAt: Date.now(),
             scoreBefore,
-            boardBefore: serializeGameState(gameState).board,
+            boardBefore,
             ...(decisionStartPiece
                 ? { activePiece: createPieceLog(decisionStartPiece) }
                 : {}),
@@ -1132,7 +1348,10 @@ export function createTetrisRuntime({
       * @param {{linesCleared: number, isTSpin: boolean, gameOver: boolean}} result - lock 처리 결과
       * @returns {{gameOver: boolean}} lock 결과의 game over 여부
       */
-    function finalizePlacementDecision(placementContext, result) {
+    function finalizePlacementDecision(
+        placementContext: PlacementContext | null,
+        result: { linesCleared: number; isTSpin: boolean; gameOver: boolean },
+    ): { gameOver: boolean } {
         if (!placementContext) return { gameOver: false }
 
         const { scoreBefore, ...logBase } = placementContext
@@ -1142,9 +1361,11 @@ export function createTetrisRuntime({
             isTSpin: result.isTSpin,
         })
         const rawAttackLines = calculateGarbageAttack(attackState)
-        const log = {
+        const boardAfter = serializeGameState(gameState).board
+        if (!boardAfter) return { gameOver: false }
+        const log: PlacementDecisionLog = {
             ...logBase,
-            boardAfter: serializeGameState(gameState).board,
+            boardAfter,
             placementResult: {
                 linesCleared: result.linesCleared,
                 isTSpin: attackState.isTSpin,
@@ -1194,11 +1415,14 @@ export function createTetrisRuntime({
         }
     }
 
-    function normalizePendingGarbageLines(lines) {
-        return Number.isInteger(lines) && lines > 0 ? lines : 0
+    function normalizePendingGarbageLines(lines: number | undefined): number {
+        return typeof lines === "number" && Number.isInteger(lines) && lines > 0 ? lines : 0
     }
 
-    function setAuthoritativePendingGarbageLines(lines, { publish = true } = {}) {
+    function setAuthoritativePendingGarbageLines(
+        lines: number | undefined,
+        { publish = true }: { publish?: boolean } = {},
+    ): number {
         runtime.authoritativePendingGarbageLines = normalizePendingGarbageLines(lines)
         ui.renderPendingGarbage(runtime.authoritativePendingGarbageLines)
         if (publish) displayBridge.publishDisplay()
@@ -1211,7 +1435,10 @@ export function createTetrisRuntime({
       * @param {{linesCleared: number, isTSpin: boolean}} params - 방금 고정된 조각의 공격 판정 입력
       * @returns {{linesCleared: number, isTSpin: boolean, combo: number, backToBack: boolean}} 공격 계산에 사용할 현재 상태
       */
-    function updateAttackState({ linesCleared, isTSpin }) {
+    function updateAttackState({ linesCleared, isTSpin }: {
+        linesCleared: number;
+        isTSpin: boolean;
+    }): Pick<AttackStateResult, "linesCleared" | "isTSpin" | "combo" | "backToBack"> {
         const attackState = resolveAttackState({
             combo: gameState.combo,
             backToBack: gameState.backToBack,
@@ -1236,7 +1463,7 @@ export function createTetrisRuntime({
       * @param {number} pieceIndex - 현재 고정된 조각 순번
       * @returns {Array<Object>} 입력 시퀀스
       */
-    function getInputSequenceForPiece(pieceIndex) {
+    function getInputSequenceForPiece(pieceIndex: number): AppliedInputLog[] {
         return runtime.inputLog
             .filter(input => {
                 return input.playerId === runtime.playerId && input.pieceIndex === pieceIndex
@@ -1250,7 +1477,7 @@ export function createTetrisRuntime({
       * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 조각 상태
       * @returns {Object} 로그용 조각 정보
       */
-    function createPieceLog(piece) {
+    function createPieceLog(piece: PlaceablePieceState): PieceLog {
         const cells = BLOCKS[piece.pieceType][piece.rotation].map(([offsetX, offsetY]) => {
             return {
                 row: piece.row + offsetY,
@@ -1278,9 +1505,9 @@ export function createTetrisRuntime({
       * @param {Array<Array<string|null>>} board - 검사할 보드 배열
       * @returns {{fullRows: number[], cols: number}} 가득 찬 줄 목록과 보드 너비
       */
-    function findFullRows(board) {
+    function findFullRows(board: Board): { fullRows: number[]; cols: number } {
         const cols = board[0]?.length ?? 0
-        const fullRows = []
+        const fullRows: number[] = []
         for (let row = 0; row < board.length; row++) {
             const isFull = board[row].every(cell => cell !== null)
             if (isFull) fullRows.push(row)
@@ -1296,7 +1523,7 @@ export function createTetrisRuntime({
       * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 적용할 조각 상태
       * @returns {void}
       */
-    function setActivePiece(piece) {
+    function setActivePiece(piece: PieceState | null): void {
         if (!piece) return
         gameState.activePiece.pieceType = piece.pieceType
         gameState.activePiece.rotation = piece.rotation
@@ -1311,10 +1538,12 @@ export function createTetrisRuntime({
       *
       * @returns {void}
       */
-    function refillSpawnQueue() {
+    function refillSpawnQueue(): void {
         if (runtime.bagMode === "server") {
             while (gameState.pieceQueue.length < NEXT_QUEUE_SIZE + 1 && runtime.serverBagQueue.length > 0) {
-                gameState.pieceQueue.push(runtime.serverBagQueue.shift())
+                const nextPiece = runtime.serverBagQueue.shift()
+                if (!nextPiece) break
+                gameState.pieceQueue.push(nextPiece)
             }
             return
         }
@@ -1327,7 +1556,7 @@ export function createTetrisRuntime({
       *
       * @returns {string|undefined} 스폰할 조각 타입
       */
-    function takeNextPieceType() {
+    function takeNextPieceType(): PieceType | undefined {
         if (runtime.bagMode === "server") {
             refillSpawnQueue()
             const nextType = gameState.pieceQueue.shift()
@@ -1344,10 +1573,11 @@ export function createTetrisRuntime({
       *
       * @returns {Object} 현재 gameState와 tick 정보를 담은 스냅샷
       */
-    function getSnapshot() {
+    function getSnapshot(): TetrisSnapshot {
+        const serializedState = serializeGameState(gameState)
         return {
-            board: serializeGameState(gameState).board,
-            activePiece: serializeGameState(gameState).activePiece,
+            board: serializedState.board,
+            activePiece: serializedState.activePiece ?? { ...gameState.activePiece },
             pieceQueue: [...gameState.pieceQueue],
             holdPieceType: gameState.holdPieceType,
             holdUsedThisDrop: gameState.holdUsedThisDrop,
@@ -1372,11 +1602,15 @@ export function createTetrisRuntime({
       * @param {{resumeGravity?: boolean, clearInputQueue?: boolean, cancelPresentation?: boolean}} options - 복원 옵션
       * @returns {void}
       */
-    function applySnapshot(snapshot, {
+    function applySnapshot(snapshot: TetrisSnapshotInput | null, {
         resumeGravity = false,
         clearInputQueue = false,
         cancelPresentation = false,
-    } = {}) {
+    }: {
+        resumeGravity?: boolean;
+        clearInputQueue?: boolean;
+        cancelPresentation?: boolean;
+    } = {}): void {
         if (!snapshot) return
         if (cancelPresentation) cancelLineClearEffect()
 
@@ -1413,14 +1647,17 @@ export function createTetrisRuntime({
             captureDecisionStartPiece(restored.activePiece)
         }
 
-        const snapshotTick = Number.isInteger(snapshot.tick) && snapshot.tick >= 0
+        const snapshotTick = typeof snapshot.tick === "number"
+            && Number.isInteger(snapshot.tick) && snapshot.tick >= 0
             ? snapshot.tick
             : runtime.currentTick
         runtime.currentTick = Math.max(runtime.currentTick, snapshotTick)
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
         runtime.automaticGroundedPieceIndex = null
-        runtime.pieceIndex = snapshot.pieceIndex ?? runtime.pieceIndex
+        runtime.pieceIndex = typeof snapshot.pieceIndex === "number"
+            ? snapshot.pieceIndex
+            : runtime.pieceIndex
         runtime.pendingLockScoreBefore = null
 
         ui.renderScore(gameState.score)
@@ -1448,7 +1685,7 @@ export function createTetrisRuntime({
       * @param {string[][]} chunks - 서버가 보낸 7-bag chunk 목록
       * @returns {void}
       */
-    function setServerBagQueue(chunks) {
+    function setServerBagQueue(chunks: PieceType[][]): void {
         runtime.bagMode = "server"
         runtime.serverBagQueue = Array.isArray(chunks)
             ? chunks.flatMap(chunk => Array.isArray(chunk) ? [...chunk] : [])
@@ -1461,7 +1698,7 @@ export function createTetrisRuntime({
       * @param {string[]} chunk - 추가 공급된 7-bag 한 묶음
       * @returns {void}
       */
-    function appendServerBag(chunk) {
+    function appendServerBag(chunk: PieceType[]): void {
         if (!Array.isArray(chunk) || chunk.length === 0) return
         runtime.bagMode = "server"
         runtime.serverBagQueue.push(...chunk)
@@ -1475,7 +1712,7 @@ export function createTetrisRuntime({
       *
       * @returns {number} server bag 모드가 아니면 Infinity
       */
-    function getServerBagRemainingCount() {
+    function getServerBagRemainingCount(): number {
         if (runtime.bagMode !== "server") return Infinity
         return runtime.serverBagQueue.length + gameState.pieceQueue.length
     }
@@ -1486,7 +1723,7 @@ export function createTetrisRuntime({
       * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - 기준 조각 상태
       * @returns {{pieceType: string, rotation: number, row: number, col: number}|null} 복사된 pendingPiece
       */
-    function clonePendingPiece(piece) {
+    function clonePendingPiece(piece: PieceState | null): PieceState | null {
         if (!piece) return null
         return {
             pieceType: piece.pieceType,
@@ -1503,18 +1740,19 @@ export function createTetrisRuntime({
       * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - spawn 또는 snapshot으로 적용된 조각
       * @returns {void}
       */
-    function captureDecisionStartPiece(piece) {
-        const rotations = BLOCKS[piece?.pieceType]
-        const isValid = Array.isArray(rotations) &&
-            Number.isInteger(piece.rotation) &&
+    function captureDecisionStartPiece(piece: PieceState | null): void {
+        if (!piece?.pieceType) {
+            runtime.decisionStartPiece = null
+            return
+        }
+        const rotations = BLOCKS[piece.pieceType]
+        const isValid = Number.isInteger(piece.rotation) &&
             piece.rotation >= 0 &&
             piece.rotation < rotations.length &&
             Number.isInteger(piece.row) &&
             Number.isInteger(piece.col)
 
-        runtime.decisionStartPiece = isValid
-            ? clonePendingPiece(piece)
-            : null
+        runtime.decisionStartPiece = isValid ? { ...piece } : null
     }
     return {
         init,

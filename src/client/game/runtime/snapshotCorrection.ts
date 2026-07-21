@@ -2,7 +2,29 @@ const ONE_PIECE_GAP_GRACE_MS = 750
 const SERVER_AHEAD_ONE_PIECE = "SERVER_AHEAD_ONE_PIECE"
 const LOCAL_AHEAD_ONE_PIECE = "LOCAL_AHEAD_ONE_PIECE"
 
-function createDecision(shouldCorrect, reason = null, nextPendingDriftState = null) {
+export type SnapshotDriftState = {
+    key: typeof SERVER_AHEAD_ONE_PIECE | typeof LOCAL_AHEAD_ONE_PIECE;
+    startedAtMs: number;
+};
+export type SnapshotCorrectionReason = "PERSISTENT_PIECE_INDEX_GAP" | "GAME_OVER" |
+    "GARBAGE_APPLIED" | "PIECE_INDEX_GAP" | "SETTLED_BOARD_MISMATCH";
+export type SnapshotCorrectionDecision = {
+    shouldCorrect: boolean;
+    reason: SnapshotCorrectionReason | null;
+    nextPendingDriftState: SnapshotDriftState | null;
+};
+type CorrectionSnapshot = {
+    phase?: string;
+    board?: unknown;
+    pendingGarbageLines?: number;
+    pieceIndex?: number;
+};
+
+function createDecision(
+    shouldCorrect: boolean,
+    reason: SnapshotCorrectionReason | null = null,
+    nextPendingDriftState: SnapshotDriftState | null = null,
+): SnapshotCorrectionDecision {
     return {
         shouldCorrect,
         reason,
@@ -10,7 +32,7 @@ function createDecision(shouldCorrect, reason = null, nextPendingDriftState = nu
     }
 }
 
-function areBoardsEqual(leftBoard, rightBoard) {
+function areBoardsEqual(leftBoard: unknown, rightBoard: unknown): boolean {
     if (!Array.isArray(leftBoard) || !Array.isArray(rightBoard)) return false
     if (leftBoard.length !== rightBoard.length) return false
 
@@ -28,7 +50,11 @@ function areBoardsEqual(leftBoard, rightBoard) {
     return true
 }
 
-function evaluateOnePieceGap(pieceIndexDelta, previousDriftState, nowMs) {
+function evaluateOnePieceGap(
+    pieceIndexDelta: number,
+    previousDriftState: SnapshotDriftState | null,
+    nowMs: number,
+): SnapshotCorrectionDecision {
     const key = pieceIndexDelta > 0
         ? SERVER_AHEAD_ONE_PIECE
         : LOCAL_AHEAD_ONE_PIECE
@@ -64,11 +90,11 @@ function evaluateOnePieceGap(pieceIndexDelta, previousDriftState, nowMs) {
  * @returns {{shouldCorrect: boolean, reason: string|null, nextPendingDriftState: Object|null}}
  */
 export function evaluateOwnSnapshotCorrection(
-    serverSnapshot,
-    localSnapshot,
-    previousDriftState = null,
+    serverSnapshot: CorrectionSnapshot | null,
+    localSnapshot: CorrectionSnapshot | null,
+    previousDriftState: SnapshotDriftState | null = null,
     nowMs = 0,
-) {
+): SnapshotCorrectionDecision {
     if (!serverSnapshot || !localSnapshot) return createDecision(false)
     if (serverSnapshot.phase === "gameOver") {
         return createDecision(true, "GAME_OVER")
@@ -78,9 +104,13 @@ export function evaluateOwnSnapshotCorrection(
     }
 
     const boardsEqual = areBoardsEqual(serverSnapshot.board, localSnapshot.board)
-    const didPendingGarbageDecrease = Number.isInteger(serverSnapshot.pendingGarbageLines)
-        && Number.isInteger(localSnapshot.pendingGarbageLines)
-        && serverSnapshot.pendingGarbageLines < localSnapshot.pendingGarbageLines
+    const serverPendingGarbageLines = serverSnapshot.pendingGarbageLines
+    const localPendingGarbageLines = localSnapshot.pendingGarbageLines
+    const didPendingGarbageDecrease = typeof serverPendingGarbageLines === "number"
+        && Number.isInteger(serverPendingGarbageLines)
+        && typeof localPendingGarbageLines === "number"
+        && Number.isInteger(localPendingGarbageLines)
+        && serverPendingGarbageLines < localPendingGarbageLines
 
     if (didPendingGarbageDecrease && !boardsEqual) {
         return createDecision(true, "GARBAGE_APPLIED")
@@ -88,7 +118,8 @@ export function evaluateOwnSnapshotCorrection(
 
     const serverPieceIndex = serverSnapshot.pieceIndex
     const localPieceIndex = localSnapshot.pieceIndex
-    if (!Number.isInteger(serverPieceIndex) || !Number.isInteger(localPieceIndex)) {
+    if (typeof serverPieceIndex !== "number" || !Number.isInteger(serverPieceIndex)
+        || typeof localPieceIndex !== "number" || !Number.isInteger(localPieceIndex)) {
         return createDecision(false)
     }
 

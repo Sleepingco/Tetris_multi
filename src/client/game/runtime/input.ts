@@ -10,9 +10,11 @@ export const INPUT_ACTION = {
         ROTATE: "rotate",
         HARD_DROP: "hard_drop",
         HOLD: "hold",
-}
+} satisfies Record<string, string>
 
-const NON_REPEATABLE_ACTIONS = new Set([
+export type InputAction = typeof INPUT_ACTION[keyof typeof INPUT_ACTION];
+
+const NON_REPEATABLE_ACTIONS = new Set<InputAction>([
         INPUT_ACTION.HOLD,
         INPUT_ACTION.HARD_DROP,
         INPUT_ACTION.ROTATE,
@@ -32,7 +34,7 @@ const PREVENT_DEFAULT_KEYS = new Set([
   * @param {KeyboardEvent} event - 브라우저 키보드 이벤트
   * @returns {string|null} 정규화된 액션, 무시할 키면 null
   */
-function mapKeyboardEventToAction(event) {
+function mapKeyboardEventToAction(event: KeyboardEvent): InputAction | null {
         if (event.code === "KeyC" || event.key?.toLowerCase() === "c") return INPUT_ACTION.HOLD
         if (event.key === "ArrowRight") return INPUT_ACTION.MOVE_RIGHT
         if (event.key === "ArrowLeft") return INPUT_ACTION.MOVE_LEFT
@@ -52,10 +54,16 @@ function mapKeyboardEventToAction(event) {
   * @param {Function} params.onUserInteract - 첫 사용자 상호작용 부수효과용 선택 콜백
   * @returns {Function} 등록한 리스너를 제거하는 정리 함수
   */
-export function attachKeyboardInput({ enqueueAction, onUserInteract }) {
+export function attachKeyboardInput({
+        enqueueAction,
+        onUserInteract,
+}: {
+        enqueueAction: ((action: InputAction) => unknown) | null | undefined;
+        onUserInteract?: (() => void) | null;
+}): () => void {
         if (typeof enqueueAction !== "function") return () => { }
 
-        const onKeydown = (event) => {
+        const onKeydown = (event: KeyboardEvent) => {
                 if (typeof onUserInteract === "function") onUserInteract()
 
                 const action = mapKeyboardEventToAction(event)
