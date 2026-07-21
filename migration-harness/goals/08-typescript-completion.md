@@ -6,8 +6,8 @@
 
 ## 선행조건
 
-- Goal 7의 main 반영과 모든 gameplay E2E green
-- client/server/shared build 경계가 안정적임
+- Goal 7A의 main 반영과 SPA route를 포함한 모든 gameplay E2E green
+- client/server/shared build와 SPA import·lifecycle 경계가 안정적임
 - 변환 대상과 유지할 JS 예외 allowlist 작성
 
 ## Checkpoint

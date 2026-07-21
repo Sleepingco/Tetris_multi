@@ -12,7 +12,8 @@
 | [5](goals/05-react-shell.md) | React index/lobby shell | 4 | `codex/migrate-react-shell` |
 | [6](goals/06-react-single.md) | runtime display bridge와 single React | 5 | `codex/migrate-react-single` |
 | [7](goals/07-react-multiplayer.md) | multiplayer/PVE React | 6 | `codex/migrate-react-multiplayer` |
-| [8](goals/08-typescript-completion.md) | 남은 first-party TypeScript 전환 | 7 | `codex/complete-typescript-migration` |
+| [7A](goals/07a-react-spa.md) | 단일 React SPA shell과 기존 URL 호환 | 7 | `codex/migrate-react-spa` |
+| [8](goals/08-typescript-completion.md) | 남은 first-party TypeScript 전환 | 7A | `codex/complete-typescript-migration` |
 | [9](goals/09-postgres-shadow.md) | PostgreSQL append-only shadow storage | 8 | `codex/add-postgres-event-shadow` |
 | [10](goals/10-storage-cutover.md) | DB/JSONL 호환 export와 점진적 전환 | 9 | `codex/cutover-event-storage` |
 | [11A](goals/11a-csp-headers.md) | CSP와 security headers | 10 | `codex/harden-csp-headers` |
@@ -27,6 +28,7 @@
 - Goal 파일이 없거나 현재 코드와 맞지 않으면 구현 전에 명세를 갱신하고 사용자 검토를 받는다.
 - 이전 Goal에서 미래 Goal 구현을 선행하지 않는다.
 - 목표가 달라지면 roadmap과 관련 Goal 파일을 문서 변경으로 먼저 갱신한다.
+- Goal 7A는 React 화면을 단일 SPA shell로 통합하되 기존 URL, gameplay와 session 계약을 유지한다.
 - Goal 8은 `core/state → runtime/render/net → server → tests` checkpoint로 나눈다.
 - Goal 11은 하나의 큰 branch가 아니라 11A~11D의 독립 Goal로 수행한다.
 
@@ -35,6 +37,7 @@
 - build/type 기반을 먼저 안정화한다.
 - 신원과 재접속 보안을 React보다 먼저 해결한다.
 - runtime 계약을 만든 뒤 React 화면을 이동한다.
+- React 화면과 lifecycle을 안정화한 뒤 단일 SPA route 경계를 만든다.
 - first-party TypeScript 전환은 기능 변화와 분리한다.
 - PostgreSQL은 shadow storage로 시작하고 JSONL parity 이후 점진적으로 전환한다.
 - production hardening은 기능 마이그레이션이 안정된 뒤 수행한다.
