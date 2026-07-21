@@ -1,7 +1,20 @@
-const { syncRoom } = require("../services/roomService.js")
-const { parseClientEvent } = require("../../shared/socketContracts.mjs")
+import { syncRoom } from "../services/roomService.js";
+import { clientToServerSchemas } from "../../shared/socketContracts.mjs";
+import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes.js";
+import type { PlayerSessionService } from "../services/playerSessionService.js";
+import type { SocketRateLimitService } from "../services/socketRateLimitService.js";
+import type { AppSocket, AppSocketServer } from "./index.js";
 
-function failure(reason, meta = {}) {
+type ChatResult = ServerToClientParsedPayload<"chat:result">;
+export type ChatHandlerDependencies = {
+    playerSessionService: PlayerSessionService;
+    socketRateLimitService: SocketRateLimitService;
+};
+
+function failure(
+    reason: string,
+    meta: Partial<ChatResult> = {},
+): ChatResult {
     return {
         ok: false,
         reason,
@@ -9,30 +22,37 @@ function failure(reason, meta = {}) {
     }
 }
 
-function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
+export function registerChatHandlers(
+    socketServer: AppSocketServer,
+    clientSocket: AppSocket,
+    dependencies: ChatHandlerDependencies,
+): void {
     const playerSessionService = dependencies.playerSessionService
     const socketRateLimitService = dependencies.socketRateLimitService
     const sessionContext = clientSocket.data?.playerSession
     const playerIdentity = clientSocket.data?.playerIdentity
 
-    function authorizeChat() {
-        if (!playerSessionService?.isActiveSocket(sessionContext, clientSocket.id)) {
+    function authorizeChat(): ChatResult | null {
+        if (!playerSessionService.isActiveSocket(sessionContext, clientSocket.id)
+            || !playerIdentity) {
             return failure("NOT_AUTHORIZED")
         }
-        if (!socketRateLimitService?.consume("chat", playerIdentity?.playerId)) {
+        if (!socketRateLimitService.consume("chat", playerIdentity.playerId)) {
             return failure("CHAT_RATE_LIMITED")
         }
         return null
     }
 
-    clientSocket.on("global:chat", (payload) => {
+    clientSocket.on("global:chat", (payload: unknown) => {
         const result = authorizeChat()
 
         if (result) {
             clientSocket.emit("chat:result", result)
             return
         }
-        const validation = parseClientEvent("global:chat", payload)
+        const identity = playerIdentity
+        if (!identity) return
+        const validation = clientToServerSchemas["global:chat"].safeParse(payload)
         if (!validation.success) {
             clientSocket.emit("chat:result", failure("INVALID_PAYLOAD"))
             return
@@ -41,20 +61,21 @@ function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
         socketServer.emit("global:message", {
             type: "chat",
             scope: "global",
-            playerId: playerIdentity.playerId,
-            nickname: playerIdentity.nickname,
+            playerId: identity.playerId,
+            nickname: identity.nickname,
             text: validation.data.text,
         })
     })
 
-    clientSocket.on("room:chat", (payload) => {
-        const playerId = playerIdentity?.playerId
+    clientSocket.on("room:chat", (payload: unknown) => {
         const authorization = authorizeChat()
         if (authorization) {
             clientSocket.emit("chat:result", authorization)
             return
         }
-        const validation = parseClientEvent("room:chat", payload)
+        const playerId = playerIdentity?.playerId
+        if (!playerId) return
+        const validation = clientToServerSchemas["room:chat"].safeParse(payload)
         if (!validation.success) {
             clientSocket.emit("chat:result", failure("INVALID_PAYLOAD"))
             return
@@ -62,7 +83,7 @@ function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
         const { roomId, text } = validation.data
         // 채팅 전송 전에 room/player 소속만 검증한다. 게임 판정이나 room 상태 전이는 하지 않는다.
         const roomResult = syncRoom(roomId, playerId)
-        if (!roomResult.ok) {
+        if (!roomResult.ok || !roomResult.room) {
             clientSocket.emit("chat:result", roomResult)
             return
         }
@@ -78,8 +99,4 @@ function registerChatHandlers(socketServer, clientSocket, dependencies = {}) {
         })
     })
 
-}
-
-module.exports = {
-    registerChatHandlers,
 }

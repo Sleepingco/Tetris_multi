@@ -1,1 +1,1 @@
-require("./server/init.js");
+import "./server/init.js";

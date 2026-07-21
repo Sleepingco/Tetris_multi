@@ -1,35 +1,86 @@
-const { registerChatHandlers } = require("./chatHandlers.js")
-const {
+import type { Server, Socket } from "socket.io";
+import { registerChatHandlers } from "./chatHandlers.js";
+import {
     handleDisconnectGraceExpired,
     registerMultiplayerHandlers,
-} = require("./multiplayerHandlers.js")
-const {
+} from "./multiplayerHandlers.js";
+import {
     createAuthoritativeTickerService,
-} = require("../services/authoritativeTickerService.js")
-const {
+} from "../services/authoritativeTickerService.js";
+import {
     createAuthoritativePlayerMutationQueue,
-} = require("../services/authoritativePlayerMutationQueue.js")
-const {
+} from "../services/authoritativePlayerMutationQueue.js";
+import {
     createPlayerSessionService,
-} = require("../services/playerSessionService.js")
-const {
+} from "../services/playerSessionService.js";
+import {
     createSocketRateLimitService,
     TEST_RATE_LIMITS,
-} = require("../services/socketRateLimitService.js")
-const { handshakeAuthSchema } = require("../../shared/socketContracts.mjs")
+} from "../services/socketRateLimitService.js";
+import { handshakeAuthSchema } from "../../shared/socketContracts.mjs";
+import type {
+    ClientToServerEventName,
+    ServerToClientEvents,
+} from "../../shared/socketContractTypes.js";
+import type { AuthoritativePlayerMutationQueue } from "../services/authoritativePlayerMutationQueue.js";
+import type { AuthoritativeTickerService } from "../services/authoritativeTickerService.js";
+import type {
+    PlayerSessionContext,
+    PlayerSessionReady,
+    PlayerSessionService,
+} from "../services/playerSessionService.js";
+import type { SocketRateLimitService } from "../services/socketRateLimitService.js";
+import type {
+    DisconnectGraceContext,
+    MultiplayerHandlerDependencies,
+} from "./multiplayerHandlers.js";
+
+export type RawClientToServerEvents = {
+    [K in ClientToServerEventName]: (payload: unknown) => void;
+};
+export type AppSocketData = {
+    playerSession?: PlayerSessionContext;
+    playerIdentity?: {
+        playerId: string;
+        nickname: string;
+    };
+};
+export type AppSocket = Socket<
+    RawClientToServerEvents,
+    ServerToClientEvents,
+    Record<string, never>,
+    AppSocketData
+>;
+export type AppSocketServer = Server<
+    RawClientToServerEvents,
+    ServerToClientEvents,
+    Record<string, never>,
+    AppSocketData
+>;
+type RegisterSocketDependencies = Partial<MultiplayerHandlerDependencies> & {
+    playerSessionService?: PlayerSessionService;
+    socketRateLimitService?: SocketRateLimitService;
+    authoritativePlayerMutationQueue?: AuthoritativePlayerMutationQueue;
+    authoritativeTickerService?: AuthoritativeTickerService;
+    rateLimitProfile?: string;
+};
+
+class SessionAuthError extends Error {
+    data: { code: string; terminal: true };
+
+    constructor(code: string) {
+        super("SESSION_AUTH_FAILED");
+        this.data = { code, terminal: true };
+    }
+}
 
 const SESSION_CLEANUP_INTERVAL_MS = 60_000
 
-function createSessionError(code) {
-    const error = new Error("SESSION_AUTH_FAILED")
-    error.data = {
-        code,
-        terminal: true,
-    }
-    return error
+function createSessionError(code: string): SessionAuthError {
+    return new SessionAuthError(code)
 }
 
-function getRemoteAddress(clientSocket) {
+function getRemoteAddress(clientSocket: AppSocket): string {
     return clientSocket.handshake?.address
         || clientSocket.request?.socket?.remoteAddress
         || "unknown"
@@ -43,7 +94,10 @@ function getRemoteAddress(clientSocket) {
  * @param {Object} dependencies - 테스트에서 주입할 서비스 의존성
  * @returns {void}
  */
-function registerSocketHandlers(socketServer, dependencies = {}) {
+export function registerSocketHandlers(
+    socketServer: AppSocketServer,
+    dependencies: RegisterSocketDependencies = {},
+): void {
     const playerSessionService = dependencies.playerSessionService
         || createPlayerSessionService()
     const rateLimitProfile = dependencies.rateLimitProfile
@@ -65,14 +119,16 @@ function registerSocketHandlers(socketServer, dependencies = {}) {
         disconnectGraceContexts: dependencies.disconnectGraceContexts || new Map(),
         playerSessionService,
         socketRateLimitService,
-    }
+    } satisfies MultiplayerHandlerDependencies
+    const pendingSessionReady = new WeakMap<AppSocket, PlayerSessionReady>()
 
     socketServer.use?.((clientSocket, next) => {
-        const auth = clientSocket.handshake?.auth || {}
+        const auth: unknown = clientSocket.handshake?.auth || {}
+        const authRecord = isRecord(auth) ? auth : {}
         const remoteAddress = getRemoteAddress(clientSocket)
-        const hasCredential = auth.playerId !== undefined
-            || auth.token !== undefined
-            || auth.credentialError !== undefined
+        const hasCredential = authRecord.playerId !== undefined
+            || authRecord.token !== undefined
+            || authRecord.credentialError !== undefined
         if (
             !hasCredential
             && !socketRateLimitService.consume("newSession", remoteAddress)
@@ -90,9 +146,10 @@ function registerSocketHandlers(socketServer, dependencies = {}) {
                 next(createSessionError("SESSION_RATE_LIMITED"))
                 return
             }
-            const hasInvalidNickname = typeof auth?.nickname !== "string"
-                || !auth.nickname.trim()
-                || auth.nickname.trim().length > 24
+            const nickname = authRecord.nickname
+            const hasInvalidNickname = typeof nickname !== "string"
+                || !nickname.trim()
+                || nickname.trim().length > 24
             next(createSessionError(hasInvalidNickname
                 ? "SESSION_NICKNAME_INVALID"
                 : "SESSION_CREDENTIALS_MALFORMED"))
@@ -112,13 +169,12 @@ function registerSocketHandlers(socketServer, dependencies = {}) {
             return
         }
 
-        clientSocket.data ||= {}
         clientSocket.data.playerSession = result.context
         clientSocket.data.playerIdentity = {
             playerId: result.ready.playerId,
             nickname: result.ready.nickname,
         }
-        clientSocket.data.sessionReady = result.ready
+        pendingSessionReady.set(clientSocket, result.ready)
 
         const replacedSocket = result.replacedSocketId
             ? socketServer.sockets?.sockets?.get?.(result.replacedSocketId)
@@ -134,7 +190,9 @@ function registerSocketHandlers(socketServer, dependencies = {}) {
             const graceContext = multiplayerDependencies.disconnectGraceContexts.get(playerId)
             if (graceContext) clearTimeout(graceContext.timer)
             multiplayerDependencies.disconnectGraceContexts.delete(playerId)
-            socketServer.sockets?.sockets?.get?.(activeSocketId)?.disconnect?.(true)
+            if (activeSocketId) {
+                socketServer.sockets.sockets.get(activeSocketId)?.disconnect(true)
+            }
             handleDisconnectGraceExpired({
                 socketServer,
                 playerId,
@@ -146,21 +204,23 @@ function registerSocketHandlers(socketServer, dependencies = {}) {
     cleanupTimer.unref?.()
 
     socketServer.on("connection", (clientSocket) => {
-        const sessionContext = clientSocket.data?.playerSession
+        const sessionContext = clientSocket.data.playerSession
         const graceContext = sessionContext
             ? multiplayerDependencies.disconnectGraceContexts.get(sessionContext.playerId)
             : null
-        if (graceContext) {
+        if (graceContext && sessionContext) {
             clearTimeout(graceContext.timer)
             multiplayerDependencies.disconnectGraceContexts.delete(sessionContext.playerId)
         }
 
         registerChatHandlers(socketServer, clientSocket, multiplayerDependencies)
         registerMultiplayerHandlers(socketServer, clientSocket, multiplayerDependencies)
-        clientSocket.emit("session:ready", clientSocket.data.sessionReady)
+        const sessionReady = pendingSessionReady.get(clientSocket)
+        pendingSessionReady.delete(clientSocket)
+        if (sessionReady) clientSocket.emit("session:ready", sessionReady)
     })
 }
 
-module.exports = {
-    registerSocketHandlers,
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === "object" && !Array.isArray(value)
 }
