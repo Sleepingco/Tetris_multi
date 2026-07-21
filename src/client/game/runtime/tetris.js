@@ -1,20 +1,20 @@
-import BLOCKS from "../state/blocks.js"
+import BLOCKS from "../state/blocks.ts"
 import {
     createEmptyBoard as createEngineBoard,
     canPlacePiece,
     lockPieceOnBoard,
     clearFilledLines,
     isPieceAboveTop,
-} from "../core/board.js"
-import { calculateGarbageAttack } from "../core/garbage.js"
-import { resolveAttackState } from "../core/attackState.js"
+} from "../core/board.ts"
+import { calculateGarbageAttack } from "../core/garbage.ts"
+import { resolveAttackState } from "../core/attackState.ts"
 import {
     resolveInputMoveIntent,
     resolveMoveAttempt,
     resolveMoveIntent,
-} from "../core/step.js"
-import { createSpawnedPiece, getHardDropRow } from "../core/piece.js"
-import { isTSpinLock } from "../core/tSpin.js"
+} from "../core/step.ts"
+import { createSpawnedPiece, getHardDropRow } from "../core/piece.ts"
+import { isTSpinLock } from "../core/tSpin.ts"
 import { playLineClearSfx } from "./sound.js"
 import { createRuntimeDisplayBridge } from "./displayBridge.js"
 import { INPUT_ACTION } from "./input.js"
@@ -26,7 +26,7 @@ import {
     NEXT_PREVIEW_DIMENSION,
     INPUT_TICK_MS,
     WALL_KICKS,
-} from "../state/config.js"
+} from "../state/config.ts"
 import {
     getBoardContext,
     renderBoardCanvas,
@@ -35,16 +35,16 @@ import {
     buildHoldPreview as buildHoldPreviewDom,
     buildNextPreview as buildNextPreviewDom,
 } from "../render/tetrisRender.js"
-import { createGameState } from "../state/stateFactory.js"
+import { createGameState } from "../state/stateFactory.ts"
 import {
     ensureQueueFilled as fillPieceQueue,
     takeNextFromQueue,
-} from "../state/pieceQueue.js"
+} from "../state/pieceQueue.ts"
 import { createGameUi } from "../ui/ui.js"
 import {
     serializeGameState,
     deserializeGameState,
-} from "../state/stateSerialization.js"
+} from "../state/stateSerialization.ts"
 import { createHumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.js"
 const NEXT_QUEUE_SIZE = 2
 

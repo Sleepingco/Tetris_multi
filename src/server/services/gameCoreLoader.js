@@ -3,14 +3,14 @@ let gameCorePromise = null;
 function loadGameCore() {
     if (!gameCorePromise) {
         gameCorePromise = Promise.all([
-            import("../../client/game/core/step.js"),
-            import("../../client/game/core/board.js"),
-            import("../../client/game/core/piece.js"),
-            import("../../client/game/core/attackState.js"),
-            import("../../client/game/core/garbage.js"),
-            import("../../client/game/core/tSpin.js"),
-            import("../../client/game/state/blocks.js"),
-            import("../../client/game/state/config.js"),
+            import("../../client/game/core/step.ts"),
+            import("../../client/game/core/board.ts"),
+            import("../../client/game/core/piece.ts"),
+            import("../../client/game/core/attackState.ts"),
+            import("../../client/game/core/garbage.ts"),
+            import("../../client/game/core/tSpin.ts"),
+            import("../../client/game/state/blocks.ts"),
+            import("../../client/game/state/config.ts"),
         ]).then(([
             stepCore,
             boardCore,

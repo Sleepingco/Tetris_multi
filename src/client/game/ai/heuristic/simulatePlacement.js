@@ -3,8 +3,8 @@ import {
     clearFilledLines,
     isPieceAboveTop,
     lockPieceOnBoard,
-} from "../../core/board.js";
-import BLOCKS from "../../state/blocks.js";
+} from "../../core/board.ts";
+import BLOCKS from "../../state/blocks.ts";
 import { normalizePlacement } from "./placementGenerator.js";
 
 function cloneBoard(board) {

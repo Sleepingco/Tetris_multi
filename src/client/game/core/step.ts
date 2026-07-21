@@ -1,4 +1,43 @@
-import { canPlacePiece } from "./board.js"
+import { canPlacePiece } from "./board.ts"
+import type { Board } from "./board.ts";
+import type { PieceState } from "./piece.ts";
+import type { BlockDefinitions } from "../state/blocks.ts";
+import type { WallKickTable } from "../state/config.ts";
+
+export type InputMoveIntent = {
+        kind: "shift";
+        rowDelta: number;
+        colDelta: number;
+        moveType: "horizontal" | "fall";
+} | {
+        kind: "rotate";
+        moveType: "rotate";
+};
+
+export type MoveStatus = "idle" | "lock" | "ok" | "gameOver" | "retry";
+
+export type MoveOutcome = {
+        status: MoveStatus;
+        moveCause: string;
+        active: PieceState;
+        pending: PieceState;
+};
+
+export type MoveIntent = {
+        kind: MoveStatus;
+        moveCause: string;
+        active: PieceState;
+        shouldStartGravity?: boolean;
+};
+
+export type ResolveMoveAttemptOptions = {
+        board: Board;
+        activePiece: PieceState;
+        pendingPiece: PieceState;
+        moveCause: string;
+        blocks: BlockDefinitions;
+        wallKicks?: WallKickTable | null;
+};
 
 // =============================
 // 이동 판정 (엔진 계층)
@@ -11,7 +50,7 @@ import { canPlacePiece } from "./board.js"
   * @param {string} action - 입력 계층에서 넘어온 action 문자열
   * @returns {{kind: string, rowDelta?: number, colDelta?: number, moveType: string}|null} 이동 intent
   */
-export function resolveInputMoveIntent(action) {
+export function resolveInputMoveIntent(action: string): InputMoveIntent | null {
         if (action === "move_left") {
                 return {
                         kind: "shift",
@@ -65,7 +104,14 @@ export function resolveInputMoveIntent(action) {
   * @param {Object} params.wallKicks - 회전 충돌 시 사용할 wall kick 테이블
   * @returns {{status: string, moveCause: string, active: Object, pending: Object}} 런타임 계층으로 넘길 엔진 판정 결과
   */
-export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause, blocks, wallKicks }) {
+export function resolveMoveAttempt({
+        board,
+        activePiece,
+        pendingPiece,
+        moveCause,
+        blocks,
+        wallKicks,
+}: ResolveMoveAttemptOptions): MoveOutcome {
         if (!pendingPiece.pieceType) {
                 return {
                         status: "idle",
@@ -113,7 +159,7 @@ export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause
                 }
 
                 if (moveCause === "spawn") {
-                        const clearedPiece = {
+                        const clearedPiece: PieceState = {
                                 ...pendingPiece,
                                 pieceType: "",
                         };
@@ -162,7 +208,13 @@ export function resolveMoveAttempt({ board, activePiece, pendingPiece, moveCause
   * @param {boolean} params.hasFallTimer - 현재 중력 타이머가 이미 동작 중인지 여부
   * @returns {{kind: string, moveCause: string, active: Object, shouldStartGravity?: boolean}} 런타임 실행 의도
   */
-export function resolveMoveIntent({ outcome, hasFallTimer }) {
+export function resolveMoveIntent({
+        outcome,
+        hasFallTimer,
+}: {
+        outcome: MoveOutcome;
+        hasFallTimer: boolean;
+}): MoveIntent {
         if (outcome.status === "lock") {
                 return { kind: "lock", moveCause: outcome.moveCause, active: { ...outcome.active } }
         }

@@ -1,10 +1,49 @@
-const BASIC_GARBAGE_ATTACK_BY_LINES = {
+import type { Board, BoardCell } from "./board.ts";
+
+const BASIC_GARBAGE_ATTACK_BY_LINES: Record<number, number> = {
     2: 1,
     3: 2,
     4: 4,
 };
 
-const T_SPIN_GARBAGE_ATTACK_BY_LINES = {
+export type GarbageEntry = {
+    lines: number;
+    holeCol?: number;
+    cellType?: string;
+    [key: string]: unknown;
+};
+
+export type GarbageAttackOptions = {
+    linesCleared?: number;
+    isTSpin?: boolean;
+    combo?: number;
+    backToBack?: boolean;
+};
+
+export type GarbageCancelOptions = {
+    pendingGarbageQueue?: GarbageEntry[];
+    rawAttackLines?: number;
+};
+
+export type GarbageCancelResult = {
+    pendingGarbageQueue: GarbageEntry[];
+    incomingGarbageLines: number;
+    canceledGarbageLines: number;
+    attackLines: number;
+};
+
+export type ApplyGarbageOptions = {
+    lines?: number;
+    holeCol?: number;
+    cellType?: string;
+};
+
+export type ApplyGarbageResult = {
+    appliedLines: number;
+    overflow: boolean;
+};
+
+const T_SPIN_GARBAGE_ATTACK_BY_LINES: Record<number, number> = {
     1: 2,
     2: 4,
     3: 6,
@@ -15,8 +54,10 @@ export function calculateGarbageAttack({
     isTSpin = false,
     combo = 0,
     backToBack = false,
-} = {}) {
-    if (!Number.isInteger(linesCleared) || linesCleared <= 0) return 0;
+}: GarbageAttackOptions = {}): number {
+    if (typeof linesCleared !== "number" || !Number.isInteger(linesCleared) || linesCleared <= 0) {
+        return 0;
+    }
 
     const baseAttack = isTSpin
         ? T_SPIN_GARBAGE_ATTACK_BY_LINES[linesCleared] ?? 0
@@ -31,7 +72,7 @@ export function calculateGarbageAttack({
 export function resolveGarbageCancel({
     pendingGarbageQueue = [],
     rawAttackLines = 0,
-} = {}) {
+}: GarbageCancelOptions = {}): GarbageCancelResult {
     const nextPendingGarbageQueue = Array.isArray(pendingGarbageQueue)
         ? pendingGarbageQueue.map(garbage => ({ ...garbage }))
         : [];
@@ -62,7 +103,10 @@ export function resolveGarbageCancel({
     };
 }
 
-export function applyGarbageLines(board, { lines, holeCol, cellType = "garbage" } = {}) {
+export function applyGarbageLines(
+    board: Board,
+    { lines, holeCol, cellType = "garbage" }: ApplyGarbageOptions = {},
+): ApplyGarbageResult {
     if (!Array.isArray(board) || board.length === 0) {
         return {
             appliedLines: 0,
@@ -71,8 +115,11 @@ export function applyGarbageLines(board, { lines, holeCol, cellType = "garbage" 
     }
 
     const cols = board[0]?.length ?? 0;
-    const safeLines = Number.isInteger(lines) && lines > 0 ? lines : 0;
-    const safeHoleCol = Number.isInteger(holeCol) && holeCol >= 0 && holeCol < cols
+    const safeLines = typeof lines === "number" && Number.isInteger(lines) && lines > 0 ? lines : 0;
+    const safeHoleCol = typeof holeCol === "number"
+        && Number.isInteger(holeCol)
+        && holeCol >= 0
+        && holeCol < cols
         ? holeCol
         : Math.floor(cols / 2);
     let overflow = false;
@@ -94,17 +141,21 @@ export function applyGarbageLines(board, { lines, holeCol, cellType = "garbage" 
     };
 }
 
-function createGarbageLine(cols, holeCol, cellType) {
+function createGarbageLine(cols: number, holeCol: number, cellType: string): BoardCell[] {
     return Array.from({ length: cols }, (_, col) => {
         return col === holeCol ? null : cellType;
     });
 }
 
-export function isBackToBackEligible({ linesCleared, isTSpin = false } = {}) {
-    return linesCleared === 4 || (isTSpin && linesCleared > 0);
+export function isBackToBackEligible({
+    linesCleared,
+    isTSpin = false,
+}: Pick<GarbageAttackOptions, "linesCleared" | "isTSpin"> = {}): boolean {
+    return linesCleared === 4
+        || (isTSpin && typeof linesCleared === "number" && linesCleared > 0);
 }
 
-function getComboBonus(combo) {
+function getComboBonus(combo: number): number {
     if (!Number.isInteger(combo) || combo <= 0) return 0;
     if (combo <= 2) return 1;
     if (combo <= 4) return 2;

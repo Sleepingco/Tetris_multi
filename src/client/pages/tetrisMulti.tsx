@@ -13,7 +13,7 @@ import { roomPublicSchema } from "../../shared/socketContracts.mjs";
 import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.js";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js";
-import BLOCKS from "../game/state/blocks.js";
+import BLOCKS from "../game/state/blocks.ts";
 import { onPlacementDecisionLogResult } from "../net/logClient.js";
 import {
     getPlayerSession,

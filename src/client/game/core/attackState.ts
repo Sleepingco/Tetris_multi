@@ -1,4 +1,20 @@
-import { isBackToBackEligible } from "./garbage.js";
+import { isBackToBackEligible } from "./garbage.ts";
+
+export type AttackStateOptions = {
+    combo?: number;
+    backToBack?: boolean;
+    linesCleared?: number;
+    isTSpin?: boolean;
+};
+
+export type AttackStateResult = {
+    linesCleared: number;
+    isTSpin: boolean;
+    combo: number;
+    backToBack: boolean;
+    nextCombo: number;
+    nextBackToBack: boolean;
+};
 
 /**
  * combo/back-to-back의 공격 계산용 상태와 다음 저장 상태를 계산한다.
@@ -22,7 +38,7 @@ export function resolveAttackState({
     backToBack = false,
     linesCleared = 0,
     isTSpin = false,
-} = {}) {
+}: AttackStateOptions = {}): AttackStateResult {
     const nextCombo = linesCleared > 0
         ? combo + 1
         : -1;

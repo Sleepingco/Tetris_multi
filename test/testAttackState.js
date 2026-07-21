@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 test("line clear가 없으면 combo를 reset한다", async () => {
-    const { resolveAttackState } = await import("../src/client/game/core/attackState.js");
+    const { resolveAttackState } = await import("../src/client/game/core/attackState.ts");
 
     assert.deepEqual(resolveAttackState({
         combo: 2,
@@ -20,7 +20,7 @@ test("line clear가 없으면 combo를 reset한다", async () => {
 });
 
 test("첫 line clear는 combo 0으로 시작한다", async () => {
-    const { resolveAttackState } = await import("../src/client/game/core/attackState.js");
+    const { resolveAttackState } = await import("../src/client/game/core/attackState.ts");
 
     assert.deepEqual(resolveAttackState({
         combo: -1,
@@ -38,7 +38,7 @@ test("첫 line clear는 combo 0으로 시작한다", async () => {
 });
 
 test("연속 line clear는 combo를 증가시킨다", async () => {
-    const { resolveAttackState } = await import("../src/client/game/core/attackState.js");
+    const { resolveAttackState } = await import("../src/client/game/core/attackState.ts");
 
     assert.deepEqual(resolveAttackState({
         combo: 0,
@@ -56,7 +56,7 @@ test("연속 line clear는 combo를 증가시킨다", async () => {
 });
 
 test("Tetris clear는 back-to-back을 시작하고 유지한다", async () => {
-    const { resolveAttackState } = await import("../src/client/game/core/attackState.js");
+    const { resolveAttackState } = await import("../src/client/game/core/attackState.ts");
 
     assert.equal(resolveAttackState({
         combo: -1,
@@ -73,7 +73,7 @@ test("Tetris clear는 back-to-back을 시작하고 유지한다", async () => {
 });
 
 test("T-Spin line clear는 back-to-back을 시작하고 유지한다", async () => {
-    const { resolveAttackState } = await import("../src/client/game/core/attackState.js");
+    const { resolveAttackState } = await import("../src/client/game/core/attackState.ts");
 
     assert.equal(resolveAttackState({
         combo: -1,
@@ -90,7 +90,7 @@ test("T-Spin line clear는 back-to-back을 시작하고 유지한다", async () 
 });
 
 test("일반 line clear는 back-to-back을 끊는다", async () => {
-    const { resolveAttackState } = await import("../src/client/game/core/attackState.js");
+    const { resolveAttackState } = await import("../src/client/game/core/attackState.ts");
 
     assert.deepEqual(resolveAttackState({
         combo: 0,

@@ -1,3 +1,9 @@
+import type { PieceState } from "./piece.ts";
+import type { BlockDefinitions } from "../state/blocks.ts";
+
+export type BoardCell = string | null;
+export type Board = BoardCell[][];
+
 // =============================
 // 보드 유틸리티 (엔진 계층)
 // 보드 생성, 충돌 검사, 고정, 줄 삭제를 담당하는 순수 함수 모음이다.
@@ -14,7 +20,7 @@
   * @param {number} col - 검사할 열 인덱스
   * @returns {boolean} 해당 칸을 사용할 수 있으면 true
   */
-function isCellEmpty(board, row, col) {
+function isCellEmpty(board: Board, row: number, col: number): boolean {
         const rows = board.length
         const cols = board[0]?.length ?? 0
         if (col < 0 || col >= cols || row >= rows) return false
@@ -29,7 +35,7 @@ function isCellEmpty(board, row, col) {
   * @param {number} cols - 보드 너비
   * @returns {Array<Array<null>>} 빈 보드 배열
   */
-export function createEmptyBoard(rows, cols) {
+export function createEmptyBoard(rows: number, cols: number): Board {
         return Array.from({ length: rows }, () => Array(cols).fill(null))
 }
 
@@ -41,7 +47,11 @@ export function createEmptyBoard(rows, cols) {
   * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 타입과 회전별 오프셋 정의
   * @returns {boolean} 조각 전체를 배치할 수 있으면 true
   */
-export function canPlacePiece(board, piece, blocks) {
+export function canPlacePiece(
+        board: Board,
+        piece: PieceState,
+        blocks: BlockDefinitions,
+): boolean {
         const { pieceType, rotation, row, col } = piece
         return blocks[pieceType][rotation].every(([offsetX, offsetY]) => {
                 const targetRow = row + offsetY
@@ -59,7 +69,11 @@ export function canPlacePiece(board, piece, blocks) {
   * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 타입과 회전별 오프셋 정의
   * @returns {void}
   */
-export function lockPieceOnBoard(board, piece, blocks) {
+export function lockPieceOnBoard(
+        board: Board,
+        piece: PieceState,
+        blocks: BlockDefinitions,
+): void {
         const { pieceType, rotation, row, col } = piece
         const rows = board.length
         const cols = board[0]?.length ?? 0
@@ -84,8 +98,11 @@ export function lockPieceOnBoard(board, piece, blocks) {
   * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 타입과 회전별 오프셋 정의
   * @returns {boolean} 조각 cell 하나라도 row 0보다 위에 있으면 true
   */
-export function isPieceAboveTop(piece, blocks) {
-        if (!piece || !blocks) return false
+export function isPieceAboveTop(
+        piece: PieceState | null | undefined,
+        blocks: BlockDefinitions | null | undefined,
+): boolean {
+        if (!piece?.pieceType || !blocks) return false
 
         const rotations = blocks[piece.pieceType]
         const cells = rotations?.[piece.rotation]
@@ -100,7 +117,7 @@ export function isPieceAboveTop(piece, blocks) {
   * @param {Array<Array<string|null>>} board - 제자리에서 수정되는 보드 배열
   * @returns {number} 삭제된 줄 개수
   */
-export function clearFilledLines(board) {
+export function clearFilledLines(board: Board): number {
         const cols = board[0]?.length ?? 0
         let cleared = 0
 

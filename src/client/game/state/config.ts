@@ -15,11 +15,17 @@ export const NEXT_PREVIEW_DIMENSION = 4;
 
 export const INPUT_TICK_MS = 16;
 
+export type WallKickOffset = [number, number];
+export type WallKickTable = {
+        normal: Record<string, WallKickOffset[]>;
+        bar: Record<string, WallKickOffset[]>;
+};
+
 /**
   * SRS(Super Rotation System) Wall Kick 데이터
   * 배열의 각 요소는 [offsetX, offsetY] (화면에서 우측 +X, 하단 +Y)
   */
-export const WALL_KICKS = {
+export const WALL_KICKS: WallKickTable = {
         // J, L, S, T, Z 블록 공통
         normal: {
                 '0->1': [[0, 0], [-1, 0], [-1, -1], [0, 2], [-1, 2]],

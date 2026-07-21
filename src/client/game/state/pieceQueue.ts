@@ -1,3 +1,6 @@
+import type { PieceType } from "./blocks.ts";
+import type { GameState } from "./stateFactory.ts";
+
 // =============================
 // 조각 큐 상태 유틸리티
 // 7-bag 랜덤화와 next queue 유지를 담당한다.
@@ -12,7 +15,11 @@
   * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
   * @returns {string} 다음 조각 타입
   */
-export function pickRandomPiece(gameState, pieceTypes, rng) {
+export function pickRandomPiece(
+    gameState: GameState,
+    pieceTypes: readonly PieceType[],
+    rng: () => number,
+): PieceType {
     if (!gameState.bag || gameState.bag.length === 0) {
         gameState.bag = [...pieceTypes];
         for (let i = gameState.bag.length - 1; i > 0; i--) {
@@ -20,7 +27,7 @@ export function pickRandomPiece(gameState, pieceTypes, rng) {
             [gameState.bag[i], gameState.bag[j]] = [gameState.bag[j], gameState.bag[i]];
         }
     }
-    return gameState.bag.pop();
+    return gameState.bag.pop()!;
 }
 
 /**
@@ -32,7 +39,12 @@ export function pickRandomPiece(gameState, pieceTypes, rng) {
   * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
   * @returns {void}
   */
-export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng) {
+export function ensureQueueFilled(
+    gameState: GameState,
+    nextQueueSize: number,
+    pieceTypes: readonly PieceType[],
+    rng: () => number,
+): void {
     // nextQueueSize는 화면 preview 개수이고, +1은 지금 스폰할 조각 몫이다.
     while (gameState.pieceQueue.length < nextQueueSize + 1) {
         gameState.pieceQueue.push(pickRandomPiece(gameState, pieceTypes, rng));
@@ -48,9 +60,14 @@ export function ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng) {
   * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
   * @returns {string} 지금 스폰할 조각 타입
   */
-export function takeNextFromQueue(gameState, nextQueueSize, pieceTypes, rng) {
+export function takeNextFromQueue(
+    gameState: GameState,
+    nextQueueSize: number,
+    pieceTypes: readonly PieceType[],
+    rng: () => number,
+): PieceType {
     ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng);
     const nextType = gameState.pieceQueue.shift();
     ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng);
-    return nextType;
+    return nextType!;
 }

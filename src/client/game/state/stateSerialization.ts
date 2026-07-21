@@ -1,4 +1,32 @@
-import { createGameState } from "./stateFactory.js"
+import { createGameState } from "./stateFactory.ts"
+import type { Board } from "../core/board.ts";
+import type { PieceState } from "../core/piece.ts";
+import type { PieceType } from "./blocks.ts";
+import type {
+        CreateGameStateOptions,
+        GamePhase,
+        GameState,
+        QueuedInput,
+} from "./stateFactory.ts";
+
+export type SerializedGameState = {
+        score: number;
+        lines: number;
+        fallIntervalMs: number;
+        board: Board | null;
+        pieceQueue: PieceType[];
+        bag: PieceType[];
+        holdPieceType: PieceType | null;
+        holdUsedThisDrop: boolean;
+        activePiece: PieceState | null;
+        pendingPiece: PieceState | null;
+        inputQueue: QueuedInput[];
+        phase: GamePhase;
+        lastActionWasRotation: boolean;
+        isTSpin: boolean;
+        combo: number;
+        backToBack: boolean;
+};
 
 // =============================
 // 상태 스냅샷 보조 함수
@@ -11,7 +39,7 @@ import { createGameState } from "./stateFactory.js"
   * @param {Array<Array<string|null>>|null} board - 복제할 보드 배열
   * @returns {Array<Array<string|null>>|null} 복제된 보드 또는 null
   */
-function cloneBoard(board) {
+function cloneBoard(board: Board | null | undefined): Board | null {
         if (!Array.isArray(board)) return null
         return board.map(row => [...row])
 }
@@ -22,7 +50,7 @@ function cloneBoard(board) {
   * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - 복제할 조각 상태
   * @returns {{pieceType: string, rotation: number, row: number, col: number}|null} 복제된 조각 또는 null
   */
-function clonePiece(piece) {
+function clonePiece(piece: PieceState | null | undefined): PieceState | null {
         if (!piece) return null
         return {
                 pieceType: piece.pieceType,
@@ -39,7 +67,7 @@ function clonePiece(piece) {
   * @param {Object} gameState - 변경 가능한 게임 상태 객체
   * @returns {Object} 직렬화 가능한 스냅샷
   */
-export function serializeGameState(gameState) {
+export function serializeGameState(gameState: GameState): SerializedGameState {
         return {
                 score: gameState.score,
                 lines: gameState.lines,
@@ -67,7 +95,10 @@ export function serializeGameState(gameState) {
   * @param {Object} defaults - 상태 팩토리 기본 입력값
   * @returns {Object} 복원된 게임 상태 객체
   */
-export function deserializeGameState(snapshot, defaults) {
+export function deserializeGameState(
+        snapshot: Partial<SerializedGameState>,
+        defaults: CreateGameStateOptions,
+): GameState {
         const gameState = createGameState(defaults)
 
         gameState.score = snapshot.score ?? gameState.score
@@ -84,7 +115,9 @@ export function deserializeGameState(snapshot, defaults) {
         gameState.phase = snapshot.phase ?? gameState.phase
         gameState.lastActionWasRotation = Boolean(snapshot.lastActionWasRotation)
         gameState.isTSpin = Boolean(snapshot.isTSpin)
-        gameState.combo = Number.isInteger(snapshot.combo) ? snapshot.combo : gameState.combo
+        gameState.combo = typeof snapshot.combo === "number" && Number.isInteger(snapshot.combo)
+                ? snapshot.combo
+                : gameState.combo
         gameState.backToBack = Boolean(snapshot.backToBack)
 
         return gameState

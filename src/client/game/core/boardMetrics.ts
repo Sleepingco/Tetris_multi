@@ -3,11 +3,20 @@
 // 휴리스틱 AI와 ML feature 생성을 위한 순수 board 평가 함수 모음이다.
 // =============================
 
-function isFilledCell(cell) {
+export type BoardMetrics = {
+    columnHeights: number[];
+    aggregateHeight: number;
+    maxHeight: number;
+    holes: number;
+    bumpiness: number;
+    completeLines: number;
+};
+
+function isFilledCell(cell: unknown): boolean {
     return cell !== null && cell !== undefined;
 }
 
-function getBoardColumnCount(board) {
+function getBoardColumnCount(board: unknown): number {
     if (!Array.isArray(board) || board.length === 0) return 0;
     return Array.isArray(board[0]) ? board[0].length : 0;
 }
@@ -18,14 +27,15 @@ function getBoardColumnCount(board) {
  * @param {Array<Array<string|null>>} board - 평가할 board
  * @returns {number[]} column별 높이
  */
-function getColumnHeights(board) {
-    const rows = Array.isArray(board) ? board.length : 0;
+function getColumnHeights(board: unknown): number[] {
+    const boardRows = Array.isArray(board) ? board : [];
+    const rows = boardRows.length;
     const cols = getBoardColumnCount(board);
     const heights = Array(cols).fill(0);
 
     for (let col = 0; col < cols; col++) {
         for (let row = 0; row < rows; row++) {
-            if (isFilledCell(board[row]?.[col])) {
+            if (isFilledCell(boardRows[row]?.[col])) {
                 heights[col] = rows - row;
                 break;
             }
@@ -41,8 +51,9 @@ function getColumnHeights(board) {
  * @param {Array<Array<string|null>>} board - 평가할 board
  * @returns {number} hole 수
  */
-function countHoles(board) {
-    const rows = Array.isArray(board) ? board.length : 0;
+function countHoles(board: unknown): number {
+    const boardRows = Array.isArray(board) ? board : [];
+    const rows = boardRows.length;
     const cols = getBoardColumnCount(board);
     let holes = 0;
 
@@ -50,7 +61,7 @@ function countHoles(board) {
         let hasBlockAbove = false;
 
         for (let row = 0; row < rows; row++) {
-            if (isFilledCell(board[row]?.[col])) {
+            if (isFilledCell(boardRows[row]?.[col])) {
                 hasBlockAbove = true;
                 continue;
             }
@@ -70,11 +81,12 @@ function countHoles(board) {
  * @param {Array<Array<string|null>>} board - 평가할 board
  * @returns {number} 모든 cell이 채워진 row 수
  */
-function countCompleteLines(board) {
+function countCompleteLines(board: unknown): number {
+    const boardRows = Array.isArray(board) ? board : [];
     const cols = getBoardColumnCount(board);
     if (cols === 0) return 0;
 
-    return board.filter(row => {
+    return boardRows.filter((row: unknown) => {
         if (!Array.isArray(row) || row.length < cols) return false;
         return row.slice(0, cols).every(isFilledCell);
     }).length;
@@ -93,7 +105,7 @@ function countCompleteLines(board) {
  *   completeLines: number
  * }} board metrics
  */
-export function getBoardMetrics(board) {
+export function getBoardMetrics(board: unknown): BoardMetrics {
     const columnHeights = getColumnHeights(board);
 
     return {

@@ -218,7 +218,7 @@ test("AI step은 plan을 먼저 만들고 action을 하나씩 적용한 뒤 log�
     assert.ok(savedLogs[0].metricsAfter);
     assert.equal(savedLogs[0].aiComparison, undefined);
     const { getBoardMetrics } = await import(
-        "../src/client/game/core/boardMetrics.js"
+        "../src/client/game/core/boardMetrics.ts"
     );
     assert.deepEqual(savedLogs[0].metricsBefore, getBoardMetrics(aiStateBefore.board));
     assert.deepEqual(savedLogs[0].metricsAfter, getBoardMetrics(savedLogs[0].boardAfter));

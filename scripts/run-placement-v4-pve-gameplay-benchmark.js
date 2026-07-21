@@ -124,7 +124,7 @@ async function runRollout({
 }) {
     resetMatches();
     const gameCore = await loadGameCore();
-    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.js");
+    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.ts");
     const match = createMatch({
         roomId,
         mode: "pve",

@@ -1,3 +1,41 @@
+import type { Board } from "../core/board.ts";
+import type { PieceState } from "../core/piece.ts";
+import type { PieceType } from "./blocks.ts";
+
+export type GamePhase = "playing" | "lineClearing" | "gameOver";
+
+export type QueuedInput = {
+        tick: number;
+        action: string;
+        pieceIndex: number | null;
+};
+
+export type CreateGameStateOptions = {
+        spawnRow: number;
+        spawnCol: number;
+        fallIntervalMs: number;
+        initialPhase: GamePhase;
+};
+
+export type GameState = {
+        score: number;
+        lines: number;
+        fallIntervalMs: number;
+        board: Board | null;
+        pieceQueue: PieceType[];
+        bag: PieceType[];
+        holdPieceType: PieceType | null;
+        holdUsedThisDrop: boolean;
+        activePiece: PieceState;
+        pendingPiece: PieceState | null;
+        inputQueue: QueuedInput[];
+        phase: GamePhase;
+        lastActionWasRotation: boolean;
+        isTSpin: boolean;
+        combo: number;
+        backToBack: boolean;
+};
+
 // =============================
 // 게임 상태 팩토리
 // 싱글 플레이 런타임에서 사용하는 상태 객체를 생성한다.
@@ -13,7 +51,12 @@
   * @param {string} params.initialPhase - 시작 phase
   * @returns {Object} 변경 가능한 게임 상태 객체
   */
-export function createGameState({ spawnRow, spawnCol, fallIntervalMs, initialPhase }) {
+export function createGameState({
+        spawnRow,
+        spawnCol,
+        fallIntervalMs,
+        initialPhase,
+}: CreateGameStateOptions): GameState {
         return {
                 score: 0,
                 lines: 0,

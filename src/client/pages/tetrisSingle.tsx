@@ -1,7 +1,7 @@
 import { StrictMode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import BLOCKS from "../game/state/blocks.js";
+import BLOCKS from "../game/state/blocks.ts";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { attachKeyboardInput } from "../game/runtime/input.js";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.js";

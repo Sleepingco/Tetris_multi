@@ -8,10 +8,10 @@ async function loadMoveStep() {
         { default: blocks },
         { WALL_KICKS },
     ] = await Promise.all([
-        import("../src/client/game/core/step.js"),
-        import("../src/client/game/core/board.js"),
-        import("../src/client/game/state/blocks.js"),
-        import("../src/client/game/state/config.js"),
+        import("../src/client/game/core/step.ts"),
+        import("../src/client/game/core/board.ts"),
+        import("../src/client/game/state/blocks.ts"),
+        import("../src/client/game/state/config.ts"),
     ]);
 
     return {

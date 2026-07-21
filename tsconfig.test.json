@@ -2,9 +2,11 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2022"],
+    "erasableSyntaxOnly": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
-    "types": ["node"]
+    "types": ["node"],
+    "verbatimModuleSyntax": true
   },
   "include": ["e2e/**/*.js", "e2e/**/*.ts", "playwright.config.cjs", "scripts/**/*.js", "scripts/**/*.ts", "test/**/*.js", "test/**/*.ts", "test-artifact/**/*.js"]
 }

@@ -1,11 +1,11 @@
-import { canPlacePiece } from "../../core/board.js";
-import { getHardDropRow } from "../../core/piece.js";
+import { canPlacePiece } from "../../core/board.ts";
+import { getHardDropRow } from "../../core/piece.ts";
 import {
     resolveInputMoveIntent,
     resolveMoveAttempt,
-} from "../../core/step.js";
-import BLOCKS from "../../state/blocks.js";
-import { WALL_KICKS } from "../../state/config.js";
+} from "../../core/step.ts";
+import BLOCKS from "../../state/blocks.ts";
+import { WALL_KICKS } from "../../state/config.ts";
 import {
     canPlacePlacement,
     normalizePlacement,

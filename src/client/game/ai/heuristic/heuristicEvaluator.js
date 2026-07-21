@@ -1,4 +1,4 @@
-import { getBoardMetrics } from "../../core/boardMetrics.js";
+import { getBoardMetrics } from "../../core/boardMetrics.ts";
 import { generateReachablePlacements } from "./reachablePlacementPlanner.js";
 import { simulatePlacement } from "./simulatePlacement.js";
 

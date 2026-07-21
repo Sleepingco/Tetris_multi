@@ -6,7 +6,7 @@ function createEmptyBoard(rows = 20, cols = 10) {
 }
 
 test("T 조각이 마지막 회전 후 중심 코너 3개 이상 막히면 T-Spin으로 판정한다", async () => {
-    const { isTSpinLock } = await import("../src/client/game/core/tSpin.js");
+    const { isTSpinLock } = await import("../src/client/game/core/tSpin.ts");
     const board = createEmptyBoard();
     const piece = {
         pieceType: "tree",
@@ -27,7 +27,7 @@ test("T 조각이 마지막 회전 후 중심 코너 3개 이상 막히면 T-Spi
 });
 
 test("T 조각이 아니면 T-Spin으로 판정하지 않는다", async () => {
-    const { isTSpinLock } = await import("../src/client/game/core/tSpin.js");
+    const { isTSpinLock } = await import("../src/client/game/core/tSpin.ts");
     const board = createEmptyBoard();
 
     board[4][3] = "garbage";
@@ -47,7 +47,7 @@ test("T 조각이 아니면 T-Spin으로 판정하지 않는다", async () => {
 });
 
 test("마지막 액션이 회전이 아니면 T-Spin으로 판정하지 않는다", async () => {
-    const { isTSpinLock } = await import("../src/client/game/core/tSpin.js");
+    const { isTSpinLock } = await import("../src/client/game/core/tSpin.ts");
     const board = createEmptyBoard();
 
     board[4][3] = "garbage";
@@ -67,7 +67,7 @@ test("마지막 액션이 회전이 아니면 T-Spin으로 판정하지 않는�
 });
 
 test("막힌 중심 코너가 2개 이하이면 T-Spin으로 판정하지 않는다", async () => {
-    const { isTSpinLock } = await import("../src/client/game/core/tSpin.js");
+    const { isTSpinLock } = await import("../src/client/game/core/tSpin.ts");
     const board = createEmptyBoard();
 
     board[4][3] = "garbage";

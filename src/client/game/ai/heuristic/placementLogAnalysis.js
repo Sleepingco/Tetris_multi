@@ -1,5 +1,5 @@
-import { getBoardMetrics } from "../../core/boardMetrics.js";
-import BLOCKS from "../../state/blocks.js";
+import { getBoardMetrics } from "../../core/boardMetrics.ts";
+import BLOCKS from "../../state/blocks.ts";
 import {
     evaluatePlacement,
     getHeuristicDecision,

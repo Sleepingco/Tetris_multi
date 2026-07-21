@@ -1,5 +1,5 @@
-import { canPlacePiece } from "../../core/board.js";
-import BLOCKS from "../../state/blocks.js";
+import { canPlacePiece } from "../../core/board.ts";
+import BLOCKS from "../../state/blocks.ts";
 
 function isRectangularBoard(board) {
     if (!Array.isArray(board) || board.length === 0) return false;

@@ -1,4 +1,13 @@
+import type { Board } from "./board.ts";
+import type { PieceState } from "./piece.ts";
+
 const T_SPIN_PIECE_TYPE = "tree";
+
+export type TSpinLockOptions = {
+    board?: Board;
+    piece?: PieceState | null;
+    lastActionWasRotation?: boolean;
+};
 
 /**
  * 현재 고정이 T-Spin 조건을 만족하는지 검사한다.
@@ -12,12 +21,17 @@ const T_SPIN_PIECE_TYPE = "tree";
  * @param {boolean} params.lastActionWasRotation - 마지막 성공 액션이 회전인지 여부
  * @returns {boolean} T-Spin 조건을 만족하면 true
  */
-export function isTSpinLock({ board, piece, lastActionWasRotation } = {}) {
+export function isTSpinLock({
+    board,
+    piece,
+    lastActionWasRotation,
+}: TSpinLockOptions = {}): boolean {
     if (!piece || piece.pieceType !== T_SPIN_PIECE_TYPE) return false;
     if (!lastActionWasRotation) return false;
 
-    const rows = Array.isArray(board) ? board.length : 0;
-    const cols = Array.isArray(board?.[0]) ? board[0].length : 0;
+    const boardRows = Array.isArray(board) ? board : [];
+    const rows = boardRows.length;
+    const cols = Array.isArray(boardRows[0]) ? boardRows[0].length : 0;
     const centerCol = piece.col + 1;
     const centerRow = piece.row + 1;
     const corners = [
@@ -29,7 +43,7 @@ export function isTSpinLock({ board, piece, lastActionWasRotation } = {}) {
 
     let filledCorners = 0;
     for (const [cx, cy] of corners) {
-        if (cx < 0 || cx >= cols || cy >= rows || (cy >= 0 && board[cy]?.[cx])) {
+        if (cx < 0 || cx >= cols || cy >= rows || (cy >= 0 && boardRows[cy]?.[cx])) {
             filledCorners++;
         }
     }

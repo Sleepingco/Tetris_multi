@@ -6,7 +6,7 @@ function createBoard(rows = 20, cols = 10) {
 }
 
 test("빈 board는 모든 board metric을 0으로 계산한다", async () => {
-    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.js");
+    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.ts");
     const board = createBoard();
 
     assert.deepEqual(getBoardMetrics(board), {
@@ -20,7 +20,7 @@ test("빈 board는 모든 board metric을 0으로 계산한다", async () => {
 });
 
 test("완성된 line 수를 계산한다", async () => {
-    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.js");
+    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.ts");
     const board = createBoard();
     board[18] = Array(10).fill("square");
     board[19] = Array(10).fill("bar");
@@ -30,7 +30,7 @@ test("완성된 line 수를 계산한다", async () => {
 });
 
 test("블록 아래 빈 칸을 hole로 계산한다", async () => {
-    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.js");
+    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.ts");
     const board = createBoard();
     board[16][0] = "bar";
     board[18][0] = "square";
@@ -44,7 +44,7 @@ test("블록 아래 빈 칸을 hole로 계산한다", async () => {
 });
 
 test("인접 column height 차이로 bumpiness를 계산한다", async () => {
-    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.js");
+    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.ts");
     const board = createBoard(4, 4);
     board[3][0] = "bar";
     board[2][1] = "bar";
@@ -60,7 +60,7 @@ test("인접 column height 차이로 bumpiness를 계산한다", async () => {
 });
 
 test("maxHeight와 aggregateHeight를 계산한다", async () => {
-    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.js");
+    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.ts");
     const board = createBoard(5, 3);
     board[4][0] = "square";
     board[2][1] = "tree";
@@ -74,7 +74,7 @@ test("maxHeight와 aggregateHeight를 계산한다", async () => {
 });
 
 test("boardMetrics 함수는 원본 board를 mutate하지 않는다", async () => {
-    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.js");
+    const { getBoardMetrics } = await import("../src/client/game/core/boardMetrics.ts");
     const board = createBoard(4, 4);
     board[1][0] = "bar";
     board[3][0] = "bar";

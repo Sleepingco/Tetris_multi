@@ -1,3 +1,12 @@
+import type { PieceType } from "../state/blocks.ts";
+
+export type PieceState = {
+    pieceType: PieceType | "";
+    rotation: number;
+    row: number;
+    col: number;
+};
+
 /**
   * 스폰 위치 기준으로 회전이 초기화된 새 조각 상태를 만든다.
   *
@@ -6,7 +15,11 @@
   * @param {number} spawnCol - 기본 스폰 열
   * @returns {{pieceType: string, rotation: number, row: number, col: number}} 스폰용 조각 상태
   */
-export function createSpawnedPiece(pieceType, spawnRow, spawnCol) {
+export function createSpawnedPiece(
+    pieceType: PieceType,
+    spawnRow: number,
+    spawnCol: number,
+): PieceState {
     return {
         pieceType,
         row: spawnRow,
@@ -22,7 +35,10 @@ export function createSpawnedPiece(pieceType, spawnRow, spawnCol) {
   * @param {(row: number) => boolean} canPlaceAt - 특정 row 배치 가능 여부를 반환하는 함수
   * @returns {number} 마지막으로 배치 가능한 row
   */
-export function getHardDropRow(piece, canPlaceAt) {
+export function getHardDropRow(
+    piece: Pick<PieceState, "row"> | null | undefined,
+    canPlaceAt: ((row: number) => boolean) | null | undefined,
+): number {
     const currentRow = piece?.row ?? 0;
     if (typeof canPlaceAt !== "function") return currentRow;
 

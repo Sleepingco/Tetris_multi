@@ -38,7 +38,7 @@ function loadHeuristicAi() {
     if (!heuristicAiPromise) {
         heuristicAiPromise = Promise.all([
             import("../../client/game/ai/heuristic/heuristicEvaluator.js"),
-            import("../../client/game/core/boardMetrics.js"),
+            import("../../client/game/core/boardMetrics.ts"),
         ]).then(([heuristicEvaluator, boardMetrics]) => ({
             ...heuristicEvaluator,
             getBoardMetrics: boardMetrics.getBoardMetrics,
