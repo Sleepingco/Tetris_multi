@@ -54,7 +54,7 @@ DOM 없이 판정                   브라우저에서 조율                   
   - `boardMetrics.ts`는 보드 높이, 구멍, 울퉁불퉁함 등 AI와 분석에 쓸 수치를 DOM 없이 계산한다.
 - `src/client/game/state/`
   - 조각 정의, 큐, 초기 상태, snapshot 직렬화를 담당한다. 여기의 데이터 형태가 런타임·서버·AI 사이의 공통 언어가 된다.
-- `src/client/game/runtime/tetris.js`
+- `src/client/game/runtime/tetris.ts`
   - 게임을 실제로 진행시키는 조율자다. 입력 큐, gravity, spawn/hold/lock 순서, 타이머, snapshot 적용, server bag 소비를 연결한다.
   - 규칙을 새로 만들기보다 core 함수의 결과를 어떤 순서로 적용할지 결정하는 위치다.
 - `src/client/game/render/`, `ui/`
@@ -106,8 +106,8 @@ DOM 없이 판정                   브라우저에서 조율                   
 
 ### 3.3 클라이언트의 멀티 역할
 
-- `src/client/net/roomClient.js`는 브라우저 Socket.IO 어댑터다. 방/게임 요청과 server event 구독을 제공하며, 게임 규칙을 담지 않는다.
-- `src/client/game/entry/multiplayerGameSession.js`는 local runtime, opponent runtime, local input 전송, snapshot listener, server bag 보충을 묶는다.
+- `src/client/net/roomClient.ts`는 브라우저 Socket.IO 어댑터다. 방/게임 요청과 server event 구독을 제공하며, 게임 규칙을 담지 않는다.
+- `src/client/game/entry/multiplayerGameSession.ts`는 local runtime, opponent runtime, local input 전송, snapshot listener, server bag 보충을 묶는다.
 - 내 보드는 입력 지연을 줄이기 위해 local runtime에서 prediction한다. 반면 상대 보드는 독립 gravity나 input replay를 하지 않고 서버 snapshot을 그대로 적용한다.
 - 내 snapshot도 무조건 덮어쓰지 않는다. line clear 효과 중이거나 빠른 조작 중인 임시 active piece 차이는 보존하고, game over·garbage 반영·settled board 불일치·지속적인 piece index 차이처럼 의미 있는 drift에서만 correction한다.
 
@@ -128,16 +128,16 @@ authoritative game state
 
 ### 4.1 AI 모듈의 현재 역할
 
-- `placementGenerator.js`
+- `placementGenerator.ts`
   - 보드 위에서 가능한 기본 최종 배치를 계산하는 순수 기반 모듈이다.
-- `reachablePlacementPlanner.js`
+- `reachablePlacementPlanner.ts`
   - 단순히 “이론적으로 놓을 수 있는 위치”가 아니라 현재 active piece에서 실제 입력으로 도달 가능한 후보만 BFS로 찾는다.
   - `move_left → move_right → rotate → soft_drop`의 고정 순서와 동일 배치의 최단 경로 규칙으로, 같은 상태에서는 항상 같은 계획을 만든다. wall kick과 장애물 아래 tuck도 기존 core 이동 판정을 재사용한다.
-- `simulatePlacement.js`
+- `simulatePlacement.ts`
   - 입력 보드를 복제한 뒤 배치를 고정하고 줄 삭제를 적용한다. 후보들을 비교할 때 원본 보드가 변하지 않는 것이 핵심이다.
-- `heuristicEvaluator.js`
+- `heuristicEvaluator.ts`
   - complete line은 보상하고, aggregate height·max height·holes·bumpiness는 위험도로 감점한다. 결과는 숫자뿐 아니라 이유와 후보 수를 제공해 설명·디버깅에 쓸 수 있다.
-- `placementLogAnalysis.js`
+- `placementLogAnalysis.ts`
   - 사람의 실제 배치를 같은 상태에서 계산한 heuristic 최선안과 비교한다. “AI가 더 높은 점수를 준 정도”와 같은 배치인지 여부를 로그에 남긴다.
 - `pveAiPlayerService.js`
   - server authoritative snapshot을 AI 판단 입력으로 사용한다. 선택한 계획을 `move_left`, `rotate`, `soft_drop`, `hard_drop` 같은 authoritative input으로 한 단계씩 실행하고, 실제 실행된 input만 placement log로 저장한다.

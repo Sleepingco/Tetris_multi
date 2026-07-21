@@ -8,8 +8,8 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 
 ## 🛠 기술 스택
 - 백엔드: `Node.js`
-- 프론트엔드: Vite multi-page + page-local React·TypeScript shell + Vanilla JS Canvas game runtime
-- 현재 실행 구조: React page shell + Vanilla Canvas game + Express + Socket.IO + server authoritative multiplayer
+- 프론트엔드: Vite multi-page + page-local React·TypeScript shell + TypeScript Canvas game runtime
+- 현재 실행 구조: React page shell + TypeScript Canvas game + Express + Socket.IO + server authoritative multiplayer
 - 실무형 확장 단계: Express + Socket.IO 경계를 유지하며 frontend/build/type/data 계층을 단계적으로 마이그레이션
 - 실행: `npm start` (`src/app.ts` source entry → `dist/server/app.js` production entry)
 - 테스트: `npm test` (`node --test`)
@@ -112,7 +112,7 @@ src/
     │   ├── state/
     │   └── ui/
     ├── net/
-    │   └── roomClient.js    # Browser Socket.IO room adapter
+    │   └── roomClient.ts    # Browser Socket.IO room adapter
     ├── pages/
     │   ├── index.html / index.tsx            # React index shell
     │   ├── multiLobby.html / multiLobby.tsx  # React lobby shell

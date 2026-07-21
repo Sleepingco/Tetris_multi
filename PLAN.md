@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 8A core/state TypeScript 전환을 검증하고 branch merge gate에서 멈춘다.
+- Last update: 2026-07-21 기준. Goal 8B client runtime/render/net/AI TypeScript 전환을 검증하고 branch merge gate에서 멈춘다.
 
 ## Document Role
 
@@ -262,7 +262,21 @@
 - clean artifact test는 compiled `loadGameCore()`의 `BLOCKS`, 빈 board와 대표 move/step fixture를 실제 실행한다. 별도 parity framework, dependency, lockfile, loader, gameplay/Socket/SPA 변경은 없다.
 - Node `24.18.0`/npm `11.16.0`에서 typecheck, build, artifact 1/1, targeted core/state 49/49, fast gate의 Node tests 584 pass·기존 조건부 1 skip과 production Playwright 34/34가 통과했다. Single/PVP/PVE 수동 검증에서도 Canvas 입력, hold/restart, authoritative 양방향 보드와 PVE AI line/garbage를 확인했고 네 page의 console error는 0개였다.
 - shared tetris bundle은 기준 34.82 kB(gzip 10.90 kB)에서 34.93 kB(gzip 10.93 kB)로 소폭 증가했다. package manifest와 lockfile checksum은 기준과 동일하다.
-- Goal 8A는 local branch merge gate에서 멈춘다. main 반영 전에는 Goal 8B를 시작하지 않으며 push, SPA 재개와 branch 삭제도 별도 승인 없이는 수행하지 않는다.
+- Goal 8A는 `7286ab6`까지 main과 origin/main에 반영됐다. Goal 8B는 이 기준에서 별도 branch로 시작했으며 Goal 8A branch와 보류된 SPA branch는 보존한다.
+
+## Migration Goal 8B Client Runtime TypeScript merge gate (2026-07-21)
+
+- 기준은 `main@7286ab6`이며 `codex/migrate-typescript-client-runtime`에서 production client AI 12개, Canvas entry/render/runtime/UI 8개, network/session 3개 등 기존 JavaScript 23개(전환 전 5,566 LOC)를 strict TypeScript로 전환했다. 최종 전환 source는 타입 선언을 포함해 6,811 LOC이며 기존 `entry/theme.ts`는 rename 수치에서 제외했다.
+- 각 값 모듈이 runtime handle/display snapshot, DOM/Canvas adapter, placement dataset·heuristic·V4 result와 multiplayer lifecycle 타입을 직접 소유한다. Goal 8A의 `PieceType`, `Board`, `PieceState`, `GameState`, `BoardMetrics`를 재사용하고 별도 type registry, manager, framework와 dependency는 추가하지 않았다.
+- `roomClient.ts` 내부에 browser Socket.IO global의 private structural type을 두고 기존 `socketContractTypes.d.ts`와 Zod parsed output을 재사용한다. page-facing session 타입은 공개 `playerId`와 `nickname`만 제공하며 token, socketId와 server-private session 필드는 React state, DOM, URL, console 또는 공개 타입에 포함하지 않는다.
+- rename commit에서 page TSX, server dynamic import, test와 script consumer를 실제 `.ts` source specifier로 함께 갱신했다. `rewriteRelativeImportExtensions`를 통해 Vite와 compiled server artifact는 `.js` import를 사용하며, build artifact에는 `.ts`, `.tsx`, declaration과 source map이 남지 않는다.
+- Node `24.18.0`/npm `11.16.0`에서 typecheck, build 134 modules, artifact 1/1, 지정 targeted 93/93, ML Node 34/34·Python 115/115, fast gate의 Node tests 584 pass·기존 조건부 1 skip, Vite-dev 8 pass·production-only 2 skip과 production Playwright 34/34가 통과했다. 첫 기준선 PVE hold 시나리오는 한 번 timeout됐지만 격리 재실행과 전체 재실행에서 통과했으며 최종 production gate도 34/34다.
+- 수동 Single에서 이동·회전·soft/hard drop·hold·restart·sound/BFCache 경계를, PVP에서 양쪽 HUD·overlay·입력·reload reconnect를, PVE V4에서 visible descent·score·line 진행을 확인했다. 확인한 page의 console error/pageerror는 0개였고 URL과 HTML에 token이 없었다.
+- production HTTP에서 대표 runtime/net `.ts` source와 bundle source map은 404, root와 Socket.IO client는 200이었다. package manifest와 lockfile checksum은 기준과 동일하다.
+- shared tetris bundle은 직전 문서 기준 34.93 kB(gzip 10.93 kB)에서 36.31 kB(gzip 11.29 kB), roomClient chunk는 76.86 kB(gzip 21.19 kB)에서 77.33 kB(gzip 21.32 kB)로 증가했다. 새 dependency나 runtime chunk는 없다.
+- Chromium local dev/production과 수동 시나리오는 검증했지만 WebKit/Firefox, 장시간 soak와 외부 network 조건은 실행하지 않았다. server TypeScript는 Goal 8C, test/e2e/script 선택 전환은 Goal 8D 범위로 남는다.
+- rollback은 최종 문서 commit → `0ee3736` → `189faf5` → `cda715e` → `7ca30b3` 순서로 역순 revert한다. rename과 consumer specifier를 같은 경계에서 되돌리고 일부 output만 복구하지 않는다.
+- Goal 8B는 local branch merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 8C/8D와 SPA 작업은 별도 승인 없이는 수행하지 않는다.
 
 ## Project Direction
 
@@ -309,12 +323,12 @@
 - [x] `src/client/game/core/step.ts`에 `resolveMoveAttempt`, `resolveMoveIntent` 존재
 - [x] `src/client/game/state/stateSerialization.ts`에 snapshot serialize/deserialize 보조 함수 존재
 - [x] `src/client/game/state/pieceQueue.ts`에 7-bag/next queue 유틸리티 존재
-- [x] `src/client/game/runtime/snapshotCorrection.js`에 원격 snapshot 보정 판단 유틸리티 존재
+- [x] `src/client/game/runtime/snapshotCorrection.ts`에 원격 snapshot 보정 판단 유틸리티 존재
 - [x] `src/server/services/roomService.js`에 room 생성/참가/퇴장/시작/종료/동기화 로직 존재
 - [x] `src/server/services/matchService.js`에 match 생성, player별 server bag chunk와 authoritative state 로직 존재
 - [x] `src/server/sockets/multiplayerHandlers.js`에 `room:create`, `room:join`, `room:leave`, `room:start`, `game:join`, `game:input`, `game:bag:request`, `disconnect` 흐름 존재
 - [x] `src/server/sockets/chatHandlers.js`에 `global:chat`, `room:chat` 흐름 분리
-- [x] `src/client/net/roomClient.js`에 room/chat/game 이벤트 adapter 함수 존재
+- [x] `src/client/net/roomClient.ts`에 room/chat/game 이벤트 adapter 함수 존재
 - [x] `src/client/pages/multiLobby.html`에서 방 코드, 상태, player 수 표시와 방 입장/나가기 UI 연결
 - [x] 로비 채팅을 `global:chat` / `room:chat`으로 분리
 - [x] 채팅 입력은 1초 1회 서버 rate limit과 plain text 렌더링 기준 적용
@@ -347,14 +361,14 @@
 
 ### 부분 완료
 
-- [~] `src/client/game/runtime/tetris.js`는 예전의 전역 싱글 파일 단계에서는 벗어남
-- [~] `src/client/game/runtime/tetris.js`는 여전히 크고 orchestration 외 책임이 남아 있음
+- [~] `src/client/game/runtime/tetris.ts`는 예전의 전역 싱글 파일 단계에서는 벗어남
+- [~] `src/client/game/runtime/tetris.ts`는 여전히 크고 orchestration 외 책임이 남아 있음
 - [~] RNG 주입 구조는 있음
 - [~] 기본 RNG는 아직 `Math.random`
 - [~] 로비와 멀티 게임 흐름은 연결됐고, 포트폴리오 시연 완료 전 garbage/gameOver/reconnect를 포함한 브라우저 2탭 전체 흐름의 수동 회귀 검증이 필요함
 - [x] 내 보드 prediction/correction 정책은 sequence/ack·gravity timing 보강 후 rollback 전용 2탭 E2E 반복 검증을 통과함
 - [x] `src/client/pages/tetrisMulti.html`의 `snapshotTimer`에서 bag request와 game over 보고 조건을 함수 단위로 분리했다.
-- [x] `src/client/game/runtime/tetris.js`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
+- [x] `src/client/game/runtime/tetris.ts`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
 - [~] `placementResult.backToBack`은 현재 “이번 lock 이후 상태”가 아니라 “이번 공격 계산에 사용된 이전 B2B 상태”에 가깝다. 추후 필요하면 `backToBackBefore` / `backToBackAfter`처럼 의미를 명확히 나누는 정리를 검토한다.
 
 ### 아직 미구현
@@ -453,7 +467,7 @@
 
 ### Runtime layer
 
-- `src/client/game/runtime/tetris.js`
+- `src/client/game/runtime/tetris.ts`
   - 현재 런타임 진입점은 `createTetrisRuntime(...)`
   - 내부에서 다음을 조율한다.
     - game state 초기화
@@ -508,7 +522,7 @@
   - `pickRandomPiece`
   - `ensureQueueFilled`
   - `takeNextFromQueue`
-- `src/client/game/runtime/snapshotCorrection.js`
+- `src/client/game/runtime/snapshotCorrection.ts`
   - `isSamePiece`
   - `shouldCorrectSnapshot`
 - `shouldCorrectSnapshot`은 own authoritative snapshot correction 기준을 판정한다.
@@ -550,7 +564,7 @@
 
 ### Client network layer
 
-- `src/client/net/roomClient.js`
+- `src/client/net/roomClient.ts`
   - 브라우저 Socket.IO room adapter다.
   - create/join/leave/start 요청, room result/update/message 구독, global/room chat 송수신, game join/input/bag/authoritative snapshot/finish 함수를 제공한다.
   - 제거된 legacy gameplay source `game:snapshot`, `game:garbage:attack`, `game:over` 경로는 제공하지 않는다.
@@ -559,7 +573,7 @@
 
 - 구조는 이전보다 훨씬 좋아졌다.
 - 특히 page bootstrap 분리와 runtime factory 도입은 큰 진전이다.
-- 다만 `src/client/game/runtime/tetris.js`는 아직 다음 책임이 남아 있다.
+- 다만 `src/client/game/runtime/tetris.ts`는 아직 다음 책임이 남아 있다.
   - line clear sequencing
   - piece lifecycle 세부 흐름
   - 일부 state helper
@@ -777,7 +791,7 @@
 - [x] Socket.IO room create/join/leave/disconnect 연결
 - [x] 클라이언트 로비 room create/join/leave UI 연결
 - [x] roomService와 multiplayerSocket Node 테스트 추가
-- [~] `src/client/game/runtime/tetris.js` 축소 진행 중
+- [~] `src/client/game/runtime/tetris.ts` 축소 진행 중
 - [x] server authoritative snapshot 기반 멀티 보정으로 전환
 - [x] `game:input` 기반 server authoritative input apply 연결
 - [x] room/start/game sync MVP는 연결됨
@@ -790,18 +804,18 @@
 
 ### 현재 단계의 핵심 문제
 
-- `src/client/game/runtime/tetris.js`가 아직 크다.
+- `src/client/game/runtime/tetris.ts`가 아직 크다.
 - 현재 snapshot의 주 원천은 server authoritative state다.
 - `game:input`은 서버 검증 후 server authoritative state에 적용되고 sender ack와 room snapshot으로 수렴한다.
 - 상대 보드는 로컬 예측 실행이 아니라 authoritative snapshot으로만 갱신된다.
 - deterministic 설계는 방향만 있고, 현재 MVP 구현 기준은 아니다.
-- `src/client/pages/tetrisMulti.html`의 멀티 세션 책임은 `src/client/game/entry/multiplayerGameSession.js`로 분리됐다.
+- `src/client/pages/tetrisMulti.html`의 멀티 세션 책임은 `src/client/game/entry/multiplayerGameSession.ts`로 분리됐다.
 - 2탭 회귀 검증으로 authoritative snapshot, bag request, garbage, game over 흐름을 확인해야 한다.
 - `placementResult.backToBack`은 현재 계산에 사용된 이전 B2B 상태를 나타내므로, 테스트와 문서에서 “이번 lock 이후 상태”로 오해하지 않도록 주의해야 한다.
 
 ### Phase 1 완료 조건
 
-- [ ] `src/client/game/runtime/tetris.js`가 orchestration 중심으로 읽힌다.
+- [ ] `src/client/game/runtime/tetris.ts`가 orchestration 중심으로 읽힌다.
 - [ ] 엔진 판단이 `src/client/game/core`에서 이해된다.
 - [ ] DOM 없이 핵심 규칙 테스트가 가능하다.
 - [ ] 입력 -> 판정 -> 상태 변경 -> 렌더 흐름을 추적할 수 있다.
