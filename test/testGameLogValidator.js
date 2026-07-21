@@ -6,7 +6,7 @@ const {
     validateGameOverLog,
     validateGameStartLog,
     validatePlacementDecisionLog,
-} = require("../src/server/validators/gameLogValidator.js");
+} = require("../dist/server/server/validators/gameLogValidator.js");
 
 function createPlacementDecisionLog(overrides = {}) {
     const placement = {

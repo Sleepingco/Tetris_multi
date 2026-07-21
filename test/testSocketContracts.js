@@ -6,10 +6,10 @@ const {
     connectErrorDataSchema,
     handshakeAuthSchema,
     serverToClientSchemas,
-} = require("../src/shared/socketContracts.mjs")
+} = require("../dist/server/shared/socketContracts.mjs")
 const {
     createAuthoritativeTickerService,
-} = require("../src/server/services/authoritativeTickerService.js")
+} = require("../dist/server/server/services/authoritativeTickerService.js")
 
 const HUMAN_ID = "00000000-0000-4000-8000-000000000001"
 const GUEST_ID = "00000000-0000-4000-8000-000000000002"

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { validatePlacementDecisionLog } = require(
-    "../src/server/validators/gameLogValidator.js"
+    "../dist/server/server/validators/gameLogValidator.js"
 );
 
 function installBrowserStubs() {

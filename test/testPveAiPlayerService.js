@@ -4,19 +4,19 @@ const { mkdtemp, writeFile } = require("node:fs/promises");
 const { tmpdir } = require("node:os");
 const path = require("node:path");
 
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 const {
     applyAuthoritativeInputToMatchPlayerState,
     createMatch,
     getAuthoritativePlayerSnapshot,
     getMatchState,
     resetMatches,
-} = require("../src/server/services/matchService.js");
+} = require("../dist/server/server/services/matchService.js");
 const { createPveAiPlayerService: createService } = require(
-    "../src/server/services/pveAiPlayerService.js"
+    "../dist/server/server/services/pveAiPlayerService.js"
 );
 const { validatePlacementDecisionLog } = require(
-    "../src/server/validators/gameLogValidator.js"
+    "../dist/server/server/validators/gameLogValidator.js"
 );
 
 function createPveAiPlayerService(dependencies = {}) {

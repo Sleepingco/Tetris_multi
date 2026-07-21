@@ -2,23 +2,23 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 
 const { createAuthoritativeTickerService } = require(
-    "../src/server/services/authoritativeTickerService.js"
+    "../dist/server/server/services/authoritativeTickerService.js"
 );
 const { createPveAiPlayerService } = require(
-    "../src/server/services/pveAiPlayerService.js"
+    "../dist/server/server/services/pveAiPlayerService.js"
 );
 const {
     createMatch,
     getMatchState,
     resetMatches,
-} = require("../src/server/services/matchService.js");
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+} = require("../dist/server/server/services/matchService.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 const {
     clearRoomsForTest,
     createRoom,
     getRoomState,
     startGame,
-} = require("../src/server/services/roomService.js");
+} = require("../dist/server/server/services/roomService.js");
 
 test.beforeEach(clearRoomsForTest);
 

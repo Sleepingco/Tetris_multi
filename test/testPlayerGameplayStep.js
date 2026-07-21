@@ -1,9 +1,9 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 const playerGameplayStep = require(
-    "../src/server/services/playerGameplayStep.js"
+    "../dist/server/server/services/playerGameplayStep.js"
 );
 const {
     applyAuthoritativeInput,

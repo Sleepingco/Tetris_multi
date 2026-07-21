@@ -3,10 +3,10 @@ const assert = require("node:assert/strict");
 
 const {
     createAuthoritativeTickerService,
-} = require("../src/server/services/authoritativeTickerService.js");
+} = require("../dist/server/server/services/authoritativeTickerService.js");
 const {
     finishAuthoritativeMatch,
-} = require("../src/server/services/authoritativeMatchFinish.js");
+} = require("../dist/server/server/services/authoritativeMatchFinish.js");
 
 function createFakeScheduler() {
     let nextId = 1;

@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 
 const {
     createAuthoritativePlayerMutationQueue,
-} = require("../src/server/services/authoritativePlayerMutationQueue.js");
+} = require("../dist/server/server/services/authoritativePlayerMutationQueue.js");
 
 function createDeferred() {
     let resolve;

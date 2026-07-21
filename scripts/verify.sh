@@ -18,6 +18,6 @@ echo "[4/5] Verifying production artifacts..."
 npm run test:artifact
 
 echo "[5/5] Running tests..."
-npm test
+npm run test:compiled
 
 echo "Verification passed."

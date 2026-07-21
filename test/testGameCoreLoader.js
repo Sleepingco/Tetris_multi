@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 
 test("loadGameCore는 server에서 재사용할 client game core를 로딩한다", async () => {
     const gameCore = await loadGameCore();

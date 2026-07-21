@@ -7,11 +7,11 @@ const path = require("node:path");
 const {
     saveGameEventLog,
     savePlacementDecisionLog,
-} = require("../src/server/services/logService.js");
+} = require("../dist/server/server/services/logService.js");
 const {
     appendJsonLine,
     resolveGameEventsLogPath,
-} = require("../src/server/repositories/jsonlLogRepository.js");
+} = require("../dist/server/server/repositories/jsonlLogRepository.js");
 
 function createPlacementDecisionLog(overrides = {}) {
     return {

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const matchService = require("../src/server/services/matchService.js");
+const matchService = require("../dist/server/server/services/matchService.js");
 const {
     appendPlayerBagChunk,
     appendPendingGarbageToOpponent,
@@ -13,7 +13,7 @@ const {
     getMatchState,
     resetMatches,
 } = matchService;
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 
 function createPlayingRoom(roomId = "ROOM001") {
     return {

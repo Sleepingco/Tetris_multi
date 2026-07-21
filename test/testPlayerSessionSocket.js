@@ -1,8 +1,8 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
 
-const { registerSocketHandlers } = require("../src/server/sockets/index.js")
-const { serverToClientSchemas } = require("../src/shared/socketContracts.mjs")
+const { registerSocketHandlers } = require("../dist/server/server/sockets/index.js")
+const { serverToClientSchemas } = require("../dist/server/shared/socketContracts.mjs")
 
 class FakeSocketServer {
     constructor() {

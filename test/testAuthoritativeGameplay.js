@@ -9,8 +9,8 @@ const {
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
     resetMatches,
-} = require("../src/server/services/matchService.js");
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+} = require("../dist/server/server/services/matchService.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 
 function createPlayingRoom(roomId = "AUTH_GAMEPLAY_001") {
     return {

@@ -1,10 +1,10 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 const {
     applyAuthoritativeInput,
-} = require("../src/server/services/playerGameplayStep.js");
+} = require("../dist/server/server/services/playerGameplayStep.js");
 
 function createBoard(rows = 20, cols = 10) {
     return Array.from({ length: rows }, () => Array(cols).fill(null));

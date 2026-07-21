@@ -95,6 +95,8 @@ V4는 Human placement imitation과 결정적 ranking을 위한 모델로는 유�
 
 ## Smoke 실행
 
+runner는 compiled server artifact만 사용하므로 먼저 `npm run build:server`를 실행한다.
+
 ~~~bash
 node scripts/run-placement-v4-pve-gameplay-benchmark.js \
   --model data/models/placement-v4-125g-candidate/model.json \

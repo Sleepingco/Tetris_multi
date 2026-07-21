@@ -3,7 +3,7 @@ const assert = require("node:assert/strict")
 
 const {
     createPlayerSessionService,
-} = require("../src/server/services/playerSessionService.js")
+} = require("../dist/server/server/services/playerSessionService.js")
 
 const PLAYER_ID = "00000000-0000-4000-8000-000000000001"
 

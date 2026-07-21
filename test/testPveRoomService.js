@@ -12,7 +12,7 @@ const {
     leaveRoom,
     startGame,
     syncRoom,
-} = require("../src/server/services/roomService.js");
+} = require("../dist/server/server/services/roomService.js");
 
 test.beforeEach(clearRoomsForTest);
 

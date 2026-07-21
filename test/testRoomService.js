@@ -12,7 +12,7 @@ const {
     leaveGame,
     syncRoom,
     finishGame,
-} = require("../src/server/services/roomService.js")
+} = require("../dist/server/server/services/roomService.js")
 
 test.beforeEach(clearRoomsForTest)
 

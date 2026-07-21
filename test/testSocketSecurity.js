@@ -4,15 +4,15 @@ const assert = require("node:assert/strict")
 const {
     createSocketServerOptions,
     readAllowedOrigins,
-} = require("../src/server/socketSecurity.ts")
+} = require("../dist/server/server/socketSecurity.js")
 const {
     createRoomPublicDto,
-} = require("../src/server/services/roomPublicDto.js")
+} = require("../dist/server/server/services/roomPublicDto.js")
 const {
     RATE_LIMITS,
     TEST_RATE_LIMITS,
     createSocketRateLimitService,
-} = require("../src/server/services/socketRateLimitService.js")
+} = require("../dist/server/server/services/socketRateLimitService.js")
 
 test("production은 exact origin allowlist가 없으면 fail closed한다", () => {
     assert.throws(

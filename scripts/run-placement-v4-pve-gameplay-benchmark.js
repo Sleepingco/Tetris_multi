@@ -5,15 +5,15 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { performance } = require("node:perf_hooks");
 
-const { loadGameCore } = require("../src/server/services/gameCoreLoader.js");
+const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 const {
     createMatch,
     getMatchState,
     resetMatches,
-} = require("../src/server/services/matchService.js");
+} = require("../dist/server/server/services/matchService.js");
 const {
     createPveAiPlayerService,
-} = require("../src/server/services/pveAiPlayerService.js");
+} = require("../dist/server/server/services/pveAiPlayerService.js");
 
 const EXPECTED_MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d";
 const PIECES = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
