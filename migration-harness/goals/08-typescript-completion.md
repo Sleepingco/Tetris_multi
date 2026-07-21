@@ -6,8 +6,8 @@
 
 ## 선행조건
 
-- Goal 7A의 main 반영과 SPA route를 포함한 모든 gameplay E2E green
-- client/server/shared build와 SPA import·lifecycle 경계가 안정적임
+- Goal 7의 main 및 origin/main 반영과 네 React page의 gameplay E2E green
+- client/server/shared build와 현재 MPA import·lifecycle 경계가 안정적임
 - 변환 대상과 유지할 JS 예외 allowlist 작성
 
 ## Checkpoint
@@ -30,6 +30,7 @@
 ## 제외 범위
 
 - 기능 추가, 프로토콜/schema 변경
+- Goal 7A SPA shell, client-side routing과 route leave lifecycle 도입
 - 광범위한 `any`, `@ts-ignore`, type assertion으로 오류 숨기기
 - 대량 formatting과 파일 구조 개편 동시 수행
 

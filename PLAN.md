@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 7 multiplayer/PVE React 전환과 접근성 review fix를 local main에 반영하고 재검증했다.
+- Last update: 2026-07-21 기준. Goal 7A SPA 실험을 보류하고 현재 MPA 기준으로 Goal 8을 준비한다.
 
 ## Document Role
 
@@ -232,6 +232,16 @@
 - clean한 `main`/`origin/main`이 `b11e10c`와 일치하고 Goal branch가 clean한 상태에서 `codex/migrate-react-multiplayer`의 최종 `c673856`을 `--ff-only`로 local main에 반영했다. merge commit은 만들지 않았고 Goal branch는 보존한다.
 - main의 Node `24.18.0`/npm `11.16.0`에서 `bash scripts/verify.sh`를 재실행해 artifact 1/1, Node test 579개 중 578 pass와 기존 조건부 1 skip을 확인했다. main `git diff --check`와 clean worktree도 통과했다.
 - Goal branch 최종 HEAD `c673856`은 main의 조상이며 local main은 `origin/main`보다 6커밋 ahead다. push와 Goal 8은 수행하지 않았다.
+
+## Migration Goal 7A SPA 보류 결정 (2026-07-21)
+
+- 보류 결정 기준 main과 origin/main HEAD는 Goal 7A 명세만 추가한 `f9ff7f7`이다. SPA 구현은 `codex/migrate-react-spa@5b0f848`의 clean worktree에만 존재하며 main에는 SPA runtime code가 없어 code revert는 필요하지 않다.
+- 구현 브랜치는 단일 shell, exact legacy URL allowlist, lazy multiplayer import와 route cleanup을 만들고 fast gate, Vite-dev 15 pass/2 skip, production Playwright 41/41을 통과했다. dependency와 lockfile은 변경하지 않았다.
+- review에서 start/leave 경합 시 pending intent가 다른 `room:result`로 제거되어 ghost match가 남을 수 있는 P1을 확인했다. stale Forward의 membership 보존과 hash-only history의 route exit 오판은 P2, modifier 새 탭 의미 훼손은 P3이다.
+- 현재 E2E는 leave 송신 1회는 확인하지만 ack와 최종 server room/match 제거 상태, multiplayer 구간의 same-document/Socket 유지, 반복 route 진입 뒤 runtime·subscription 단일성을 직접 증명하지 않는다. 필수 수동 PVP/PVE도 완료되지 않았다.
+- 브랜치 전체 변화는 net 644줄이며 production 183줄, test 353줄, docs 108줄이다. index Vite bundle은 gzip 13.45 kB 증가하고 모든 route가 classic Socket.IO script와 두 stylesheet를 연결해 현재 네 개의 큰 page에 비해 초기 전송과 lifecycle 비용이 크다.
+- 따라서 SPA 구현은 실험 브랜치에 보존하되 main에 병합하지 않는다. Goal 7A는 Goal 8 선행조건에서 제외하고, Goal 8은 Goal 7이 반영된 현재 four-entry MPA 기준에서 시작한다.
+- 다음 단계는 이 docs 변경을 main에 반영·검증한 뒤 `migration-harness/goals/08-typescript-completion.md`의 preflight와 설계 gate를 실행하는 것이다. SPA를 재개할 때는 Goal 7A 문서의 문제와 재개 조건을 먼저 해결한다.
 
 ## Project Direction
 

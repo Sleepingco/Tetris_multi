@@ -44,4 +44,4 @@ Goal 6의 runtime bridge를 재사용해 multiplayer/PVE game 화면을 React li
 
 ## Rollback과 Merge Gate
 
-multiplayer React entry를 revert해 기존 game page로 복귀할 수 있어야 한다. AI/프로토콜 개선, Goal 7A와 Goal 8을 선행하지 않는다.
+multiplayer React entry를 revert해 기존 game page로 복귀할 수 있어야 한다. AI/프로토콜 개선과 Goal 8을 선행하지 않는다. Goal 7A는 선택 실험으로 보류한다.

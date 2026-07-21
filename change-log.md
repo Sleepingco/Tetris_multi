@@ -2383,3 +2383,9 @@ client input
 - Goal 7의 display snapshot, session cleanup, multiplayer React shell과 접근성 review fix를 `c673856`까지 `--ff-only`로 local main에 반영했다. Goal branch는 보존한다.
 - main Node `24.18.0`에서 `bash scripts/verify.sh`를 재실행해 artifact 1/1, Node test 579개 중 578 pass와 기존 조건부 1 skip, `git diff --check`와 clean worktree를 확인했다.
 - 전체 branch gate는 Vite-dev 8 pass/2 skip, production Playwright 34/34였고, local main은 origin/main보다 6커밋 ahead다. push와 Goal 8은 수행하지 않았다.
+
+## Migration Goal 7A SPA 실험 보류 (2026-07-21)
+
+- 자동 gate를 통과했지만 review blocker가 남은 SPA 실험 구현은 `codex/migrate-react-spa@5b0f848`에 보존하고 main에는 병합하지 않는다.
+- leave result 상관관계, membership 보존, hash navigation과 server cleanup 검증 문제가 남아 Goal 7A를 선택 실험으로 보류했다.
+- 현재 four-entry MPA를 유지하며 Goal 8의 선행조건을 Goal 7로 복구했다. 상세 문제와 재개 조건은 `PLAN.md`와 `migration-harness/goals/07a-react-spa.md`를 따른다.

@@ -1,12 +1,39 @@
 # Goal 7A — React SPA Shell
 
+> 상태: **보류된 선택 실험**. 이 Goal은 Goal 8의 선행조건이 아니며, 아래 재개 조건을 충족하기 전에는 기존 구현 브랜치를 main에 병합하지 않는다.
+
 ## 목적
 
 기존 네 React 페이지를 단일 React root와 명시적인 client-side route 경계로 통합하면서 gameplay, Socket session과 기존 URL 호환성을 보존한다.
 
-## 왜 지금 필요한가
+## 왜 보류했는가
 
-Goal 7까지 index, lobby, single과 multiplayer/PVE 화면의 React lifecycle 전환이 완료됐다. 동작 변화 없는 TypeScript 전환인 Goal 8보다 먼저 SPA route와 build 구조를 안정화해, Goal 8이 최종 import·runtime 경계를 대상으로 strict 검사를 완성하게 한다.
+Goal 7까지 index, lobby, single과 multiplayer/PVE 화면은 독립 React page entry에서 이미 동작한다. 현재 화면은 네 개의 큰 page이고 route 사이에 game state를 보존하지 않으므로, SPA가 해결하는 사용자 문제가 아직 명확하지 않다. 반면 단일 document에서 Socket transport를 유지하면서 room/game membership을 정리하려면 MPA에는 없던 route leave와 reconnect 경합을 소유해야 한다.
+
+구현 브랜치는 dependency 없이 exact route allowlist, lazy multiplayer loading과 cleanup 경계를 만들었지만, review에서 merge를 막는 lifecycle 문제와 검증 공백이 확인됐다. 우선순위는 검증된 MPA 위에서 Goal 8 TypeScript 전환을 진행하는 것이다.
+
+## 보류 검토에서 발견된 문제
+
+- **P1 — start/leave 경합과 ghost match:** lobby 이탈 intent가 대기 중일 때 `room:start` 결과가 먼저 오면 같은 `room:result` channel 때문에 intent가 조기에 제거될 수 있다. 서버가 이미 `playing`으로 전환된 뒤 `room:leave`를 `GAME_IN_PROGRESS`로 거절해도 off-route Socket membership과 match가 남을 수 있다.
+- **P2 — stale history에서 ghost waiting room:** lobby가 목적지 pathname만 보고 game 이동의 membership을 보존하면, 오래된 Forward entry로 새 waiting room에서 game URL로 이동할 때 room을 leave하지 못하고 client storage만 잃을 수 있다.
+- **P2 — hash-only history 오판:** pathname이 같은 hash Back/Forward도 route exit와 remount로 처리하면 single runtime이 재시작되거나 active multiplayer가 불필요한 `game:leave`를 보낼 수 있다.
+- **P3 — 기본 anchor 의미 훼손:** 일부 page-local click handler가 modifier key를 확인하지 않아 Cmd/Ctrl-click의 새 탭 동작을 현재 탭 SPA 이동으로 바꿀 수 있다.
+
+## 검증 공백
+
+- leave event 송신 횟수뿐 아니라 ack의 `ok`, `roomId`와 최종 server room/match 제거 상태를 확인해야 한다.
+- lobby와 PVP/PVE game 이동이 같은 document, React root, Socket과 credential을 유지하는지 직접 관찰해야 한다.
+- 여러 route를 왕복한 뒤 keyboard, timer, animation, runtime과 Socket subscription이 각각 한 세트인지 검증해야 한다.
+- multiplayer URL의 direct load·refresh·title·style·focus와 실제 browser 두 context PVP/PVE 수동 흐름을 완료하거나 명시적으로 waiver해야 한다.
+
+## 재개 조건
+
+- full-document navigation으로 해결할 수 없는 구체적인 사용자 요구나 측정된 UX 문제가 먼저 존재한다.
+- pending leave는 event 종류와 `roomId`가 일치하는 결과만 처리하고, 실패를 성공처럼 폐기하지 않는다. start/leave 경합은 최종 server membership 제거까지 증명한다.
+- membership 보존은 pathname 추측이 아니라 현재 room과 server가 확인한 lobby→playing 전환에만 적용한다.
+- hash-only 이동과 modifier/new-tab anchor 의미를 보존한다.
+- 위 문제를 재현하는 server-state E2E와 반복 route lifecycle 검증을 추가한 뒤 fast/full/manual gate를 다시 실행한다.
+- Goal 8 이후 재개한다면 오래된 브랜치 전체를 바로 merge하지 않고 최신 main의 TypeScript 경계 위에 필요한 변경만 재적용한다.
 
 ## 선행조건
 
@@ -138,4 +165,4 @@ SPA shell, page component/navigation, server/build fallback과 test/document com
 
 ## Merge Gate
 
-Goal 7A의 route/lifecycle/full gameplay gate가 모두 통과하기 전에는 Goal 8을 시작하지 않는다. 사용자 승인 전에는 push, PR, main merge, Goal 7 branch 삭제와 Goal 8 선행 구현을 수행하지 않는다.
+Goal 7A는 보류 상태이며 Goal 8을 막지 않는다. 재개 조건과 route/lifecycle/full gameplay gate가 모두 통과하고 사용자가 다시 승인하기 전에는 push, PR, main merge와 기존 SPA 브랜치 삭제를 수행하지 않는다.
