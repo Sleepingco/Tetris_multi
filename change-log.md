@@ -2377,3 +2377,9 @@ client input
 - main에서 `git diff --check`와 clean worktree를 확인했고 `0cdc3cee`가 main에 포함됐다.
 - 동일 HEAD에서 이미 전체 production Playwright 31/31과 Vite-dev 5 pass가 통과했으며 코드 변경이 없으므로 두 E2E 명령은 재실행하지 않았다.
 - 실제 browser history 기반 BFCache eligibility, WebKit/Firefox, 외부 TLS/reverse proxy와 장시간 timer/animation soak는 남은 위험이다. Goal 6 branch는 보존하고 push와 Goal 7은 수행하지 않았다.
+
+## Migration Goal 7 multiplayer React main 통합 (2026-07-21)
+
+- Goal 7의 display snapshot, session cleanup, multiplayer React shell과 접근성 review fix를 `c673856`까지 `--ff-only`로 local main에 반영했다. Goal branch는 보존한다.
+- main Node `24.18.0`에서 `bash scripts/verify.sh`를 재실행해 artifact 1/1, Node test 579개 중 578 pass와 기존 조건부 1 skip, `git diff --check`와 clean worktree를 확인했다.
+- 전체 branch gate는 Vite-dev 8 pass/2 skip, production Playwright 34/34였고, local main은 origin/main보다 6커밋 ahead다. push와 Goal 8은 수행하지 않았다.

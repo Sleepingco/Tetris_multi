@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 7 multiplayer/PVE React 전환을 전용 branch에서 구현·검증하고 merge gate에 두었다.
+- Last update: 2026-07-21 기준. Goal 7 multiplayer/PVE React 전환과 접근성 review fix를 local main에 반영하고 재검증했다.
 
 ## Document Role
 
@@ -225,7 +225,13 @@
 - review fix는 React state가 runtime 전체 객체 대신 `getDisplaySnapshot`/`subscribeDisplay`만 가진 page-local handle을 보관하게 했다. session destroy test는 네 game Socket handler가 1개에서 0개가 되는지 확인하고, reconnect는 상대 hold HUD 유지와 양쪽 overlay 해제를 확인한다. 기존 incoming/PVE badge 알림을 보존하며 reconnect/terminal/result overlay만 사용자 소유 column에서 알린다.
 - 기준 multiplayer entry는 12,963 bytes(gzip 4,839), 최종은 17,297 bytes(gzip 6,181)로 4,334 bytes(gzip 1,342) 증가했다. shared React chunk는 189,660 bytes(gzip 58,971)에서 192,260 bytes(gzip 60,025)로 2,600 bytes(gzip 1,054) 증가해 합계 증가는 6,934 bytes(gzip 2,396)다.
 - dependency, lockfile, server runtime/Socket contract, roomClient session 정책, core/renderer/AI 규칙과 single page는 변경하지 않았다. 실제 browser history 기반 BFCache eligibility, WebKit/Firefox와 장시간 reconnect/gameplay soak는 미검증 범위다.
-- Goal 7은 local branch merge gate에 있으며 push, PR, main merge, branch 삭제와 Goal 8은 별도 승인 전 수행하지 않는다.
+- Goal 7 branch는 보존하며 push, PR, branch 삭제와 Goal 8은 별도 승인 전 수행하지 않는다.
+
+### Main integration (2026-07-21)
+
+- clean한 `main`/`origin/main`이 `b11e10c`와 일치하고 Goal branch가 clean한 상태에서 `codex/migrate-react-multiplayer`의 최종 `c673856`을 `--ff-only`로 local main에 반영했다. merge commit은 만들지 않았고 Goal branch는 보존한다.
+- main의 Node `24.18.0`/npm `11.16.0`에서 `bash scripts/verify.sh`를 재실행해 artifact 1/1, Node test 579개 중 578 pass와 기존 조건부 1 skip을 확인했다. main `git diff --check`와 clean worktree도 통과했다.
+- Goal branch 최종 HEAD `c673856`은 main의 조상이며 local main은 `origin/main`보다 6커밋 ahead다. push와 Goal 8은 수행하지 않았다.
 
 ## Project Direction
 
