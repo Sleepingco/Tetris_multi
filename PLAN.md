@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-21 기준. Goal 7A SPA 실험을 보류하고 Goal 8을 8A~8D의 독립 merge gate로 분할한다.
+- Last update: 2026-07-21 기준. Goal 8A core/state TypeScript 전환을 검증하고 branch merge gate에서 멈춘다.
 
 ## Document Role
 
@@ -252,6 +252,17 @@
 - root `type: module`, 새 loader와 runtime dependency는 추가하지 않는다. `socketContracts.mjs`는 shared Zod runtime의 명시적인 `allowJs` 예외이며 `allowJs: false`는 Goal 8 완료 조건이 아니다.
 - 모든 하위 Goal은 검증 전에 `.nvmrc`와 일치하는 Node `24.18.0`을 명시적으로 확인한다. dependency, lockfile, protocol/schema, gameplay, JSONL/Python parity와 보류된 SPA branch는 변경하지 않는다.
 - `codex/complete-typescript-migration`은 이 분할 문서만 소유한다. 문서가 main에 반영되기 전에는 8A 구현을 시작하지 않는다.
+
+## Migration Goal 8A Core/State TypeScript merge gate (2026-07-21)
+
+- 기준은 `main@53b3fd5`이며 `codex/migrate-typescript-core-state`에서 production `core` 7개와 `state` 5개를 strict TypeScript로 전환했다. 아직 JavaScript인 내부 3개와 외부 19개 consumer의 source specifier도 같은 rename 경계에서 `.ts`로 갱신했다.
+- `blocks.ts`가 `PieceType = keyof typeof BLOCKS`를 유일하게 소유하고 `piece.ts`는 이를 `import type`으로 가져와 `PieceState`만 소유한다. 빈 조각 sentinel은 `PieceType | ""`로 표현하며 별도 type registry나 중복 literal 목록은 만들지 않았다.
+- state deserialize는 기존 fallback을 유지하는 `Partial<SerializedGameState>` 입력을 허용한다. board와 row, active/pending piece 및 queue/bag/inputQueue 배열 컨테이너의 기존 복제 범위만 고정했고 inputQueue 원소의 deep clone이나 serialization schema 변경은 추가하지 않았다.
+- `rewriteRelativeImportExtensions`를 기존 shared tsconfig 경계에 적용해 source의 `.ts` specifier를 browser/server artifact의 `.js`로 emit한다. client/test의 Node source 경계는 `erasableSyntaxOnly`, `verbatimModuleSyntax`와 `import type`을 검사하며 root CommonJS, client ESM marker, `allowJs`와 compiled-only server 실행 계약은 유지한다.
+- clean artifact test는 compiled `loadGameCore()`의 `BLOCKS`, 빈 board와 대표 move/step fixture를 실제 실행한다. 별도 parity framework, dependency, lockfile, loader, gameplay/Socket/SPA 변경은 없다.
+- Node `24.18.0`/npm `11.16.0`에서 typecheck, build, artifact 1/1, targeted core/state 46/46, fast gate의 Node 581개 중 580 pass·기존 조건부 1 skip과 production Playwright 34/34가 통과했다. Single/PVP/PVE 수동 검증에서도 Canvas 입력, hold/restart, authoritative 양방향 보드와 PVE AI line/garbage를 확인했고 네 page의 console error는 0개였다.
+- shared tetris bundle은 기준 34.82 kB(gzip 10.90 kB)에서 34.93 kB(gzip 10.93 kB)로 소폭 증가했다. package manifest와 lockfile checksum은 기준과 동일하다.
+- Goal 8A는 local branch merge gate에서 멈춘다. main 반영 전에는 Goal 8B를 시작하지 않으며 push, SPA 재개와 branch 삭제도 별도 승인 없이는 수행하지 않는다.
 
 ## Project Direction
 
