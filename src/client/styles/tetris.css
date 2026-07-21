@@ -77,6 +77,10 @@ body {
         gap: 1.5rem;
 }
 
+#multiplayerRoot {
+        width: 100%;
+}
+
 .single-wrapper {
         width: min(960px, 100%);
         display: flex;

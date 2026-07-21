@@ -1,5 +1,7 @@
 import * as z from "zod";
 
+z.config({ jitless: true });
+
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ROOM_ID_PATTERN = /^[0-9A-F]{8}$/;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;

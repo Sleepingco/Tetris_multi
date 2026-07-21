@@ -9,6 +9,7 @@ declare module "express" {
 
     export interface Application {
         (request: IncomingMessage, response: ServerResponse): void;
+        disable(setting: string): void;
         use(handler: unknown): void;
         get(
             route: string,
