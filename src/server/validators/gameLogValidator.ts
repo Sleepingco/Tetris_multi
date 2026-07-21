@@ -15,6 +15,23 @@ export type LogValidationResult = {
     log: null;
     reason: string;
 };
+
+const PRIVATE_FIELD_FRAGMENTS = [
+    "authorization",
+    "apikey",
+    "cookie",
+    "credential",
+    "expiresat",
+    "generation",
+    "password",
+    "privatekey",
+    "reconnecttoken",
+    "secret",
+    "sessionid",
+    "socketid",
+    "token",
+];
+const PRIVATE_FIELD_EXACT_NAMES = new Set(["auth"]);
 type ValidationOptions = {
     maxBytes?: number;
     allowedSchemaVersions?: number[];
@@ -315,6 +332,9 @@ function validateBaseLog(
     if (!isPlainObject(log)) {
         return createFailure("LOG_REQUIRED");
     }
+    if (containsPrivateLogField(log)) {
+        return createFailure("PRIVATE_FIELD_NOT_ALLOWED");
+    }
 
     let payloadBytes;
     try {
@@ -332,6 +352,31 @@ function validateBaseLog(
     }
 
     return createSuccess(log);
+}
+
+export function containsPrivateLogField(value: unknown): boolean {
+    const pending: unknown[] = [value];
+    const visited = new WeakSet<object>();
+    while (pending.length > 0) {
+        const current = pending.pop();
+        if (current === null || typeof current !== "object" || visited.has(current)) continue;
+        visited.add(current);
+        let entries: [string, unknown][];
+        try {
+            entries = Object.entries(current);
+        } catch {
+            return true;
+        }
+        for (const [key, child] of entries) {
+            const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, "");
+            if (PRIVATE_FIELD_EXACT_NAMES.has(normalizedKey)
+                || PRIVATE_FIELD_FRAGMENTS.some(fragment => normalizedKey.includes(fragment))) {
+                return true;
+            }
+            pending.push(child);
+        }
+    }
+    return false;
 }
 
 function isNonEmptyString(value: unknown): value is string {
