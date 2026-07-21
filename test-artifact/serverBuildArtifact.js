@@ -176,7 +176,7 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
             "-e",
             `const { createAuthoritativePlayerMutationQueue } = require(${JSON.stringify(
                 path.join(SERVER_ROOT, "server", "services", "authoritativePlayerMutationQueue.js"),
-            )}); createAuthoritativePlayerMutationQueue().enqueueAuthoritativePlayerMutation("room", "player", process.argv[1]).catch(error => { throw error; });`,
+            )}); createAuthoritativePlayerMutationQueue().enqueueAuthoritativePlayerMutation(process.argv[1], process.argv[2], "not-a-function").catch(error => { throw error; });`,
             "sentinel-token-value",
             "sentinel-session-value",
         ],

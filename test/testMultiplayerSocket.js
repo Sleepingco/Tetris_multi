@@ -1,7 +1,13 @@
 const test = require("node:test")
 const assert = require("node:assert/strict")
+const { mkdtemp, readFile, rm } = require("node:fs/promises")
+const { tmpdir } = require("node:os")
+const path = require("node:path")
 
 const { registerSocketHandlers } = require("../dist/server/server/sockets/index.js")
+const {
+    handleDisconnectGraceExpired,
+} = require("../dist/server/server/sockets/multiplayerHandlers.js")
 const {
     applyGravityStepToMatchPlayerState,
     getAuthoritativePlayerSnapshot,
@@ -15,6 +21,9 @@ const {
 const {
     createAuthoritativePlayerMutationQueue,
 } = require("../dist/server/server/services/authoritativePlayerMutationQueue.js")
+const {
+    createPlayerSessionService,
+} = require("../dist/server/server/services/playerSessionService.js")
 const {
     clearRoomsForTest,
     findRoomByPlayerId,
@@ -4275,6 +4284,43 @@ test("disconnect grace timer는 captured generation을 재검증한 뒤 waiting 
 
     assert.equal(getRoomState(roomId).players.length, 1)
     assert.equal(getRoomState(roomId).players[0].playerId, "grace-host")
+})
+
+test("진행 중 session TTL 만료는 기본 game_over JSONL을 한 번 저장한다", async (t) => {
+    const fixture = await createStartedPvpSocketFixture("ttl-expired")
+    const temporaryDirectory = await mkdtemp(path.join(tmpdir(), "tetris-ttl-log-"))
+    const logPath = path.join(temporaryDirectory, "game-events.jsonl")
+    const previousLogPath = process.env.GAME_EVENTS_LOG_PATH
+    process.env.GAME_EVENTS_LOG_PATH = logPath
+    t.after(async () => {
+        if (previousLogPath === undefined) delete process.env.GAME_EVENTS_LOG_PATH
+        else process.env.GAME_EVENTS_LOG_PATH = previousLogPath
+        await rm(temporaryDirectory, { recursive: true, force: true })
+    })
+
+    let now = 0
+    const playerSessionService = createPlayerSessionService({
+        now: () => now,
+        sessionTtlMs: 1,
+        createPlayerId: () => fixture.guestPlayerId,
+    })
+    playerSessionService.authenticate({ nickname: "Guest" }, "ttl-expired-socket")
+    now = 1
+    const [expiredSession] = playerSessionService.cleanupExpired()
+
+    await handleDisconnectGraceExpired({
+        socketServer: fixture.socketServer,
+        playerId: expiredSession.playerId,
+        authoritativeTickerService: createNoopAuthoritativeTickerService(),
+    })
+
+    const logs = (await readFile(logPath, "utf8"))
+        .trim()
+        .split("\n")
+        .map(line => JSON.parse(line))
+    assert.equal(logs.length, 1)
+    assert.equal(logs[0].eventType, "game_over")
+    assert.equal(logs[0].reason, "disconnect_timeout")
 })
 
 test("socket별 game input은 120개 pending까지만 받고 완료 후 다시 허용한다", async () => {

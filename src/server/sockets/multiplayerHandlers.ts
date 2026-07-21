@@ -1088,7 +1088,7 @@ export async function handleDisconnectGraceExpired({
             emitMatchFinish(payload) {
                 socketServer.to(room.roomId).emit("match:finish", payload)
             },
-            saveGameEventLog: saveEventLog,
+            saveGameEventLog: saveEventLog || saveGameEventLog,
             getMatchState,
             deleteMatch,
         })
