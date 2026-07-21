@@ -38,6 +38,16 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
         [],
     );
 
+    const clientShell = await readFile(
+        path.join(DIST_ROOT, "client", "pages", "index.html"),
+        "utf8",
+    );
+    const socketClientIndex = clientShell.indexOf("/socket.io/socket.io.js");
+    const spaEntryIndex = clientShell.indexOf('type="module"');
+    assert.notEqual(socketClientIndex, -1);
+    assert.notEqual(spaEntryIndex, -1);
+    assert.ok(socketClientIndex < spaEntryIndex);
+
     const serverFiles = await listFiles(SERVER_ROOT);
     const allowedServerArtifact = file => {
         return file === "app.js"

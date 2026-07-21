@@ -79,12 +79,12 @@
             document.getElementById("gameStyles").media = gameStyle ? "all" : "not all"
         })()
     </script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="./spa.tsx"></script>
 </head>
 
 <body>
     <div id="appRoot" tabindex="-1"></div>
-    <script src="/socket.io/socket.io.js"></script>
-    <script type="module" src="./spa.tsx"></script>
 </body>
 
 </html>
