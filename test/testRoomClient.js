@@ -5,6 +5,7 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     const emitted = [];
     const handlers = new Map();
     let connectCount = 0;
+    let socketOptions = null;
     const fakeSocket = {
         connected: true,
         id: "client-socket",
@@ -37,7 +38,10 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
             if (wasConnected) handlers.get("disconnect")?.(reason);
         },
     };
-    global.io = () => fakeSocket;
+    global.io = options => {
+        socketOptions = options;
+        return fakeSocket;
+    };
     global.sessionStorage = {
         values: new Map([["tetris:nickname", "Player"]]),
         getItem(key) {
@@ -67,6 +71,21 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     onSessionDisconnected((disconnect) => disconnects.push(disconnect));
     onSessionError((error) => sessionErrors.push(error));
 
+    sessionStorage.setItem("tetris:playerSession", JSON.stringify({
+        version: 1,
+        playerId: "00000000-0000-4000-8000-000000000001",
+        token: "d".repeat(43),
+        nickname: "Stored",
+        expiresAt: Date.now() + 60_000,
+    }));
+    let resumeAuth = null;
+    socketOptions.auth(payload => { resumeAuth = payload; });
+    assert.deepEqual(resumeAuth, {
+        playerId: "00000000-0000-4000-8000-000000000001",
+        token: "d".repeat(43),
+        nickname: "Player",
+    });
+
     let disposedReplayCount = 0;
     const detachDisposedReplay = onSessionReady(() => {
         disposedReplayCount += 1;
@@ -92,6 +111,32 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     await Promise.resolve();
     assert.deepEqual(rotatedReadySessions, ["Rotated"]);
     detachRotatedReady();
+
+    const projectedSessions = [];
+    const detachFirstProjection = onSessionReady(session => {
+        projectedSessions.push(session);
+        session.nickname = "Changed by first subscriber";
+    });
+    const detachSecondProjection = onSessionReady(session => {
+        projectedSessions.push(session);
+    });
+    handlers.get("session:ready")?.({
+        version: 1,
+        playerId: "00000000-0000-4000-8000-000000000001",
+        token: "e".repeat(43),
+        nickname: "Canonical",
+        expiresAt: Date.now() + 60_000,
+        resumed: true,
+    });
+    assert.notEqual(projectedSessions[0], projectedSessions[1]);
+    assert.deepEqual(projectedSessions[1], {
+        playerId: "00000000-0000-4000-8000-000000000001",
+        nickname: "Canonical",
+    });
+    assert.equal("token" in projectedSessions[0], false);
+    assert.equal("token" in projectedSessions[1], false);
+    detachFirstProjection();
+    detachSecondProjection();
 
     let disconnectedReplayCount = 0;
     const detachDisconnectedReplay = onSessionReady(() => {

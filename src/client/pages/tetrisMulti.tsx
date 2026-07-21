@@ -11,9 +11,15 @@ import { createRoot } from "react-dom/client";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes";
 import { roomPublicSchema } from "../../shared/socketContracts.mjs";
 import { startMultiplayerGame } from "../game/entry/multiplayerGameSession.ts";
+import type { MultiplayerGameSession } from "../game/entry/multiplayerGameSession.ts";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
+import type {
+    RuntimeDisplayHandle,
+    RuntimeDisplaySnapshot,
+} from "../game/runtime/displayBridge.ts";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.ts";
 import BLOCKS from "../game/state/blocks.ts";
+import type { PieceType } from "../game/state/blocks.ts";
 import { onPlacementDecisionLogResult } from "../net/logClient.ts";
 import {
     getPlayerSession,
@@ -28,7 +34,11 @@ import {
     requestJoinGameRoom,
     requestLeaveRoom,
 } from "../net/roomClient.ts";
-import type { PlayerSession } from "../net/roomClient.ts";
+import type {
+    PlayerSession,
+    SessionDisconnect,
+    SessionError,
+} from "../net/roomClient.ts";
 
 type PublicRoom = ServerToClientParsedPayload<"room:updated">;
 type SessionReady = PlayerSession;
@@ -37,28 +47,9 @@ type PveAiPolicy = ServerToClientParsedPayload<"pve:ai-policy">;
 type MatchFinish = ServerToClientParsedPayload<"match:finish">;
 type OpponentLeft = ServerToClientParsedPayload<"game:opponent-left">;
 type PlacementLogResult = ServerToClientParsedPayload<"game:log:result">;
-type SessionError = { code: string; terminal: boolean };
-type SessionDisconnect = { reason: string; terminal: boolean };
 type Disposer = () => void;
 type PlayerNumber = 1 | 2;
-type DisplaySnapshot = {
-    score: number;
-    lines: number;
-    holdPieceType: string | null;
-    nextPieceTypes: [string | null, string | null];
-    pendingGarbageLines: number;
-    phase: "playing" | "lineClearing" | "gameOver";
-};
-type DisplayHandle = {
-    getDisplaySnapshot: () => DisplaySnapshot;
-    subscribeDisplay: (callback: () => void) => () => void;
-};
-type DisplaySource = Pick<DisplayHandle, "getDisplaySnapshot" | "subscribeDisplay">;
-type GameSession = {
-    myGame: DisplaySource;
-    opponentGame: DisplaySource;
-    destroy: () => void;
-};
+type DisplayHandle = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "subscribeDisplay">;
 type DisplayHandles = {
     player1: DisplayHandle;
     player2: DisplayHandle;
@@ -87,7 +78,7 @@ const WAITING_OVERLAYS: [Overlay, Overlay] = [
     { text: "대기중", showLobby: false },
 ];
 
-function createDisplayHandle(game: DisplaySource): DisplayHandle {
+function createDisplayHandle(game: DisplayHandle): DisplayHandle {
     return {
         getDisplaySnapshot: () => game.getDisplaySnapshot(),
         subscribeDisplay: callback => game.subscribeDisplay(callback),
@@ -118,9 +109,9 @@ function storeRoom(room: PublicRoom) {
     sessionStorage.setItem("room", JSON.stringify(room));
 }
 
-function PiecePreview({ pieceType }: { pieceType: string | null }) {
+function PiecePreview({ pieceType }: { pieceType: PieceType | null }) {
     const offsets = pieceType
-        ? BLOCKS[pieceType as keyof typeof BLOCKS]?.[0]
+        ? BLOCKS[pieceType][0]
         : null;
     const occupied = new Set<string>();
     if (offsets) {
@@ -155,7 +146,7 @@ function PlayerHud({
     holdRoot: HTMLDivElement;
     nextRoot: HTMLDivElement;
 }) {
-    const snapshot = useSyncExternalStore(
+    const snapshot: RuntimeDisplaySnapshot = useSyncExternalStore(
         handle.subscribeDisplay,
         handle.getDisplaySnapshot,
     );
@@ -385,7 +376,7 @@ function MultiplayerGamePage() {
         let matchFinished = false;
         let joinPending = false;
         let isSessionReady = false;
-        let activeGameSession: GameSession | null = null;
+        let activeGameSession: MultiplayerGameSession | null = null;
         let navigationTimer: number | null = null;
         const disposers: Disposer[] = [];
         const cleanupSound = initGameSound(soundToggle);
@@ -485,7 +476,7 @@ function MultiplayerGamePage() {
                 myCanvas: myRole === "host" ? player1Canvas : player2Canvas,
                 opponentCanvas: myRole === "host" ? player2Canvas : player1Canvas,
                 onUserInteract: tryPlayMusic,
-            }) as GameSession;
+            });
             activeGameSession = session;
             setDisplayHandles(myRole === "host"
                 ? {

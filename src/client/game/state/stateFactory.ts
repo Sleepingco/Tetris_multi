@@ -1,12 +1,13 @@
 import type { Board } from "../core/board.ts";
 import type { PieceState } from "../core/piece.ts";
 import type { PieceType } from "./blocks.ts";
+import type { InputAction } from "../runtime/input.ts";
 
 export type GamePhase = "playing" | "lineClearing" | "gameOver";
 
 export type QueuedInput = {
         tick: number;
-        action: string;
+        action: InputAction;
         pieceIndex: number | null;
 };
 

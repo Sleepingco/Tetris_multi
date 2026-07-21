@@ -4,17 +4,18 @@ import {
 } from "../../shared/socketContracts.mjs"
 import type {
     ClientToServerEventName,
+    ClientToServerWirePayload,
     ServerToClientEventName,
     ServerToClientParsedPayload,
 } from "../../shared/socketContractTypes.d.ts"
-import type { PieceType } from "../game/state/blocks.ts"
 
 type Disposer = () => void;
 type RequestType = "create" | "join" | "leave" | "start" | "sync" | null;
 type PlayerIdentity = { playerId: string | null; nickname: string };
-type StoredSession = ServerToClientParsedPayload<"session:ready">;
+type ActiveSession = ServerToClientParsedPayload<"session:ready">;
+type StoredCredential = Pick<ActiveSession, "version" | "playerId" | "token" | "nickname" | "expiresAt">;
 type MalformedSession = { malformed: true };
-export type PlayerSession = Pick<StoredSession, "playerId" | "nickname">;
+export type PlayerSession = Pick<ActiveSession, "playerId" | "nickname">;
 export type SessionError = { code: string; terminal: boolean };
 export type SessionDisconnect = { reason: string; terminal: boolean };
 type AuthPayload = {
@@ -32,7 +33,10 @@ type BrowserSocket = {
     io?: SocketManager;
     on: (eventName: string, handler: SocketHandler) => void;
     off: (eventName: string, handler: SocketHandler) => void;
-    emit: (eventName: ClientToServerEventName, payload: unknown) => void;
+    emit: <K extends ClientToServerEventName>(
+        eventName: K,
+        payload: ClientToServerWirePayload<K>,
+    ) => void;
     connect: () => void;
     disconnect?: () => void;
 };
@@ -61,7 +65,7 @@ const terminalSessionErrors = new Set([
 const sessionReadyHandlers = new Set<(session: PlayerSession) => void>()
 const sessionErrorHandlers = new Set<(error: SessionError) => void>()
 const sessionDisconnectedHandlers = new Set<(disconnect: SessionDisconnect) => void>()
-let activeSession: StoredSession | null = null
+let activeSession: ActiveSession | null = null
 let activeSocketId: string | null = null
 let terminalRetryUsed = false
 let recoveringWithNewSession = false
@@ -71,7 +75,7 @@ function readNickname(): string {
     return sessionStorage.getItem("tetris:nickname")?.trim() || "Guest"
 }
 
-function readStoredSession(): StoredSession | MalformedSession | null {
+function readStoredSession(): StoredCredential | MalformedSession | null {
     const rawSession = sessionStorage.getItem(SESSION_STORAGE_KEY)
     if (!rawSession) return null
 
@@ -89,8 +93,6 @@ function readStoredSession(): StoredSession | MalformedSession | null {
             || !("expiresAt" in session)
             || typeof session.expiresAt !== "number"
             || !Number.isFinite(session.expiresAt)
-            || !("resumed" in session)
-            || typeof session.resumed !== "boolean"
         ) {
             return { malformed: true }
         }
@@ -100,7 +102,6 @@ function readStoredSession(): StoredSession | MalformedSession | null {
             token: session.token,
             nickname: session.nickname,
             expiresAt: session.expiresAt,
-            resumed: session.resumed,
         }
     } catch {
         return { malformed: true }
@@ -136,7 +137,7 @@ const serverConnection = io({
 })
 let lastRoomRequestType: RequestType = null
 
-function toPlayerSession(session: StoredSession): PlayerSession {
+function toPlayerSession(session: Pick<ActiveSession, "playerId" | "nickname">): PlayerSession {
     return { playerId: session.playerId, nickname: session.nickname }
 }
 
@@ -201,8 +202,7 @@ onValidatedServerEvent("session:ready", (session) => {
     sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(activeSession))
     sessionStorage.setItem("tetris:nickname", activeSession.nickname)
     sessionStorage.removeItem("tetris:playerId")
-    const playerSession = toPlayerSession(activeSession)
-    sessionReadyHandlers.forEach(handler => handler(playerSession))
+    sessionReadyHandlers.forEach(handler => handler(toPlayerSession(session)))
 })
 
 serverConnection.on("connect_error", (error: ConnectError) => {
@@ -250,7 +250,10 @@ serverConnection.on("disconnect", (reason: string) => {
 
 serverConnection.connect()
 
-function emitAuthenticated(eventName: ClientToServerEventName, payload: unknown): boolean {
+function emitAuthenticated<K extends ClientToServerEventName>(
+    eventName: K,
+    payload: ClientToServerWirePayload<K>,
+): boolean {
     if (!activeSession || !serverConnection.connected) return false
 
     // connected 확인과 emit은 같은 task에서 실행되므로 Socket.IO의 reconnect
@@ -409,32 +412,46 @@ export function requestStartGame(roomId: string, _playerId: string | null): void
 // =============================
 
 export function sendGameInput(
-    roomId: string,
+    roomId: ClientToServerWirePayload<"game:input">["roomId"],
     _playerId: string,
-    action: string,
-    tick: number | null = null,
-    pieceIndex: number | null = null,
-    clientSequence: number | null = null,
-    expectedTransform: { pieceType: PieceType; rotation: number; col: number } | null = null,
+    action: Extract<ClientToServerWirePayload<"game:input">, { action: "hold" }>["action"],
+    tick: ClientToServerWirePayload<"game:input">["tick"],
+    pieceIndex: ClientToServerWirePayload<"game:input">["pieceIndex"],
+    clientSequence: ClientToServerWirePayload<"game:input">["clientSequence"],
+    expectedTransform?: Extract<ClientToServerWirePayload<"game:input">, { action: "hold" }>["expectedTransform"] | null,
+): boolean;
+export function sendGameInput(
+    roomId: ClientToServerWirePayload<"game:input">["roomId"],
+    _playerId: string,
+    action: Exclude<ClientToServerWirePayload<"game:input">, { action: "hold" }>["action"],
+    tick: ClientToServerWirePayload<"game:input">["tick"],
+    pieceIndex: ClientToServerWirePayload<"game:input">["pieceIndex"],
+    clientSequence: ClientToServerWirePayload<"game:input">["clientSequence"],
+    expectedTransform: Exclude<ClientToServerWirePayload<"game:input">, { action: "hold" }>["expectedTransform"],
+): boolean;
+export function sendGameInput(
+    roomId: ClientToServerWirePayload<"game:input">["roomId"],
+    _playerId: string,
+    action: ClientToServerWirePayload<"game:input">["action"],
+    tick: ClientToServerWirePayload<"game:input">["tick"],
+    pieceIndex: ClientToServerWirePayload<"game:input">["pieceIndex"],
+    clientSequence: ClientToServerWirePayload<"game:input">["clientSequence"],
+    expectedTransform: NonNullable<ClientToServerWirePayload<"game:input">["expectedTransform"]> | null = null,
 ): boolean {
-    const payload: {
-        roomId: string;
-        action: string;
-        tick: number | null;
-        pieceIndex: number | null;
-        clientSequence: number | null;
-        expectedTransform?: { pieceType: PieceType; rotation: number; col: number };
-    } = {
+    if (action === "hold") {
+        return emitAuthenticated("game:input", expectedTransform
+            ? { roomId, action, tick, pieceIndex, clientSequence, expectedTransform }
+            : { roomId, action, tick, pieceIndex, clientSequence })
+    }
+    if (!expectedTransform) return false
+    return emitAuthenticated("game:input", {
         roomId,
         action,
         tick,
         pieceIndex,
         clientSequence,
-    }
-    if (expectedTransform) {
-        payload.expectedTransform = expectedTransform
-    }
-    return emitAuthenticated("game:input", payload)
+        expectedTransform,
+    })
 }
 
 export function onGameInputResult(

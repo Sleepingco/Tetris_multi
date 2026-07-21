@@ -297,19 +297,31 @@ export function startMultiplayerGame({
     function handleLocalInputOutcome(outcome: InputOutcomeRecord): void {
         if (destroyed) return
         if (!outcome?.applied || !outcome.input) return
+        if (outcome.input.pieceIndex === null) return
 
         const expectedTransform = createExpectedTransform(outcome)
         const clientSequence = nextClientSequence
         nextClientSequence += 1
-        const didSend = sendGameInput(
-            roomId,
-            playerId,
-            outcome.input.action,
-            outcome.input.tick,
-            outcome.input.pieceIndex,
-            clientSequence,
-            expectedTransform,
-        )
+        const didSend = outcome.input.action === "hold"
+            ? sendGameInput(
+                roomId,
+                playerId,
+                outcome.input.action,
+                outcome.input.tick,
+                outcome.input.pieceIndex,
+                clientSequence,
+            )
+            : expectedTransform
+                ? sendGameInput(
+                    roomId,
+                    playerId,
+                    outcome.input.action,
+                    outcome.input.tick,
+                    outcome.input.pieceIndex,
+                    clientSequence,
+                    expectedTransform,
+                )
+                : false
         if (!didSend) {
             settlePlacementAttempt(createPlacementAttemptKey(
                 outcome.input.pieceIndex,
