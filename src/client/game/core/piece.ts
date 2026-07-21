@@ -1,11 +1,20 @@
 import type { PieceType } from "../state/blocks.ts";
 
-export type PieceState = {
-    pieceType: PieceType | "";
+export type EmptyPieceState = {
+    pieceType: "";
     rotation: number;
     row: number;
     col: number;
 };
+
+export type PlaceablePieceState = {
+    pieceType: PieceType;
+    rotation: number;
+    row: number;
+    col: number;
+};
+
+export type PieceState = EmptyPieceState | PlaceablePieceState;
 
 /**
   * 스폰 위치 기준으로 회전이 초기화된 새 조각 상태를 만든다.
@@ -19,7 +28,7 @@ export function createSpawnedPiece(
     pieceType: PieceType,
     spawnRow: number,
     spawnCol: number,
-): PieceState {
+): PlaceablePieceState {
     return {
         pieceType,
         row: spawnRow,

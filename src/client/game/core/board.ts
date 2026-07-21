@@ -1,4 +1,4 @@
-import type { PieceState } from "./piece.ts";
+import type { PieceState, PlaceablePieceState } from "./piece.ts";
 import type { BlockDefinitions } from "../state/blocks.ts";
 
 export type BoardCell = string | null;
@@ -49,7 +49,7 @@ export function createEmptyBoard(rows: number, cols: number): Board {
   */
 export function canPlacePiece(
         board: Board,
-        piece: PieceState,
+        piece: PlaceablePieceState,
         blocks: BlockDefinitions,
 ): boolean {
         const { pieceType, rotation, row, col } = piece
@@ -71,7 +71,7 @@ export function canPlacePiece(
   */
 export function lockPieceOnBoard(
         board: Board,
-        piece: PieceState,
+        piece: PlaceablePieceState,
         blocks: BlockDefinitions,
 ): void {
         const { pieceType, rotation, row, col } = piece

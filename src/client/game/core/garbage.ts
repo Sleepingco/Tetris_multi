@@ -152,7 +152,7 @@ export function isBackToBackEligible({
     isTSpin = false,
 }: Pick<GarbageAttackOptions, "linesCleared" | "isTSpin"> = {}): boolean {
     return linesCleared === 4
-        || (isTSpin && typeof linesCleared === "number" && linesCleared > 0);
+        || (isTSpin && linesCleared !== undefined && linesCleared > 0);
 }
 
 function getComboBonus(combo: number): number {

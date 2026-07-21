@@ -20,6 +20,9 @@ export function pickRandomPiece(
     pieceTypes: readonly PieceType[],
     rng: () => number,
 ): PieceType {
+    if (pieceTypes.length === 0) {
+        throw new TypeError("pieceTypes must not be empty");
+    }
     if (!gameState.bag || gameState.bag.length === 0) {
         gameState.bag = [...pieceTypes];
         for (let i = gameState.bag.length - 1; i > 0; i--) {
@@ -27,7 +30,11 @@ export function pickRandomPiece(
             [gameState.bag[i], gameState.bag[j]] = [gameState.bag[j], gameState.bag[i]];
         }
     }
-    return gameState.bag.pop()!;
+    const pieceType = gameState.bag.pop();
+    if (pieceType === undefined) {
+        throw new Error("piece bag must not be empty");
+    }
+    return pieceType;
 }
 
 /**
@@ -69,5 +76,8 @@ export function takeNextFromQueue(
     ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng);
     const nextType = gameState.pieceQueue.shift();
     ensureQueueFilled(gameState, nextQueueSize, pieceTypes, rng);
-    return nextType!;
+    if (nextType === undefined) {
+        throw new Error("piece queue must not be empty");
+    }
+    return nextType;
 }

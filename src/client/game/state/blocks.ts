@@ -44,6 +44,6 @@ const BLOCKS = {
 }
 
 export type PieceType = keyof typeof BLOCKS;
-export type BlockDefinitions = typeof BLOCKS & Record<string, number[][][]>;
+export type BlockDefinitions = typeof BLOCKS;
 
 export default BLOCKS;
