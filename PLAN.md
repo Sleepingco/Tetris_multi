@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-22 기준. Goal 11A CSP/security headers가 전용 branch의 merge gate에 있으며 DB Goal 9·10은 보류한다.
+- Last update: 2026-07-22 기준. Goal 11B dependency hardening이 전용 branch의 merge gate에 있으며 DB Goal 9·10은 보류한다.
 
 ## Document Role
 
@@ -315,6 +315,17 @@
 - Node `24.18.0`/npm `11.16.0`에서 header/hash와 HTTP mode targeted 5/5, artifact 1/1, source-less release 1/1과 report-only/enforce CSP browser gate 각각 1/1이 통과했다. `/pages` 404와 hashed asset Range 416에서도 선택된 CSP mode 하나만 존재한다. `bash scripts/verify.sh`는 Node tests 592 pass·기존 조건부 1 skip, Vite-dev는 기존 8 pass·production-only 2 skip, enforce production Playwright는 Single/PVP/PVE를 포함해 35/35다.
 - HSTS, COOP/COEP/CORP, report collector, dependency hardening과 외부 TLS/reverse proxy는 이번 Goal 범위가 아니다. WebKit/Firefox와 실제 배포 origin은 미검증이며 production에서 외부 connect destination이 필요하면 exact `CSP_CONNECT_ORIGINS`를 별도로 설정해야 한다.
 - Goal 11A는 local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 11B와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
+
+## Migration Goal 11B Dependency hardening merge gate (2026-07-22)
+
+- 기준은 `main@5a2bb22`이며 `codex/harden-dependencies`에서 fresh npm audit의 유일한 low advisory인 `body-parser@2.2.2`의 invalid-limit DoS 경계를 검토하고 patched `2.3.0`으로 갱신했다. `package.json`, production source, script와 engine 설정은 변경하지 않았다.
+- Express는 `body-parser` 모듈을 로드한다. 현재 애플리케이션은 `express.json()`, `express.urlencoded()`, `express.raw()`, `express.text()` 또는 `body-parser` middleware를 생성하지 않으므로 취약점의 invalid-limit 처리 경로는 현재 코드에서 도달하지 않는다. 그래도 알려진 취약점을 제거하기 위해 Express의 기존 `^2.2.1` 범위와 Node 24에 호환되는 patched version을 적용했다.
+- lockfile 변경은 `body-parser@2.3.0`, 그 dependency인 `type-is@2.1.0`과 각 모듈 아래 `content-type@2.0.0` 네 entry뿐이다. 모든 변경 package는 npm registry URL과 integrity를 가지며 install-script allowlist는 optional `fsevents@2.3.2`, Vite 내부 optional `fsevents@2.3.3` 두 개로 유지된다.
+- Node `24.18.0`/npm `11.16.0`에서 `npm ci --ignore-scripts`, production/full npm audit 0건, artifact 1/1, source-less release 1/1이 통과했다. `bash scripts/verify.sh`는 Node tests 592 pass·기존 조건부 1 skip, Vite-dev는 8 pass·production-only 2 skip, production Playwright는 CSP·Socket.IO·Single/PVP/PVE를 포함해 35/35다.
+- 기존 `tetris-ml` 환경은 수정하지 않았다. `/private/tmp`의 별도 prefix에서 `environment-ml.yml` exact pin을 clean resolve해 Python 115/115를 통과한 뒤 prefix를 제거했다. 기존 `npm run verify:ml`도 Node 35/35·Python 115/115를 통과했고 source/dist V4 model SHA-256은 모두 `ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d`다.
+- `package.json`과 `environment-ml.yml` checksum은 기준과 동일하다. `environment-ml.yml`은 exact top-level pin을 제공하지만 전체 transitive package/build lockfile은 아니며, Conda solver와 defaults channel의 미래 metadata 변화는 남은 재현성 한계다.
+- rollback은 현재 Goal 11B 문서 commit을 먼저 revert한 뒤 dependency commit `3fe121e`를 revert하고 `npm ci --ignore-scripts`로 기준 lock resolve를 복구한다. Python/Conda 파일은 변경하지 않아 별도 rollback이 없다.
+- Goal 11B는 clean local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 11C와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
 
 ## Project Direction
 
