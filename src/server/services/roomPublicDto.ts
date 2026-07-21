@@ -19,24 +19,38 @@ function createPublicPlayerDto(player: RoomPlayer): RoomPublicDto["players"][num
     }
 }
 
-export function createRoomPublicDto(room: RoomState | null): RoomPublicDto | null {
+export function createRoomPublicDto(room: RoomState): RoomPublicDto;
+export function createRoomPublicDto(room: null): null;
+export function createRoomPublicDto(
+    room: RoomState | null,
+): Record<string, unknown> | null {
     if (!room) return null
 
-    return {
-        roomId: room.roomId,
-        mode: room.mode,
-        aiDifficulty: room.aiDifficulty,
-        aiPolicy: room.aiPolicy,
-        hostPlayerId: room.hostPlayerId,
-        status: room.status,
-        createdAt: room.createdAt,
-        players: room.players.map(createPublicPlayerDto),
+    const dto: Record<string, unknown> = {}
+    const scalarFields = [
+        "roomId",
+        "mode",
+        "aiDifficulty",
+        "aiPolicy",
+        "hostPlayerId",
+        "status",
+        "createdAt",
+    ] as const
+    scalarFields.forEach((field) => {
+        if (Object.hasOwn(room, field)) dto[field] = room[field]
+    })
+    if (Object.hasOwn(room, "players")) {
+        dto.players = Array.isArray(room.players)
+            ? room.players.map(createPublicPlayerDto)
+            : []
     }
+
+    return dto
 }
 
 export function createPublicRoomResult(result: RoomResult): RoomResultDto {
     return {
         ...result,
-        room: createRoomPublicDto(result?.room),
+        room: result.room ? createRoomPublicDto(result.room) : null,
     }
 }

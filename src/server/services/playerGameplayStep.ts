@@ -1,8 +1,65 @@
-const {
+import {
     applyServerInputToPlayerState,
-} = require("./playerStateInput.js");
+} from "./playerStateInput.js";
+import type { Board } from "../../client/game/core/board.js";
+import type { PieceState, PlaceablePieceState } from "../../client/game/core/piece.js";
+import type { PieceType } from "../../client/game/state/blocks.js";
+import type { GameCore } from "./gameCoreLoader.js";
+import type { AuthoritativeInput, AuthoritativePlayerState } from "./matchService.js";
 
-function applyAuthoritativeInput(authoritativeState, input, gameCore) {
+type MoveIntent = ReturnType<GameCore["resolveMoveIntent"]>;
+export type PresentationEffect = {
+    type: "line_clear";
+    id?: string;
+    pieceIndex: number;
+    rows: number[];
+    boardBeforeClear: AuthoritativePlayerState["board"];
+};
+export type PlacementResult = {
+    pieceIndex: number;
+    lockedPiece: PlaceablePieceState;
+    droppedRows: number;
+    linesCleared: number;
+    isTSpin: boolean;
+    combo: number;
+    backToBack: boolean;
+    rawAttackLines: number;
+    attackLines: number;
+    canceledGarbageLines: number;
+    incomingGarbageLines: number;
+    appliedGarbageLines: number;
+    scoreBefore: number;
+    scoreAfter: number;
+    scoreDelta: number;
+    gameOver: boolean;
+    gameOverReason?: string;
+    nextPiece: PlaceablePieceState | null;
+};
+export type GameplayResult = {
+    ok: boolean;
+    reason: string | null;
+    moveIntent?: MoveIntent | null;
+    holdResult?: {
+        holdPieceType: PieceType;
+        activePiece: AuthoritativePlayerState["activePiece"];
+        gameOver?: boolean;
+        gameOverReason?: string;
+    };
+    placementResult?: PlacementResult;
+    presentationEffect?: PresentationEffect;
+};
+export type GravityStepResult = GameplayResult & {
+    gravityResult?: {
+        kind: "skipped" | "move" | "grounded" | "lock" | MoveIntent["kind"];
+        moveIntent?: MoveIntent;
+    };
+};
+
+export function applyAuthoritativeInput(
+    authoritativeState: AuthoritativePlayerState,
+    input: AuthoritativeInput,
+    gameCore: GameCore,
+): GameplayResult {
     if (!authoritativeState) {
         return createFailure("INVALID_AUTHORITATIVE_STATE");
     }
@@ -35,7 +92,11 @@ function applyAuthoritativeInput(authoritativeState, input, gameCore) {
     return createFailure("UNSUPPORTED_ACTION");
 }
 
-function applyAuthoritativeGravityStep(authoritativeState, gameCore, options = {}) {
+export function applyAuthoritativeGravityStep(
+    authoritativeState: AuthoritativePlayerState,
+    gameCore: GameCore,
+    options: { lockGroundedPiece?: boolean } = {},
+): GravityStepResult {
     if (!authoritativeState) {
         return createFailure("INVALID_AUTHORITATIVE_STATE");
     }
@@ -76,7 +137,7 @@ function applyAuthoritativeGravityStep(authoritativeState, gameCore, options = {
         hasFallTimer: true,
     });
 
-    if (moveIntent.kind === "ok") {
+    if (moveIntent.kind === "ok" && isPlaceablePiece(moveIntent.active)) {
         authoritativeState.activePiece = { ...moveIntent.active };
         authoritativeState.pendingPiece = { ...moveIntent.active };
         authoritativeState.lastActionWasRotation = false;
@@ -92,7 +153,7 @@ function applyAuthoritativeGravityStep(authoritativeState, gameCore, options = {
         };
     }
 
-    if (moveIntent.kind === "lock") {
+    if (moveIntent.kind === "lock" && isPlaceablePiece(moveIntent.active)) {
         if (options.lockGroundedPiece !== true) {
             return {
                 ok: true,
@@ -131,7 +192,11 @@ function applyAuthoritativeGravityStep(authoritativeState, gameCore, options = {
     };
 }
 
-function applyHardDropInput(authoritativeState, input, gameCore) {
+function applyHardDropInput(
+    authoritativeState: AuthoritativePlayerState,
+    input: AuthoritativeInput,
+    gameCore: GameCore,
+): GameplayResult {
     if (!authoritativeState) {
         return createFailure("INVALID_PLAYER_STATE");
     }
@@ -145,7 +210,7 @@ function applyHardDropInput(authoritativeState, input, gameCore) {
     }
 
     const activePiece = authoritativeState.activePiece;
-    if (!activePiece?.pieceType) {
+    if (!isPlaceablePiece(activePiece)) {
         return createFailure("INVALID_PLAYER_STATE");
     }
 
@@ -168,13 +233,17 @@ function applyHardDropInput(authoritativeState, input, gameCore) {
     });
 }
 
-function applySoftDrop(authoritativeState, input, gameCore) {
+function applySoftDrop(
+    authoritativeState: AuthoritativePlayerState,
+    input: AuthoritativeInput,
+    gameCore: GameCore,
+): GameplayResult {
     const moveResult = applyServerInputToPlayerState(authoritativeState, input, gameCore);
     if (moveResult.ok) {
         return moveResult;
     }
 
-    if (moveResult.moveIntent?.kind !== "lock") {
+    if (moveResult.moveIntent?.kind !== "lock" || !isPlaceablePiece(moveResult.moveIntent.active)) {
         return moveResult;
     }
 
@@ -185,7 +254,10 @@ function applySoftDrop(authoritativeState, input, gameCore) {
     });
 }
 
-function applyHold(authoritativeState, gameCore) {
+function applyHold(
+    authoritativeState: AuthoritativePlayerState,
+    gameCore: GameCore,
+): GameplayResult {
     const activePieceType = authoritativeState.activePiece?.pieceType;
     if (!activePieceType || authoritativeState.holdUsedThisDrop) {
         return createFailure("HOLD_NOT_AVAILABLE");
@@ -196,7 +268,9 @@ function applyHold(authoritativeState, gameCore) {
         if (!Array.isArray(authoritativeState.pieceQueue) || authoritativeState.pieceQueue.length === 0) {
             return createFailure("NO_PIECE_AVAILABLE");
         }
-        incomingType = authoritativeState.pieceQueue.shift();
+        const queuedPieceType = authoritativeState.pieceQueue.shift();
+        if (!queuedPieceType) return createFailure("NO_PIECE_AVAILABLE");
+        incomingType = queuedPieceType;
     }
 
     authoritativeState.holdPieceType = activePieceType;
@@ -218,11 +292,15 @@ function applyHold(authoritativeState, gameCore) {
     };
 }
 
-function lockPieceAndSpawnNext(authoritativeState, gameCore, {
+function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gameCore: GameCore, {
     lockedPiece,
     droppedRows,
     useHardDropScore,
-}) {
+}: {
+    lockedPiece: PlaceablePieceState;
+    droppedRows: number;
+    useHardDropScore: boolean;
+}): GameplayResult {
     if (!lockedPiece?.pieceType) {
         return createFailure("INVALID_AUTHORITATIVE_STATE");
     }
@@ -247,7 +325,7 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
     const clearedRows = topOut
         ? []
         : findFilledRows(authoritativeState.board);
-    const presentationEffect = clearedRows.length > 0
+    const presentationEffect: PresentationEffect | null = clearedRows.length > 0
         ? {
             type: "line_clear",
             pieceIndex: lockedPieceIndex,
@@ -333,10 +411,10 @@ function lockPieceAndSpawnNext(authoritativeState, gameCore, {
     };
 }
 
-function findFilledRows(board) {
+function findFilledRows(board: Board): number[] {
     if (!Array.isArray(board)) return [];
 
-    return board.reduce((filledRows, row, rowIndex) => {
+    return board.reduce<number[]>((filledRows, row, rowIndex) => {
         if (Array.isArray(row) && row.length > 0 && row.every(cell => cell !== null)) {
             filledRows.push(rowIndex);
         }
@@ -344,11 +422,16 @@ function findFilledRows(board) {
     }, []);
 }
 
-function cloneBoard(board) {
+function cloneBoard(
+    board: AuthoritativePlayerState["board"],
+): AuthoritativePlayerState["board"] {
     return board.map(row => [...row]);
 }
 
-function applyPendingGarbageQueue(authoritativeState, gameCore) {
+function applyPendingGarbageQueue(
+    authoritativeState: AuthoritativePlayerState,
+    gameCore: GameCore,
+): { appliedLines: number; overflow: boolean } {
     let appliedLines = 0;
     let overflow = false;
 
@@ -365,12 +448,16 @@ function applyPendingGarbageQueue(authoritativeState, gameCore) {
     };
 }
 
-function spawnNextPiece(authoritativeState, gameCore) {
+function spawnNextPiece(
+    authoritativeState: AuthoritativePlayerState,
+    gameCore: GameCore,
+): PlaceablePieceState | null {
     if (!Array.isArray(authoritativeState.pieceQueue) || authoritativeState.pieceQueue.length === 0) {
         return null;
     }
 
     const pieceType = authoritativeState.pieceQueue.shift();
+    if (!pieceType) return null;
 
     authoritativeState.pieceIndex = normalizeInteger(authoritativeState.pieceIndex) + 1;
     authoritativeState.holdUsedThisDrop = false;
@@ -379,7 +466,11 @@ function spawnNextPiece(authoritativeState, gameCore) {
     return spawnPiece(authoritativeState, pieceType, gameCore);
 }
 
-function spawnPiece(authoritativeState, pieceType, gameCore) {
+function spawnPiece(
+    authoritativeState: AuthoritativePlayerState,
+    pieceType: PieceType,
+    gameCore: GameCore,
+): PlaceablePieceState | null {
     const spawnedPiece = createSpawnedPiece(pieceType, gameCore);
     const canSpawn = gameCore.canPlacePiece(
         authoritativeState.board,
@@ -406,7 +497,7 @@ function spawnPiece(authoritativeState, pieceType, gameCore) {
     return spawnedPiece;
 }
 
-function createSpawnedPiece(pieceType, gameCore) {
+function createSpawnedPiece(pieceType: PieceType, gameCore: GameCore): PlaceablePieceState {
     const spawnPosition = gameCore.SPAWN_POSITION ?? {
         row: -1,
         col: 3,
@@ -418,30 +509,29 @@ function createSpawnedPiece(pieceType, gameCore) {
     );
 }
 
-function createFailure(reason) {
+function createFailure(reason: string): GameplayResult {
     return {
         ok: false,
         reason,
     };
 }
 
-function normalizeInteger(value) {
-    return Number.isInteger(value) && value >= 0
+function isPlaceablePiece(piece: PieceState): piece is PlaceablePieceState {
+    return piece.pieceType !== "";
+}
+
+function normalizeInteger(value: unknown): number {
+    return typeof value === "number" && Number.isInteger(value) && value >= 0
         ? value
         : 0;
 }
 
-function normalizeNumber(value) {
-    return Number.isFinite(value) && value >= 0
+function normalizeNumber(value: unknown): number {
+    return typeof value === "number" && Number.isFinite(value) && value >= 0
         ? value
         : 0;
 }
 
-function incrementCurrentTick(authoritativeState) {
+function incrementCurrentTick(authoritativeState: AuthoritativePlayerState): void {
     authoritativeState.currentTick = normalizeInteger(authoritativeState.currentTick) + 1;
 }
-
-module.exports = {
-    applyAuthoritativeInput,
-    applyAuthoritativeGravityStep,
-};

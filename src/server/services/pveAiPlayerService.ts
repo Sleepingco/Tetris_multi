@@ -1,23 +1,85 @@
-const {
-    applyAuthoritativeInputToMatchPlayerState: defaultApplyInput,
-    ensurePlayerBagQueue: defaultEnsurePlayerBagQueue,
-    getAuthoritativePlayerSnapshot: defaultGetPlayerSnapshot,
-    getMatchState: defaultGetMatchState,
-    markAuthoritativePlayerGameOver: defaultMarkPlayerGameOver,
-} = require("./matchService.js");
-const {
-    savePlacementDecisionLog: defaultSavePlacementDecisionLog,
-} = require("./logService.js");
-const {
+import {
+    applyAuthoritativeInputToMatchPlayerState as defaultApplyInput,
+    ensurePlayerBagQueue as defaultEnsurePlayerBagQueue,
+    getAuthoritativePlayerSnapshot as defaultGetPlayerSnapshot,
+    getMatchState as defaultGetMatchState,
+    markAuthoritativePlayerGameOver as defaultMarkPlayerGameOver,
+} from "./matchService.js";
+import {
+    savePlacementDecisionLog as defaultSavePlacementDecisionLog,
+} from "./logService.js";
+import {
     AI_EXECUTION_PROFILES,
     AI_POLICY,
     DEFAULT_AI_DIFFICULTY,
-} = require("./aiDifficulty.js");
-const crypto = require("node:crypto");
-const fs = require("node:fs/promises");
-const path = require("node:path");
+} from "./aiDifficulty.js";
+import * as crypto from "node:crypto";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
+import type { BoardMetrics } from "../../client/game/core/boardMetrics.js";
+import type { PlaceablePieceState } from "../../client/game/core/piece.js";
+import type { HeuristicDecision } from "../../client/game/ai/heuristic/heuristicEvaluator.js";
+import type { Placement } from "../../client/game/ai/heuristic/placementGenerator.js";
+import type { ReachableAction } from "../../client/game/ai/heuristic/reachablePlacementPlanner.js";
+import type { PlacementV4Model } from "../../client/game/ai/ml/placementV4OfflineScorer.js";
+import type { PlacementV4PveDecision } from "../../client/game/ai/ml/placementV4PveDecisionAdapter.js";
+import type { AiPolicy } from "./aiDifficulty.js";
+import type { GameCore } from "./gameCoreLoader.js";
+import type {
+    AuthoritativeInput,
+    AuthoritativePlayerState,
+    MatchResult,
+    MatchState,
+} from "./matchService.js";
+import type {
+    GameplayResult,
+    PlacementResult,
+    PresentationEffect,
+} from "./playerGameplayStep.js";
 
-const AI_ACTIONS = new Set([
+type DecisionMetadata = {
+    policyRequested?: AiPolicy;
+    policyUsed?: AiPolicy;
+    fallbackReason?: string | null;
+    modelSha256?: string | null;
+    selectedClassKey?: string;
+    selectedRepresentativeKey?: string;
+};
+type WithDecisionMetadata<T> = T & DecisionMetadata;
+export type AiDecision = WithDecisionMetadata<HeuristicDecision>
+    | WithDecisionMetadata<PlacementV4PveDecision>;
+type SuccessfulAiDecision = Extract<AiDecision, { ok: true }>;
+export type PveAiPlan = {
+    pieceIndex: number;
+    selectedPlacement: Placement;
+    remainingActions: ReachableAction[];
+    executedInputs: Array<AuthoritativeInput & { sequence: number; createdAt: number }>;
+    terminalSoftDropsExecuted: number;
+    decision: SuccessfulAiDecision;
+    stateBefore: AuthoritativePlayerState;
+};
+export type PveAiStepResult = {
+    ok: boolean;
+    reason: string | null;
+    skipped?: boolean;
+    gameOver?: boolean;
+    stateChanged?: boolean;
+    replanRequired?: boolean;
+    action?: AuthoritativeInput["action"];
+    input?: AuthoritativeInput;
+    gameplayResult?: GameplayResult;
+    placementResult?: PlacementResult | null;
+    presentationEffect?: PresentationEffect;
+    decision?: AiDecision;
+    log?: unknown;
+    logResult?: unknown;
+    message?: string;
+};
+export type PveAiPlayerService = {
+    processAiStep(roomId: string, playerId: string, gameCore: GameCore): Promise<PveAiStepResult>;
+};
+
+const AI_ACTIONS = new Set<ReachableAction>([
     "move_left",
     "move_right",
     "rotate",
@@ -31,10 +93,17 @@ const DEFAULT_PLACEMENT_V4_MODEL_PATH = path.join(
     "assets",
     "placement-v4-125g-experimental-model.json",
 );
-let heuristicAiPromise = null;
-let placementV4AiPromise = null;
+type HeuristicAi = typeof import("../../client/game/ai/heuristic/heuristicEvaluator.js") & {
+    getBoardMetrics: typeof import("../../client/game/core/boardMetrics.js")["getBoardMetrics"];
+};
+type PlacementV4Ai = {
+    getPlacementV4PveDecision: typeof import("../../client/game/ai/ml/placementV4PveDecisionAdapter.js")["getPlacementV4PveDecision"];
+    validatePlacementV4Model: typeof import("../../client/game/ai/ml/placementV4OfflineScorer.js")["validatePlacementV4Model"];
+};
+let heuristicAiPromise: Promise<HeuristicAi> | null = null;
+let placementV4AiPromise: Promise<PlacementV4Ai> | null = null;
 
-function loadHeuristicAi() {
+function loadHeuristicAi(): Promise<HeuristicAi> {
     if (!heuristicAiPromise) {
         heuristicAiPromise = Promise.all([
             import("../../client/game/ai/heuristic/heuristicEvaluator.ts"),
@@ -47,7 +116,7 @@ function loadHeuristicAi() {
     return heuristicAiPromise;
 }
 
-function loadPlacementV4Ai() {
+function loadPlacementV4Ai(): Promise<PlacementV4Ai> {
     if (!placementV4AiPromise) {
         placementV4AiPromise = Promise.all([
             import("../../client/game/ai/ml/placementV4PveDecisionAdapter.ts"),
@@ -60,7 +129,21 @@ function loadPlacementV4Ai() {
     return placementV4AiPromise;
 }
 
-async function loadPlacementV4Model(modelPath, validateModel) {
+type PlacementV4ModelResult = {
+    ok: true;
+    model: PlacementV4Model;
+    modelSha256: string;
+    reason: null;
+} | {
+    ok: false;
+    reason: string;
+    modelSha256: string | null;
+};
+
+async function loadPlacementV4Model(
+    modelPath: string,
+    validateModel: PlacementV4Ai["validatePlacementV4Model"],
+): Promise<PlacementV4ModelResult> {
     let bytes;
     try {
         bytes = await fs.readFile(modelPath);
@@ -73,7 +156,7 @@ async function loadPlacementV4Model(modelPath, validateModel) {
     }
 
     const modelSha256 = crypto.createHash("sha256").update(bytes).digest("hex");
-    let model;
+    let model: unknown;
     try {
         model = JSON.parse(bytes.toString("utf8"));
     } catch {
@@ -91,11 +174,16 @@ async function loadPlacementV4Model(modelPath, validateModel) {
         };
     }
 
-    let validation;
+    let validation: ReturnType<PlacementV4Ai["validatePlacementV4Model"]>;
     try {
         validation = validateModel(model);
     } catch (error) {
-        validation = { ok: false, reason: error.message || "UNEXPECTED_ERROR" };
+        validation = {
+            ok: false,
+            reason: error instanceof Error && error.message
+                ? error.message
+                : "UNEXPECTED_ERROR",
+        };
     }
     if (!validation?.ok) {
         return {
@@ -106,13 +194,30 @@ async function loadPlacementV4Model(modelPath, validateModel) {
     }
     return {
         ok: true,
-        model,
+        model: model as PlacementV4Model,
         modelSha256,
         reason: null,
     };
 }
 
-function createPveAiPlayerService(dependencies = {}) {
+type Dependencies = {
+    loadHeuristicAi?: typeof loadHeuristicAi;
+    loadPlacementV4Ai?: typeof loadPlacementV4Ai;
+    getMatchState?: typeof defaultGetMatchState;
+    getPlayerSnapshot?: typeof defaultGetPlayerSnapshot;
+    applyInput?: typeof defaultApplyInput;
+    ensurePlayerBagQueue?: typeof defaultEnsurePlayerBagQueue;
+    markPlayerGameOver?: typeof defaultMarkPlayerGameOver;
+    savePlacementDecisionLog?: typeof defaultSavePlacementDecisionLog;
+    loadPlacementV4Model?: typeof loadPlacementV4Model;
+    recordAiPolicyEvidence?: (evidence: Record<string, unknown>) => unknown;
+    now?: () => number;
+    env?: NodeJS.ProcessEnv;
+};
+
+export function createPveAiPlayerService(
+    dependencies: Dependencies = {},
+): PveAiPlayerService {
     const loadAi = dependencies.loadHeuristicAi || loadHeuristicAi;
     const loadV4Ai = dependencies.loadPlacementV4Ai || loadPlacementV4Ai;
     const getMatchState = dependencies.getMatchState || defaultGetMatchState;
@@ -125,15 +230,19 @@ function createPveAiPlayerService(dependencies = {}) {
     const loadV4Model = dependencies.loadPlacementV4Model || loadPlacementV4Model;
     const recordAiPolicyEvidence = dependencies.recordAiPolicyEvidence || (() => {});
     const now = dependencies.now || Date.now;
-    const modelPathValue = typeof (dependencies.env || process.env).PVE_PLACEMENT_V4_MODEL_PATH === "string"
-        ? (dependencies.env || process.env).PVE_PLACEMENT_V4_MODEL_PATH.trim()
+    const env = dependencies.env || process.env;
+    const configuredModelPath = env.PVE_PLACEMENT_V4_MODEL_PATH;
+    const modelPathValue = typeof configuredModelPath === "string"
+        ? configuredModelPath.trim()
         : "";
     const modelPath = modelPathValue
         ? path.resolve(process.cwd(), modelPathValue)
         : DEFAULT_PLACEMENT_V4_MODEL_PATH;
-    let modelPromise = null;
+    let modelPromise: Promise<PlacementV4ModelResult> | null = null;
 
-    function getPlacementV4Model(ai) {
+    function getPlacementV4Model(
+        ai: Awaited<ReturnType<typeof loadPlacementV4Ai>>,
+    ): Promise<PlacementV4ModelResult> {
         if (!modelPromise) {
             modelPromise = Promise.resolve()
                 .then(() => loadV4Model(modelPath, ai.validatePlacementV4Model))
@@ -146,7 +255,12 @@ function createPveAiPlayerService(dependencies = {}) {
         return modelPromise;
     }
 
-    function getHeuristicFallbackDecision(ai, decisionState, fallbackReason, modelSha256) {
+    function getHeuristicFallbackDecision(
+        ai: Awaited<ReturnType<typeof loadHeuristicAi>>,
+        decisionState: ReturnType<typeof createDecisionState>,
+        fallbackReason: string,
+        modelSha256: string | null,
+    ): AiDecision {
         return {
             ...ai.getHeuristicDecision(decisionState),
             policyRequested: "placement_v4",
@@ -156,7 +270,11 @@ function createPveAiPlayerService(dependencies = {}) {
         };
     }
 
-    async function getPolicyDecision(ai, decisionState, aiPolicy) {
+    async function getPolicyDecision(
+        ai: Awaited<ReturnType<typeof loadHeuristicAi>>,
+        decisionState: ReturnType<typeof createDecisionState>,
+        aiPolicy: AiPolicy | null,
+    ): Promise<AiDecision> {
         if (aiPolicy !== AI_POLICY.PLACEMENT_V4) {
             return ai.getHeuristicDecision(decisionState);
         }
@@ -197,7 +315,12 @@ function createPveAiPlayerService(dependencies = {}) {
         }
     }
 
-    function recordPolicyEvidence(roomId, playerId, pieceIndex, decision) {
+    function recordPolicyEvidence(
+        roomId: string,
+        playerId: string,
+        pieceIndex: number,
+        decision: AiDecision,
+    ): void {
         if (decision.policyRequested !== AI_POLICY.PLACEMENT_V4) return;
         try {
             void Promise.resolve(recordAiPolicyEvidence({
@@ -226,7 +349,11 @@ function createPveAiPlayerService(dependencies = {}) {
      * @param {Object} gameCore - server에서 재사용하는 game core
      * @returns {Promise<Object>} plan 생성, action 적용 또는 실패 결과
      */
-    async function processAiStep(roomId, playerId, gameCore) {
+    async function processAiStep(
+        roomId: string,
+        playerId: string,
+        gameCore: GameCore,
+    ): Promise<PveAiStepResult> {
         try {
             const matchResult = getMatchState(roomId);
             if (!matchResult.ok || !matchResult.match) {
@@ -251,7 +378,7 @@ function createPveAiPlayerService(dependencies = {}) {
                 const ai = await loadAi();
                 const queueResult = ensurePlayerBagQueue(roomId, playerId);
                 if (!queueResult.ok) {
-                    return createFailure(queueResult.reason);
+                    return createFailure(queueResult.reason || "BAG_QUEUE_FAILED");
                 }
 
                 const snapshotResult = getPlayerSnapshot(roomId, playerId);
@@ -299,8 +426,8 @@ function createPveAiPlayerService(dependencies = {}) {
             }
             const currentState = snapshotResult.snapshot;
             const plan = player.aiPlan;
-            const executionProfile = AI_EXECUTION_PROFILES[matchResult.match.aiDifficulty]
-                || AI_EXECUTION_PROFILES[DEFAULT_AI_DIFFICULTY];
+            const difficulty = matchResult.match.aiDifficulty || DEFAULT_AI_DIFFICULTY;
+            const executionProfile = AI_EXECUTION_PROFILES[difficulty];
             if (plan.pieceIndex !== currentState.pieceIndex) {
                 player.aiPlan = null;
                 return {
@@ -313,10 +440,17 @@ function createPveAiPlayerService(dependencies = {}) {
             }
 
             const plannedAction = plan.remainingActions[0];
+            if (!plannedAction) {
+                player.aiPlan = null;
+                return createFailure("AI_INVALID_PLAN", {
+                    decision: plan.decision,
+                    replanRequired: true,
+                });
+            }
             const shouldSoftDropBeforeLock = plannedAction === "hard_drop" &&
                 currentState.activePiece?.row < plan.selectedPlacement.row &&
                 plan.terminalSoftDropsExecuted < executionProfile.terminalSoftDropSteps;
-            const action = shouldSoftDropBeforeLock
+            const action: AuthoritativeInput["action"] = shouldSoftDropBeforeLock
                 ? "soft_drop"
                 : plannedAction;
             const input = {
@@ -327,7 +461,7 @@ function createPveAiPlayerService(dependencies = {}) {
             const applyResult = applyInput(roomId, playerId, input, gameCore);
             if (!applyResult.ok) {
                 player.aiPlan = null;
-                return createFailure(applyResult.reason, {
+                return createFailure(applyResult.reason || "AI_INPUT_FAILED", {
                     decision: plan.decision,
                     replanRequired: true,
                 });
@@ -418,7 +552,7 @@ function createPveAiPlayerService(dependencies = {}) {
                     ok: false,
                     log: null,
                     reason: "LOG_WRITE_FAILED",
-                    message: error.message,
+                    message: getErrorMessage(error),
                 };
             }
 
@@ -441,7 +575,7 @@ function createPveAiPlayerService(dependencies = {}) {
             markPlayerGameOver(roomId, playerId, "AI_DECISION_FAILED");
             return createFailure("AI_DECISION_FAILED", {
                 gameOver: true,
-                message: error.message,
+                message: getErrorMessage(error),
             });
         }
     }
@@ -451,9 +585,10 @@ function createPveAiPlayerService(dependencies = {}) {
     };
 }
 
-function isValidAiDecision(decision) {
-    const actions = decision?.plannedActions;
-    if (!decision?.selectedPlacement || !Array.isArray(actions) || actions.length === 0) {
+function isValidAiDecision(decision: AiDecision): decision is SuccessfulAiDecision {
+    if (!decision.ok) return false;
+    const actions = decision.plannedActions;
+    if (!decision.selectedPlacement || !Array.isArray(actions) || actions.length === 0) {
         return false;
     }
 
@@ -471,7 +606,10 @@ function isValidAiDecision(decision) {
  * @param {Object} decision - heuristic decision
  * @returns {Object} match player에 저장할 AI plan
  */
-function createAiPlan(stateBefore, decision) {
+function createAiPlan(
+    stateBefore: AuthoritativePlayerState,
+    decision: SuccessfulAiDecision,
+): PveAiPlan {
     return {
         pieceIndex: stateBefore.pieceIndex,
         selectedPlacement: clonePlacement(decision.selectedPlacement),
@@ -488,7 +626,7 @@ function createAiPlan(stateBefore, decision) {
     };
 }
 
-function clonePlacement(placement) {
+function clonePlacement(placement: Placement): Placement {
     return {
         ...placement,
         cells: Array.isArray(placement?.cells)
@@ -497,15 +635,18 @@ function clonePlacement(placement) {
     };
 }
 
-function isSamePlacement(left, right) {
-    return Boolean(left && right) &&
-        left.pieceType === right.pieceType &&
+function isSamePlacement(
+    left: PlaceablePieceState | null | undefined,
+    right: Placement | null | undefined,
+): boolean {
+    if (!left || !right) return false;
+    return left.pieceType === right.pieceType &&
         left.rotation === right.rotation &&
         left.row === right.row &&
         left.col === right.col;
 }
 
-function createDecisionState(state) {
+function createDecisionState(state: AuthoritativePlayerState) {
     return {
         board: state.board,
         activePiece: state.activePiece,
@@ -520,7 +661,7 @@ function createDecisionState(state) {
     };
 }
 
-function createPieceLog(piece, blocks) {
+function createPieceLog(piece: PlaceablePieceState, blocks: GameCore["BLOCKS"]) {
     const offsets = blocks?.[piece?.pieceType]?.[piece?.rotation] || [];
     return {
         ...piece,
@@ -543,7 +684,22 @@ function createPlacementDecisionLog({
     gameCore,
     getBoardMetrics,
     createdAt,
+}: {
+    match: MatchState;
+    playerId: string;
+    stateBefore: AuthoritativePlayerState;
+    stateAfter: AuthoritativePlayerState;
+    decision: SuccessfulAiDecision;
+    selectedPlacement: PlaceablePieceState;
+    placementResult: PlacementResult;
+    executedInputs: PveAiPlan["executedInputs"];
+    gameCore: GameCore;
+    getBoardMetrics: (board: AuthoritativePlayerState["board"]) => BoardMetrics;
+    createdAt: number;
 }) {
+    if (!stateBefore.activePiece.pieceType) {
+        throw new TypeError("active piece must be placeable");
+    }
     return {
         eventType: "placement_decision",
         schemaVersion: 2,
@@ -575,7 +731,16 @@ function createPlacementDecisionLog({
     };
 }
 
-function createFailure(reason, extra = {}) {
+function getErrorMessage(error: unknown): string {
+    return error instanceof Error && error.message
+        ? error.message
+        : "UNEXPECTED_ERROR";
+}
+
+function createFailure(
+    reason: string,
+    extra: Partial<PveAiStepResult> = {},
+): PveAiStepResult {
     return {
         ok: false,
         skipped: false,
@@ -584,7 +749,3 @@ function createFailure(reason, extra = {}) {
         ...extra,
     };
 }
-
-module.exports = {
-    createPveAiPlayerService,
-};

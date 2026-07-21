@@ -1,4 +1,19 @@
-function applyServerInputToPlayerState(authoritativeState, input, gameCore) {
+import type { PieceState, PlaceablePieceState } from "../../client/game/core/piece.js";
+import type { GameCore } from "./gameCoreLoader.js";
+import type { AuthoritativeInput, AuthoritativePlayerState } from "./matchService.js";
+
+type MoveIntent = ReturnType<GameCore["resolveMoveIntent"]>;
+export type PlayerStateInputResult = {
+    ok: boolean;
+    reason: string | null;
+    moveIntent: MoveIntent | null;
+};
+
+export function applyServerInputToPlayerState(
+    authoritativeState: AuthoritativePlayerState,
+    input: AuthoritativeInput,
+    gameCore: GameCore,
+): PlayerStateInputResult {
     const inputIntent = gameCore?.resolveInputMoveIntent?.(input?.action);
     if (!inputIntent) {
         return {
@@ -8,7 +23,7 @@ function applyServerInputToPlayerState(authoritativeState, input, gameCore) {
         };
     }
 
-    if (!authoritativeState?.activePiece?.pieceType) {
+    if (!isPlaceablePiece(authoritativeState?.activePiece)) {
         return {
             ok: false,
             reason: "INVALID_PLAYER_STATE",
@@ -74,11 +89,16 @@ function applyServerInputToPlayerState(authoritativeState, input, gameCore) {
     };
 }
 
-function createPendingPiece(authoritativeState, inputIntent) {
+function createPendingPiece(
+    authoritativeState: AuthoritativePlayerState,
+    inputIntent: NonNullable<ReturnType<GameCore["resolveInputMoveIntent"]>>,
+): PieceState | null {
     if (inputIntent.kind === "shift") {
+        const activePiece = authoritativeState.activePiece;
+        if (!isPlaceablePiece(activePiece)) return null;
         const pendingPiece = authoritativeState.pendingPiece
             ? { ...authoritativeState.pendingPiece }
-            : { ...authoritativeState.activePiece };
+            : { ...activePiece };
 
         pendingPiece.row += inputIntent.rowDelta;
         pendingPiece.col += inputIntent.colDelta;
@@ -100,6 +120,8 @@ function createPendingPiece(authoritativeState, inputIntent) {
     return null;
 }
 
-module.exports = {
-    applyServerInputToPlayerState,
-};
+function isPlaceablePiece(
+    piece: PieceState | null | undefined,
+): piece is PlaceablePieceState {
+    return Boolean(piece?.pieceType);
+}

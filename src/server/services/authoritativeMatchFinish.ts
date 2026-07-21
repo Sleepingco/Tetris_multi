@@ -1,10 +1,40 @@
-function createGameId(roomId, match) {
+import { createRoomPublicDto } from "./roomPublicDto.js";
+import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes.js";
+import type { LogSaveResult } from "./logService.js";
+import type { MatchResult, MatchState } from "./matchService.js";
+import type { FinishGameResult } from "./roomService.js";
+
+type MatchFinishPayload = ServerToClientParsedPayload<"match:finish">;
+type FinishAuthoritativeMatchOptions = {
+    roomId: string;
+    loserPlayerId: string;
+    finishReason?: string;
+    match?: MatchState | null;
+    finishGame: (
+        roomId: string,
+        loserPlayerId: string,
+        finishReason?: string,
+    ) => FinishGameResult;
+    stopRoomTicker?: (roomId: string) => unknown;
+    emitMatchFinish?: (payload: MatchFinishPayload) => unknown;
+    saveGameEventLog?: (log: unknown) => Promise<LogSaveResult> | LogSaveResult;
+    getMatchState?: ((roomId: string) => MatchResult) | null;
+    deleteMatch?: ((roomId: string) => MatchResult) | null;
+};
+export type FinishAuthoritativeMatchResult = {
+    ok: boolean;
+    finished: boolean;
+    reason: string | null;
+    finishResult?: FinishGameResult;
+};
+
+function createGameId(roomId: string, match: MatchState | null): string {
     return match?.createdAt
         ? `${roomId}-${match.createdAt}`
         : roomId;
 }
 
-function createGameOverLog(result, match) {
+function createGameOverLog(result: Extract<FinishGameResult, { ok: true }>, match: MatchState | null) {
     return {
         eventType: "game_over",
         schemaVersion: 1,
@@ -25,15 +55,19 @@ function createGameOverLog(result, match) {
     };
 }
 
-async function persistGameEventLog(saveGameEventLog, log) {
+async function persistGameEventLog(
+    saveGameEventLog: NonNullable<FinishAuthoritativeMatchOptions["saveGameEventLog"]>,
+    log: unknown,
+): Promise<void> {
     try {
         await saveGameEventLog(log);
     } catch (error) {
-        console.warn(`[authoritativeMatchFinish] game event log failed: ${error.message}`);
+        const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
+        console.warn(`[authoritativeMatchFinish] game event log failed: ${message}`);
     }
 }
 
-async function finishAuthoritativeMatch({
+export async function finishAuthoritativeMatch({
     roomId,
     loserPlayerId,
     finishReason = "top_out",
@@ -44,7 +78,7 @@ async function finishAuthoritativeMatch({
     saveGameEventLog,
     getMatchState = null,
     deleteMatch = null,
-}) {
+}: FinishAuthoritativeMatchOptions): Promise<FinishAuthoritativeMatchResult> {
     if (!roomId || !loserPlayerId || typeof finishGame !== "function") {
         return {
             ok: false,
@@ -82,7 +116,7 @@ async function finishAuthoritativeMatch({
     });
     deleteMatch?.(roomId);
 
-    if (typeof saveGameEventLog === "function") {
+    if (saveGameEventLog) {
         await persistGameEventLog(saveGameEventLog, gameOverLog);
     }
 
@@ -93,8 +127,3 @@ async function finishAuthoritativeMatch({
         finishResult,
     };
 }
-
-module.exports = {
-    finishAuthoritativeMatch,
-};
-const { createRoomPublicDto } = require("./roomPublicDto.js");

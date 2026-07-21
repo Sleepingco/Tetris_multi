@@ -1,25 +1,108 @@
-const {
-    appendPendingGarbageToOpponent: defaultAppendPendingGarbageToOpponent,
-    applyGravityStepToMatchPlayerState: defaultApplyGravityStepToMatchPlayerState,
-    deleteMatch: defaultDeleteMatch,
-    getAuthoritativePlayerSnapshotDto: defaultGetAuthoritativePlayerSnapshotDto,
-    getMatchState: defaultGetMatchState,
-} = require("./matchService.js");
-const { finishGame: defaultFinishGame } = require("./roomService.js");
-const { loadGameCore: defaultLoadGameCore } = require("./gameCoreLoader.js");
-const { saveGameEventLog: defaultSaveGameEventLog } = require("./logService.js");
-const { finishAuthoritativeMatch } = require("./authoritativeMatchFinish.js");
-const { createPveAiPlayerService } = require("./pveAiPlayerService.js");
-const {
-    createAuthoritativePlayerMutationQueue,
-} = require("./authoritativePlayerMutationQueue.js");
+import type { Server } from "socket.io";
+import {
+    appendPendingGarbageToOpponent as defaultAppendPendingGarbageToOpponent,
+    applyGravityStepToMatchPlayerState as defaultApplyGravityStepToMatchPlayerState,
+    deleteMatch as defaultDeleteMatch,
+    getAuthoritativePlayerSnapshotDto as defaultGetAuthoritativePlayerSnapshotDto,
+    getMatchState as defaultGetMatchState,
+} from "./matchService.js";
+import { finishGame as defaultFinishGame } from "./roomService.js";
+import { loadGameCore as defaultLoadGameCore } from "./gameCoreLoader.js";
+import { saveGameEventLog as defaultSaveGameEventLog } from "./logService.js";
+import { finishAuthoritativeMatch } from "./authoritativeMatchFinish.js";
+import { createPveAiPlayerService } from "./pveAiPlayerService.js";
+import { createAuthoritativePlayerMutationQueue } from "./authoritativePlayerMutationQueue.js";
+import type {
+    ClientToServerEvents,
+    ServerToClientEvents,
+    ServerToClientParsedPayload,
+} from "../../shared/socketContractTypes.js";
+import type { AuthoritativePlayerMutationQueue } from "./authoritativePlayerMutationQueue.js";
+import type { GameCore } from "./gameCoreLoader.js";
+import type { MatchPlayer, MatchResult, MatchState } from "./matchService.js";
+import type { AiDecision, PveAiPlayerService } from "./pveAiPlayerService.js";
+import type {
+    GameplayResult,
+    GravityStepResult,
+    PlacementResult,
+    PresentationEffect,
+} from "./playerGameplayStep.js";
 
-const AUTHORITATIVE_TICK_MS = 100;
-const AUTHORITATIVE_GRAVITY_INTERVAL_MS = 500;
-const AI_ACTION_INTERVAL_MS = 100;
-const LINE_CLEAR_PRESENTATION_DELAY_MS = 350;
+type AuthoritativeSocketServer = Server<ClientToServerEvents, ServerToClientEvents>;
+type GravityTiming = {
+    accumulatorMs: number;
+    generation: number;
+    groundedPieceIndex: number | null;
+};
+type TickerState = {
+    intervalId: ReturnType<typeof setInterval>;
+    socketServer: AuthoritativeSocketServer;
+    playerGravityTimings: Map<string, GravityTiming>;
+    aiAccumulatorMs: number;
+    isProcessing: boolean;
+};
+type DuePlayerStepResult = {
+    ok: boolean;
+    reason: string | null;
+    stateChanged?: boolean;
+    gameOver?: boolean;
+    skipped?: boolean;
+    decision?: AiDecision;
+    gravityResult?: GravityStepResult["gravityResult"];
+    placementResult?: PlacementResult | null;
+    gameplayResult?: GameplayResult;
+    presentationEffect?: PresentationEffect;
+};
+type TickerDependencies = {
+    setIntervalFn?: typeof setInterval;
+    clearIntervalFn?: typeof clearInterval;
+    tickMs?: number;
+    gravityIntervalMs?: number;
+    aiActionIntervalMs?: number;
+    loadGameCore?: typeof defaultLoadGameCore;
+    getMatchState?: typeof defaultGetMatchState;
+    applyGravityStepToMatchPlayerState?: typeof defaultApplyGravityStepToMatchPlayerState;
+    getAuthoritativePlayerSnapshotDto?: typeof defaultGetAuthoritativePlayerSnapshotDto;
+    appendPendingGarbageToOpponent?: typeof defaultAppendPendingGarbageToOpponent;
+    deleteMatch?: typeof defaultDeleteMatch;
+    finishGame?: typeof defaultFinishGame;
+    saveGameEventLog?: typeof defaultSaveGameEventLog;
+    createGarbageHoleCol?: () => number;
+    pveAiPlayerService?: PveAiPlayerService;
+    authoritativePlayerMutationQueue?: AuthoritativePlayerMutationQueue;
+};
+type TickerActionResult = {
+    ok: boolean;
+    started?: boolean;
+    stopped?: boolean;
+    reason?: string | null;
+};
+export type AuthoritativeTickerService = {
+    startRoomTicker(roomId: string, socketServer: AuthoritativeSocketServer): TickerActionResult;
+    stopRoomTicker(roomId: string): TickerActionResult;
+    hasRoomTicker(roomId: string): boolean;
+    resetPlayerGravity(
+        roomId: string,
+        playerId: string,
+        options?: { lineClear?: boolean },
+    ): TickerActionResult;
+    tickRoom(
+        roomId: string,
+        socketServer: AuthoritativeSocketServer,
+        elapsedMs?: number,
+    ): Promise<void>;
+};
 
-function updateAiPolicyRuntime(match, playerId, decision = {}) {
+export const AUTHORITATIVE_TICK_MS = 100;
+export const AUTHORITATIVE_GRAVITY_INTERVAL_MS = 500;
+export const AI_ACTION_INTERVAL_MS = 100;
+export const LINE_CLEAR_PRESENTATION_DELAY_MS = 350;
+
+function updateAiPolicyRuntime(
+    match: MatchState,
+    playerId: string,
+    decision: AiDecision,
+): NonNullable<MatchState["aiPolicyRuntime"]> {
     const policyRequested = decision.policyRequested || "heuristic";
     const policyUsed = decision.policyUsed || "heuristic";
     const fallbackReason = decision.fallbackReason ?? null;
@@ -49,7 +132,9 @@ function updateAiPolicyRuntime(match, playerId, decision = {}) {
  * @param {Object} dependencies - 테스트/런타임 의존성
  * @returns {Object} ticker 시작/정리 API
  */
-function createAuthoritativeTickerService(dependencies = {}) {
+export function createAuthoritativeTickerService(
+    dependencies: TickerDependencies = {},
+): AuthoritativeTickerService {
     const setIntervalFn = dependencies.setIntervalFn || setInterval;
     const clearIntervalFn = dependencies.clearIntervalFn || clearInterval;
     const tickMs = dependencies.tickMs || AUTHORITATIVE_TICK_MS;
@@ -72,9 +157,12 @@ function createAuthoritativeTickerService(dependencies = {}) {
         || createPveAiPlayerService();
     const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
         || createAuthoritativePlayerMutationQueue();
-    const tickers = new Map();
+    const tickers = new Map<string, TickerState>();
 
-    function startRoomTicker(roomId, socketServer) {
+    function startRoomTicker(
+        roomId: string,
+        socketServer: AuthoritativeSocketServer,
+    ): TickerActionResult {
         if (!roomId || !socketServer) {
             return {
                 ok: false,
@@ -110,7 +198,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
         };
     }
 
-    function stopRoomTicker(roomId) {
+    function stopRoomTicker(roomId: string): TickerActionResult {
         const ticker = tickers.get(roomId);
 
         if (!ticker) {
@@ -129,11 +217,15 @@ function createAuthoritativeTickerService(dependencies = {}) {
         };
     }
 
-    function hasRoomTicker(roomId) {
+    function hasRoomTicker(roomId: string): boolean {
         return tickers.has(roomId);
     }
 
-    function resetPlayerGravity(roomId, playerId, options = {}) {
+    function resetPlayerGravity(
+        roomId: string,
+        playerId: string,
+        options: { lineClear?: boolean } = {},
+    ): TickerActionResult {
         const ticker = tickers.get(roomId);
         if (!ticker || !playerId) {
             return {
@@ -155,7 +247,11 @@ function createAuthoritativeTickerService(dependencies = {}) {
         };
     }
 
-    async function tickRoom(roomId, socketServer, elapsedMs = tickMs) {
+    async function tickRoom(
+        roomId: string,
+        socketServer: AuthoritativeSocketServer,
+        elapsedMs = tickMs,
+    ): Promise<void> {
         const ticker = tickers.get(roomId);
         if (!ticker) return;
 
@@ -185,7 +281,10 @@ function createAuthoritativeTickerService(dependencies = {}) {
                 }
             }
 
-            const duePlayers = [];
+            const duePlayers: Array<{
+                player: MatchPlayer;
+                gravityGeneration: number | null;
+            }> = [];
             players.forEach(player => {
                 if (player.playerType === "heuristic_ai") {
                     if (shouldProcessAi) {
@@ -242,7 +341,14 @@ function createAuthoritativeTickerService(dependencies = {}) {
         gameCore,
         socketServer,
         match,
-    }) {
+    }: {
+        roomId: string;
+        player: MatchPlayer;
+        gravityGeneration: number | null;
+        gameCore: GameCore;
+        socketServer: AuthoritativeSocketServer;
+        match: MatchState;
+    }): Promise<void> {
         const playerId = player.playerId;
         const isAiPlayer = player.playerType === "heuristic_ai";
         const ticker = tickers.get(roomId);
@@ -257,12 +363,16 @@ function createAuthoritativeTickerService(dependencies = {}) {
         }
 
         const pieceIndex = player.authoritativeState?.pieceIndex;
-        const stepResult = isAiPlayer
-            ? await pveAiPlayerService.processAiStep(roomId, playerId, gameCore)
-            : applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, {
-                lockGroundedPiece: Number.isInteger(pieceIndex)
+        let stepResult: DuePlayerStepResult;
+        if (isAiPlayer) {
+            stepResult = await pveAiPlayerService.processAiStep(roomId, playerId, gameCore);
+        } else {
+            if (!gravityTiming) return;
+            stepResult = applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, {
+                lockGroundedPiece: typeof pieceIndex === "number" && Number.isInteger(pieceIndex)
                     && gravityTiming.groundedPieceIndex === pieceIndex,
             });
+        }
 
         if (!stepResult.ok && !stepResult.stateChanged) {
             if (stepResult.gameOver) {
@@ -283,15 +393,15 @@ function createAuthoritativeTickerService(dependencies = {}) {
             }
             return;
         }
-        if (isAiPlayer && stepResult.reason === "AI_PLAN_CREATED") {
+        if (isAiPlayer && stepResult.reason === "AI_PLAN_CREATED" && stepResult.decision) {
             const policyRuntime = updateAiPolicyRuntime(match, playerId, stepResult.decision);
             socketServer.to(roomId).emit("pve:ai-policy", policyRuntime);
         }
-        if (!isAiPlayer && stepResult.gravityResult?.kind === "grounded") {
+        if (!isAiPlayer && gravityTiming && stepResult.gravityResult?.kind === "grounded") {
             gravityTiming.groundedPieceIndex = pieceIndex;
             return;
         }
-        if (!isAiPlayer && stepResult.gravityResult?.kind === "move") {
+        if (!isAiPlayer && gravityTiming && stepResult.gravityResult?.kind === "move") {
             gravityTiming.groundedPieceIndex = null;
         }
         if (stepResult.skipped) return;
@@ -332,21 +442,24 @@ function createAuthoritativeTickerService(dependencies = {}) {
     }
 
     function emitAuthoritativeSnapshot(
-        roomId,
-        playerId,
-        socketServer,
-        presentationEffect = null,
-    ) {
+        roomId: string,
+        playerId: string,
+        socketServer: AuthoritativeSocketServer,
+        presentationEffect: PresentationEffect | null = null,
+    ): ServerToClientParsedPayload<"game:authoritative:snapshot">["snapshot"] | null {
         const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId);
         if (!snapshotResult.ok) return null;
 
-        const payload = {
+        const payload: ServerToClientParsedPayload<"game:authoritative:snapshot"> = {
             roomId,
             playerId,
             snapshot: snapshotResult.snapshot,
         };
-        if (presentationEffect) {
-            payload.presentationEffect = presentationEffect;
+        if (presentationEffect?.id) {
+            payload.presentationEffect = {
+                ...presentationEffect,
+                id: presentationEffect.id,
+            };
         }
 
         socketServer.to(roomId).emit("game:authoritative:snapshot", payload);
@@ -354,7 +467,11 @@ function createAuthoritativeTickerService(dependencies = {}) {
         return snapshotResult.snapshot;
     }
 
-    function handlePlacementResult(roomId, playerId, placementResult) {
+    function handlePlacementResult(
+        roomId: string,
+        playerId: string,
+        placementResult?: PlacementResult | null,
+    ): MatchResult | null {
         const attackLines = placementResult?.attackLines ?? 0;
         if (!Number.isInteger(attackLines) || attackLines <= 0) return null;
 
@@ -368,7 +485,7 @@ function createAuthoritativeTickerService(dependencies = {}) {
         return appendResult;
     }
 
-    function normalizeAiFinishReason(reason) {
+    function normalizeAiFinishReason(reason: string | null): string {
         if (reason === "NO_LEGAL_PLACEMENT") return "ai_no_legal_placement";
         return "ai_decision_failed";
     }
@@ -382,7 +499,10 @@ function createAuthoritativeTickerService(dependencies = {}) {
     };
 }
 
-function getOrCreatePlayerGravityTiming(ticker, playerId) {
+function getOrCreatePlayerGravityTiming(
+    ticker: TickerState,
+    playerId: string,
+): GravityTiming {
     let timing = ticker.playerGravityTimings.get(playerId);
     if (timing) return timing;
 
@@ -394,11 +514,3 @@ function getOrCreatePlayerGravityTiming(ticker, playerId) {
     ticker.playerGravityTimings.set(playerId, timing);
     return timing;
 }
-
-module.exports = {
-    AI_ACTION_INTERVAL_MS,
-    AUTHORITATIVE_GRAVITY_INTERVAL_MS,
-    AUTHORITATIVE_TICK_MS,
-    LINE_CLEAR_PRESENTATION_DELAY_MS,
-    createAuthoritativeTickerService,
-};

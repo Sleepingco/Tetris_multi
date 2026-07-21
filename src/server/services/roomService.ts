@@ -57,6 +57,21 @@ export type RoomResult = {
     loserPlayerId?: string | null;
     finishReason?: string;
 };
+export type FinishGameResult = {
+    ok: true;
+    room: RoomState;
+    reason: null;
+    winnerPlayerId: string;
+    loserPlayerId: string;
+    finishReason: string;
+} | {
+    ok: false;
+    room: null;
+    reason: string;
+    winnerPlayerId: string | null;
+    loserPlayerId: string | null;
+    finishReason: string;
+};
 export type RoomMembership = { room: RoomState; player: RoomPlayer };
 type PlayerIdentity = { playerId: string; nickname: string };
 type RoomOptions = {
@@ -472,51 +487,66 @@ export function finishGame(
     roomId: string,
     loserPlayerId: string,
     finishReason = "top_out",
-): RoomResult {
+): FinishGameResult {
     const context = getRoomPlayerContext(roomId, loserPlayerId)
     if (!context.ok) {
-        return failure(context.reason, {
+        return {
+            ok: false,
+            room: null,
+            reason: context.reason,
             winnerPlayerId: null,
             loserPlayerId: null,
             finishReason,
-        })
+        }
     }
 
     const { roomState } = context
 
     if (roomState.status !== "playing") {
-        return failure("GAME_NOT_PLAYING", {
+        return {
+            ok: false,
+            room: null,
+            reason: "GAME_NOT_PLAYING",
             winnerPlayerId: null,
             loserPlayerId,
             finishReason,
-        })
+        }
     }
 
     if (roomState.players.length !== 2) {
-        return failure("NOT_ENOUGH_PLAYERS", {
+        return {
+            ok: false,
+            room: null,
+            reason: "NOT_ENOUGH_PLAYERS",
             winnerPlayerId: null,
             loserPlayerId,
             finishReason,
-        })
+        }
     }
 
     const winnerPlayer = roomState.players.find(player => player.playerId !== loserPlayerId)
     if (!winnerPlayer) {
-        return failure("NOT_ENOUGH_PLAYERS", {
+        return {
+            ok: false,
+            room: null,
+            reason: "NOT_ENOUGH_PLAYERS",
             winnerPlayerId: null,
             loserPlayerId,
             finishReason,
-        })
+        }
     }
 
     roomState.status = "finished"
     roomState.lobbyPlayerIds = []
 
-    return success(roomState, {
+    return {
+        ok: true,
+        room: roomState,
+        reason: null,
         winnerPlayerId: winnerPlayer.playerId,
         loserPlayerId,
         finishReason,
-    })
+    }
 }
 
 export { AI_DIFFICULTY, AI_POLICY };
