@@ -1,5 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -234,4 +235,89 @@ test("saveGameEventLog는 game_start와 game_over 로그를 저장한다", async
     assert.equal(startResult.ok, true);
     assert.equal(overResult.ok, true);
     assert.deepEqual(savedLogs.map(log => log.eventType), ["game_start", "game_over"]);
+});
+
+test("saveGameEventLog는 private field 변형을 JSONL과 shadow 경계 전에 거부한다", async () => {
+    let writes = 0;
+    const repository = {
+        async append() {
+            writes += 1;
+        },
+    };
+
+    for (const field of [
+        "accessToken",
+        "api_key",
+        "auth",
+        "client_secret",
+        "reconnect_token",
+        "session_id",
+    ]) {
+        const result = await saveGameEventLog({
+            eventType: "game_start",
+            schemaVersion: 1,
+            gameId: `private-${field}`,
+            roomId: "private-room",
+            mode: "pvp",
+            startedAt: 1780000000000,
+            players: [{ playerId: "private-player" }],
+            nested: { [field]: "must-not-be-written" },
+        }, { repository });
+
+        assert.equal(result.ok, false);
+        assert.equal(result.reason, "PRIVATE_FIELD_NOT_ALLOWED");
+    }
+    assert.equal(writes, 0);
+});
+
+test("PostgreSQL 장애는 JSONL 성공을 막거나 credential을 노출하지 않는다", (t) => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "tetris-shadow-down-"));
+    const filePath = path.join(tempDir, "game-events.jsonl");
+    t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+    const script = `
+        const { saveGameEventLog, shutdownLogStorage } = require(
+            "./dist/server/server/services/logService.js"
+        );
+        (async () => {
+            const startedAt = performance.now();
+            const result = await saveGameEventLog({
+                eventType: "game_start",
+                schemaVersion: 1,
+                gameId: "shadow-down-game",
+                roomId: "shadow-down-room",
+                mode: "pvp",
+                startedAt: 1780000000000,
+                players: [{ playerId: "shadow-player" }],
+            });
+            const saveElapsedMs = performance.now() - startedAt;
+            const shutdownStartedAt = performance.now();
+            await shutdownLogStorage();
+            const shutdownElapsedMs = performance.now() - shutdownStartedAt;
+            console.log(JSON.stringify({ result, saveElapsedMs, shutdownElapsedMs }));
+        })().catch(() => { process.exitCode = 1; });
+    `;
+    const result = spawnSync(process.execPath, ["-e", script], {
+        cwd: path.resolve(__dirname, ".."),
+        encoding: "utf8",
+        timeout: 2_000,
+        env: {
+            DATABASE_URL: "postgresql://sentinel-user:sentinel-secret@127.0.0.1:1/test",
+            GAME_EVENTS_LOG_PATH: filePath,
+            POSTGRES_SHADOW_WRITE_ENABLED: "true",
+            POSTGRES_SHADOW_CONNECTION_TIMEOUT_MS: "25",
+            POSTGRES_SHADOW_QUERY_TIMEOUT_MS: "25",
+            POSTGRES_SHADOW_SHUTDOWN_TIMEOUT_MS: "500",
+        },
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    const output = JSON.parse(result.stdout);
+    assert.equal(output.result.ok, true);
+    assert.ok(output.saveElapsedMs < 250, `save took ${output.saveElapsedMs}ms`);
+    assert.ok(
+        output.shutdownElapsedMs < 1_000,
+        `shutdown took ${output.shutdownElapsedMs}ms`,
+    );
+    assert.equal(fs.readFileSync(filePath, "utf8").trim().split("\n").length, 1);
+    assert.doesNotMatch(result.stderr, /sentinel-user|sentinel-secret|postgresql:\/\//);
 });
