@@ -2389,3 +2389,9 @@ client input
 - 자동 gate를 통과했지만 review blocker가 남은 SPA 실험 구현은 `codex/migrate-react-spa@5b0f848`에 보존하고 main에는 병합하지 않는다.
 - leave result 상관관계, membership 보존, hash navigation과 server cleanup 검증 문제가 남아 Goal 7A를 선택 실험으로 보류했다.
 - 현재 four-entry MPA를 유지하며 Goal 8의 선행조건을 Goal 7로 복구했다. 상세 문제와 재개 조건은 `PLAN.md`와 `migration-harness/goals/07a-react-spa.md`를 따른다.
+
+## Migration Goal 8B client runtime TypeScript main 통합 (2026-07-22)
+
+- `codex/migrate-typescript-client-runtime@bead1b7`를 local main에 `--ff-only`로 병합했다. production client runtime/render/net/AI의 23개 JavaScript 경계를 TypeScript로 전환하고 consumer specifier, Socket/session 타입 경계와 PVE AI parity를 유지한 결과다.
+- main Node `24.18.0`에서 `bash scripts/verify.sh`가 typecheck, clean build, artifact 1/1과 Node 586 pass·기존 조건부 1 skip으로 통과했다. 동일 Goal HEAD의 Vite-dev 8 pass·2 production-only skip과 production Playwright 34/34 결과를 통합 근거로 사용했으며 main E2E는 중복 실행하지 않았다.
+- Goal branch는 보존하고 package/lockfile, gameplay·protocol·security와 보류 SPA는 변경하지 않았다. WebKit/Firefox, 장시간 soak와 외부 네트워크 조건은 남은 위험이며 Goal 8C/8D와 Goal 9는 시작하지 않았다.

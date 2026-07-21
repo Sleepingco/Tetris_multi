@@ -264,7 +264,7 @@
 - shared tetris bundle은 기준 34.82 kB(gzip 10.90 kB)에서 34.93 kB(gzip 10.93 kB)로 소폭 증가했다. package manifest와 lockfile checksum은 기준과 동일하다.
 - Goal 8A는 `7286ab6`까지 main과 origin/main에 반영됐다. Goal 8B는 이 기준에서 별도 branch로 시작했으며 Goal 8A branch와 보류된 SPA branch는 보존한다.
 
-## Migration Goal 8B Client Runtime TypeScript merge gate (2026-07-21)
+## Migration Goal 8B Client Runtime TypeScript main integration (2026-07-22)
 
 - 기준은 `main@7286ab6`이며 `codex/migrate-typescript-client-runtime`에서 production client AI 12개, Canvas entry/render/runtime/UI 8개, network/session 3개 등 기존 JavaScript 23개(전환 전 5,566 LOC)를 strict TypeScript로 전환했다. 리뷰 수정 후 최종 전환 source는 타입 선언을 포함해 6,865 LOC이며 기존 `entry/theme.ts`는 rename 수치에서 제외했다.
 - 각 값 모듈이 runtime handle/display snapshot, DOM/Canvas adapter, placement dataset·heuristic·V4 result와 multiplayer lifecycle 타입을 직접 소유한다. Goal 8A의 `PieceType`, `Board`, `PieceState`, `GameState`, `BoardMetrics`를 재사용하고 별도 type registry, manager, framework와 dependency는 추가하지 않았다.
@@ -278,7 +278,9 @@
 - shared tetris bundle은 직전 문서 기준 34.93 kB(gzip 10.93 kB)에서 36.31 kB(gzip 11.29 kB), roomClient chunk는 76.86 kB(gzip 21.19 kB)에서 77.39 kB(gzip 21.31 kB)로 증가했다. 새 dependency나 runtime chunk는 없다.
 - Chromium local dev/production과 수동 시나리오는 검증했지만 WebKit/Firefox, 장시간 soak와 외부 network 조건은 실행하지 않았다. server TypeScript는 Goal 8C, test/e2e/script 선택 전환은 Goal 8D 범위로 남는다.
 - rollback은 최종 문서 commit → `047347c` → `f93f7b8` → `842d23b` → `386c853` → `9a45ab7` → `0ee3736` → `189faf5` → `cda715e` → `7ca30b3` 순서로 역순 revert한다. rename과 consumer specifier를 같은 경계에서 되돌리고 일부 output만 복구하지 않는다.
-- Goal 8B는 local branch merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 8C/8D와 SPA 작업은 별도 승인 없이는 수행하지 않는다.
+- `codex/migrate-typescript-client-runtime@bead1b7`를 clean한 local `main@7286ab6`에 `--ff-only`로 병합해 `main@bead1b7`로 통합했다. Goal branch와 worktree는 보존한다.
+- 병합 후 Node `24.18.0`에서 `bash scripts/verify.sh`를 재실행해 typecheck, clean build, artifact 1/1과 Node 586 pass·기존 조건부 1 skip을 확인했고 `git diff --check 7286ab6..HEAD`도 통과했다.
+- 동일한 Goal HEAD에서 이미 production Playwright 34/34와 Vite-dev 8 pass·2 production-only skip이 통과했으므로 main에서 전체 E2E는 코드 변경이 없어 반복하지 않았다. push 후 Goal 8C/8D, Goal 9와 SPA 작업은 별도 승인으로 남긴다.
 
 ## Project Direction
 
