@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11D migration CI가 로컬 구현·검증을 마치고 실제 GitHub 실행 승인 gate에 있으며 DB Goal 9·10은 보류한다.
+- Last update: 2026-07-23 기준. Goal 11D GitHub Actions workflow는 PR #1로 원격 `main@d6112e1`에 반영됐다. PR clean run은 통과했지만 첫 main push의 기존 PVE T-Spin E2E timing failure 1건을 조사 중이며, DB Goal 9·10은 보류한다.
 
 ## Document Role
 
@@ -327,7 +327,7 @@
 - rollback은 현재 Goal 11B 문서 commit을 먼저 revert한 뒤 dependency commit `3fe121e`를 revert하고 `npm ci --ignore-scripts`로 기준 lock resolve를 복구한다. Python/Conda 파일은 변경하지 않아 별도 rollback이 없다.
 - Goal 11B는 clean local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 11C와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
 
-## Migration Goal 11C Production Docker merge gate (2026-07-22)
+## Migration Goal 11C Production Docker main integration (2026-07-22)
 
 - 초기 기준은 `main@a18801c`이며 `codex/add-production-docker`에서 official Node `24.18.0-bookworm-slim` digest를 고정한 multi-stage image를 추가했다. 이후 사운드 재시도 수정이 포함된 `main@65b1903`을 merge commit `6d09a28`로 동기화했으며 기존 Goal 11C commit과 Docker 계약을 보존했다. build dependency와 production dependency 설치를 분리하고 runtime에는 `dist`, production `node_modules`와 명시적인 `/app/data/logs` 경계만 둔다. package/lockfile과 dependency는 변경하지 않았다.
 - runtime은 built-in `node` user로 실행하며 exec-form `CMD`, read-only root filesystem과 named JSONL volume을 사용한다. health check는 내부 상태를 노출하지 않고 `/`의 성공 여부만 확인한다. `.env`, credential, source, test, devDependency, first-party TypeScript와 source map은 image에 포함하지 않는다.
@@ -336,7 +336,7 @@
 - 동기화 코드로 새로 build한 local image는 `tetris-multi:goal11c-6d09a28`, image ID `sha256:6c5a00b67f4013d901f6913da89f5328299b5c5ccf3cd47e9d054e77886118db`, linux/arm64 88,083,089 bytes다. health `starting → healthy`, non-root/read-only, writable JSONL volume, 네 page·asset·Socket.IO client HTTP 200, CSP/security header, first-party TS/TSX/map 404와 public Socket.IO map 200 예외를 확인했다.
 - container PVP/PVE Playwright는 6/6, `bash scripts/verify.sh`는 Node tests 594 pass·기존 조건부 1 skip, Vite-dev는 10 pass·production-only 2 skip, production Playwright는 37/37 통과했다. named volume은 재시작 전 484줄의 hash를 재시작 후 prefix에서 그대로 유지했고 lifecycle 로그 1줄을 append했으며, 최종 SIGTERM은 0.16초·exit code 0으로 종료됐다. production/full npm audit은 기존 Goal 11C 검증에서 모두 0건이다.
 - 첫 production image라 실제 이전 image로의 downgrade는 검증할 대상이 없다. 현재는 commit tag와 image ID 재실행만 확인했으며, 다음 배포부터는 배포 전 현재 registry digest를 보존하고 실패 시 해당 digest로 동일 runtime 환경을 재기동한다. registry publish/deploy, amd64 build, 외부 TLS/reverse proxy와 장시간 soak는 미검증이다.
-- Goal 11C는 clean local merge gate에서 멈춘다. push, main merge, image publish/deploy, branch 삭제, Goal 11D와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
+- Goal 11C는 `84f8659`까지 `main`/`origin/main`에 반영됐다. image publish/deploy, branch 삭제, Goal 11D와 보류된 Goal 8D/9/10/SPA는 수행하지 않았다.
 
 ## Migration Goal 11D CI execution gate (2026-07-23)
 
@@ -349,7 +349,7 @@
 ## Project Direction
 
 - 핵심 목표는 멀티플레이 가능한 테트리스 구조를 만드는 것이다.
-- 현재 우선순위는 프레임워크 도입이 아니라 런타임, 엔진, 네트워크 경계를 안정화하는 것이다.
+- 현재 우선순위는 새 프레임워크 확장이 아니라 이미 도입한 Vite/React/TypeScript, server authoritative gameplay, 보안·운영 gate를 안정화하는 것이다.
 - 방향은 유지한다.
   - 엔진은 최대한 순수하게 유지
   - 런타임은 orchestration 중심
@@ -359,13 +359,14 @@
 - 하지만 현재 MVP 멀티는 `seed` 기반 완전 결정론보다 `server bag` 정책이 더 현실적이다.
 - LLM 기능은 현재 MVP 범위가 아니다.
 - 추후 LLM은 게임 판단이나 AI 의사결정의 원천이 아니라, 플레이 로그와 AI 분석 결과를 사용자에게 설명하는 코칭 리포트 계층으로 둔다.
-- AI 구현의 다음 축은 ML 학습이 아니라 휴리스틱 PVE AI 상대와 로그 축적이다.
-- PVE AI는 추천 코치가 아니라 실제 게임에 참여하는 AI 상대다.
-- Python AI 서버, 강화학습, LLM 코칭은 `placementGenerator` / `simulatePlacement` / `heuristicEvaluator` / PVE AI Player가 안정화된 뒤 검토한다.
+- 기본 AI 축은 휴리스틱 PVE AI 상대와 placement 로그·평가다.
+- PVE AI는 추천 코치가 아니라 실제 게임에 참여하는 AI 상대이며, 사람과 같은 authoritative input 경로를 사용한다.
+- V4 placement model은 사용자 선택형 Experimental PVE와 offline imitation 분석에만 사용한다. 기본 production PVE 정책은 heuristic이다.
+- Python AI 서버, 강화학습, LLM 코칭은 현재 범위가 아니며, LLM은 분석 결과 설명 계층으로만 검토한다.
 
 ## Current Status
 
-### 2026-07-19 요약
+### 2026-07-23 요약
 
 - 멀티 MVP는 기존 `client snapshot relay` 중심 구조에서 `server authoritative snapshot` 중심 구조로 전환됐다.
 - 서버는 player별 `authoritativeState`를 들고 `game:input`과 room ticker gravity step으로 상태를 갱신한다.
@@ -378,8 +379,10 @@
 - match cleanup, client sequence acknowledgment, roomId collision retry가 보강됐다.
 - `src/client/game/core/boardMetrics.ts`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현됐다.
 - `test/testBoardMetrics.js`가 board metric 계산과 원본 board mutation 방지를 검증한다.
-- 자동 테스트 기준으로 멀티 MVP 핵심 구현은 완료에 가깝다.
-- 포트폴리오 시연 완료 판정은 2탭 수동 회귀 통과 후로 둔다.
+- PVE room, heuristic AI player, reachable placement planner, placement decision log, dataset/export/evaluation, V4 parity와 Experimental PVE 경로가 구현됐다.
+- Vite multi-page, page-local React shell, client/runtime/server TypeScript migration과 production Docker image가 main에 반영됐다.
+- 자동 테스트 기준으로 PVP/PVE 핵심 gameplay와 production artifact는 고정돼 있다.
+- 포트폴리오 시연 완료 판정은 현재 README와 Goal run 기록의 production/browser gate를 기준으로 본다. 추가 수동 2탭 검증은 release 전 보조 확인이다.
 
 ### 구현된 것
 
@@ -426,6 +429,12 @@
 - [x] roomId 충돌 재시도와 client sequence acknowledgment 추가
 - [x] `src/client/game/core/boardMetrics.ts`에 `columnHeights`, `aggregateHeight`, `maxHeight`, `holes`, `bumpiness`, `completeLines` 계산 순수 함수 추가
 - [x] `test/testBoardMetrics.js`로 board metric과 mutation 방지 검증
+- [x] `placementGenerator`, `reachablePlacementPlanner`, `simulatePlacement`, `heuristicEvaluator` 기반 휴리스틱 PVE decision path 구현
+- [x] `pveAiPlayerService`가 AI plan을 사람과 같은 authoritative input으로 실행
+- [x] placement decision JSONL log, dataset exporter/evaluator, JS/Python parity 검증 경로 구현
+- [x] 사용자 선택형 Experimental PVE V4 model 경로와 heuristic fallback 구현
+- [x] Vite multi-page + page-local React shell + TypeScript client/runtime/server migration 반영
+- [x] CSP/security headers, dependency hardening, production Docker image 반영
 
 ### 부분 완료
 
@@ -433,7 +442,7 @@
 - [~] `src/client/game/runtime/tetris.ts`는 여전히 크고 orchestration 외 책임이 남아 있음
 - [~] RNG 주입 구조는 있음
 - [~] 기본 RNG는 아직 `Math.random`
-- [~] 로비와 멀티 게임 흐름은 연결됐고, 포트폴리오 시연 완료 전 garbage/gameOver/reconnect를 포함한 브라우저 2탭 전체 흐름의 수동 회귀 검증이 필요함
+- [~] 로비와 멀티 게임 흐름은 자동 브라우저 회귀로 고정돼 있다. 공개 release 전 실제 배포 환경의 수동 smoke는 별도 확인 대상이다.
 - [x] 내 보드 prediction/correction 정책은 sequence/ack·gravity timing 보강 후 rollback 전용 2탭 E2E 반복 검증을 통과함
 - [x] `src/client/pages/tetrisMulti.html`의 `snapshotTimer`에서 bag request와 game over 보고 조건을 함수 단위로 분리했다.
 - [x] `src/client/game/runtime/tetris.ts`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
@@ -453,7 +462,7 @@
 - 실제 멀티 게임의 최종 진실 원천은 server authoritative state로 이동했다.
 - 내 보드는 조작감을 위해 client prediction을 유지하고, 서버 snapshot은 gameOver/garbage 적용 등 제한된 상황에서만 full apply한다.
 - shadow/debug 방향은 현재 main 우선순위가 아니다. 해결된 rollback 경로는 기존 회귀 테스트로 감시하고, 재현 증거 없이 debug 시스템이나 correction 방어를 추가하지 않는다.
-- AI 쪽은 이미 구현된 `boardMetrics`를 기반으로 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player 순서로 진행한다.
+- AI 쪽은 휴리스틱 PVE와 Experimental V4 체험까지 구현됐다. 새 AI 작업은 기본 PVE 정책 변경이 아니라 별도 승인된 실험·평가 질문에서 시작한다.
 - 현재 `boardMetrics`는 core board 표현을 그대로 읽는 DOM-free 순수 함수라서 `src/client/game/core`에 둔다. 서버/클라이언트/AI가 더 넓게 공유하는 시점이 오면 `shared` 계층으로 이동할 수 있다.
 
 ### 2026-07-19 멀티 안정화 상태
@@ -846,123 +855,69 @@
 
 ### 현재 단계
 
-- 이름: Server authoritative multiplayer MVP final verification
+- 이름: Goal 11D main CI green 복구와 production hardening 이후 안정화
 
 ### 진행 현황
 
-- [x] 전역 단일 파일 구조 탈출
-- [x] runtime factory 도입
-- [x] 싱글 페이지 runtime bootstrap 정리
-- [x] tick-tagged input queue 도입
-- [x] core board/step 분리
-- [x] 서버 roomService 구현
-- [x] Socket.IO room create/join/leave/disconnect 연결
-- [x] 클라이언트 로비 room create/join/leave UI 연결
-- [x] roomService와 multiplayerSocket Node 테스트 추가
-- [~] `src/client/game/runtime/tetris.ts` 축소 진행 중
-- [x] server authoritative snapshot 기반 멀티 보정으로 전환
-- [x] `game:input` 기반 server authoritative input apply 연결
-- [x] room/start/game sync MVP는 연결됨
-- [x] 현재 멀티 게임은 server bag + server authoritative state + authoritative snapshot 기반으로 동작
-- [x] garbage cancel / combo / back-to-back / T-Spin attack은 서버 lock 결과 기준으로 처리
-- [x] T-Spin, back-to-back, combo, 일반 line clear의 B2B reset은 runtime 통합 테스트로 `placementResult` 반영을 검증함
-- [~] shadow/debug 실험은 별도 브랜치로 분리했고, main에서는 바로 확장하지 않음
-- [x] authoritative input/ticker loop 시작
-- [ ] 2탭 수동 회귀로 MVP 완료 판정
+- [x] server authoritative PVP/PVE gameplay MVP 구현
+- [x] own-board rollback 주요 재현 경로 E2E 회귀 고정
+- [x] 휴리스틱 PVE AI와 authoritative input executor 구현
+- [x] placement decision log, dataset/export/evaluation, JS/Python parity 경로 구현
+- [x] 사용자 선택형 Experimental PVE V4 경로와 fallback 구현
+- [x] Vite multi-page, React page shell, TypeScript client/runtime/server 전환
+- [x] CSP/security headers와 dependency hardening 반영
+- [x] production Docker image와 graceful shutdown 반영
+- [~] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됨. 첫 main push는 Fast/Docker가 통과했고 Browser는 기존 PVE T-Spin timing test 1건 때문에 36/37로 실패함
 
 ### 현재 단계의 핵심 문제
 
-- `src/client/game/runtime/tetris.ts`가 아직 크다.
-- 현재 snapshot의 주 원천은 server authoritative state다.
-- `game:input`은 서버 검증 후 server authoritative state에 적용되고 sender ack와 room snapshot으로 수렴한다.
-- 상대 보드는 로컬 예측 실행이 아니라 authoritative snapshot으로만 갱신된다.
-- deterministic 설계는 방향만 있고, 현재 MVP 구현 기준은 아니다.
-- `src/client/pages/tetrisMulti.html`의 멀티 세션 책임은 `src/client/game/entry/multiplayerGameSession.ts`로 분리됐다.
-- 2탭 회귀 검증으로 authoritative snapshot, bag request, garbage, game over 흐름을 확인해야 한다.
-- `placementResult.backToBack`은 현재 계산에 사용된 이전 B2B 상태를 나타내므로, 테스트와 문서에서 “이번 lock 이후 상태”로 오해하지 않도록 주의해야 한다.
-
-### Phase 1 완료 조건
-
-- [ ] `src/client/game/runtime/tetris.ts`가 orchestration 중심으로 읽힌다.
-- [ ] 엔진 판단이 `src/client/game/core`에서 이해된다.
-- [ ] DOM 없이 핵심 규칙 테스트가 가능하다.
-- [ ] 입력 -> 판정 -> 상태 변경 -> 렌더 흐름을 추적할 수 있다.
+- `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
+- room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
+- JSONL 로그는 현재 요구에 충분하다. PostgreSQL Goal 9·10은 중앙 조회, 대시보드, 다중 인스턴스 수집 요구가 생길 때 재개한다.
+- Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
+- Goal 11D와 무관한 기존 PVE T-Spin E2E가 server gravity와 soft drop의 경계에서 간헐 실패한다. timeout/retry로 숨기지 않고 결정론적 test 입력 경계를 보강해야 한다.
+- WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
 
 ### 현재 단계에서 하지 않을 것
 
-- 전체 프런트 프레임워크 전환
+- SPA 전환
+- PostgreSQL storage cutover
+- Redis/Socket.IO adapter와 multi-instance 운영
 - rollback netcode
-- checksum 자동 복구
-- spectator
-- ranking
-- seed 기반 완전 재현을 멀티 MVP의 선행조건으로 두기
+- V4를 기본 PVE 또는 production gameplay AI로 승격
+- CI 통과 전 CD, registry publish, 실제 배포 자동화
 
 ## Next Actions
 
 ### 바로 해야 할 일
-1. 브라우저 2탭 멀티 플레이 회귀 검증
-   - room create / join / start
-   - 양쪽 입력 반응
-   - 상대 보드가 authoritative snapshot으로 자연스럽게 갱신되는지 확인
-   - 내 보드 line clear effect가 끊기지 않는지 확인
-   - incoming garbage 숫자와 실제 garbage board 적용이 맞는지 확인
-   - Tetris, combo, B2B, T-Spin attack이 실제 플레이에서 체감되는지 확인
-   - top-out / gameOver / match finish / lobby 복귀 확인
-   - leave / disconnect / 재입장 흐름 확인
-2. 상대 보드 line clear 표시용 effect 검토
-   - 서버 snapshot DTO에 표시용 `lineClearEffect`를 넣을지 결정한다.
-   - 소리는 재생하지 않는다.
-   - 같은 effect가 반복 재생되지 않도록 `pieceIndex` 또는 effect key를 둔다.
-3. 휴리스틱 PVE AI 단계 진입 준비
-   - `boardMetrics`는 이미 구현된 기반으로 본다.
-   - 다음 구현 순서는 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player다.
-   - PVE AI는 추천 코치가 아니라 실제 상대다.
-   - placement decision log와 PVE AI 선택을 비교할 수 있게 최소 feature를 정리한다.
-   - LLM은 아직 붙이지 않고, 휴리스틱 PVE AI와 로그 축적을 먼저 만든다.
-4. 문서/커밋 정리
-   - server authoritative 전환 커밋과 안정화 커밋을 구분해 유지한다.
-   - `.DS_Store` 같은 로컬 파일은 커밋하지 않는다.
 
-### 권장 구현 순서
-
-- [x] Step 1. 로비 create/join/leave/disconnect 브라우저 검증
-- [x] Step 2. `game:input` 최소 이벤트 정의 및 서버 검증/authoritative 적용
-- [x] Step 3. `roomService`와 분리된 match state/service 초안 추가
-- [x] Step 4. 서버가 local player용 `server bag` 또는 spawn stream을 관리
-- [x] Step 5. 초기 서버 match state에 input log 저장 경로 구현 후, consumer 부재를 확인한 cleanup에서 제거
-- [x] Step 6. local/remote 한 화면에서 상태 차이가 눈에 보이게 만들기
-- [~] Step 7. 멀티 gameplay 회귀 검증: garbage cancel / combo / back-to-back / T-Spin attack
-  - core/runtime 자동 테스트는 보강됨
-  - 브라우저 2탭 체감 검증은 아직 필요함
-- [x] Step 8. `tetrisMulti.html`의 snapshot timer 책임을 작은 함수로 분리
-- [x] Step 8-1. 상대 보드 score/lines drift를 snapshot correction 조건에 포함
-- [x] Step 8-2. T-Spin / attack state / garbage cancel 계산 일부를 core pure logic으로 분리
-- [x] Step 8-3. T-Spin / B2B / combo / B2B reset runtime 통합 테스트 추가
-- [x] Step 9. 서버가 input으로 game state를 계산할 수 있는 core 함수/서버 wrapper 연결
-- [x] Step 10. server authoritative input/ticker loop 추가
-- [x] Step 11. 서버 authoritative snapshot 방향으로 전환
-- [ ] Step 12. 2탭 수동 회귀 통과
-- [x] Step 13-0. `boardMetrics` 순수 함수와 Node 테스트 추가
-- [ ] Step 13-1. `placementGenerator` 설계/구현
-- [ ] Step 13-2. `simulatePlacement` 설계/구현
-- [ ] Step 13-3. `heuristicEvaluator` 설계/구현
-- [ ] Step 13-4. PVE AI Player 설계/구현
+1. Main CI green 복구
+   - 실패한 browser job을 재실행해 기존 PVE timing failure의 재현성을 확인한다.
+   - 재현 여부와 관계없이 same-piece snapshot을 기다리는 test helper의 gravity/lock 경합을 별도 bugfix로 고정한다.
+   - retry 횟수나 timeout 증가만으로 실패를 숨기지 않는다.
+2. `PLAN.md` 단일 기준성 유지
+   - migration run 기록은 실행 증거로 두고, 현재 우선순위는 이 섹션만 갱신한다.
+   - 과거 phase 체크리스트는 archive 성격으로 남기되 “다음 작업”으로 되살리지 않는다.
+3. Release 전 보조 smoke
+   - `bash scripts/verify.sh`
+   - `npm run test:e2e`
+   - `npm run test:release`
+   - Docker container health/shutdown smoke
+   - 필요 시 수동 PVP/PVE 1회
 
 ### 이후 단계
 
-- [ ] deterministic RNG를 실제로 주입 가능한 구조로 마무리
-- [ ] seed 기반 replay 실험
-- [x] authoritative tick과 snapshot 주기 1차 정리
-- [ ] 2탭 회귀 통과 후 multiplayer MVP 완료 선언
-- [ ] multiplayer MVP 완료 후 휴리스틱 PVE AI 단계로 이동
-- [ ] 플레이 로그 수집과 사용자 행동 feature 추출
-- [ ] PVE AI 선택과 사용자 선택 비교 지표 추가
-- [ ] ML/RL은 휴리스틱 baseline과 로그가 안정화된 뒤 검토
-- [ ] LLM 코칭 리포트는 분석 지표와 AI 비교 결과가 준비된 뒤 검토
+- [~] Goal 11D PR clean run과 main 반영 완료. 첫 main push browser gate의 PVE timing failure 1건 해결 후 main green 재확인
+- [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
+- [ ] 중앙 조회나 다중 인스턴스 로그 수집 요구가 생기면 Goal 9 PostgreSQL shadow 재개
+- [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
+- [ ] 실제 gameplay 성능 목표가 생기면 heuristic/V4/hybrid를 새 실험 문서와 benchmark로 분리 검토
+- [ ] LLM 코칭 리포트는 분석 지표와 사용자-vs-AI 비교 결과가 준비된 뒤 별도 승인으로 검토
 
 ## MVP Event Contract
 
 - 목적: 현재 코드에 구현된 Socket.IO 이벤트를 기준으로 MVP 계약을 작게 고정한다.
+- 현재 authoritative gameplay의 최신 runtime schema는 `src/shared/socketContracts.mjs`와 `src/shared/socketContractTypes.d.ts`를 우선한다.
 - 현재는 `matchId`가 따로 없고 `roomId`가 match 조회 key 역할을 한다.
 - 현재는 `match:start` 이벤트가 없다. 게임 시작 요청은 `room:start`이고, 성공 시 서버가 내부에서 `createMatch(room)`을 호출한다.
 - 네트워크에는 `action`을 보내고, 내부 판정 문맥은 `moveCause`로 유지한다.
@@ -1294,38 +1249,39 @@
 
 ## Later Roadmap
 
-### 멀티 MVP 이후
+### production hardening 이후
 
-- [ ] 배포와 운영 기초 정리
-- [ ] `placementGenerator` 추가
-- [ ] `simulatePlacement` 추가
-- [ ] `heuristicEvaluator` 추가
-- [ ] PVE AI 상대 추가
-- [ ] 플레이 로그 기반 사용자 패턴 분석
-- [ ] 사용자 행동과 PVE AI 선택 비교
-- [ ] LLM 기반 코칭 리포트 추가 검토
+- [x] Goal 11D PR 원격 실행 증거와 main 반영
+- [ ] 첫 main push에서 확인된 PVE timing failure 해결 후 main CI green 복구
+- [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
+- [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
+- [ ] 중앙 조회·다중 인스턴스 수집 요구가 생기면 PostgreSQL shadow/cutover 재검토
 - [ ] deterministic seed/replay 고도화
+- [ ] 사용자 행동과 PVE AI 선택 비교 리포트 고도화
+- [ ] LLM 기반 코칭 리포트 추가 검토
 
 ### 운영 체크리스트 최소 항목
 
 - [x] `start` script
 - [x] `test` script
-- [ ] `dev` script 필요 여부 결정
-- [ ] `build` script는 프론트엔드 마이그레이션 전까지 보류
-- [ ] `env` / `port` 정리
-- [~] disconnect 기반 room cleanup
+- [x] `dev` / `dev:server` script
+- [x] `build` script
+- [x] `env` / `port` 기본 경계 정리
+- [x] disconnect 기반 room cleanup
+- [x] production Docker health check
 - [ ] TTL 또는 오래된 room cleanup
-- [ ] health check
+- [ ] external TLS/reverse proxy 환경 검증
+- [~] GitHub Actions PR remote green, 첫 main push browser gate 36/37
 
 ### AI 원칙
 
 - AI는 DOM이 아니라 game state를 읽는다.
 - AI 출력은 사람과 같은 `action` 형식을 사용한다.
-- 현재 구현된 AI 기반은 `src/client/game/core/boardMetrics.ts`다.
-- 현재 다음 구현 순서는 `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player다.
+- 현재 구현된 AI 기반은 `boardMetrics`, reachable placement planning, simulation, heuristic evaluation, PVE AI Player다.
 - PVE AI는 추천 코치가 아니라 실제 AI 상대다.
-- rule-based PVE AI를 먼저 만들고, 이후 ML/RL은 비교 가능한 지표와 로그 위에서 확장한다.
-- Python AI 서버는 현재 범위가 아니며, JavaScript 순수 함수 baseline이 안정화된 뒤 검토한다.
+- production 기본 PVE는 heuristic이다.
+- V4는 사용자 선택형 Experimental PVE와 offline Human imitation 분석용이다.
+- Python AI 서버와 강화학습은 현재 범위가 아니며, 별도 gameplay 목표와 benchmark가 생긴 뒤 검토한다.
 - LLM은 보조 설명 계층이다.
 - LLM 입력은 원본 게임 로그 전체가 아니라 요약 통계, 주요 실수 장면, PVE AI 선택 행동, 사용자 행동 차이를 중심으로 구성한다.
 - LLM이 판단을 대신하지 않는다. 판단은 휴리스틱/ML 분석 계층에서 만들고, LLM은 그 결과를 자연어로 설명한다.
