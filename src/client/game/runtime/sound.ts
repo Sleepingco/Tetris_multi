@@ -20,8 +20,11 @@ export function initLobbySound(toggleBtn: HTMLButtonElement | null): () => void 
     currentMusic = lobbyMusic
     const cleanupToggle = registerToggle(toggleBtn)
     applySoundSetting(soundEnabled, { initial: true })
-    tryPlayMusic()
-    return cleanupToggle
+    const cleanupAutoplayRetry = registerAutoplayRetry()
+    return () => {
+        cleanupAutoplayRetry()
+        cleanupToggle()
+    }
 }
 
 /**
@@ -35,8 +38,11 @@ export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
     currentMusic = gameMusic
     const cleanupToggle = registerToggle(toggleBtn)
     applySoundSetting(soundEnabled, { initial: true })
-    tryPlayMusic()
-    return cleanupToggle
+    const cleanupAutoplayRetry = registerAutoplayRetry({ includeKeyboard: false })
+    return () => {
+        cleanupAutoplayRetry()
+        cleanupToggle()
+    }
 }
 
 /**
@@ -45,10 +51,50 @@ export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
   * @returns {void}
   */
 export function tryPlayMusic() {
-    if (!soundEnabled || !currentMusic) return
-    currentMusic.play().catch(() => {
-        // 첫 사용자 인터랙션 후 재생 시도됨
-    })
+    void attemptMusicPlayback()
+}
+
+/**
+  * 자동재생이 차단된 경우 사용자 상호작용에서 BGM을 다시 시도한다.
+  * 실제 재생에 성공한 뒤에만 리스너를 제거한다.
+  *
+  * @param {{includeKeyboard?: boolean}} [options={}] - keydown 재시도 포함 여부
+  * @returns {Function} 등록한 사용자 상호작용 리스너를 제거하는 정리 함수
+  */
+function registerAutoplayRetry(
+    { includeKeyboard = true }: { includeKeyboard?: boolean } = {},
+): () => void {
+    if (!soundEnabled) return () => {}
+
+    let listening = true
+    const cleanup = () => {
+        if (!listening) return
+        listening = false
+        document.removeEventListener("click", retry)
+        if (includeKeyboard) document.removeEventListener("keydown", retry)
+    }
+    const retry = (event: Event) => {
+        if (!event.isTrusted) return
+        void attemptMusicPlayback().then(playing => {
+            if (playing) cleanup()
+        })
+    }
+
+    document.addEventListener("click", retry)
+    if (includeKeyboard) document.addEventListener("keydown", retry)
+    return cleanup
+}
+
+async function attemptMusicPlayback(): Promise<boolean> {
+    if (!soundEnabled || !currentMusic) return false
+    if (!currentMusic.paused) return true
+
+    try {
+        await currentMusic.play()
+        return true
+    } catch {
+        return false
+    }
 }
 
 /**
