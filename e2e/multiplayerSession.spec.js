@@ -34,7 +34,7 @@ test("Host와 Guest의 sessionStorage와 게임 역할이 서로 격리된다", 
 
         expect(hostSession.session.version).toBe(1);
         expect(hostSession.session.playerId).not.toBe(guestSession.session.playerId);
-        expect(hostSession.session.token).toHaveLength(43);
+        expect(hostSession.session.token.length === 43).toBe(true);
         expect(hostSession.roomId).toBe(roomId);
         expect(guestSession.roomId).toBe(roomId);
         await expect(hostPage.locator("#player1RoleBadge")).toHaveText("내 보드");
@@ -69,7 +69,7 @@ test("current token 중복 연결은 이전 로비 탭을 terminal 상태로 남
 
     await expect(page.locator("#chatMessages")).toContainText(terminalMessage);
     await expect(page.locator("#btnJoinCode")).toBeDisabled();
-    expect(await readPlayerSession(page)).toEqual(currentSession);
+    expect(JSON.stringify(await readPlayerSession(page)) === JSON.stringify(currentSession)).toBe(true);
 });
 
 test("lobby reload와 transport reconnect는 token을 회전하고 room을 다시 sync한다", async ({ browser }) => {
@@ -84,15 +84,15 @@ test("lobby reload와 transport reconnect는 token을 회전하고 room을 다�
         await expect(hostPage.locator("#roomCodeText")).toHaveText(roomId);
         const reloadedSession = await readPlayerSession(hostPage);
         expect(reloadedSession.playerId).toBe(initialSession.playerId);
-        expect(reloadedSession.token).not.toBe(initialSession.token);
+        expect(reloadedSession.token === initialSession.token).toBe(false);
         expect(reloadedSession.expiresAt).toBe(initialSession.expiresAt);
 
         await hostContext.setOffline(true);
         await expect(hostPage.locator("#btnLeaveRoom")).toBeDisabled();
         await hostContext.setOffline(false);
-        await expect.poll(async () => (await readPlayerSession(hostPage))?.token).not.toBe(
-            reloadedSession.token,
-        );
+        await expect.poll(async () => {
+            return (await readPlayerSession(hostPage))?.token === reloadedSession.token;
+        }).toBe(false);
         await expect(hostPage.locator("#roomCodeText")).toHaveText(roomId);
         await expect(hostPage.locator("#btnLeaveRoom")).toBeEnabled();
 
@@ -106,9 +106,9 @@ test("lobby reload와 transport reconnect는 token을 회전하고 room을 다�
                 window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
             }),
         ]);
-        await expect.poll(async () => (await readPlayerSession(hostPage))?.token).not.toBe(
-            tokenBeforeBfcacheRestore,
-        );
+        await expect.poll(async () => {
+            return (await readPlayerSession(hostPage))?.token === tokenBeforeBfcacheRestore;
+        }).toBe(false);
         await expect(hostPage.locator("#roomCodeText")).toHaveText(roomId);
     } finally {
         await players.close();
@@ -128,7 +128,7 @@ test("game reload은 자동 game:join으로 같은 player session을 복구한�
         const afterReload = await readPlayerSession(guestPage);
 
         expect(afterReload.playerId).toBe(beforeReload.playerId);
-        expect(afterReload.token).not.toBe(beforeReload.token);
+        expect(afterReload.token === beforeReload.token).toBe(false);
     } finally {
         await players.close();
     }
@@ -161,9 +161,9 @@ test("game transport reconnect는 authoritative match와 sequence, bag 흐름을
         expect(monitor.getSentGameInputCount()).toBe(inputCountWhileOffline);
 
         await guestContext.setOffline(false);
-        await expect.poll(async () => (await readPlayerSession(guestPage))?.token).not.toBe(
-            sessionBeforeReconnect.token,
-        );
+        await expect.poll(async () => {
+            return (await readPlayerSession(guestPage))?.token === sessionBeforeReconnect.token;
+        }).toBe(false);
         await expect(guestPage.locator('.next-preview[data-player="2"] .next-cell')).toHaveCount(32);
         await expect.poll(async () => {
             const [guestBoard, hostBoard] = await Promise.all([
@@ -234,9 +234,9 @@ test("replayed token은 room을 탈취하지 못하고 한 번의 신규 identit
         await createWaitingRoom(hostPage, guestPage);
         const replayedSession = await readPlayerSession(hostPage);
         await hostPage.reload();
-        await expect.poll(async () => (await readPlayerSession(hostPage))?.token).not.toBe(
-            replayedSession.token,
-        );
+        await expect.poll(async () => {
+            return (await readPlayerSession(hostPage))?.token === replayedSession.token;
+        }).toBe(false);
 
         replayPage = await hostContext.newPage();
         await replayPage.addInitScript((session) => {

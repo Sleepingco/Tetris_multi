@@ -25,9 +25,9 @@ function captureBrowserErrors(page) {
 }
 
 async function expectTokenHidden(page, token, consoleMessages) {
-    expect(page.url()).not.toContain(token);
-    expect(await page.content()).not.toContain(token);
-    expect(consoleMessages.join("\n")).not.toContain(token);
+    expect(page.url().includes(token)).toBe(false);
+    expect((await page.content()).includes(token)).toBe(false);
+    expect(consoleMessages.join("\n").includes(token)).toBe(false);
 }
 
 test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 유지한다", async ({ browser }) => {
@@ -107,9 +107,9 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
             hostPage.locator('.hold-preview[data-player="2"] .next-cell.preview'),
         ).toHaveCount(4);
         await hostContext.setOffline(false);
-        await expect.poll(async () => (await readPlayerSession(hostPage))?.token).not.toBe(
-            sessionBeforeReconnect.token,
-        );
+        await expect.poll(async () => {
+            return (await readPlayerSession(hostPage))?.token === sessionBeforeReconnect.token;
+        }).toBe(false);
         await expect.poll(() => hostMonitor.getSentEventCount("game:join")).toBe(2);
         await expect(hostPage.locator('.game-text[data-player="1"]')).not.toBeVisible();
         await expect(hostPage.locator('.game-text[data-player="2"]')).not.toBeVisible();
@@ -150,9 +150,9 @@ test("multiplayer BFCache 복귀와 terminal replacement는 stale 입력을 남�
                 window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
             }),
         ]);
-        await expect.poll(async () => (await readPlayerSession(page))?.token).not.toBe(
-            tokenBeforeRestore,
-        );
+        await expect.poll(async () => {
+            return (await readPlayerSession(page))?.token === tokenBeforeRestore;
+        }).toBe(false);
         await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(32);
         await expect.poll(() => monitor.getSentEventCount("game:join")).toBe(2);
 
@@ -180,7 +180,7 @@ test("multiplayer BFCache 복귀와 terminal replacement는 stale 입력을 남�
         await page.keyboard.press("Space");
         await page.waitForTimeout(200);
         expect(monitor.getSentGameInputCount()).toBe(inputCount);
-        expect(await readPlayerSession(page)).toEqual(currentSession);
+        expect(JSON.stringify(await readPlayerSession(page)) === JSON.stringify(currentSession)).toBe(true);
         expect(browserErrors.errors).toEqual([]);
     } finally {
         monitor.dispose();
