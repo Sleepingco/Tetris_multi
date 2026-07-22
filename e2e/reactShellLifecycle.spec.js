@@ -104,6 +104,38 @@ test("index BFCache 복귀는 reload 후 sound toggle listener를 복원한다",
     await expect(soundToggle).not.toHaveAttribute("aria-pressed", initialPressed);
 });
 
+test("index는 자동재생 차단 뒤 첫 사용자 상호작용에서 BGM을 한 번 재시도한다", async ({ page }) => {
+    await page.addInitScript(() => {
+        window.__musicPlayAttempts = [];
+        HTMLMediaElement.prototype.play = function play() {
+            const userActivated = navigator.userActivation.isActive;
+            window.__musicPlayAttempts.push({ src: this.src, userActivated });
+            if (userActivated) return Promise.resolve();
+            return Promise.reject(new DOMException("Autoplay blocked", "NotAllowedError"));
+        };
+    });
+    await page.goto("/pages/index.html");
+
+    await expect.poll(() => page.evaluate(() => {
+        return window.__musicPlayAttempts.filter(attempt => {
+            return attempt.src.includes("tetris_lobby_music") && !attempt.userActivated;
+        }).length;
+    })).toBeGreaterThan(0);
+
+    const attemptsBeforeSyntheticEvent = await page.evaluate(() => window.__musicPlayAttempts.length);
+    await page.evaluate(() => document.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(await page.evaluate(() => window.__musicPlayAttempts.length))
+        .toBe(attemptsBeforeSyntheticEvent);
+
+    const attemptsBeforeInteraction = await page.evaluate(() => window.__musicPlayAttempts.length);
+    await page.locator("#nicknameInput").click();
+    await expect.poll(() => page.evaluate(() => window.__musicPlayAttempts.length))
+        .toBe(attemptsBeforeInteraction + 1);
+    expect(await page.evaluate(() => window.__musicPlayAttempts.at(-1))).toMatchObject({
+        userActivated: true,
+    });
+});
+
 test("production React artifact는 TSX source와 source map을 제공하지 않는다", async ({ page }) => {
     test.skip(process.env.PLAYWRIGHT_VITE_DEV === "1", "production artifact 전용 검증");
     await page.goto("/pages/multiLobby.html");

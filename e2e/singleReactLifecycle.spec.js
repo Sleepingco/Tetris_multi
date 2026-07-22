@@ -78,6 +78,29 @@ test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 �
     expect(errors).toEqual([]);
 });
 
+test("single 첫 키 입력은 차단된 BGM을 중복 없이 한 번 재시도한다", async ({ page }) => {
+    await page.addInitScript(() => {
+        window.__musicPlayAttempts = [];
+        HTMLMediaElement.prototype.play = function play() {
+            const userActivated = navigator.userActivation.isActive;
+            window.__musicPlayAttempts.push({ src: this.src, userActivated });
+            if (userActivated) return Promise.resolve();
+            return Promise.reject(new DOMException("Autoplay blocked", "NotAllowedError"));
+        };
+    });
+    await page.goto("/pages/tetrisSingle.html");
+
+    await expect.poll(() => page.evaluate(() => window.__musicPlayAttempts.length))
+        .toBeGreaterThan(0);
+    const attemptsBeforeInteraction = await page.evaluate(() => window.__musicPlayAttempts.length);
+    await page.keyboard.press("ArrowLeft");
+    await expect.poll(() => page.evaluate(() => window.__musicPlayAttempts.length))
+        .toBe(attemptsBeforeInteraction + 1);
+    expect(await page.evaluate(() => window.__musicPlayAttempts.at(-1))).toMatchObject({
+        userActivated: true,
+    });
+});
+
 test("single game-over와 반복 restart는 HUD와 input lifecycle을 복원한다", async ({ page }) => {
     const errors = captureBrowserErrors(page);
     await page.goto("/pages/tetrisSingle.html");
