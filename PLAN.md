@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-22 기준. Goal 11C production Docker image가 전용 branch의 merge gate에 있으며 DB Goal 9·10은 보류한다.
+- Last update: 2026-07-23 기준. Goal 11D migration CI가 로컬 구현·검증을 마치고 실제 GitHub 실행 승인 gate에 있으며 DB Goal 9·10은 보류한다.
 
 ## Document Role
 
@@ -337,6 +337,14 @@
 - container PVP/PVE Playwright는 6/6, `bash scripts/verify.sh`는 Node tests 594 pass·기존 조건부 1 skip, Vite-dev는 10 pass·production-only 2 skip, production Playwright는 37/37 통과했다. named volume은 재시작 전 484줄의 hash를 재시작 후 prefix에서 그대로 유지했고 lifecycle 로그 1줄을 append했으며, 최종 SIGTERM은 0.16초·exit code 0으로 종료됐다. production/full npm audit은 기존 Goal 11C 검증에서 모두 0건이다.
 - 첫 production image라 실제 이전 image로의 downgrade는 검증할 대상이 없다. 현재는 commit tag와 image ID 재실행만 확인했으며, 다음 배포부터는 배포 전 현재 registry digest를 보존하고 실패 시 해당 digest로 동일 runtime 환경을 재기동한다. registry publish/deploy, amd64 build, 외부 TLS/reverse proxy와 장시간 soak는 미검증이다.
 - Goal 11C는 clean local merge gate에서 멈춘다. push, main merge, image publish/deploy, branch 삭제, Goal 11D와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
+
+## Migration Goal 11D CI execution gate (2026-07-23)
+
+- 기준은 Goal 11C가 반영된 `main@84f8659`이며 `codex/add-migration-ci`에 GitHub Actions workflow 하나를 추가했다. `fast`, `browser`, `docker` 세 job은 `ubuntu-24.04`에서 실행하고 `.nvmrc`를 Node 단일 기준으로 사용한다. 실제 npm 버전은 출력만 하며 `11.16.0`으로 고정됐다고 주장하지 않는다.
+- `fast`는 pull request에서 base/head merge-base부터 head까지, main push에서 `github.event.before`부터 `github.sha`까지 committed diff를 검사하고 수동 dispatch에서는 현재 HEAD commit을 검사한다. 이어 `npm ci --ignore-scripts`, `bash scripts/verify.sh`와 `npm run test:release`를 실행한다. `browser`는 독립 checkout·Node setup·clean install 뒤 기존 Playwright webServer lifecycle로 Chromium Vite-dev와 production PVP/PVE를 실행한다. `docker`는 registry push 없이 local image를 만들고 고유 container/volume, read-only root, JSONL writable volume, bounded health, HTTP/CSP/source-map 404와 SIGTERM exit 0을 확인한다.
+- workflow 권한은 `contents: read`뿐이며 공식 `actions/checkout`과 `actions/setup-node`를 검증된 full commit SHA로 고정했다. npm cache는 `package-lock.json`에 연결하되 모든 job이 clean install을 수행해 cache miss에도 동작한다. trace, HTML report, JSONL을 포함한 실패 artifact는 redaction 정책 전까지 업로드하지 않는다.
+- token rotation, stale credential 보존과 URL/DOM/console 비노출 E2E는 token 원문을 matcher에 넘기지 않는 boolean 비교로 바꿨다. 관련 production Playwright 19/19, canonical Node 594 pass·기존 조건부 1 skip, source-less release 1/1, Vite-dev 10 pass·2 skip, production Playwright 37/37과 Docker smoke가 통과했다. Docker smoke는 root HTML에서 동적으로 찾은 hashed module을 실제 HTTP 200으로 확인한 뒤 같은 module의 map 404를 확인한다.
+- Draft PR [#1](https://github.com/Sleepingco/Tetris_multi/pull/1)의 GitHub-hosted `ubuntu-24.04` clean run [#1](https://github.com/Sleepingco/Tetris_multi/actions/runs/29960528790)에서 `Fast gate`, `Chromium PVP and PVE`, `Production container smoke`가 모두 통과했다. fast는 cache miss 후 저장, browser는 cache hit였고 Node 594 pass·기존 조건부 1 skip, release 1/1, Vite-dev 10 pass·2 skip, production 37/37과 Docker health/HTTP/CSP/artifact/shutdown이 통과했다. 의도적인 type/build/unit/E2E 실패 routing, main push·수동 dispatch event와 branch protection 연결은 실행하지 않았으며 사용자가 포트폴리오 범위의 수용된 미검증 위험으로 보류했다. 이를 검증했다고 주장하지 않고 workflow/branch-protection 변경 시 재검토한다. registry/deployment와 optional ML workflow는 수행하지 않았으며 Goal 11D는 PR merge gate다.
 
 ## Project Direction
 

@@ -1,0 +1,198 @@
+name: Migration CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Fast gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check committed diff
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          case "$EVENT_NAME" in
+              pull_request)
+                  merge_base="$(git merge-base "$PR_BASE_SHA" "$PR_HEAD_SHA")"
+                  git diff --check "$merge_base..$PR_HEAD_SHA"
+                  ;;
+              push)
+                  git diff --check "$PUSH_BEFORE_SHA..$EVENT_SHA"
+                  ;;
+              workflow_dispatch)
+                  git show --check --format= "$EVENT_SHA"
+                  ;;
+          esac
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Verify runtime versions
+        run: |
+          test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run fast migration gate
+        run: bash scripts/verify.sh
+
+      - name: Verify production release boundary
+        run: npm run test:release
+
+  browser:
+    name: Chromium PVP and PVE
+    needs: fast
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Verify runtime versions
+        run: |
+          test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
+          npm --version
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Install Chromium
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Run Vite development lifecycle gate
+        run: npm run test:e2e:vite-dev
+
+      - name: Run production browser gate
+        run: npm run test:e2e
+
+  docker:
+    name: Production container smoke
+    needs: fast
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Build and verify local production image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          image_tag="tetris-multi:ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          container_name="tetris-ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          volume_name="tetris-ci-logs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          cleanup() {
+              docker rm -f "$container_name" >/dev/null 2>&1 || true
+              docker volume rm "$volume_name" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker build --pull --tag "$image_tag" .
+          docker volume create "$volume_name" >/dev/null
+          docker run -d \
+              --read-only \
+              --name "$container_name" \
+              -p 127.0.0.1:5510:5500 \
+              --mount "type=volume,src=$volume_name,dst=/app/data/logs" \
+              -e SOCKET_ALLOWED_ORIGINS=http://127.0.0.1:5510 \
+              -e CSP_CONNECT_ORIGINS=ws://127.0.0.1:5510 \
+              -e GAME_EVENTS_LOG_PATH=/app/data/logs/game-events.jsonl \
+              "$image_tag" >/dev/null
+
+          health="starting"
+          for _ in $(seq 1 40); do
+              if [ "$(docker inspect --format '{{.State.Running}}' "$container_name")" != "true" ]; then
+                  docker logs "$container_name"
+                  exit 1
+              fi
+              health="$(docker inspect --format '{{.State.Health.Status}}' "$container_name")"
+              case "$health" in
+                  healthy) break ;;
+                  unhealthy)
+                      docker logs "$container_name"
+                      exit 1
+                      ;;
+              esac
+              sleep 2
+          done
+          test "$health" = "healthy"
+
+          test "$(docker inspect --format '{{.Config.User}}' "$container_name")" = "node"
+          test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$container_name")" = "true"
+          docker exec "$container_name" sh -lc 'test -w /app/data/logs && test ! -w /app/dist'
+
+          for path in \
+              / \
+              /pages/index.html \
+              /pages/multiLobby.html \
+              /pages/tetrisSingle.html \
+              /pages/tetrisMulti.html \
+              /socket.io/socket.io.js
+          do
+              curl --fail --silent --show-error "http://127.0.0.1:5510$path" >/dev/null
+          done
+
+          headers="$RUNNER_TEMP/tetris-security-headers.txt"
+          root_html="$(curl --fail --silent --show-error \
+              --dump-header "$headers" \
+              http://127.0.0.1:5510/)"
+          grep -qi '^Content-Security-Policy: ' "$headers"
+          grep -qi '^X-Content-Type-Options: nosniff' "$headers"
+          grep -qi '^X-Frame-Options: DENY' "$headers"
+          grep -qi '^Referrer-Policy: no-referrer' "$headers"
+
+          module_path="$(printf '%s' "$root_html" \
+              | sed -n 's/.*src="\([^"]*\.js\)".*/\1/p' \
+              | head -n 1)"
+          test -n "$module_path"
+          curl --fail --silent --show-error \
+              "http://127.0.0.1:5510${module_path}" >/dev/null
+          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              http://127.0.0.1:5510/pages/index.tsx)" = "404"
+          test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+              "http://127.0.0.1:5510${module_path}.map")" = "404"
+
+          docker stop --time 20 "$container_name" >/dev/null
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$container_name")" = "0"

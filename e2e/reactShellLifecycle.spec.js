@@ -72,12 +72,12 @@ test("React lobby lifecycle은 listener와 초기 room sync를 한 세트만 유
         const guestToken = await guestPage.evaluate(() => {
             return JSON.parse(sessionStorage.getItem("tetris:playerSession")).token;
         });
-        expect(hostPage.url()).not.toContain(hostToken);
-        expect(await hostPage.content()).not.toContain(hostToken);
-        expect(hostErrors.consoleMessages.join("\n")).not.toContain(hostToken);
-        expect(guestPage.url()).not.toContain(guestToken);
-        expect(await guestPage.content()).not.toContain(guestToken);
-        expect(guestErrors.consoleMessages.join("\n")).not.toContain(guestToken);
+        expect(hostPage.url().includes(hostToken)).toBe(false);
+        expect((await hostPage.content()).includes(hostToken)).toBe(false);
+        expect(hostErrors.consoleMessages.join("\n").includes(hostToken)).toBe(false);
+        expect(guestPage.url().includes(guestToken)).toBe(false);
+        expect((await guestPage.content()).includes(guestToken)).toBe(false);
+        expect(guestErrors.consoleMessages.join("\n").includes(guestToken)).toBe(false);
         expect(hostErrors.errors).toEqual([]);
         expect(guestErrors.errors).toEqual([]);
     } finally {
