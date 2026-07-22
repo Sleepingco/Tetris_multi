@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-22 기준. Goal 11B dependency hardening이 전용 branch의 merge gate에 있으며 DB Goal 9·10은 보류한다.
+- Last update: 2026-07-22 기준. Goal 11C production Docker image가 전용 branch의 merge gate에 있으며 DB Goal 9·10은 보류한다.
 
 ## Document Role
 
@@ -326,6 +326,17 @@
 - `package.json`과 `environment-ml.yml` checksum은 기준과 동일하다. `environment-ml.yml`은 exact top-level pin을 제공하지만 전체 transitive package/build lockfile은 아니며, Conda solver와 defaults channel의 미래 metadata 변화는 남은 재현성 한계다.
 - rollback은 현재 Goal 11B 문서 commit을 먼저 revert한 뒤 dependency commit `3fe121e`를 revert하고 `npm ci --ignore-scripts`로 기준 lock resolve를 복구한다. Python/Conda 파일은 변경하지 않아 별도 rollback이 없다.
 - Goal 11B는 clean local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 11C와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
+
+## Migration Goal 11C Production Docker merge gate (2026-07-22)
+
+- 기준은 `main@a18801c`이며 `codex/add-production-docker`에서 official Node `24.18.0-bookworm-slim` digest를 고정한 multi-stage image를 추가했다. build dependency와 production dependency 설치를 분리하고 runtime에는 `dist`, production `node_modules`와 명시적인 `/app/data/logs` 경계만 둔다. package/lockfile과 dependency는 변경하지 않았다.
+- runtime은 built-in `node` user로 실행하며 exec-form `CMD`, read-only root filesystem과 named JSONL volume을 사용한다. health check는 내부 상태를 노출하지 않고 `/`의 성공 여부만 확인한다. `.env`, credential, source, test, devDependency, first-party TypeScript와 source map은 image에 포함하지 않는다.
+- SIGTERM은 Socket.IO session cleanup interval, disconnect grace timer와 authoritative room ticker를 idempotent하게 정리하고 Socket.IO가 연결된 HTTP server를 닫는다. 8초 상한을 두었고 실제 container는 0.16초, exit code 0으로 종료됐다. restart 뒤 named volume의 기존 JSONL이 유지됐다.
+- production browser의 same-origin Socket.IO polling은 `Origin` header를 보내지 않는 실제 동작을 확인했다. exact origin allowlist 필수 정책과 cross-origin 거부를 유지하면서 `Sec-Fetch-Site: same-origin`과 allowlisted `Host`가 함께 맞는 경우만 no-Origin polling을 허용한다. 일반 no-Origin 요청과 forged/unlisted host·origin은 계속 거부한다.
+- 검증한 local image는 `tetris-multi:goal11c-d13abfb`, image ID `sha256:9ea62bf5c49996eeb4fe3784bfe2d7d98d3a4a7659eda5eac222a7365d45c178`, linux/arm64 88,082,938 bytes다. health `starting → healthy`, non-root/read-only, writable JSONL volume, 네 page·asset·Socket.IO client HTTP 200, CSP/security header, first-party TS/TSX/map 404와 public Socket.IO map 200 예외를 확인했다.
+- container PVP/PVE Playwright는 6/6, targeted lifecycle/security는 32/32, source-less release는 1/1 통과했다. `bash scripts/verify.sh`는 Node tests 594 pass·기존 조건부 1 skip, Vite-dev는 8 pass·production-only 2 skip이다. production Playwright 첫 실행은 기존 PVE 7-bag hold timing timeout으로 34/35였고 해당 시나리오 단독 1/1 및 전체 재실행 35/35가 통과했다. production/full npm audit은 모두 0건이다.
+- 첫 production image라 실제 이전 image로의 downgrade는 검증할 대상이 없다. 현재는 commit tag와 image ID 재실행만 확인했으며, 다음 배포부터는 배포 전 현재 registry digest를 보존하고 실패 시 해당 digest로 동일 runtime 환경을 재기동한다. registry publish/deploy, amd64 build, 외부 TLS/reverse proxy와 장시간 soak는 미검증이다.
+- Goal 11C는 clean local merge gate에서 멈춘다. push, main merge, image publish/deploy, branch 삭제, Goal 11D와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
 
 ## Project Direction
 
