@@ -80,6 +80,7 @@ type TickerActionResult = {
 export type AuthoritativeTickerService = {
     startRoomTicker(roomId: string, socketServer: AuthoritativeSocketServer): TickerActionResult;
     stopRoomTicker(roomId: string): TickerActionResult;
+    stopAllRoomTickers(): void;
     hasRoomTicker(roomId: string): boolean;
     resetPlayerGravity(
         roomId: string,
@@ -196,6 +197,12 @@ export function createAuthoritativeTickerService(
             ok: true,
             started: true,
         };
+    }
+
+    function stopAllRoomTickers(): void {
+        for (const roomId of [...tickers.keys()]) {
+            stopRoomTicker(roomId);
+        }
     }
 
     function stopRoomTicker(roomId: string): TickerActionResult {
@@ -493,6 +500,7 @@ export function createAuthoritativeTickerService(
     return {
         startRoomTicker,
         stopRoomTicker,
+        stopAllRoomTickers,
         hasRoomTicker,
         resetPlayerGravity,
         tickRoom,

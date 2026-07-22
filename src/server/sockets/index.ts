@@ -97,7 +97,7 @@ function getRemoteAddress(clientSocket: AppSocket): string {
 export function registerSocketHandlers(
     socketServer: AppSocketServer,
     dependencies: RegisterSocketDependencies = {},
-): void {
+): () => void {
     const playerSessionService = dependencies.playerSessionService
         || createPlayerSessionService()
     const rateLimitProfile = dependencies.rateLimitProfile
@@ -203,7 +203,22 @@ export function registerSocketHandlers(
     }, SESSION_CLEANUP_INTERVAL_MS)
     cleanupTimer.unref?.()
 
+    let disposed = false
+
+    function dispose(): void {
+        if (disposed) return
+        disposed = true
+
+        clearInterval(cleanupTimer)
+        for (const context of multiplayerDependencies.disconnectGraceContexts.values()) {
+            clearTimeout(context.timer)
+        }
+        multiplayerDependencies.disconnectGraceContexts.clear()
+        authoritativeTickerService.stopAllRoomTickers()
+    }
+
     socketServer.on("connection", (clientSocket) => {
+        if (disposed) return
         const sessionContext = clientSocket.data.playerSession
         const graceContext = sessionContext
             ? multiplayerDependencies.disconnectGraceContexts.get(sessionContext.playerId)
@@ -219,6 +234,8 @@ export function registerSocketHandlers(
         pendingSessionReady.delete(clientSocket)
         if (sessionReady) clientSocket.emit("session:ready", sessionReady)
     })
+
+    return dispose
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

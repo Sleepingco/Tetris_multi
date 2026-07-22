@@ -41,6 +41,25 @@ app.use((error: unknown, _request: Request, response: Response, _next: unknown) 
     response.end("Request Failed")
 })
 
-registerSocketHandlers(socketServer)
+const disposeSocketHandlers = registerSocketHandlers(socketServer)
+let isShuttingDown = false
+
+function shutdown(): void {
+    if (isShuttingDown) return
+    isShuttingDown = true
+
+    const forceExitTimer = setTimeout(() => process.exit(1), 8_000)
+    forceExitTimer.unref?.()
+    disposeSocketHandlers()
+    socketServer.close((error) => {
+        clearTimeout(forceExitTimer)
+        process.exitCode = error ? 1 : 0
+    }).catch(() => {
+        clearTimeout(forceExitTimer)
+        process.exitCode = 1
+    })
+}
+
+process.once("SIGTERM", shutdown)
 
 server.listen(PORT, () => console.log(`server is running ${PORT}`))

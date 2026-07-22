@@ -30,6 +30,13 @@ export function createSocketServerOptions(
 ): SocketServerOptions {
     const allowedOrigins = readAllowedOrigins(environment);
     const isProduction = environment.NODE_ENV === "production";
+    const allowedHosts = new Set([...allowedOrigins].flatMap((origin) => {
+        try {
+            return [new URL(origin).host];
+        } catch {
+            return [];
+        }
+    }));
     const isAllowed = (origin: string | undefined): boolean => {
         return Boolean(origin && allowedOrigins.has(origin));
     };
@@ -38,7 +45,7 @@ export function createSocketServerOptions(
         maxHttpBufferSize: 512 * 1024,
         cors: {
             origin(origin, callback) {
-                if ((!origin && !isProduction) || isAllowed(origin)) {
+                if (!origin || isAllowed(origin)) {
                     callback(null, true);
                     return;
                 }
@@ -47,7 +54,11 @@ export function createSocketServerOptions(
         },
         allowRequest(request, callback) {
             const origin = request.headers.origin;
-            callback(null, (!origin && !isProduction) || isAllowed(origin));
+            const isSameOriginBrowserRequest = !origin
+                && request.headers["sec-fetch-site"] === "same-origin"
+                && typeof request.headers.host === "string"
+                && allowedHosts.has(request.headers.host);
+            callback(null, (!origin && !isProduction) || isAllowed(origin) || isSameOriginBrowserRequest);
         },
     };
 }
