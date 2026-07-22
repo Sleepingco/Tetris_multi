@@ -2,11 +2,11 @@
 
 ## Purpose
 
-This document describes the heuristic AI path after the server authoritative multiplayer MVP.
+This document describes the heuristic AI path on top of the server authoritative multiplayer MVP.
 It separates pure decision logic from game loop integration so the AI work does not change the current multiplayer or server authoritative flow.
 
-The first AI should choose the best placement for the current piece and play as a real PVE opponent.
-It should be simple, testable, and explainable.
+The first AI chooses a reachable placement for the current piece and plays as a real PVE opponent.
+It is intentionally simple, testable, and explainable.
 It is not a recommendation coach. Coaching and LLM explanations come later, after gameplay AI and logs exist.
 
 ## Current vs Future
@@ -14,23 +14,19 @@ It is not a recommendation coach. Coaching and LLM explanations come later, afte
 Current implementation:
 
 - Core board functions exist for collision, locking, and line clearing.
-- Runtime currently handles lock flow and placement logging on the client.
+- Runtime and server authoritative services reuse core/state concepts for lock, line clear, garbage, game over, and snapshot flow.
 - `src/client/game/core/boardMetrics.ts` exists as a pure module with Node tests in `test/testBoardMetrics.js`.
-- A first server authoritative input, ticker, state, and snapshot flow exists.
-- No placement generator, simulator, evaluator, or AI controller exists yet.
-- Final two-browser regression for the authoritative flow is still pending.
+- `placementGenerator.ts`, `reachablePlacementPlanner.ts`, `simulatePlacement.ts`, and `heuristicEvaluator.ts` exist under `src/client/game/ai/heuristic`.
+- `src/server/services/pveAiPlayerService.ts` runs AI plans through the same authoritative input path as human players.
+- Placement decision logs, dataset export/evaluation, and JS/Python parity checks exist.
+- User-selected Experimental PVE can use the V4 imitation model, but production/default PVE remains heuristic.
 
-Future implementation:
+Future improvements:
 
-- Additional pure AI utility modules are added in this order:
-  1. `placementGenerator`
-  2. `simulatePlacement`
-  3. `heuristicEvaluator`
-  4. PVE AI Player
-- The AI controller runs only after the authoritative game state boundary passes the final browser regression.
-- PVE mode uses the same game rules as human play.
-- The current priority is heuristic PVE AI and log accumulation, not ML training.
-- Python AI server, reinforcement learning, and LLM coaching are later layers.
+- Improve evaluation weights only with a named benchmark and dataset.
+- Keep V4 as opt-in Human imitation unless a separate gameplay promotion gate proves it should change.
+- Add richer user-vs-AI analysis before considering LLM coaching.
+- Python AI server, reinforcement learning, and production model serving remain later layers.
 
 ## Components
 
@@ -57,7 +53,7 @@ If both server-side AI and client-side tooling need a wider shared import bounda
 
 ### placementGenerator
 
-`placementGenerator` should enumerate legal final placements for the active piece.
+`placementGenerator` enumerates legal final placements for the active piece.
 
 Input candidates:
 
@@ -76,8 +72,7 @@ Output candidates should include:
 - whether hold was used
 - optional path metadata for later input sequence generation
 
-In the first version, this module does not need to generate human-like movement inputs.
-It only needs to find legal final placements.
+Reachability and action planning live in `reachablePlacementPlanner.ts`, which filters candidates to placements the current piece can reach through existing movement rules.
 
 ### simulatePlacement
 
@@ -88,14 +83,14 @@ It should return:
 - `boardAfter`
 - `linesCleared`
 - `gameOver`
-- optional attack-related result if the server rules are ready
+- optional attack-related result when the caller passes the needed state
 
 It must not mutate `boardBefore`.
 This is important because the evaluator will simulate many candidates from the same state.
 
 ### heuristicEvaluator
 
-`heuristicEvaluator` scores a simulated placement.
+`heuristicEvaluator` scores simulated reachable placements.
 
 A first scoring formula can combine:
 
@@ -105,7 +100,7 @@ A first scoring formula can combine:
 - more complete lines is better
 - lower max height is safer
 
-The exact weights should be treated as tunable parameters, not permanent game rules.
+The exact weights are policy parameters, not permanent game rules.
 
 The evaluator should return both:
 
@@ -114,22 +109,21 @@ The evaluator should return both:
 
 This helps debugging and portfolio explanation.
 
-### aiPlayerController
+### pveAiPlayerService
 
-`aiPlayerController` is the integration boundary.
-It should not exist inside the current multiplayer loop yet.
+`pveAiPlayerService` is the current integration boundary.
+It should stay outside the browser runtime and run through the server authoritative input path.
 
-Future responsibilities:
+Current responsibilities:
 
 1. Receive authoritative game state.
-2. Call placement generation.
-3. Simulate each placement.
-4. Score candidates.
-5. Select a placement.
-6. Return either an immediate placement command or a human-like input sequence.
+2. Choose heuristic or opt-in V4 policy.
+3. Generate reachable candidate plans.
+4. Simulate and score candidates.
+5. Execute the selected plan as authoritative actions.
+6. Save placement log evidence without blocking gameplay on log failure.
 
-For the first PVE MVP, immediate lock is acceptable.
-Later, input sequence generation can make the AI move like a human player.
+The AI no longer directly places the piece on the board. That older shortcut was removed so human and AI gameplay use the same lock/garbage/game-over rules.
 
 ## Recommended First API Shape
 
@@ -145,8 +139,7 @@ gameState
   -> selectedPlacement
 ```
 
-Only `boardMetrics` exists today.
-The remaining modules should be implemented in the listed order: `placementGenerator` -> `simulatePlacement` -> `heuristicEvaluator` -> PVE AI Player.
+This flow exists today for heuristic PVE. Experimental V4 can replace the scoring choice only when the user explicitly selects it, and falls back to heuristic on model load or validation failure.
 
 ## Testing Strategy
 
@@ -159,12 +152,11 @@ Test pure modules first:
 - simulation does not mutate input board
 - evaluator chooses a safer board when line clear is equal
 
-Do not test AI through browser UI in the first step.
-The useful tests are data-in, data-out tests.
+Browser tests are useful for PVE lifecycle, policy display, and authoritative input execution. Pure AI modules should still be tested with data-in, data-out tests.
 
 ## Server Authoritative Dependency
 
-The AI controller should wait until these server-side boundaries are stable:
+The AI integration depends on these server-side boundaries:
 
 - server owns tick progression
 - server owns board and active piece
@@ -172,12 +164,12 @@ The AI controller should wait until these server-side boundaries are stable:
 - server emits authoritative snapshots
 - placement logs can be generated from server-confirmed state
 
-Until then, implement only pure functions and documentation.
+These boundaries are now implemented. Future AI work should not bypass them.
 
 ## Out of Scope For Now
 
 - Do not implement PVE as a recommendation coach. It is a real opponent mode.
-- Do not start ML training before heuristic baseline and logs exist.
-- Do not add a Python AI server before the JavaScript pure-function baseline is stable.
+- Do not make V4 the default PVE policy from this document alone.
+- Do not add a Python AI server before there is a concrete runtime serving requirement.
 - Do not start reinforcement learning before replayable state, metrics, and evaluation criteria are available.
 - Do not attach LLM coaching until AI decisions and user-vs-AI comparison data can be summarized reliably.

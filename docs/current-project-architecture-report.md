@@ -1,10 +1,10 @@
 # Tetris Multi 프로젝트 구조 및 확장 의도 보고서
 
-> 기준 시점: 2026-07-14. 이 문서는 현재 코드와 `change-log.md`의 변경 흐름을 함께 읽어, **현재 무엇이 동작하는지**와 **왜 이 경계로 나누었는지**를 설명한다.
+> 기준 시점: 2026-07-23. 이 문서는 현재 코드와 `change-log.md`의 변경 흐름을 함께 읽어, **현재 무엇이 동작하는지**와 **왜 이 경계로 나누었는지**를 설명한다.
 
 ## 1. 한눈에 보는 결론
 
-이 프로젝트는 처음의 DOM 직접 조작형 테트리스에서 출발해, 현재는 다음 세 단계가 서로 침범하지 않도록 정리된 구조다.
+이 프로젝트는 처음의 DOM 직접 조작형 테트리스에서 출발해, 현재는 Vite multi-page + page-local React shell + TypeScript Canvas runtime 위에서 다음 세 단계가 서로 침범하지 않도록 정리된 구조다.
 
 ```text
 순수 게임 규칙                 실행·표현                         네트워크·권위
@@ -59,8 +59,8 @@ DOM 없이 판정                   브라우저에서 조율                   
   - 규칙을 새로 만들기보다 core 함수의 결과를 어떤 순서로 적용할지 결정하는 위치다.
 - `src/client/game/render/`, `ui/`
   - `board`와 활성 조각을 Canvas에 그리고, 점수·다음 조각·홀드·garbage 표시를 갱신한다. 화면이 규칙을 결정하지 않는 것이 원칙이다.
-- `src/client/game/entry/`, `pages/`
-  - HTML 페이지별 DOM을 찾고 runtime을 생성하는 시작점이다. 싱글과 멀티의 화면 진입 책임을 엔진과 분리한다.
+- `src/client/game/entry/`, `src/client/pages/*.tsx`
+  - page-local React shell과 runtime session을 연결하는 시작점이다. React는 HUD와 lifecycle을 맡고, runtime/core/render는 게임 실행과 Canvas drawing을 계속 소유한다.
 
 이 분리는 특히 `core`가 DOM 없이 실행된다는 점에서 중요하다. 같은 입력을 주면 같은 판정이 나오는 방향을 유지해야 서버 판정과 AI 시뮬레이션이 화면 구현에 흔들리지 않는다.
 
@@ -172,7 +172,7 @@ ML이 들어와도 placement generator는 규칙 기반으로 유지하고, 모�
 
 ### 5.2 게임 로그: AI·데이터셋을 위한 사실 기록
 
-`logService.js`, `gameLogValidator.js`, `jsonlLogRepository.js`는 JSONL 형태의 이벤트 로그를 관리한다. 주요 이벤트는 `game_start`, `placement_decision`, `game_over`다.
+`logService.ts`, `gameLogValidator.ts`, `jsonlLogRepository.ts`는 JSONL 형태의 이벤트 로그를 관리한다. 주요 이벤트는 `game_start`, `placement_decision`, `game_over`다.
 
 현재 feature-ready `placement_decision` v2는 다음을 남긴다.
 
@@ -217,7 +217,7 @@ change log에 남은 핵심 결정은 다음과 같이 연결된다.
 
 ## 7. 현재 상태와 다음 검증 기준
 
-현재 `main`은 server authoritative 멀티 MVP 위에, authoritative input을 사용하는 휴리스틱 PVE AI와 feature-ready placement log를 올린 상태다. PVP와 PVE 모두 자동 테스트로 핵심 경로를 고정했지만, 실제 브라우저에서의 체감 회귀는 별도 확인 대상이다.
+현재 `main`은 server authoritative 멀티 MVP 위에, authoritative input을 사용하는 휴리스틱 PVE AI, Experimental V4 opt-in 경로, feature-ready placement log, React/TypeScript migration, CSP/security hardening과 production Docker image를 올린 상태다. PVP와 PVE 핵심 경로는 자동 브라우저 테스트로 고정했지만, 실제 배포 환경의 TLS/reverse proxy, WebKit/Firefox, 장시간 soak는 별도 확인 대상이다.
 
 우선 확인할 흐름은 다음과 같다.
 

@@ -1,5 +1,29 @@
 # Tetris Flow Notes
 
+> Last update: 2026-07-23.
+> 이 문서는 `src/client/game/runtime/tetris.ts` 내부의 이동/고정/라인 클리어 흐름을 읽기 위한 학습 노트다.
+> 현재 페이지는 React shell이 담당하지만, 게임 규칙과 Canvas 실행은 runtime/core/render 경계가 계속 소유한다.
+> 멀티플레이 최종 상태는 서버 authoritative state가 소유하므로, 이 문서는 서버 흐름과 함께 읽어야 한다.
+
+## 현재 큰 그림
+
+```text
+React page shell
+  -> createTetrisRuntime(...)
+  -> enqueueInput(action, tick, pieceIndex)
+  -> runtime input queue
+  -> resolveMoveAttempt / resolveMoveIntent
+  -> board, score, line clear, placement log
+  -> Canvas render + display bridge
+
+PVP/PVE multiplayer
+  -> client prediction for own board
+  -> game:input
+  -> server authoritative player state
+  -> game:authoritative:snapshot
+  -> opponent full apply, own limited correction
+```
+
 ## 0) 용어/변수 사전 (Glossary)
 
 ### gameState 핵심 필드
@@ -13,8 +37,9 @@
 - `holdPieceType`: 홀드에 저장된 조각 타입(없으면 `null`/`""` 등)
 - `holdUsedThisDrop`: “이번 드랍 턴에서 홀드를 이미 썼는지” 플래그
   - `true`면 같은 조각이 고정되기 전까지 홀드 재사용 금지
-- `fallTimer`: 중력 `setInterval` 핸들(있으면 중력 ON, 없으면 OFF)
-- `spawnGraceTimer`: 스폰 충돌 유예 `setTimeout` 핸들(있으면 유예 중)
+- `inputTimer`: 고정 tick에서 입력 큐와 자동 중력을 처리하는 interval 핸들
+- `gravityRunning`: 자동 중력 처리 여부
+- `automaticGroundedPieceIndex`: 자동 중력으로 바닥에 처음 닿은 조각을 한 번 그려 준 뒤 다음 gravity에서 lock하기 위한 표시값
 - `score`: 점수
 
 ---
@@ -22,10 +47,11 @@
 ### moveCause(=cause) 정의
 `renderBlocks(moveCause)`에 전달되는 문자열. “왜 이번 이동/판정이 발생했는지”를 의미.
 - `"spawn"`: 새 조각을 스폰한 직후, 스폰 위치가 유효한지 검사
-- `"fall"`: 중력/하강(ArrowDown 포함)으로 인해 더 내려가려다 막혀서 “락(lock) 판정”이 필요한 케이스
-  - gravity tick 또는 ArrowDown → renderBlocks("falls")
+- `"fall"`: 자동 중력/하강으로 인해 더 내려가려다 막혀서 “락(lock) 판정”이 필요한 케이스
+  - gravity tick → renderBlocks("fall")
 - `"horizontal"`: 좌/우 이동 입력으로 발생
-- `"retry"`: 스폰 충돌 재확인에만 사용(현재 구현은 setTimeout 재호출 포함)
+- `"rotate"`: 회전 입력으로 발생
+- `"hardDrop"`: 하드 드롭으로 즉시 lock까지 이어지는 케이스
 
 ---
 
@@ -43,7 +69,7 @@
 - `ok`: pending이 유효 → commit
 - `retry`: pending이 불가 → revert만 하고 끝(대부분 “입력 무시”와 동일)
 - `lock`: 하강 시도 실패(더 내려갈 수 없음) → 고정(seizeBlock)로 이동
-- `spawnBlocked`: 스폰 위치부터 불가 → 유예(grace) 후 gameOver 또는 유예 중 탈출 성공 시 계속
+- `spawnBlocked`: 스폰 위치부터 불가 → 현재 런타임에서는 gameOver 판정 흐름으로 이어지는 예전 상태명
 - `gameOver`: 더 이상 진행 불가(유예 끝, 또는 상단 침범 고정 등) → 종료
 
 ---
@@ -146,10 +172,9 @@ stateDiagram-v2
   Active --> Active: ok (commit)
 
   Active --> SpawnBlocked: canPlace=false && cause=spawn
-  SpawnBlocked --> Active: grace 중 입력 성공 (ok)
-  SpawnBlocked --> GameOver: grace timeout
+  SpawnBlocked --> GameOver: spawn blocked
 
-  Active --> Locking: canPlace=false && cause=top
+  Active --> Locking: canPlace=false && cause=fall or hardDrop
   Locking --> Seized: seizeBlock()
 
   Seized --> LineCheck: checkMatch()
@@ -167,16 +192,16 @@ stateDiagram-v2
 - 쓰기: `gameState.pendingPiece` (row/col 변경)
 - 다음: `renderBlocks(cause)` 호출
 
-### `changeDirection()`
+### `rotatePendingPiece()`
 - 의미: 회전 후보(pendingPiece.rotation)를 만든다
 - 읽기: `activePiece`
 - 쓰기: `pendingPiece.rotation`
-- 다음: `renderBlocks()` (cause 없음)
+- 다음: `renderBlocks("rotate")`
 
 ### `renderBlocks(moveCause)`
 - 의미: “pending이 실제로 가능한지”를 엔진에 물어보고(status), 그 결과에 따라 state 변경/렌더/타이머 제어
 - 읽기: `board, activePiece, pendingPiece`
-- 쓰기: `activePiece/pendingPiece`, `fallTimer`, `spawnGraceTimer`, `UI(renderBoard)`
+- 쓰기: `activePiece/pendingPiece`, `gravityRunning`, `automaticGroundedPieceIndex`, `UI(renderBoard)`
 - 핵심: **상태를 바꾸는 게 여기서 최종 결정됨**
 
 ### `resolveMoveAttempt(board, active, pending, cause)`
@@ -201,7 +226,6 @@ stateDiagram-v2
   - 실제 구현은 `findFullRows`로 이펙트 줄 찾은 뒤 `clearFilledLines`에서 다시 스캔
 
 ### `spawnNextActivePiece()`
-- (현재 이름은 `generateNewBlock()`)
 - 의미: 큐에서 다음 조각 뽑아 스폰하고 프리뷰 갱신
 - 읽기/쓰기: `pieceQueue`
 - 쓰기: `activePiece`, `pendingPiece`
@@ -216,17 +240,19 @@ stateDiagram-v2
 
 ---
 
-## 3) “유예시간(Spawn Grace)”이 실제로 의미하는 것
+## 3) 자동 중력 lock grace가 실제로 의미하는 것
 
-- `spawnBlocked`가 뜨는 조건: **스폰 직후 위치가 이미 불가능**
-- 목적: 즉사 방지(“유저가 0.4초 안에 회전/이동/홀드/하드드롭으로 빠져나가면 살림”)
+- 자동 중력이 조각을 더 내릴 수 없게 만들면 즉시 lock하지 않고, 같은 조각의 바닥 접촉 상태를 한 번 렌더한 뒤 다음 gravity에서 lock한다.
+- 목적: 자동 중력 tick 하나 때문에 조각이 눈에 보이기도 전에 고정되는 느낌을 줄이는 것이다.
 - 핵심 포인트:
-  - 유예 동안은 `fallTimer`를 멈춰서 **시간을 벌어줌**
-  - 유예 타이머가 끝나도 여전히 못 빠져나오면 `gameOver`
+  - 이 처리는 `automaticGroundedPieceIndex`로 조각당 한 번만 적용한다.
+  - 플레이어가 그 사이 입력으로 빠져나가면 lock하지 않고 계속 진행한다.
+  - hard drop과 soft drop lock은 이 자동 중력 grace와 별도로 처리한다.
 
----
+## 4) 서버 authoritative 흐름에서 같은 개념이 쓰이는 방식
 
-원하면 다음도 바로 해줄게(질문 없이 내가 알아서 맞춰서):
-1) 네 코드에서 쓰는 **실제 moveCause 문자열/필드명**에 1:1로 맞춘 버전  
-2) `resolveMoveAttempt`의 “cause별 분기표(표 형태)”  
-3) “유예 중 허용되는 입력만 통과시키는 방식(예: hold/rotate만 허용)” 설계안
+- 클라이언트 runtime은 내 보드 조작감을 위해 prediction을 한다.
+- 서버는 같은 action을 authoritative player state에 적용하고 snapshot을 보낸다.
+- 상대 보드는 서버 snapshot을 full apply한다.
+- 내 보드는 pending input, line clear, garbage/gameOver 조건을 보고 제한적으로 correction한다.
+- PVE AI도 최종 좌표를 직접 꽂지 않고 `move_left`, `rotate`, `soft_drop`, `hard_drop` 같은 action을 서버 authoritative input 경로로 실행한다.
