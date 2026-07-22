@@ -162,6 +162,7 @@ for (const mode of ["enforce", "report-only"]) test(`compiled server는 ${mode} 
             application.kill("SIGTERM");
             await new Promise(resolve => application.once("exit", resolve));
         }
-        assert.equal(application.exitCode === 0 || application.signalCode === "SIGTERM", true, output);
+        assert.equal(application.exitCode, 0, output);
+        assert.equal(application.signalCode, null, output);
     }
 });

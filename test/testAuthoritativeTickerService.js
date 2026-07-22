@@ -1385,3 +1385,22 @@ test("stopRoomTicker는 여러 번 호출해도 안전하게 interval을 정리�
     assert.deepEqual(scheduler.clearedIds, [intervalId]);
     assert.equal(tickerService.hasRoomTicker("room-1"), false);
 });
+
+test("stopAllRoomTickers는 모든 ticker를 정리한다", () => {
+    const scheduler = createFakeScheduler();
+    const tickerService = createAuthoritativeTickerService({
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+    });
+    const socketServer = createFakeSocketServer();
+    tickerService.startRoomTicker("room-1", socketServer);
+    tickerService.startRoomTicker("room-2", socketServer);
+    const intervalIds = [...scheduler.intervals.keys()];
+
+    tickerService.stopAllRoomTickers();
+    tickerService.stopAllRoomTickers();
+
+    assert.deepEqual(scheduler.clearedIds, intervalIds);
+    assert.equal(tickerService.hasRoomTicker("room-1"), false);
+    assert.equal(tickerService.hasRoomTicker("room-2"), false);
+});

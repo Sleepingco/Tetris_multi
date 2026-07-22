@@ -2,6 +2,7 @@ const { defineConfig, devices } = require("@playwright/test");
 const path = require("node:path");
 
 const viteDev = process.env.PLAYWRIGHT_VITE_DEV === "1";
+const externalServer = process.env.PLAYWRIGHT_EXTERNAL_SERVER === "1";
 const baseURL = viteDev ? "http://127.0.0.1:5173" : "http://127.0.0.1:5510";
 const gameEventsLogPath = path.join(
     __dirname,
@@ -31,7 +32,9 @@ module.exports = defineConfig({
             },
         },
     ],
-    webServer: viteDev
+    webServer: externalServer
+        ? undefined
+        : viteDev
         ? [
             {
                 command: "npm run dev:server",

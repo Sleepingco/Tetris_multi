@@ -97,17 +97,48 @@ class FakeSocket {
     }
 }
 
-function registerTestHandlers(socketServer) {
-    registerSocketHandlers(socketServer, {
+function registerTestHandlers(socketServer, dependencies = {}) {
+    return registerSocketHandlers(socketServer, {
         authoritativeTickerService: {
             startRoomTicker() {},
             stopRoomTicker() {},
+            stopAllRoomTickers() {},
             resetPlayerGravity() {},
         },
         saveGameEventLog: async log => ({ ok: true, log, reason: null }),
         savePlacementDecisionLog: async log => ({ ok: true, log, reason: null }),
+        ...dependencies,
     })
 }
+
+test("socket handler disposer는 grace timer와 ticker를 한 번만 정리한다", () => {
+    const socketServer = new FakeSocketServer()
+    const disconnectGraceContexts = new Map()
+    disconnectGraceContexts.set("player-1", {
+        timer: setTimeout(() => {}, 60_000),
+    })
+    let stopAllCount = 0
+    const dispose = registerTestHandlers(socketServer, {
+        disconnectGraceContexts,
+        authoritativeTickerService: {
+            startRoomTicker() {},
+            stopRoomTicker() {},
+            stopAllRoomTickers() {
+                stopAllCount += 1
+            },
+            resetPlayerGravity() {},
+        },
+    })
+
+    dispose()
+    dispose()
+
+    assert.equal(stopAllCount, 1)
+    assert.equal(disconnectGraceContexts.size, 0)
+    const socket = new FakeSocket("socket-after-dispose", { nickname: "Player" })
+    assert.equal(socketServer.connect(socket), null)
+    assert.equal(socket.events.length, 0)
+})
 
 test("bootstrap은 session을 발급·회전하고 newest socket wins를 적용한다", () => {
     const socketServer = new FakeSocketServer()

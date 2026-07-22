@@ -21,7 +21,7 @@ test("production은 exact origin allowlist가 없으면 fail closed한다", () =
     )
 })
 
-test("cors.origin과 allowRequest는 같은 exact allowlist를 적용한다", () => {
+test("cors와 allowRequest는 exact origin과 allowlisted same-origin browser만 허용한다", () => {
     const options = createSocketServerOptions({
         NODE_ENV: "production",
         SOCKET_ALLOWED_ORIGINS: "https://game.example.com",
@@ -37,6 +37,10 @@ test("cors.origin과 allowRequest는 같은 exact allowlist를 적용한다", ()
         corsAllowed = !error
     })
     assert.equal(corsAllowed, false)
+    options.cors.origin(undefined, (error, allowed) => {
+        corsAllowed = !error && allowed
+    })
+    assert.equal(corsAllowed, true)
 
     let requestAllowed = null
     options.allowRequest({ headers: { origin: "https://game.example.com" } }, (_, allowed) => {
@@ -44,6 +48,34 @@ test("cors.origin과 allowRequest는 같은 exact allowlist를 적용한다", ()
     })
     assert.equal(requestAllowed, true)
     options.allowRequest({ headers: {} }, (_, allowed) => {
+        requestAllowed = allowed
+    })
+    assert.equal(requestAllowed, false)
+    options.allowRequest({
+        headers: {
+            host: "game.example.com",
+            "sec-fetch-site": "same-origin",
+        },
+    }, (_, allowed) => {
+        requestAllowed = allowed
+    })
+    assert.equal(requestAllowed, true)
+    options.allowRequest({
+        headers: {
+            host: "evil.example.com",
+            "sec-fetch-site": "same-origin",
+        },
+    }, (_, allowed) => {
+        requestAllowed = allowed
+    })
+    assert.equal(requestAllowed, false)
+    options.allowRequest({
+        headers: {
+            origin: "https://evil.example.com",
+            host: "game.example.com",
+            "sec-fetch-site": "same-origin",
+        },
+    }, (_, allowed) => {
         requestAllowed = allowed
     })
     assert.equal(requestAllowed, false)
