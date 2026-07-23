@@ -85,6 +85,7 @@ image_created=true
 docker run --rm --entrypoint sh "$image_tag" -c '
     ! command -v postgres
     ! command -v initdb
+    ! env | grep -Eq "^(DATABASE_URL|MIGRATION_DATABASE_URL|IMPORT_DATABASE_URL|PGPASSWORD)="
     test ! -d /var/lib/postgresql/data
     test ! -d /app/src
     test ! -d /app/test
@@ -267,6 +268,9 @@ event_snapshot() {
 start_application
 test "$(docker inspect --format '{{.Config.User}}' "$application_container")" = node
 test "$(docker inspect --format '{{.HostConfig.ReadonlyRootfs}}' "$application_container")" = true
+test -z "$(docker inspect --format \
+    '{{range .Mounts}}{{if eq .Destination "/app/data/logs"}}{{.Destination}}{{end}}{{end}}' \
+    "$application_container")"
 docker exec "$application_container" sh -c \
     'test ! -e /app/data/logs/game-events.jsonl && test ! -w /app/dist'
 
@@ -450,18 +454,30 @@ retention_deleted="$(docker exec -i "$database_container" \
     --set ON_ERROR_STOP=1 \
     --set "cutoff=${cutoff}" \
     --set max_rows=10 \
+    --set max_bytes=1048576 \
     --username "$maintenance_role" --dbname "$database_name" <<'SQL'
-PREPARE goal9d_retention_delete(timestamptz, bigint) AS
-DELETE FROM tetris_analytics.game_events
-WHERE event_id IN (
-    SELECT event_id
+PREPARE goal9d_retention_delete(timestamptz, bigint, bigint) AS
+WITH ordered_candidates AS (
+    SELECT
+        event_id,
+        pg_catalog.sum(pg_catalog.pg_column_size(game_events)) OVER (
+            ORDER BY ingested_at, event_id
+            ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS cumulative_bytes
     FROM tetris_analytics.game_events
     WHERE ingested_at < $1
     ORDER BY ingested_at, event_id
     LIMIT $2
+), bounded_candidates AS (
+    SELECT event_id
+    FROM ordered_candidates
+    WHERE cumulative_bytes <= $3
 )
-RETURNING event_id;
-EXECUTE goal9d_retention_delete(:'cutoff', :max_rows);
+DELETE FROM tetris_analytics.game_events AS game_events
+USING bounded_candidates
+WHERE game_events.event_id = bounded_candidates.event_id
+RETURNING game_events.event_id;
+EXECUTE goal9d_retention_delete(:'cutoff', :max_rows, :max_bytes);
 SQL
 )"
 test "$retention_deleted" = "$(printf 'a%.0s' $(seq 1 64))"
