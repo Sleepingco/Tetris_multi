@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11D GitHub Actions workflow는 PR #1로 원격 `main@d6112e1`에 반영됐다. PR clean run은 통과했지만 첫 main push의 기존 PVE T-Spin E2E timing failure 1건을 조사 중이며, DB Goal 9·10은 보류한다.
+- Last update: 2026-07-23 기준. Goal 11D 이후 main browser CI의 PVE timing 실패를 Goal 11E로 분리하고, 실제 사용자 event 장기 보존 요구에 따라 PostgreSQL Goal 9를 9A~9D로 재설계하는 문서 작업 중이다. CI·SQL·dependency와 production 동작은 아직 변경하지 않았다.
 
 ## Document Role
 
@@ -298,11 +298,22 @@
 - rollback은 현재 리뷰 문서 commit → `0fa4f39` → `785dcf0` → `978398c` → `c8cdb9d` → `3a60750` → `e67ecf5` → `49187e4` 순서로 역순 revert한다. pre-interop 문서 commit `7680229`는 구현 rollback 대상이 아니다.
 - Goal 8C는 local `main@4d5bcd5`에 반영됐다. `origin/main` push, branch 삭제, Goal 8D와 SPA 작업은 수행하지 않았다.
 
-## Storage roadmap decision (2026-07-22)
+## Storage roadmap decision (2026-07-22, historical)
 
 - 현재 단일 서버와 ML 분석에는 JSONL 경로로 충분하므로 Goal 9 PostgreSQL shadow storage를 main에 병합하지 않는다. 검증된 실험 구현은 `codex/add-postgres-event-shadow`에 보존한다.
 - Goal 10 DB/JSONL cutover도 함께 보류한다. 중앙 SQL 조회, 사용자 기록·대시보드 또는 다중 서버 event 수집 요구가 생기면 JSONL batch import부터 다시 판단한다.
 - Goal 8D와 SPA는 계속 선택·보류 상태다. 다음 migration 작업은 DB와 무관한 Goal 11A CSP/security headers이며 Goal 8C main 반영만 선행조건으로 사용한다.
+
+## CI and PostgreSQL roadmap reactivation (2026-07-23)
+
+- 실제 사용자 gameplay event를 container 수명과 분리해 장기 보존하고 SQL로 중복·완전성·용량을 점검한다는 요구가 생겼다. 위 2026-07-22 보류 판단은 당시 사실로 남기되 향후 실행 순서는 `11E → 9A → 9B → 9C → 9D`로 갱신한다.
+- Goal 11E는 main push에서 관찰된 PVE T-Spin과 pending garbage timing race를 timeout/retry 없이 authoritative snapshot 기준으로 고친다. main hosted CI가 green이 되기 전에는 9A를 시작하지 않는다.
+- Goal 9는 구현 index이며 9A schema/repository, 9B runtime canonical storage, 9C JSONL import/completeness, 9D PostgreSQL CI/release로 나눈다. 각 단계는 별도 branch/worktree와 main merge gate를 사용한다.
+- local/development는 JSONL, 배포 환경은 명시적 PostgreSQL 단일 sink를 사용한다. dual-write, silent fallback, Drizzle, Redis, Kafka와 custom in-memory queue는 현재 범위가 아니다.
+- read-only 감사 기준 현재 JSONL은 약 82.7 MiB/17,636 event이며 lifecycle 불완전 경기와 placement 내부 gap이 존재한다. 모든 `game_start`에 포함된 nickname은 DB projection에서 제거하고 human payload는 `client_reported`로 유지한다. 실제 구현 preflight에서 수치를 다시 측정한다.
+- 문서 설계 시점의 `codex/add-postgres-event-shadow` merge-base는 Goal 8C `4d5bcd5`이며 current main 쪽 24 commit, old branch 쪽 6 commit으로 갈라져 있다. branch 고유 Drizzle/queue 구현은 payload conflict를 숨기며 queue drop, silent JSONL success와 65초 shutdown을 사용한다. CSP, Docker, 현재 8초 shutdown과 CI가 없으므로 전체 merge/rebase와 commit 전체 cherry-pick은 금지한다.
+- 과거 branch에서 참고 가능한 것은 semantic identity, parameterized query, TLS/least-privilege 검토와 실제 DB integration test 아이디어뿐이다. 새 구현은 최신 main에서 `pg`와 검토된 SQL로 다시 작성한다.
+- 이 문서 branch는 Goal 명세만 변경한다. SQL, dependency, CI workflow, production env, managed DB와 기존 JSONL data를 변경하지 않는다.
 
 ## Migration Goal 11A CSP/security headers merge gate (2026-07-22)
 
@@ -855,7 +866,7 @@
 
 ### 현재 단계
 
-- 이름: Goal 11D main CI green 복구와 production hardening 이후 안정화
+- 이름: Goal 11E와 PostgreSQL 9A~9D 실행 문서 승인
 
 ### 진행 현황
 
@@ -867,21 +878,23 @@
 - [x] Vite multi-page, React page shell, TypeScript client/runtime/server 전환
 - [x] CSP/security headers와 dependency hardening 반영
 - [x] production Docker image와 graceful shutdown 반영
-- [~] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됨. 첫 main push는 Fast/Docker가 통과했고 Browser는 기존 PVE T-Spin timing test 1건 때문에 36/37로 실패함
+- [~] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됨. 이후 main runs의 Fast/Docker는 통과했고 Browser는 각각 PVE T-Spin과 pending garbage timing 경계에서 36/37로 실패함
+- [~] Goal 11E와 PostgreSQL 9A~9D 범위·검증·rollback 문서 작성, 구현은 미착수
 
 ### 현재 단계의 핵심 문제
 
 - `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
 - room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
-- JSONL 로그는 현재 요구에 충분하다. PostgreSQL Goal 9·10은 중앙 조회, 대시보드, 다중 인스턴스 수집 요구가 생길 때 재개한다.
+- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. PostgreSQL Goal 9A~9D를 승인된 순서로 실행한다.
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
-- Goal 11D와 무관한 기존 PVE T-Spin E2E가 server gravity와 soft drop의 경계에서 간헐 실패한다. timeout/retry로 숨기지 않고 결정론적 test 입력 경계를 보강해야 한다.
+- Goal 11D와 무관한 기존 PVE E2E가 T-Spin의 server gravity/soft drop 경계와 pending garbage 직후 새 AI 공격 관찰 경계에서 간헐 실패한다. timeout/retry로 숨기지 않고 authoritative 결과 기준으로 보강해야 한다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
 
 ### 현재 단계에서 하지 않을 것
 
 - SPA 전환
-- PostgreSQL storage cutover
+- 문서 branch에서 PostgreSQL code/dependency/CI를 선행 구현
+- Goal 9D 이전 production PostgreSQL enable과 실제 사용자 data import
 - Redis/Socket.IO adapter와 multi-instance 운영
 - rollback netcode
 - V4를 기본 PVE 또는 production gameplay AI로 승격
@@ -891,25 +904,27 @@
 
 ### 바로 해야 할 일
 
-1. Main CI green 복구
-   - 실패한 browser job을 재실행해 기존 PVE timing failure의 재현성을 확인한다.
-   - 재현 여부와 관계없이 same-piece snapshot을 기다리는 test helper의 gravity/lock 경합을 별도 bugfix로 고정한다.
-   - retry 횟수나 timeout 증가만으로 실패를 숨기지 않는다.
-2. `PLAN.md` 단일 기준성 유지
-   - migration run 기록은 실행 증거로 두고, 현재 우선순위는 이 섹션만 갱신한다.
-   - 과거 phase 체크리스트는 archive 성격으로 남기되 “다음 작업”으로 되살리지 않는다.
-3. Release 전 보조 smoke
-   - `bash scripts/verify.sh`
-   - `npm run test:e2e`
-   - `npm run test:release`
-   - Docker container health/shutdown smoke
-   - 필요 시 수동 PVP/PVE 1회
+1. Goal 문서 branch 검토와 main 반영
+   - Goal 11E, Goal 9 index와 9A~9D, Goal 10 경계를 먼저 승인한다.
+   - 문서-only gate와 main merge 전에는 구현을 시작하지 않는다.
+2. Goal 11E main CI green 복구
+   - 두 hosted PVE timing failure를 authoritative 결과 기준으로 고친다.
+   - targeted 반복, full local gate와 동일 SHA hosted Browser 연속 성공을 확인한다.
+3. PostgreSQL Goal 순차 실행
+   - 9A 실제 schema/migration/repository
+   - 9B runtime canonical storage와 shutdown
+   - 9C 기존 JSONL streaming import와 completeness
+   - 9D 실제 PostgreSQL CI/release/Docker gate
+4. `PLAN.md` 단일 기준성 유지
+   - 실행 결과는 각 `runs/goal-*`에 남기고 현재 우선순위만 이 섹션에서 갱신한다.
 
 ### 이후 단계
 
-- [~] Goal 11D PR clean run과 main 반영 완료. 첫 main push browser gate의 PVE timing failure 1건 해결 후 main green 재확인
+- [~] Goal 11D PR clean run과 main 반영 완료. main browser gate의 PVE timing failure 두 형태를 Goal 11E에서 해결한 뒤 main green 재확인
+- [ ] Goal 11E main/hosted CI green 확인 후 9A 시작
+- [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
-- [ ] 중앙 조회나 다중 인스턴스 로그 수집 요구가 생기면 Goal 9 PostgreSQL shadow 재개
+- [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
 - [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
 - [ ] 실제 gameplay 성능 목표가 생기면 heuristic/V4/hybrid를 새 실험 문서와 benchmark로 분리 검토
 - [ ] LLM 코칭 리포트는 분석 지표와 사용자-vs-AI 비교 결과가 준비된 뒤 별도 승인으로 검토
@@ -1252,10 +1267,11 @@
 ### production hardening 이후
 
 - [x] Goal 11D PR 원격 실행 증거와 main 반영
-- [ ] 첫 main push에서 확인된 PVE timing failure 해결 후 main CI green 복구
+- [ ] main push에서 확인된 PVE timing failure 두 형태를 해결한 뒤 main CI green 복구
+- [ ] Goal 9A~9D PostgreSQL event storage 구현과 실제 DB CI 검증
 - [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
 - [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
-- [ ] 중앙 조회·다중 인스턴스 수집 요구가 생기면 PostgreSQL shadow/cutover 재검토
+- [ ] Goal 9D 이후 DB export/read-source 전환이 필요하면 Goal 10 재검토
 - [ ] deterministic seed/replay 고도화
 - [ ] 사용자 행동과 PVE AI 선택 비교 리포트 고도화
 - [ ] LLM 기반 코칭 리포트 추가 검토

@@ -19,6 +19,11 @@
 | [11B](goals/11b-dependency-hardening.md) | dependency audit와 보안 업데이트 | 11A | `codex/harden-dependencies` |
 | [11C](goals/11c-production-docker.md) | production Docker image | 11B | `codex/add-production-docker` |
 | [11D](goals/11d-ci.md) | Node/browser CI gate | 11C | `codex/add-migration-ci` |
+| [11E](goals/11e-ci-stabilization.md) | main PVE browser CI timing 안정화 | 11D | `codex/stabilize-pve-ci-timing` |
+| [9A](goals/09a-postgres-schema-repository.md) | PostgreSQL schema, migration과 repository | 11E | `codex/add-postgres-event-schema` |
+| [9B](goals/09b-postgres-runtime-storage.md) | canonical game event PostgreSQL 저장 | 9A | `codex/persist-game-events-postgres` |
+| [9C](goals/09c-jsonl-backfill.md) | 기존 JSONL 멱등 import와 완전성 판정 | 9B | `codex/import-jsonl-game-events` |
+| [9D](goals/09d-postgres-ci-release.md) | PostgreSQL CI와 production release gate | 9C | `codex/verify-postgres-ci` |
 
 ## 보류된 선택 Goal
 
@@ -26,8 +31,7 @@
 | --- | --- | --- | --- |
 | [7A](goals/07a-react-spa.md) | 단일 React SPA shell과 기존 URL 호환 | 보류, Goal 8 선행조건 아님 | `codex/migrate-react-spa` |
 | [8D](goals/08d-typescript-tests-tooling.md) | test/e2e/scripts 선택적 TypeScript 정리 | 보류, production hardening 선행조건 아님 | 생성하지 않음 |
-| [9](goals/09-postgres-shadow.md) | PostgreSQL append-only shadow storage | 보류, production hardening 선행조건 아님 | `codex/add-postgres-event-shadow` |
-| [10](goals/10-storage-cutover.md) | DB/JSONL 호환 export와 점진적 전환 | 보류, Goal 9 재개 전 실행 금지 | 생성하지 않음 |
+| [10](goals/10-storage-cutover.md) | DB export/read-source와 retention 자동화 | 보류, Goal 9D 이후 요구가 있을 때만 | 생성하지 않음 |
 
 ## 상세 Goal 문서 정책
 
@@ -38,12 +42,15 @@
 - 목표가 달라지면 roadmap과 관련 Goal 파일을 문서 변경으로 먼저 갱신한다.
 - Goal 7A는 현재 제품 요구보다 route/session lifecycle 복잡도가 커서 선택 실험으로 보류한다. 재개 조건과 발견된 문제는 Goal 파일을 따른다.
 - [Goal 8](goals/08-typescript-completion.md)은 실행 Goal이 아니라 8A~8D 분할 정책의 인덱스다.
+- [Goal 9](goals/09-postgres-event-storage.md)는 실행 Goal이 아니라 9A~9D 공통 storage 계약의 인덱스다.
 - production 전환은 `8A core/state → 8B client runtime/render/net/AI → 8C server/artifact` 순서로 각각 main에 반영한다.
 - 8D test/e2e/scripts 정리는 유지보수 이득이 확인될 때까지 보류하며 production hardening을 막지 않는다.
-- Goal 9와 10은 현재 JSONL 분석 경로로 충분하다는 판단에 따라 보류한다. 중앙 SQL 조회나 사용자 기록 요구가 생기기 전에는 구현 브랜치를 main에 병합하거나 DB 전환을 시작하지 않는다.
+- 사용자 event를 container 수명과 분리해 수집한다는 요구가 생겨 Goal 9를 재개한다. 실행 순서는 번호순이 아니라 `11E → 9A → 9B → 9C → 9D`이며 각 단계는 main 반영 후 다음 단계로 이동한다.
+- 과거 `codex/add-postgres-event-shadow`는 참고 전용이다. branch 전체 merge/rebase와 commit 전체 cherry-pick 없이 최신 main에서 새 계약을 다시 구현한다.
+- Goal 10은 Goal 9C의 import를 중복하지 않는다. production 활성화 전 최소 수동 retention runbook은 Goal 9D에서 증명하고, Goal 10은 DB 기반 dataset 조회나 반복 retention 자동화 요구가 생길 때만 재개한다.
 - production hardening은 Goal 8C 이후 Goal 11A부터 진행하며 Goal 9와 10을 선행조건으로 요구하지 않는다.
 - rename을 수행한 Goal은 아직 JavaScript인 consumer를 포함해 해당 파일을 참조하는 모든 source import/require 경로를 함께 갱신한다.
-- Goal 11은 하나의 큰 branch가 아니라 11A~11D의 독립 Goal로 수행한다.
+- Goal 11은 하나의 큰 branch가 아니라 11A~11E의 독립 Goal로 수행한다.
 
 ## 변하지 않는 방향
 
@@ -52,5 +59,6 @@
 - runtime 계약을 만든 뒤 React 화면을 이동한다.
 - 현재 네 React page entry와 full-document navigation을 유지한다. SPA는 구체적인 사용자 요구가 생겼을 때만 다시 검토한다.
 - first-party TypeScript 전환은 기능 변화와 분리한다.
-- 분석 로그는 JSONL을 유지한다. PostgreSQL은 중앙 조회·대시보드·다중 인스턴스 수집 같은 구체적인 요구가 생겼을 때만 다시 검토한다.
+- Goal 9B가 main에 반영되기 전에는 JSONL이 현재 runtime 경로다. 이후에도 local은 JSONL을 유지하고 배포 환경만 명시적으로 PostgreSQL 단일 sink를 선택한다.
+- PostgreSQL은 분석 event 장기 보존용이며 실시간 room/match 상태의 원천이 아니다.
 - production hardening은 기능 마이그레이션이 안정된 뒤 수행한다.

@@ -18,10 +18,11 @@ CURRENT_GOAL_FILE = migration-harness/goals/00-baseline.md
 4. migration-harness/workflow.md
 5. migration-harness/verification.md
 6. migration-harness/roadmap.md
-7. CURRENT_GOAL_FILE에 지정된 Goal 파일
-8. ai-harness/tasks/implementation.md
-9. ai-harness/tasks/review.md
-10. 학습 설명이 필요하면 ai-harness/guides/teaching-style.md
+7. roadmap이 현재 Goal의 공통 split index를 지정하면 그 index 파일
+8. CURRENT_GOAL_FILE에 지정된 현재 Goal 상세 파일
+9. ai-harness/tasks/implementation.md
+10. ai-harness/tasks/review.md
+11. 학습 설명이 필요하면 ai-harness/guides/teaching-style.md
 
 문서를 읽은 뒤 실제 Git, 코드, 테스트 상태를 먼저 확인해.
 문서와 실제 상태가 다르면 실제 상태를 우선하되 바로 구현하지 말고 차이와 안전한 선택지를 보고해.
@@ -66,4 +67,4 @@ CURRENT_GOAL = 01-vite-typescript-foundation
 CURRENT_GOAL_FILE = migration-harness/goals/01-vite-typescript-foundation.md
 ```
 
-상세 Goal 파일이 아직 없다면 구현 프롬프트를 실행하지 않고 `_template.md`로 명세를 먼저 작성해 검토받는다.
+상세 Goal 파일이 아직 없다면 구현 프롬프트를 실행하지 않고 `_template.md`로 명세를 먼저 작성해 검토받는다. Goal 8과 Goal 9의 index 파일은 `CURRENT_GOAL_FILE`로 사용하지 않고 승인된 하위 Goal 하나만 지정한다.

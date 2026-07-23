@@ -9,7 +9,7 @@
 - 전체 로드맵을 하나의 Goal로 만들거나 token budget을 임의로 지정하지 않는다.
 - Goal과 별도로 작은 실행 계획을 만들고 한 단계만 `in_progress`로 유지한다.
 - 상세 Goal 파일이 없으면 구현하지 않고 먼저 명세 작성과 사용자 검토를 요청한다.
-- 분할 인덱스는 구현 Goal로 실행하지 않는다. Goal 8은 `08-typescript-completion.md`가 아니라 8A~8D 중 승인된 상세 Goal 파일 하나만 선택한다.
+- 분할 인덱스는 구현 Goal로 실행하지 않는다. Goal 8과 Goal 9는 각각 index가 아니라 승인된 8A~8D 또는 9A~9D 상세 Goal 파일 하나만 선택한다.
 
 ## 2. Preflight
 
@@ -47,7 +47,9 @@ test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
 - 기존 브랜치가 같은 이름으로 존재하면 강제로 이동하지 않고 base와 변경 상태를 보고한다.
 - 의존 관계가 있는 migration Goal을 병렬 실행하지 않는다. 무관한 작업이 진행 중이면 현재 Goal 전용 브랜치를 별도 worktree에 checkout한다.
 - 오래된 브랜치 전체 merge보다 필요한 고유 변경을 최신 main 위에 재적용하는 방식을 우선 검토한다.
-- Goal 8A, 8B와 8C는 각각 선행 Goal이 main에 반영된 뒤 새 전용 브랜치에서 시작한다. 보류된 8D, 9와 10은 별도 문서 승인 전에는 시작하지 않으며 production hardening을 막지 않는다.
+- Goal 8A, 8B와 8C는 각각 선행 Goal이 main에 반영된 뒤 새 전용 브랜치에서 시작한다. 선택 Goal 8D와 10은 별도 승인 전에는 시작하지 않는다.
+- PostgreSQL 실행 순서는 `11E → 9A → 9B → 9C → 9D`다. 하루 일정이라도 선행 Goal의 main/hosted gate를 생략하거나 한 branch에 여러 Goal을 쌓지 않는다.
+- 오래된 `codex/add-postgres-event-shadow`는 참고 전용이다. preflight에서 최신 main과의 merge-base/diff를 다시 확인하고 branch 전체 merge/rebase 또는 commit 전체 cherry-pick을 수행하지 않는다.
 
 ## 4. 구현
 

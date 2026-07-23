@@ -19,7 +19,7 @@ Goal 1에서 Vite/TypeScript 기반이 추가된 이후의 최소 자동 검증�
 
 `scripts/verify.sh`는 Goal 1에서 `typecheck`, `build`, unit test를 포함하는 canonical fast gate로 강화한다. 개별 명령은 실패 원인 분석에 사용하고 같은 검증을 불필요하게 두 번 실행하지 않는다.
 
-Playwright와 production runtime smoke는 별도 full gate로 실행할 수 있지만 관련 Goal 완료 전에는 반드시 실행한다. DB 통합 검증은 보류된 Goal 9 또는 10을 다시 승인한 경우에만 적용한다.
+Playwright와 production runtime smoke는 별도 full gate로 실행할 수 있지만 관련 Goal 완료 전에는 반드시 실행한다. DB 통합 검증은 승인된 Goal 9A~9D 또는 10에서 실제 PostgreSQL을 대상으로 적용한다.
 
 ## 브라우저 검증
 
@@ -52,15 +52,36 @@ Goal 1에서는 build environment에서 산출물을 만든 뒤 devDependencies�
 - client/server event 이름과 acknowledgment 결과를 함께 검증한다.
 - authoritative input, ticker, garbage, game over와 lobby 복귀를 확인한다.
 
+## Goal 11E CI 안정화 검증
+
+- hosted failure의 trace와 authoritative snapshot 흐름을 먼저 확인한다.
+- timeout, retry, worker 수와 고정 sleep을 늘려 flake를 숨기지 않는다.
+- T-Spin과 pending garbage targeted scenario를 각각 10회 반복해 합계 20회 모두 통과한다.
+- 전체 PVE spec을 3회 반복하고 Vite-dev, production E2E와 release gate를 실행한다.
+- 제품 source, workflow, dependency와 lockfile이 기준 main과 같은지 확인한다.
+- 동일 commit의 hosted Browser job이 연속 두 번 성공하고 main push의 기존 세 job이 모두 green이어야 Goal 9A를 시작한다.
+
 ## DB와 데이터 검증
 
-이 절은 Goal 9 또는 10을 별도 승인으로 재개한 경우에만 적용한다.
+이 절은 Goal 9A~9D 또는 10을 별도 승인으로 실행할 때 적용한다. mock-only 검증은 완료 증거가 아니다.
 
-- migration empty bootstrap과 재실행 안전성을 확인한다.
-- idempotency와 unique constraint를 검증한다.
-- DB 장애가 gameplay loop를 막지 않는지 확인한다.
-- JSONL과 DB export의 event count, hash, feature schema와 dataset 결과를 비교한다.
-- backfill과 rollback을 테스트한다.
+- empty PostgreSQL migration, migration 재실행, checksum mismatch와 concurrent runner를 확인한다.
+- same ID/same immutable event hash는 duplicate success와 row count 1, same ID/different immutable column 또는 payload는 conflict와 기존 hash 불변인지 확인한다.
+- concurrent insert와 DB partial unique/check constraint를 검증한다.
+- human event의 game/room/player/sequence identity가 server context로 대체되고 forged/stale identity가 거부되는지 확인한다.
+- nickname, token, socket ID, IP, Cookie, User-Agent와 DB credential이 row, log와 artifact에 없는지 확인한다.
+- missing URL, bad TLS와 old schema는 listen 전 실패하고 startup 이후 DB down/timeout은 gameplay를 rollback하지 않는지 확인한다.
+- transient retry가 같은 event ID와 bounded total budget을 사용하고 conflict/validation 오류를 재시도하지 않는지 확인한다.
+- DB await가 authoritative mutation/ticker critical section을 막지 않고, 수치로 고정한 총 write budget이 in-flight drain 약 3초와 기존 8초 server budget보다 작은지 확인한다.
+- DB down·동시 room 부하에서 `pg.Pool` max/timeout과 process-wide in-flight write 상한이 지켜지고 초과가 gameplay 중단이나 silent drop이 아닌 구조화된 실패로 관찰되는지 확인한다.
+- SIGTERM이 신규 write를 막고 기존 8초 server budget 안에서 in-flight write와 pool을 정리하는지 확인한다.
+- production storage mode 생략이 fail closed하고 runtime role이 event INSERT·idempotency/migration-history SELECT 외 DDL/UPDATE/DELETE를 수행하지 못하는지 확인한다.
+- same identity에서 payload뿐 아니라 trust/time 등 immutable column이 달라져도 event hash conflict가 드러나는지 확인한다.
+- JSONL importer가 streaming으로 동작하고 두 번째 실행에서 row count/hash가 바뀌지 않는지 확인한다.
+- malformed/private/conflict row는 non-zero이며 raw payload를 출력하지 않는지 확인한다.
+- lifecycle duplicate/missing, placement duplicate/internal gap/tail count와 legacy unknown-tail을 구분한다.
+- Goal 9D는 GitHub-hosted 실제 PostgreSQL service, source-less release와 외부 DB container smoke를 통과해야 한다.
+- Goal 10을 실행할 때만 JSONL/DB export의 event identity, feature schema, manifest와 dataset 결과를 비교한다.
 
 ## 완료 판정
 

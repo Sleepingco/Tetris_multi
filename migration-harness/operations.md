@@ -43,6 +43,41 @@ CURRENT_GOAL 00-baseline만 실행해줘.
 
 에이전트는 현재 Goal만 구현하고 다음 Goal을 시작하지 않아야 한다.
 
+## 1.1 CI와 PostgreSQL Goal 실행 순서
+
+[Goal 9 index](goals/09-postgres-event-storage.md)는 공통 계약 문서이며 직접 실행하지 않는다. 다음 순서에서 현재 파일 하나만 `run-goal.md`에 지정한다.
+
+```text
+11E CI 안정화
+  → 9A PostgreSQL schema/repository
+  → 9B runtime PostgreSQL 저장
+  → 9C 기존 JSONL import
+  → 9D PostgreSQL CI/release gate
+```
+
+첫 요청 예시:
+
+```text
+migration-harness/prompts/run-goal.md를 사용해서
+CURRENT_GOAL 11e-ci-stabilization만 실행해줘.
+CURRENT_GOAL_FILE은 migration-harness/goals/11e-ci-stabilization.md야.
+검증과 로컬 커밋까지 수행하고 merge gate에서 멈춰.
+```
+
+11E가 main과 hosted CI에 반영된 뒤 9A를 요청한다.
+
+```text
+migration-harness/prompts/run-goal.md를 사용해서
+CURRENT_GOAL 09a-postgres-schema-repository만 실행해줘.
+CURRENT_GOAL_FILE은 migration-harness/goals/09a-postgres-schema-repository.md야.
+실제 PostgreSQL 검증과 로컬 커밋까지 수행하고 merge gate에서 멈춰.
+```
+
+- 일정이 하루여도 여러 Goal을 한 프롬프트나 branch로 묶지 않는다.
+- 다음 Goal 준비는 이전 Goal의 main merge와 main/hosted gate가 끝난 뒤 새 worktree에서 시작한다.
+- 과거 `codex/add-postgres-event-shadow`는 조사 자료일 뿐 실행 branch가 아니다. branch 전체 merge/rebase나 commit 전체 cherry-pick을 지시하지 않는다.
+- 9D 전 production DB enable, managed DB provisioning과 실제 사용자 JSONL import를 승인한 것으로 해석하지 않는다.
+
 ## 2. Merge 가능한 시점
 
 다음 조건을 모두 만족한 뒤 merge한다.

@@ -34,11 +34,12 @@
 4. `workflow.md`
 5. `verification.md`
 6. `roadmap.md`
-7. 현재 Goal 파일 하나
-8. 요청에 맞는 `ai-harness/tasks/*.md`
-9. 학습 중심이면 `ai-harness/guides/teaching-style.md`
+7. 현재 Goal이 분할 Goal이면 공통 index 하나
+8. 현재 Goal 상세 파일 하나
+9. 요청에 맞는 `ai-harness/tasks/*.md`
+10. 학습 중심이면 `ai-harness/guides/teaching-style.md`
 
-모든 Goal은 범위 계약 파일을 갖지만 실행 에이전트는 현재 Goal 파일 하나만 읽는다. 현재 Goal을 시작하기 직전에 실제 코드와 main 상태를 기준으로 계약을 재검토하며, 미래 Goal을 미리 구현하지 않는다.
+모든 Goal은 범위 계약 파일을 갖는다. Goal 8A~8D는 `08-typescript-completion.md`, Goal 9A~9D는 `09-postgres-event-storage.md` 공통 index와 승인된 현재 상세 파일만 읽는다. 다른 미래 Goal 상세 파일은 읽거나 미리 구현하지 않는다. 현재 Goal을 시작하기 직전에 실제 코드와 main 상태를 기준으로 계약을 재검토한다.
 
 ## 규칙 우선순위
 

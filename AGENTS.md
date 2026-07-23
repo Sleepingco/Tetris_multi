@@ -64,13 +64,14 @@ LLM 기능은 즉시 구현 대상이 아니라, 추후 ML/플레이 분석 결�
 4. `migration-harness/workflow.md`
 5. `migration-harness/verification.md`
 6. `migration-harness/roadmap.md`
-7. 현재 Goal 파일 하나
-8. 요청에 맞는 `ai-harness/tasks/*.md`
+7. 현재 Goal이 분할 Goal이면 공통 index 하나
+8. 현재 Goal 상세 파일 하나
+9. 요청에 맞는 `ai-harness/tasks/*.md`
 
 - `migration-harness`는 현재 Goal의 범위, Git 계보, 선행조건과 완료 게이트를 담당한다.
 - `ai-harness`는 현재 Goal 안에서 구현·리팩토링·리뷰 방식과 설명 스타일만 보완한다.
 - 브랜치 이름만으로 migration harness를 활성화하지 않는다.
-- 한 번에 현재 Goal 하나만 수행하고, 미래 Goal 상세 파일을 한꺼번에 읽거나 선행 구현하지 않는다.
+- 한 번에 현재 Goal 하나만 수행한다. Goal 8A~8D와 9A~9D는 공통 index와 승인된 현재 상세 파일만 읽고 미래 Goal 상세 파일을 한꺼번에 읽거나 선행 구현하지 않는다.
 - 사용자가 승인한 Goal에 명시된 Vite, React 등의 도입만 프레임워크 임의 추가 금지의 제한적 예외다.
 - 이 예외는 게임 규칙, 상태 소유권, 보안, 검증 또는 destructive Git operation 제한을 완화하지 않는다.
 - 현재 상태는 Git, 실제 코드·테스트와 `PLAN.md`에서 확인한다. 동적 상태를 하네스에 중복 기록하지 않는다.

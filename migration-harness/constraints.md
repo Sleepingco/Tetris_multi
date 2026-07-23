@@ -24,7 +24,7 @@
 - React는 화면과 생명주기를 담당하고 게임 상태의 새로운 수정 원천이 되지 않는다.
 - 같은 의미의 상태를 runtime, React와 서버에 각각 수정 가능한 값으로 중복 저장하지 않는다.
 - 멀티플레이의 최종 진실 원천은 server authoritative state다.
-- 분석 로그의 현재 영속 경로는 JSONL이다. PostgreSQL Goal을 재개하더라도 실시간 room/game state의 원천으로 사용하지 않는다.
+- Goal 9B가 main에 반영되기 전 분석 로그의 현재 영속 경로는 JSONL이다. Goal 9를 실행하더라도 PostgreSQL을 실시간 room/game state의 원천으로 사용하지 않는다.
 - Redis, Next.js, NestJS, Redux, Zustand, Tailwind는 별도 Goal과 근거 없이 추가하지 않는다.
 
 ## 보안 불변조건
@@ -44,9 +44,12 @@
 
 - schema와 feature version을 명시한다.
 - dataset lineage, split 정책과 재현 가능한 seed를 보존한다.
-- 별도 storage Goal을 다시 승인하기 전에는 JSONL 분석 경로를 임의로 대체하거나 제거하지 않는다.
+- Goal 9A~9D의 현재 하위 Goal과 merge gate를 승인받기 전에는 JSONL 분석 경로를 임의로 대체하거나 제거하지 않는다.
 - DB 쓰기가 authoritative tick이나 input 처리의 성공 조건이 되지 않게 한다.
-- dual-write가 필요하면 bounded queue, timeout, overflow와 shutdown 정책을 먼저 정의한다.
+- Goal 9A~9D는 environment별 JSONL/PostgreSQL 단일 sink를 사용하며 runtime dual-write와 조용한 fallback을 금지한다.
+- event identity, immutable event hash, conflict, retry allowlist, timeout, privacy projection과 shutdown 정책을 DB 활성화 전에 정의한다.
+- production storage mode는 명시해야 하며 best-effort event loss는 Goal 9B 구현 전에 사용자가 승인한다. strict lossless 요구에서는 durable outbox 설계 없이 진행하지 않는다.
+- PostgreSQL row는 append-only로 취급하고 code rollback 과정에서 자동 삭제하지 않는다.
 
 ## 버전과 의존성 제약
 
