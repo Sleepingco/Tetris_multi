@@ -1,7 +1,7 @@
 # Tetris Multi & Placement AI Lab
 
-> 작성 기준일: 2026-07-23  
-> 근거 범위: 현재 저장소의 소스 코드, 설정, 테스트, `change-log.md`, Git 이력, AI/ML 및 migration 실행 기록  
+> 작성 기준일: 2026-07-23
+> 근거 범위: 현재 저장소의 소스 코드, 설정, 테스트, `change-log.md`, Git 이력, AI/ML 및 migration 실행 기록
 > 작성 원칙: 구현 사실과 문서에 남은 검증 결과만 사용하고, 확인되지 않은 운영 사실은 별도로 표시했다.
 
 ## 프로젝트 기본 정보

@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11E는 최종 `8cc16d9`까지 main과 origin/main에 반영됐다. 자연 중력과 runner scheduling에 의존하던 PVE T-Spin E2E와 전용 helper는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트가 담당한다. pending-garbage E2E 보강은 유지했으며 hosted Fast/Docker와 동일 SHA Browser 연속 2회가 통과했다. production·workflow·dependency는 변경하지 않았다.
+- Last update: 2026-07-23 기준. Goal 11E는 최종 `8cc16d9`까지 main과 origin/main에 반영됐다. 자연 중력과 runner scheduling에 의존하던 PVE T-Spin E2E와 전용 helper는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트가 담당한다. pending-garbage E2E 보강은 유지했다. `main@8087712`는 portfolio 문서 trailing whitespace와 PLAN 상태를 정정했으며 hosted Fast/Docker와 Browser가 모두 통과했다. production·workflow·dependency는 변경하지 않았다.
 
 ## Document Role
 
@@ -879,7 +879,7 @@
 - [x] Vite multi-page, React page shell, TypeScript client/runtime/server 전환
 - [x] CSP/security headers와 dependency hardening 반영
 - [x] production Docker image와 graceful shutdown 반영
-- [x] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됨. 이후 발견된 PVE timing 경계는 Goal 11E에서 별도로 안정화했다.
+- [x] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됐으며, 이후 발견된 PVE timing 경계는 Goal 11E에서 별도로 안정화했다.
 - [x] Goal 11E 최종 `8cc16d9`은 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 SHA Browser 연속 2회가 통과했다.
 
 ### 현재 단계의 핵심 문제
@@ -890,7 +890,7 @@
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
 - pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
 - T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
-- Goal 11E 최종 `8cc16d9`의 hosted Fast/Docker와 Browser 연속 2회가 성공했다. 자연 중력과 browser scheduling에 의존하던 PVE 7-bag T-Spin E2E는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트로 보장한다.
+- Goal 11E 최종 `8cc16d9`의 hosted Fast/Docker와 Browser 연속 2회가 성공했다. 자연 중력과 browser scheduling에 의존하던 PVE 7-bag T-Spin E2E는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트로 보장한다. `main@8087712`의 hosted Fast/Docker/Browser도 모두 성공했다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
 
 ### 현재 단계에서 하지 않을 것
@@ -920,6 +920,7 @@
 ### 이후 단계
 
 - [x] Goal 11E는 `8cc16d9`으로 main/origin/main에 반영됐고 hosted Fast/Docker 및 Browser 연속 2회가 통과함
+- [x] `main@8087712`의 Fast/Docker/Browser도 통과해 portfolio trailing whitespace와 PLAN 상태 정정 뒤 main CI green을 확인함
 - [ ] Goal 9A 설계 준비 후 별도 구현 승인
 - [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
@@ -1267,6 +1268,7 @@
 
 - [x] Goal 11D PR 원격 실행 증거와 main 반영
 - [x] main push에서 확인된 PVE timing failure는 Goal 11E에서 deterministic coverage로 재배치하고 hosted CI green을 확인함
+- [x] `main@8087712`의 portfolio trailing whitespace와 PLAN 상태 정정 뒤 hosted Fast/Docker/Browser green을 확인함
 - [ ] Goal 9A~9D PostgreSQL event storage 구현과 실제 DB CI 검증
 - [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
 - [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
