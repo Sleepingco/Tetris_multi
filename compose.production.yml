@@ -1,0 +1,108 @@
+name: tetris
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  app:
+    build:
+      context: .
+    image: tetris-app:${APP_IMAGE_TAG:-latest}
+    init: true
+    read_only: true
+    restart: unless-stopped
+    stop_grace_period: 10s
+    mem_limit: 320m
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=192
+      GAME_EVENT_STORAGE: postgres
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      NODE_EXTRA_CA_CERTS: /run/secrets/postgres-ca.crt
+      SOCKET_ALLOWED_ORIGINS: https://tetra-arena.duckdns.org
+      CSP_CONNECT_ORIGINS: wss://tetra-arena.duckdns.org
+    volumes:
+      - /srv/tetris/certs/ca.crt:/run/secrets/postgres-ca.crt:ro
+    networks:
+      - edge
+      - database
+    logging: *default-logging
+
+  postgres:
+    image: postgres:17.10-alpine3.24@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+    restart: unless-stopped
+    stop_grace_period: 30s
+    mem_limit: 256m
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-admin-password
+    entrypoint:
+      - /bin/sh
+      - -c
+    command: |
+      set -eu
+      mkdir -p /var/lib/postgresql/tls
+      cp /run/host-certs/postgres.crt /var/lib/postgresql/tls/postgres.crt
+      cp /run/host-certs/postgres.key /var/lib/postgresql/tls/postgres.key
+      chown postgres:postgres /var/lib/postgresql/tls/postgres.crt /var/lib/postgresql/tls/postgres.key
+      chmod 600 /var/lib/postgresql/tls/postgres.key
+      exec docker-entrypoint.sh postgres \
+        -c ssl=on \
+        -c ssl_cert_file=/var/lib/postgresql/tls/postgres.crt \
+        -c ssl_key_file=/var/lib/postgresql/tls/postgres.key \
+        -c shared_buffers=32MB \
+        -c max_connections=20 \
+        -c work_mem=2MB \
+        -c maintenance_work_mem=32MB
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready --quiet --username postgres --dbname postgres
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - /srv/tetris/secrets/postgres-admin-password:/run/secrets/postgres-admin-password:ro
+      - /srv/tetris/certs:/run/host-certs:ro
+    networks:
+      - database
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    read_only: true
+    restart: unless-stopped
+    stop_grace_period: 10s
+    mem_limit: 96m
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs:
+      - /tmp
+    networks:
+      - edge
+    logging: *default-logging
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
+  database:
+    internal: true
