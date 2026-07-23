@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11D 이후 main browser CI의 PVE timing 실패를 Goal 11E로 분리하고, 실제 사용자 event 장기 보존 요구에 따라 PostgreSQL Goal 9를 9A~9D로 재설계하는 문서 작업 중이다. CI·SQL·dependency와 production 동작은 아직 변경하지 않았다.
+- Last update: 2026-07-23 기준. Goal 11E의 hosted 반복에서 자연 중력과 runner scheduling에 의존하는 PVE T-Spin E2E가 결정론적 gate에 적합하지 않음이 확인돼 해당 시나리오와 전용 helper를 제거했다. T-Spin은 기존 core·authoritative·runtime 결정론적 테스트가 보장하고 pending-garbage E2E 보강은 유지한다. production·workflow·dependency는 변경하지 않았으며 새 SHA의 hosted CI gate와 main 반영은 아직 수행하지 않았다.
 
 ## Document Role
 
@@ -867,7 +867,7 @@
 
 ### 현재 단계
 
-- 이름: Goal 11E와 PostgreSQL 9A~9D 실행 문서 승인
+- 이름: Goal 11E hosted revalidation gate
 
 ### 진행 현황
 
@@ -880,7 +880,7 @@
 - [x] CSP/security headers와 dependency hardening 반영
 - [x] production Docker image와 graceful shutdown 반영
 - [~] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됨. 이후 main runs의 Fast/Docker는 통과했고 Browser는 각각 PVE T-Spin과 pending garbage timing 경계에서 36/37로 실패함
-- [~] Goal 11E와 PostgreSQL 9A~9D 범위·검증·rollback 문서 작성, 구현은 미착수
+- [~] Goal 11E는 PR #2의 SHA `88dec1f` 첫 Browser는 통과했지만 같은 SHA의 두 번째 Browser에서 T-Spin 조각이 row-16 회전 precondition 전에 자동 lock됐다. timing-dependent T-Spin E2E를 제거한 최종 local gate를 완료했고 새 SHA의 hosted 검증을 대기 중
 
 ### 현재 단계의 핵심 문제
 
@@ -888,7 +888,9 @@
 - room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
 - JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. PostgreSQL Goal 9A~9D를 승인된 순서로 실행한다.
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
-- Goal 11D와 무관한 기존 PVE E2E가 T-Spin의 server gravity/soft drop 경계와 pending garbage 직후 새 AI 공격 관찰 경계에서 간헐 실패한다. timeout/retry로 숨기지 않고 authoritative 결과 기준으로 보강해야 한다.
+- pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
+- T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
+- PR #2의 SHA `88dec1f` hosted run은 Fast/Docker와 첫 Browser가 성공했지만 두 번째 Browser가 row-16 회전 precondition 전 자동 lock으로 실패했다. 최종 범위 commit의 hosted Browser 연속 2회 성공과 Fast/Docker green은 아직 확인하지 않았다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
 
 ### 현재 단계에서 하지 않을 것
@@ -905,23 +907,20 @@
 
 ### 바로 해야 할 일
 
-1. Goal 문서 branch 검토와 main 반영
-   - Goal 11E, Goal 9 index와 9A~9D, Goal 10 경계를 먼저 승인한다.
-   - 문서-only gate와 main merge 전에는 구현을 시작하지 않는다.
-2. Goal 11E main CI green 복구
-   - 두 hosted PVE timing failure를 authoritative 결과 기준으로 고친다.
-   - targeted 반복, full local gate와 동일 SHA hosted Browser 연속 성공을 확인한다.
-3. PostgreSQL Goal 순차 실행
+1. Goal 11E hosted CI와 main green 확인
+   - 후속 local gate가 통과한 새 SHA로 hosted Fast/Docker 성공과 Browser 연속 2회 성공을 확인한다.
+   - 별도 승인 후 main에 반영하고 main push의 Fast/Browser/Docker 세 job green을 확인한다.
+2. PostgreSQL Goal 순차 실행
    - 9A 실제 schema/migration/repository
    - 9B runtime canonical storage와 shutdown
    - 9C 기존 JSONL streaming import와 completeness
    - 9D 실제 PostgreSQL CI/release/Docker gate
-4. `PLAN.md` 단일 기준성 유지
+3. `PLAN.md` 단일 기준성 유지
    - 실행 결과는 각 `runs/goal-*`에 남기고 현재 우선순위만 이 섹션에서 갱신한다.
 
 ### 이후 단계
 
-- [~] Goal 11D PR clean run과 main 반영 완료. main browser gate의 PVE timing failure 두 형태를 Goal 11E에서 해결한 뒤 main green 재확인
+- [~] Goal 11E 후속 local gate 완료. 새 SHA의 hosted Fast/Docker와 Browser 연속 2회 성공 확인 대기
 - [ ] Goal 11E main/hosted CI green 확인 후 9A 시작
 - [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
