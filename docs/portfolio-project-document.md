@@ -1,6 +1,6 @@
 # Tetris Multi & Placement AI Lab
 
-> 작성 기준일: 2026-07-23
+> 작성 기준일: 2026-07-24
 > 근거 범위: 현재 저장소의 소스 코드, 설정, 테스트, `change-log.md`, Git 이력, AI/ML 및 migration 실행 기록
 > 작성 원칙: 구현 사실과 문서에 남은 검증 결과만 사용하고, 확인되지 않은 운영 사실은 별도로 표시했다.
 
@@ -9,8 +9,8 @@
 | 항목 | 내용 |
 | --- | --- |
 | 프로젝트명 | Tetris Multi & Placement AI Lab |
-| 프로젝트 기간 | 2025.03.13 ~ 2026.07.23 |
-| 기간 근거 | Git 최초 커밋은 2025-03-13, 현재 분석 기준 마지막 커밋은 2026-07-23이다. 상세 change-log는 2025-10-20부터 확인된다. |
+| 프로젝트 기간 | 2025.03.13 ~ 2026.07.24 |
+| 기간 근거 | Git 최초 커밋은 2025-03-13, 현재 분석 기준 마지막 커밋은 2026-07-24이다. 상세 change-log는 2025-10-20부터 확인된다. |
 | 프로젝트 인원 | 개인 |
 | 담당 역할 | `[직접 작성]` |
 | 프로젝트 목적 | 배열 기반 Tetris 엔진을 직접 구현하고, 이를 싱글플레이에서 server-authoritative PVP/PVE로 확장하면서 상태 소유권, 실시간 동기화, 테스트, 보안, 데이터 수집과 placement AI 평가까지 한 프로젝트 안에서 학습하고 검증하는 것 |
@@ -21,9 +21,10 @@
 - 현재 애플리케이션은 싱글플레이, 2인 PVP, 휴리스틱 PVE, 사용자 선택형 experimental placement V4 PVE를 제공한다.
 - 프론트엔드는 Vite multi-page와 page-local React shell을 사용하고, 게임 실행과 그리기는 TypeScript Canvas runtime이 담당한다.
 - 멀티플레이의 최종 상태는 단일 Node.js 프로세스의 메모리에 있는 server-authoritative match state가 소유한다.
-- room, match, session, rate limit은 메모리에 저장하며, 분석 이벤트만 append-only JSONL 파일에 기록한다. 데이터베이스는 사용하지 않는다.
+- room, match, session, rate limit은 메모리에 저장한다. 분석 이벤트는 `GAME_EVENT_STORAGE` 설정에 따라 JSONL 또는 PostgreSQL 중 하나에만 기록한다. 개발 기본값은 JSONL이며 production에서는 저장 방식을 명시해야 한다.
+- PostgreSQL schema, migration, runtime repository, JSONL importer와 production-like 검증은 구현됐지만 실제 production DB 활성화와 운영 JSONL import는 수행하지 않았다.
 - Docker image와 GitHub Actions workflow는 확인되지만 공개 서비스 배포 URL, cloud provider, 실제 운영 트래픽은 확인되지 않는다.
-- 2026-07-23 로컬에서 `bash scripts/verify.sh`를 재실행해 typecheck, clean build, artifact 검사와 Node 테스트 594 pass·1 skip을 확인했다.
+- 최신 Goal 9D 기록에서 `bash scripts/verify.sh`는 Node 테스트 643 pass·1 skip, PostgreSQL integration 8/8, production Chromium 36/36을 통과했다. 최종 main의 GitHub Actions 네 job도 모두 green이다.
 
 ---
 
@@ -72,7 +73,8 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 - session token rotation, reconnect sync, duplicate tab 차단, disconnect grace
 - reachable placement를 탐색하고 보드 지표로 평가하는 휴리스틱 PVE
 - 사람의 placement 선택을 모방하는 experimental V4 PVE와 휴리스틱 fallback
-- placement/game event JSONL, 결정론적 dataset exporter, ranker 평가, JavaScript↔Python parity
+- placement/game event single-sink(JSONL/PostgreSQL), 결정론적 dataset exporter, ranker 평가, JavaScript↔Python parity
+- canonical event identity, PostgreSQL migration·멱등 저장, JSONL streaming importer와 completeness report
 - theme, lobby/game sound, line-clear presentation
 - CSP, exact Origin allowlist, rate limit, DTO whitelist, payload validation
 - clean production artifact, multi-stage Docker, GitHub Actions CI
@@ -93,7 +95,7 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 
 ### 분석·ML
 
-서버는 검증을 통과하고 실제 authoritative placement가 commit된 decision만 JSONL에 저장한다. exporter는 원본 로그를 수정하지 않고 후보 placement를 다시 생성해 dataset을 만든다. Python 실험은 JavaScript가 만든 feature와 canonical order를 입력으로 사용하고, checksum과 parity 검증 뒤 결과를 요약한다.
+서버는 검증을 통과하고 실제 authoritative placement가 commit된 decision만 선택된 단일 sink에 저장한다. 기본 JSONL 경로에서는 exporter가 원본 로그를 수정하지 않고 후보 placement를 다시 생성해 dataset을 만든다. PostgreSQL 경로에서는 allowlist projector가 이벤트를 canonical envelope로 바꾸고 멱등 identity/hash를 기준으로 append한다. Python 실험은 JavaScript가 만든 feature와 canonical order를 입력으로 사용하고, checksum과 parity 검증 뒤 결과를 요약한다.
 
 ## 1.5 프로젝트 특징
 
@@ -103,6 +105,7 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 - 학습 모델의 한계를 숨기지 않고 휴리스틱을 기본값으로 유지한다.
 - 기능 마이그레이션을 Goal 단위로 나누고 각 단계의 검증, 남은 위험과 rollback 순서를 기록했다.
 - 로컬 실행만 확인하는 데서 끝내지 않고 source-less artifact, Docker read-only runtime, browser E2E까지 검증 범위를 확장했다.
+- 실시간 room 상태와 분석 이벤트의 수명 주기를 분리하고, JSONL/PostgreSQL을 runtime dual-write 없이 명시적인 single-sink로 선택한다.
 
 ---
 
@@ -184,7 +187,7 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 
 | 항목 | 분석 |
 | --- | --- |
-| 역할 | HTTP server, Socket.IO, server-authoritative ticker, JSONL I/O, build/test/export script를 실행한다. |
+| 역할 | HTTP server, Socket.IO, server-authoritative ticker, JSONL/PostgreSQL event I/O, build/test/export/import script를 실행한다. |
 | 사용 이유 | client와 game core를 같은 TypeScript/JavaScript 생태계에서 공유하고, `node:test`, crypto, fs, fetch 같은 내장 기능을 사용한다. 버전은 `.nvmrc`와 `engines`로 고정했다. |
 | 대표 대안과 비교 | Java/Spring이나 Go보다 현재 웹 코드 공유가 쉽지만 CPU-bound 대규모 시뮬레이션은 event loop 부하를 고려해야 한다. |
 | 현재 규모에서의 적절성 | 2인 room과 100ms ticker를 단일 프로세스로 운영하는 MVP에는 구조가 단순하다. |
@@ -257,7 +260,7 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 | 역할 | core, runtime, service, Socket handler, security, dataset, ranker와 artifact 회귀 테스트를 실행한다. |
 | 사용 이유 | Node 내장 test runner로 별도 unit test framework 없이 production과 가까운 환경을 유지한다. |
 | 대표 대안과 비교 | Jest/Vitest보다 matcher·mock 편의는 적지만 dependency와 설정이 작다. |
-| 현재 규모에서의 적절성 | 현재 595 test 기준으로 빠르게 실행되며 2026-07-23 검증에서 약 7초 내 594 pass·1 skip을 확인했다. |
+| 현재 규모에서의 적절성 | 최신 Goal 9D 기록에서 644개 중 643 pass·1 skip으로 core부터 PostgreSQL runtime 경계까지 빠르게 검증했다. 실제 PostgreSQL이 필요한 검증은 별도 `test:db`로 분리했다. |
 | 고려할 점 | DOM mock과 browser 동작은 별도 helper 또는 Playwright가 필요하다. 테스트가 compiled artifact를 대상으로 실행된다는 경계를 유지해야 한다. |
 | 확장 방향 | coverage나 property test가 실제 품질 질문에 필요할 때만 추가한다. |
 
@@ -268,8 +271,8 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 | 역할 | navigation, React lifecycle, Canvas input 결과, 2-context PVP, PVE, session/reconnect, rollback, CSP를 Chromium에서 검증한다. |
 | 사용 이유 | 단위 테스트만으로 확인하기 어려운 실제 Socket.IO, Canvas, BFCache와 두 브라우저 상호작용을 검증하기 위해 사용한다. |
 | 대표 대안과 비교 | Cypress보다 multi-context와 browser automation을 직접 다루기 쉽지만 설치와 실행 시간이 크다. 수동 테스트보다 반복 가능하다. |
-| 현재 규모에서의 적절성 | 핵심 사용자 흐름 37개 production E2E와 10개 Vite-dev lifecycle gate로 배포 경계를 확인한다. |
-| 고려할 점 | 현재 project 설정은 Chromium 하나와 worker 1개다. timing flake가 기록돼 있으며 WebKit/Firefox는 확인되지 않았다. |
+| 현재 규모에서의 적절성 | 핵심 사용자 흐름 36개 production E2E와 Vite-dev lifecycle gate로 배포 경계를 확인한다. |
+| 고려할 점 | 현재 project 설정은 Chromium 하나와 worker 1개다. 자연 중력과 runner scheduling을 동시에 의존하던 PVE T-Spin E2E는 제거하고 core·authoritative·runtime의 결정론적 테스트로 옮겼다. WebKit/Firefox는 확인되지 않았다. |
 | 확장 방향 | 공개 배포 전 다른 browser와 mobile viewport, latency/jitter 시나리오를 우선 추가하는 것이 현실적이다. |
 
 ### Jupyter / NumPy / SciPy / scikit-learn / pandas
@@ -287,12 +290,23 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 
 ### Database
 
-- 사용한 데이터베이스: 없음.
-- room, match, player session, ticker와 rate limit은 `Map` 기반 process memory에 있다.
-- placement/game event는 `fs.appendFile()`을 사용하는 JSONL repository에 저장한다.
-- 장점: 개인 MVP에서 schema migration과 운영 dependency 없이 게임 규칙·네트워크 구조를 검증할 수 있다.
-- 단점: restart 시 진행 중인 상태가 사라지고, 다중 instance가 같은 상태를 공유할 수 없으며, JSONL은 질의·동시 쓰기·retention 관리에 한계가 있다.
-- 확장 방향: 실제 영속 room/session/분석 질의 요구가 생기면 PostgreSQL shadow/cutover를 별도 Goal로 진행할 수 있다. 현재 Goal 9·10은 보류 상태다. 실시간 ephemeral state까지 무조건 DB에 넣기보다 Redis 또는 Socket.IO adapter 필요성을 함께 판단해야 한다.
+#### PostgreSQL 17.10 / `pg` 8.22.0
+
+| 항목 | 분석 |
+| --- | --- |
+| 역할 | `game_start`, `placement_decision`, `game_over` 분석 이벤트를 `tetris_analytics.game_events`에 append한다. raw SQL migration, schema checksum, canonical identity/hash, idempotent duplicate/conflict 판정, JSONL import와 completeness 검증을 제공한다. |
+| 사용 이유 | container 수명과 gameplay event 보존을 분리하고, 중복·완전성·용량을 SQL로 점검해야 한다는 요구가 생겨 Goal 9A~9D로 도입했다. room/match/session의 실시간 상태 저장 용도는 아니다. |
+| 대표 대안과 비교 | JSONL은 single writer와 offline batch 분석이 단순하지만 index, 동시 접근, 중앙 조회와 retention 운영이 어렵다. PostgreSQL은 제약·transaction·JSONB·index를 제공하지만 migration, credential, TLS, backup과 운영 책임이 추가된다. Redis는 실시간 ephemeral state에는 후보가 될 수 있지만 이 append-only 분석 원본의 관계형 제약과 장기 보존 목적을 바로 대체하지 않는다. |
+| 현재 규모에서의 적절성 | 이벤트 종류가 세 개이고 append/read audit가 중심이라 ORM 없이 `pg`와 parameterized raw SQL로 경계를 명확히 유지할 수 있다. pool 4, in-flight 16으로 현재 단일 process 규모를 넘는 무제한 queue를 만들지 않았다. |
+| 고려할 점 | non-loopback 연결은 CA와 hostname 검증이 필수다. runtime/migration/maintenance role을 분리하고 runtime role에는 UPDATE·DELETE·DDL 권한을 주지 않는다. 같은 identity의 다른 payload는 덮어쓰지 않고 conflict로 처리한다. |
+| 확장 방향 | 먼저 OCI 기준선 배포와 managed PostgreSQL provider·TLS·backup/restore를 검증한 뒤 별도 승인으로 import와 single-sink cutover를 수행한다. room recovery나 multi-instance는 별도의 shared state/ownership 설계가 필요하다. |
+
+#### Process memory와 JSONL
+
+- room, match, player session, ticker와 rate limit은 계속 `Map` 기반 process memory에 있다.
+- JSONL은 local/development의 기본 분석 sink이며 PostgreSQL과 runtime dual-write하지 않는다.
+- production은 `GAME_EVENT_STORAGE=jsonl|postgres`를 명시해야 한다. PostgreSQL을 선택하면 JSONL writer와 writable log volume을 사용하지 않는다.
+- JSONL 원본은 importer가 stream/readline으로 읽고 canonical projection 뒤 PostgreSQL에 멱등 import한다. production 데이터 import는 확인되지 않았다.
 
 ### Cloud
 
@@ -307,20 +321,20 @@ placement 후보가 한 decision 안에서 여러 row로 펼쳐지므로 임의 
 | 역할 | build, production dependency, runtime을 분리한 production image를 만든다. |
 | 사용 이유 | source·test·dev tool을 제외하고 동일한 Node/runtime artifact를 재현하기 위해 도입했다. |
 | 대표 대안과 비교 | 직접 VM에 npm install하는 방식보다 재현성과 격리가 높지만 image build·registry 운영이 추가된다. |
-| 현재 규모에서의 적절성 | 단일 server process와 JSONL volume이라는 현재 실행 모델을 그대로 패키징한다. |
-| 고려할 점 | non-root `node` user, read-only root, `/app/data/logs` volume, exact base digest, healthcheck, SIGTERM을 유지해야 한다. TLS와 secret 주입은 image 밖에서 해결해야 한다. |
-| 확장 방향 | 실제 배포 시 registry digest, reverse proxy/TLS, volume backup과 rollback 절차를 추가한다. Kubernetes는 다중 instance 필요가 확인되기 전에는 필요하지 않다. |
+| 현재 규모에서의 적절성 | 같은 image를 JSONL volume 모드와 PostgreSQL single-sink 모드로 검증한다. production-like PostgreSQL gate에서는 source-less·read-only app image와 외부 DB network 경계를 사용한다. |
+| 고려할 점 | non-root `node` user, read-only root, exact base digest, healthcheck와 SIGTERM을 유지한다. JSONL mode만 `/app/data/logs` volume이 필요하며 PostgreSQL mode는 DB secret/CA를 image 밖에서 주입해야 한다. |
+| 확장 방향 | OCI VM preflight 뒤 registry digest, reverse proxy/TLS, JSONL backup과 rollback을 먼저 고정한다. PostgreSQL provisioning/cutover는 별도 승인으로 분리한다. Kubernetes는 다중 instance 필요가 확인되기 전에는 필요하지 않다. |
 
 ### GitHub Actions
 
 | 항목 | 분석 |
 | --- | --- |
-| 역할 | PR/main에서 fast gate, Chromium PVP/PVE, production container smoke를 실행한다. |
+| 역할 | PR/main에서 Fast gate, Chromium PVP/PVE, production container smoke, PostgreSQL event storage를 실행한다. |
 | 사용 이유 | 로컬 환경뿐 아니라 clean Ubuntu runner에서 install/build/test/browser/container 경계를 재현하기 위해 추가했다. |
 | 대표 대안과 비교 | 다른 CI도 가능하지만 저장소와 PR check 연결이 단순하다. 로컬 script만 사용하는 것보다 회귀 발견이 빠르지만 runner 시간과 flaky E2E 관리가 필요하다. |
-| 현재 규모에서의 적절성 | 세 job으로 type/build/unit/release, browser, Docker 책임을 나눴고 artifact 업로드나 deployment는 하지 않는다. |
-| 고려할 점 | branch protection은 확인되지 않았고 ML parity는 required CI에서 제외됐다. `PLAN.md`에는 첫 main push에서 기존 PVE T-Spin timing flake 1건이 기록돼 있다. |
-| 확장 방향 | main green을 복구한 뒤 required check 연결, 실패 routing 검증, 필요 시 수동 ML workflow를 추가할 수 있다. CD는 공개 배포가 정해진 뒤 별도 설계해야 한다. |
+| 현재 규모에서의 적절성 | 네 job으로 type/build/unit/release, browser, Docker, 실제 PostgreSQL migration/runtime/import 책임을 나눴다. DB job은 PostgreSQL 17.10 image digest를 고정하고 private-CA TLS, role separation과 backup/restore까지 점검한다. |
+| 고려할 점 | branch protection은 확인되지 않았고 ML parity는 required CI에서 제외됐다. CI의 DB는 합성 데이터이며 managed production provider와 실제 운영 데이터는 검증하지 않는다. |
+| 확장 방향 | 공개 배포가 정해지면 OCI preflight와 HTTPS 기준선을 별도 gate로 수행하고, CD·registry publish는 rollback과 secret 관리가 정해진 뒤 추가한다. |
 
 ---
 
@@ -358,10 +372,15 @@ Node.js HTTP / Socket.IO Server
 │  ├─ movement / collision / line clear
 │  ├─ T-Spin / combo / B2B / garbage
 │  └─ placement / board metrics
-└─ JSONL log repository
+├─ event storage boundary
+│  ├─ allowlist projector / canonical identity
+│  ├─ JSONL repository
+│  └─ PostgreSQL repository / migration
+└─ graceful shutdown
+   └─ reject writes → stop producers → drain → pool → Socket/HTTP
         │
         ▼
-Dataset exporter / evaluator / Python parity & experiments
+JSONL exporter/importer / evaluator / Python parity & experiments
 ```
 
 ## 3.2 계층 구조
@@ -377,16 +396,16 @@ Transport boundary
 Socket.IO handlers + shared Zod schemas
         ↓
 Application/domain services
-Room / Match / Session / Ticker / PVE AI / Log
+Room / Match / Session / Ticker / PVE AI / Event projection
         ↓
 Pure domain logic
 Board / Step / Piece / Attack / Garbage / T-Spin / Metrics
         ↓
 Persistence boundary
-In-memory Map + append-only JSONL
+In-memory Map + selected single event sink(JSONL or PostgreSQL)
 ```
 
-이 구조에서 일반적인 REST Controller는 없다. Socket handler가 transport/controller 역할을 하고, service가 상태 전이와 orchestration을 담당한다. JSONL에는 얇은 repository가 있지만 room/match용 DAO나 database 계층은 없다.
+이 구조에서 일반적인 REST Controller는 없다. Socket handler가 transport/controller 역할을 하고, service가 상태 전이와 orchestration을 담당한다. room/match용 영속 DAO는 없고 분석 이벤트에만 JSONL/PostgreSQL repository 경계가 있다.
 
 ## 3.3 컴포넌트 구조
 
@@ -409,6 +428,10 @@ In-memory Map + append-only JSONL
 - `authoritativeTickerService.ts`: 100ms room ticker, 500ms gravity, AI cadence, presentation delay와 finish를 조율한다.
 - `playerSessionService.ts`: token digest, generation, active socket, expiry와 rotation을 관리한다.
 - `pveAiPlayerService.ts`: heuristic/V4 decision과 input execution plan을 관리한다.
+- `gameEventProjector.ts`: 검증된 raw log에서 저장 허용 필드만 canonical event로 투영하고 trust level을 구분한다.
+- `runtimeEventStorage.ts`: JSONL/PostgreSQL single-sink 선택, bounded retry·in-flight·drain을 관리한다.
+- `postgresEventRepository.ts`: parameterized append와 inserted/duplicate/conflict 판정을 담당한다.
+- `serverShutdown.ts`: 새 write 차단부터 producer, drain, pool, Socket/HTTP까지 종료 순서를 한 번만 실행한다.
 
 ## 3.4 요청 흐름
 
@@ -450,7 +473,7 @@ authoritative input 또는 gravity
 → finishAuthoritativeMatch()
 → roomService.finishGame()
 → ticker stop + match cleanup
-→ game_over JSONL 저장
+→ game_over를 선택된 event sink에 저장
 → match:finish broadcast
 → 양쪽 React overlay / lobby return
 ```
@@ -485,8 +508,12 @@ Server lock result
 ```text
 Authoritative placement commit
 → validated placement_decision
-→ JSONL append
-→ streaming exporter
+→ runtime single-sink 선택
+   ├─ JSONL append → streaming exporter
+   └─ allowlist projection → canonical identity/hash → PostgreSQL append
+→ 필요 시 JSONL streaming importer로 PostgreSQL backfill
+→ completeness/duplicate/conflict report
+→ exporter
 → reachable candidates 재생성
 → feature/dataset JSONL + manifest
 → gameId split / LOGO / temporal holdout
@@ -505,7 +532,8 @@ Authoritative placement commit
 | session credential 상태 | `playerSessionService` |
 | React HUD | runtime display snapshot의 파생 상태 |
 | 상대 board | server authoritative snapshot |
-| 분석 원본 | append-only game events JSONL |
+| 분석 event identity | `identity-v1` canonical tuple과 SHA-256 |
+| 분석 저장 원본 | 실행 시 선택한 단일 sink(JSONL 또는 PostgreSQL `game_events`) |
 
 ---
 
@@ -531,6 +559,8 @@ Tetris_multi/
 │  │        ├─ dataset/
 │  │        └─ ml/
 │  ├─ server/
+│  │  ├─ db/
+│  │  │  └─ migrations/
 │  │  ├─ sockets/
 │  │  ├─ services/
 │  │  ├─ validators/
@@ -538,6 +568,7 @@ Tetris_multi/
 │  │  └─ assets/
 │  └─ shared/
 ├─ test/
+├─ test-integration/
 ├─ e2e/
 ├─ test-artifact/
 ├─ python_tests/
@@ -567,13 +598,16 @@ Tetris_multi/
 | `src/server/sockets` | Socket event 입구 | transport 검증과 domain service를 분리한다. |
 | `src/server/services` | room/match/session/ticker/PVE/log orchestration | 상태 소유권을 기능별로 나눠 socket handler의 비대화를 줄인다. |
 | `src/server/validators` | game log trust boundary | 저장 전에 size, schema, private field와 값 범위를 확인한다. |
-| `src/server/repositories` | JSONL append | 파일 I/O를 validation/service에서 분리하고 test repository를 주입할 수 있다. |
+| `src/server/db` | canonical event, PostgreSQL 연결, migration/import CLI | database-specific identity·연결·schema 변경을 gameplay service에서 분리한다. |
+| `src/server/db/migrations` | checksum으로 추적하는 raw SQL migration | schema 변경 순서와 제약을 코드와 함께 versioning하고 재실행을 검증한다. |
+| `src/server/repositories` | JSONL/PostgreSQL append | 저장 매체 I/O를 projection/service에서 분리하고 test repository를 주입할 수 있다. |
 | `src/shared` | Socket runtime schema와 파생 type | client/server protocol 정의가 갈라지는 것을 줄인다. |
 | `test` | compiled Node unit/integration/type contract | 게임 규칙과 server boundary를 빠르게 회귀 검증한다. |
+| `test-integration` | 실제 PostgreSQL schema/repository 검증 | mock으로 확인할 수 없는 SQL constraint, migration, TLS와 role 권한을 별도 환경에서 검증한다. |
 | `e2e` | Chromium user flow | 실제 두 context, Socket.IO, Canvas, React lifecycle을 검증한다. |
 | `test-artifact` | clean build와 source-less release | 개발 환경에 우연히 의존하는 production build를 막는다. |
 | `python_tests` | parity, Notebook contract, summarizer | offline ML 결과와 안전한 파일 처리를 검증한다. |
-| `scripts` | build, export, evaluation, training, summary | 반복 실행을 명령으로 고정하고 수작업 차이를 줄인다. |
+| `scripts` | build, export, evaluation, training, DB/production smoke, summary | 반복 실행을 명령으로 고정하고 수작업 차이를 줄인다. |
 | `ai-harness` | 작업 방식과 ML experiment contract | 긴 프롬프트 반복을 줄이고 implement-smoke/full/analyze 단계를 분리한다. |
 | `migration-harness` | Goal 범위, 선행조건, 검증, rollback | 큰 기술 전환을 작은 merge gate로 제한한다. |
 
@@ -771,17 +805,17 @@ server가 UUID playerId와 256-bit opaque token을 발급한다. browser는 vers
 - 따라서 기본 PVE는 heuristic이며 V4는 명시적 experimental option으로만 제공한다.
 - imitation metric과 long-horizon gameplay strength를 같은 의미로 해석하지 않는다.
 
-## 5.10 JSONL 로그와 데이터셋
+## 5.10 분석 이벤트와 JSONL 데이터셋
 
 ### 기능 설명
 
-`game_start`, `placement_decision`, `game_over`를 한 줄 JSON으로 저장하고, placement log에서 모든 reachable candidate를 다시 만들어 ranking dataset으로 변환한다.
+`game_start`, `placement_decision`, `game_over`를 분석 이벤트로 만들고, JSONL을 선택한 환경에서는 한 줄 JSON으로 저장한다. placement log에서 모든 reachable candidate를 다시 만들어 ranking dataset으로 변환한다.
 
 ### 동작 과정
 
 1. server가 event type, schema version, board/metric, source/model 조합과 256 KiB 상한을 검증한다.
 2. authoritative terminal input이 placement를 실제 commit한 경우에만 log를 저장한다.
-3. repository가 대상 directory를 만들고 JSONL을 append한다.
+3. runtime storage가 선택된 sink로 이벤트를 전달한다. JSONL mode에서는 repository가 대상 directory를 만들고 한 줄씩 append한다.
 4. exporter가 streaming으로 원본을 읽고 accepted/rejected/train/validation/manifest를 쓴다.
 5. decision group은 `(gameId, playerId, pieceIndex)`로 묶고 정확히 하나의 selected candidate를 요구한다.
 6. split은 `gameId` 단위로 수행한다.
@@ -790,9 +824,34 @@ server가 UUID playerId와 256-bit opaque token을 발급한다. browser는 vers
 
 - test/E2E log 경로와 production log를 분리한다.
 - export 전후 source checksum을 비교해 원본 불변성을 확인한다.
-- JSONL은 현재 단일 instance 분석 경로이며 database를 대신하는 범용 저장소로 주장하지 않는다.
+- JSONL은 local/development의 기본 분석 경로이며 PostgreSQL mode와 동시에 쓰지 않는다.
 
-## 5.11 Build, 보안과 운영 경계
+## 5.11 PostgreSQL canonical event storage와 JSONL import
+
+### 기능 설명
+
+선택된 production runtime에서 분석 이벤트를 PostgreSQL에 멱등하게 저장한다. 기존 JSONL은 streaming importer로 옮길 수 있지만 원본을 수정하지 않으며, 실제 production import는 아직 수행하지 않았다.
+
+### 동작 과정
+
+1. `gameEventProjector`가 raw log를 다시 검증하고 event별 allowlist만 새 객체로 복사한다.
+2. lifecycle은 `server_authoritative`, human placement는 `client_reported`, heuristic placement는 `server_authoritative`로 trust level을 기록한다.
+3. canonical serializer가 key 순서를 고정하고 비정상 JSON 값, NUL, 잘못된 surrogate, getter, cycle과 256 KiB 초과 envelope를 거부한다.
+4. identity tuple로 `event_id`, immutable envelope로 `event_sha256`을 계산한다.
+5. repository가 parameterized SQL로 insert한다. 같은 ID와 같은 hash는 duplicate 성공, 같은 identity와 다른 내용은 conflict 실패다.
+6. retry 가능한 연결 오류만 최대 3회·총 약 2.7초 안에서 재시도한다. pool은 4, process in-flight는 16으로 제한한다.
+7. 종료 시 새 write를 차단하고 event producer를 멈춘 뒤 최대 3초 drain, pool close, Socket.IO/HTTP close 순서로 정리한다. 전체 종료 상한은 8초다.
+8. importer는 JSONL을 줄 단위로 읽고 같은 projection/identity 경로를 재사용해 dry-run, 멱등 재실행과 completeness reason을 보고한다.
+
+### 고려 사항
+
+- `GAME_EVENT_STORAGE=jsonl|postgres`는 single-sink 선택이다. 장애 시 다른 저장소로 조용히 fallback하거나 dual-write하지 않는다.
+- 분석 저장 실패가 gameplay를 중단시키지는 않는다. 대신 실패 이벤트가 유실될 수 있고 불완전 경기는 학습 export에서 제외한다.
+- non-loopback PostgreSQL은 `verify-full` TLS, CA와 DNS hostname 검증을 요구한다.
+- runtime role은 append/readiness에 필요한 최소 권한만 갖고 retention delete는 maintenance role로 분리한다.
+- retention 자동 삭제, managed provider, 실제 production credential·backup·restore와 운영 import는 추가 확인이 필요하다.
+
+## 5.12 Build, 보안과 운영 경계
 
 ### 기능 설명
 
@@ -804,14 +863,15 @@ production은 compiled server와 hashed client artifact만 실행한다. HTTP/So
 2. artifact test가 source, source map, test, dev tool이 없는지 검사한다.
 3. Express는 security header를 정상/오류 응답에 적용한다.
 4. production Socket.IO는 `SOCKET_ALLOWED_ORIGINS` 없이는 시작하지 않는다.
-5. Docker runtime은 non-root, read-only root로 실행하고 JSONL 경로만 volume에 둔다.
-6. GitHub Actions가 fast, browser, Docker job을 실행한다.
+5. Docker runtime은 non-root, read-only root로 실행한다. JSONL mode에서만 log volume을 두고 PostgreSQL mode에서는 writable JSONL mount가 없는지 검사한다.
+6. GitHub Actions가 Fast, Browser, Docker, PostgreSQL 네 job을 실행한다.
 
 ### 고려 사항
 
 - TLS/HSTS와 reverse proxy는 실제 배포 환경이 정해지지 않아 구현 범위가 아니다.
 - healthcheck는 내부 상태나 credential을 노출하지 않고 `/`만 확인한다.
 - dependency patch는 direct dependency를 늘리지 않고 lockfile의 호환 가능한 transitive version만 갱신했다.
+- PostgreSQL production-like gate는 합성 이벤트와 test DB를 사용하며 실제 서비스 활성화를 의미하지 않는다.
 
 ---
 
@@ -870,12 +930,14 @@ production은 compiled server와 hashed client artifact만 실행한다. HTTP/So
 - 실제 runtime validation과 compile-time type을 같은 schema map에서 만든다.
 - ownership과 business rule은 schema에 섞지 않고 socket/service에서 별도로 검사한다.
 
-## 6.9 Memory store와 JSONL을 유지
+## 6.9 실시간 상태는 memory, 분석 이벤트는 single-sink
 
-- 현재 요구는 2인 MVP와 분석 로그이며 DB migration은 보류됐다.
-- memory store는 구현과 테스트가 단순하지만 restart/multi-instance를 지원하지 않는다.
-- JSONL은 append와 dataset export에 적합하지만 사용자 조회나 동시 쓰기 scale에는 맞지 않는다.
-- 실제 영속성 요구 없이 PostgreSQL/Redis를 미리 넣지 않은 판단이다.
+- room/match/session은 짧은 수명의 실시간 상태이고 분석 이벤트는 장기 보존 대상이라 같은 저장 전략을 적용하지 않았다.
+- 실시간 상태는 계속 process memory에 둬 단일 instance MVP의 mutation 순서를 단순하게 유지했다. PostgreSQL은 세 종류의 append-only 분석 이벤트에만 사용한다.
+- JSONL과 PostgreSQL을 동시에 쓰면 한쪽 성공·한쪽 실패의 의미와 재처리가 복잡해지므로 runtime은 strict single-sink를 선택한다.
+- PostgreSQL 장애를 JSONL 성공으로 숨기지 않고 bounded best-effort 실패로 관찰한다. gameplay는 계속되지만 불완전 경기를 학습 데이터에서 제외한다.
+- identity tuple의 SHA-256과 immutable envelope hash를 나눠 같은 이벤트의 재전송은 멱등 성공으로, 같은 identity의 내용 변경은 conflict로 처리한다.
+- ORM보다 raw SQL과 `pg`를 선택해 두 migration과 한 append table의 제약·권한·쿼리를 직접 검증했다. 현재 규모에서는 추가 추상화보다 계약이 명확하다.
 
 ## 6.10 AI도 authoritative input 경로 사용
 
@@ -913,6 +975,8 @@ production은 compiled server와 hashed client artifact만 실행한다. HTTP/So
 - public room DTO는 whitelist mapper를 사용해 내부 field 추가가 자동 노출로 이어지지 않게 했다.
 - lifecycle object의 `destroy()`와 disposer는 중복 호출에 안전하게 만들었다.
 - production artifact와 source-less release를 별도 테스트해 개발 환경 의존을 막았다.
+- canonical projector와 raw SQL migration을 gameplay service 밖에 둬 저장소 변경이 입력 판정으로 번지지 않게 했다.
+- server shutdown 순서를 함수 하나로 고정해 write reject, producer stop, drain, pool close와 network close의 누락을 막았다.
 - migration run 기록에 rollback 순서를 남겨 단계별 변경을 되돌릴 수 있게 했다.
 
 ## 7.2 코드 재사용성
@@ -922,12 +986,14 @@ production은 compiled server와 hashed client artifact만 실행한다. HTTP/So
 - reachability planner의 결과는 heuristic decision, V4 decision과 dataset builder가 함께 사용한다.
 - shared Zod contract는 browser와 server event boundary를 함께 정의한다.
 - display bridge는 single/multiplayer HUD가 runtime을 같은 방식으로 구독하게 한다.
+- canonical projection은 runtime PostgreSQL append와 JSONL importer가 공유해 online/offline 변환 의미가 갈라지지 않게 한다.
 
 ## 7.3 현재 확장 가능한 지점
 
 - 새 AI policy는 PVE decision adapter와 fallback evidence 경계에 추가할 수 있다.
-- 새 game log event는 validator와 repository 계약을 통해 추가할 수 있다.
-- room/match persistence는 service API를 보존하면서 repository를 추가할 여지가 있다.
+- 새 game log event는 validator, projector, identity tuple, SQL constraint와 completeness 계약을 함께 versioning해 추가할 수 있다.
+- event storage는 runtime selector 뒤에 JSONL/PostgreSQL repository가 있어 실행 환경별 single-sink를 교체할 수 있다.
+- room/match persistence는 현재 event DB와 별개로 service API와 ownership을 보존하면서 설계할 여지가 있다.
 - page UI가 커지면 실제 중복을 기준으로 React component를 추출할 수 있다.
 - Socket schema와 DTO가 중앙화돼 protocol versioning을 시작할 위치가 분명하다.
 
@@ -936,27 +1002,29 @@ production은 compiled server와 hashed client artifact만 실행한다. HTTP/So
 - memory map은 multi-instance와 restart recovery를 지원하지 않는다.
 - full snapshot 전송은 동시 room이 커지면 직렬화와 bandwidth 비용이 증가한다.
 - 단일 Node event loop에서 많은 AI search와 ticker가 동시에 실행될 때 성능 검증이 없다.
-- JSONL에는 index/query/retention/concurrent writer 전략이 없다.
+- JSONL에는 index/query/concurrent writer 전략이 없고 PostgreSQL도 아직 production provider·운영 retention 자동화가 확인되지 않았다.
+- PostgreSQL 저장은 gameplay state recovery나 multi-instance room 공유를 해결하지 않는다.
 - Chromium desktop 중심이라 browser/device 범위가 좁다.
 
 ## 7.5 실제 서비스로 확장할 때의 순서
 
-1. 현재 main CI flake와 공개 배포 전 browser smoke를 먼저 안정화한다.
-2. observability와 실제 부하 지표를 수집한다.
-3. 영속 계정/전적/room recovery 요구가 확인되면 PostgreSQL schema를 설계한다.
-4. multi-instance 필요가 확인되면 Socket.IO adapter, sticky session과 shared ephemeral store를 함께 설계한다.
-5. snapshot bandwidth가 병목이면 input ack와 snapshot coalescing을 분리한다.
-6. 그 뒤에야 CDN, registry, reverse proxy/TLS, CD와 autoscaling을 결정한다.
+1. OCI VM의 OS, 자원, Docker, port, reverse proxy/TLS, DNS, firewall와 기존 JSONL backup 경로를 read-only로 확인한다.
+2. JSONL 기반 app과 HTTPS 기준선을 먼저 배포하고 rollback·observability를 검증한다.
+3. managed PostgreSQL provider, CA/hostname TLS, role/secret, backup/restore와 비용을 검증한다.
+4. 승인된 JSONL import와 completeness 확인 뒤 `GAME_EVENT_STORAGE=postgres` single-sink로 전환한다.
+5. multi-instance 요구가 생기면 별도로 Socket.IO adapter, sticky session과 shared ephemeral store를 설계한다.
+6. snapshot bandwidth가 병목이면 input ack와 snapshot coalescing을 분리한다.
 
 ---
 
 # 8. 향후 개선점
 
-## 우선순위 1: 현재 검증 상태를 green으로 유지
+## 우선순위 1: OCI 기준선 배포와 운영 경계 확인
 
-- `PLAN.md`에 기록된 main push의 PVE T-Spin timing flake를 재현·분리하고 CI green을 복구한다.
-- branch protection에 실제 check를 required로 연결할지는 공개 협업 방식이 정해질 때 결정한다.
-- 실패 routing은 아직 실제 실패 branch로 검증하지 않았으므로 설정 변경 시 확인한다.
+- 현재 네 CI job은 green이지만 실제 cloud/OCI 배포는 확인되지 않았다.
+- 먼저 read-only preflight로 OS/architecture, RAM·swap·disk, Docker/Compose, port, reverse proxy/TLS, DNS, firewall와 기존 JSONL backup 경로를 확인한다.
+- 그 결과와 rollback 계획을 검토한 뒤 JSONL 기반 app+HTTPS를 기준선으로 배포한다.
+- branch protection과 CD는 공개 운영 방식과 secret/rollback이 정해진 뒤 연결한다.
 
 ## 우선순위 2: 네트워크 회귀 범위 확대
 
@@ -971,17 +1039,19 @@ production은 compiled server와 hashed client artifact만 실행한다. HTTP/So
 - lock, garbage, presentation effect, game over와 correction snapshot은 즉시 전송해야 한다.
 - event loss 없이 마지막 state를 보내는 회귀 테스트가 선행돼야 한다.
 
-## 우선순위 4: 영속성 경계 도입
+## 우선순위 4: PostgreSQL production 활성화
 
-- 사용자 계정, 전적, room 복구 또는 분석 조회가 실제 요구가 될 때 PostgreSQL을 추가한다.
-- 기존 memory state를 한 번에 교체하지 않고 shadow write/read 검증 뒤 cutover한다.
-- session과 실시간 match state를 모두 관계형 DB에 넣는 대신 성격에 따라 PostgreSQL/Redis 역할을 나눈다.
+- 구현과 합성 production-like 검증은 끝났지만 managed provider, 실제 CA/credential, backup/restore와 latency/cost는 확인되지 않았다.
+- provider와 role을 준비한 뒤 migration을 두 번 실행해 apply/skip을 확인하고, 실제 JSONL import는 checksum·completeness report와 rollback을 승인받은 경우에만 수행한다.
+- cutover는 `GAME_EVENT_STORAGE=postgres` 단일 sink로 진행하며 JSONL runtime dual-write나 silent fallback을 추가하지 않는다.
+- room/session 복구와 multi-instance는 event database와 별도 문제로 다룬다.
 
-## 우선순위 5: 로그 운영 정책
+## 우선순위 5: Retention과 관찰 가능성
 
-- JSONL rotation, retention, backup, disk usage alert와 single-writer 보장을 추가한다.
-- 현재 256 KiB event 상한과 schema validation은 유지한다.
-- 분석 환경이 커지면 object storage나 batch warehouse를 검토할 수 있지만 현재는 확인되지 않은 요구다.
+- PostgreSQL raw event 보존 목표 90일, 용량 경고 70%, 비상 기준 85%는 runbook에 있으나 자동 삭제는 구현하지 않았다.
+- 먼저 table/index size, write failure, conflict, in-flight reject와 incomplete game 수를 수집하고 maintenance role의 dry-run 결과를 운영자가 검토하게 한다.
+- 실제 삭제는 backup·completeness와 승인 절차가 확인된 뒤 수행한다.
+- JSONL fallback 운영 시에는 rotation, 압축, volume backup과 disk usage alert가 여전히 필요하다.
 
 ## 우선순위 6: 사용자 경험과 접근성
 
@@ -1041,6 +1111,10 @@ server-authoritative 작업 중 특정 목표가 없는 “진행해”라는 �
 ## 9.9 큰 ML 결과는 LLM에 그대로 넣지 않아도 된다
 
 초기에는 agent가 full report와 Notebook 내용을 모두 읽어 분석하게 했지만, 로컬과 외부 model 사이의 전송 및 고급 model 처리 시간이 길었다. 이후 Python summarizer를 만들어 고정 계약, 핵심 수치, checksum과 decision status만 compact JSON/Markdown으로 만들었다. 이 방식으로 LLM 입력 token과 분석 시간을 줄이고, 원본 report는 검증 증거로 보존했다.
+
+## 9.10 영속성은 저장 코드보다 실패와 종료 의미가 더 중요하다
+
+PostgreSQL append 자체뿐 아니라 duplicate와 conflict의 차이, DB-down일 때 gameplay를 계속할지, 종료 중인 write를 어디까지 기다릴지, retention delete 권한을 누가 가질지를 함께 결정해야 했다. canonical identity, single-sink, bounded retry, drain과 role separation을 구현하면서 저장 기술 선택은 운영 실패 의미를 정하는 작업이라는 점을 배웠다.
 
 ---
 
@@ -1216,6 +1290,31 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 로컬 shell과 CI shell의 차이도 재현성 범위에 포함된다. 넓은 시스템 변수 이름을 재사용하지 않고, cleanup target을 명시적으로 제한해야 한다.
 
+## 10.7 PostgreSQL CI에서 정상적인 late commit을 데이터 불일치로 오판한 문제
+
+### 문제
+
+첫 hosted PostgreSQL job은 PVP/PVE와 첫 shutdown까지 성공했지만 exit code 1로 종료됐다. 종료 전 row snapshot과 재시작 뒤 snapshot의 event 수가 달랐다.
+
+### 원인
+
+event producer가 살아 있고 best-effort write가 in-flight인 상태에서 비교 기준 snapshot을 먼저 만들었다. 이후 shutdown drain에서 정상 commit된 event가 추가되면서, 코드가 정상적인 late commit을 restart 불일치로 판정했다.
+
+### 해결 과정
+
+1. 첫 PVP/PVE 직후 application producer를 먼저 중단했다.
+2. 새 write 차단과 in-flight drain을 완료한 뒤 row count, privacy, duplicate와 snapshot을 측정했다.
+3. 그 snapshot을 기준으로 backup/restore와 restart 동일성을 검증했다.
+4. shutdown 결과도 exit 0, exit 1, exit 137, unexpected exit, OOMKilled와 남은 pool connection으로 구분하고 민감한 값 대신 안전 코드만 출력했다.
+
+### 결과
+
+최종 hosted PostgreSQL job은 event 26건, privacy 위반 0, duplicate ID 0, shutdown 뒤 pool connection 0과 restart/backup/restore 동일성을 확인하며 통과했다. 같은 main revision에서 네 CI job이 모두 green이 됐다.
+
+### 배운 점
+
+비동기 저장 검증에서는 측정 값보다 먼저 “어느 시점부터 상태가 고정됐는가”를 정의해야 한다. 종료 시점의 불변성을 확인하려면 producer 중단과 drain이 snapshot보다 앞서야 한다.
+
 ---
 
 # 11. 포트폴리오 개선 제안
@@ -1226,10 +1325,11 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 | ★★★★★ 매우 추천 | 두 브라우저 PVP 화면 캡처 또는 20~30초 영상 | room 생성, 동시 board, garbage, match finish가 실제로 연결됐다는 증거가 된다. |
 | ★★★★★ 매우 추천 | rollback 전후 비교 자료 | 증상 영상 또는 board fingerprint/log 일부와 sequence/ack 해결 흐름을 함께 제시하면 트러블 슈팅 설명력이 높다. |
 | ★★★★★ 매우 추천 | AI benchmark 표/차트 | “ML을 붙였다”보다 V4를 기본값으로 올리지 않은 판단을 수치로 보여주는 편이 설득력이 높다. |
-| ★★★★★ 매우 추천 | GitHub Actions 3-job 성공 화면과 검증 범위 | unit, browser, Docker를 어떤 경계로 나눴는지 설명할 수 있다. main timing flake가 남았다면 숨기지 말고 현재 상태를 함께 적는다. |
+| ★★★★★ 매우 추천 | GitHub Actions 4-job 성공 화면과 검증 범위 | Fast, Browser, Docker, PostgreSQL을 어떤 실패 경계로 나눴는지 설명할 수 있다. |
+| ★★★★★ 매우 추천 | PostgreSQL event lifecycle 다이어그램 | raw log→allowlist projector→canonical identity/hash→single-sink append→import/completeness와 shutdown drain을 한 장으로 보여준다. |
 | ★★★★ 추천 | 아키텍처 전환 타임라인 | DOM state → Canvas/core 분리 → Socket room → server authoritative → PVE/ML → React/TypeScript/Docker/CI 순서를 6단계로 압축한다. |
 | ★★★★ 추천 | session/reconnect 보안 표 | 위협, 대응, 남은 한계를 `token rotation / newest socket wins / CSP / in-memory limit`로 정리한다. |
-| ★★★★ 추천 | 데이터 파이프라인 다이어그램 | JSONL에서 dataset, LOGO/temporal holdout, parity, summary까지 이어지는 흐름은 일반 게임 프로젝트와 구분되는 부분이다. |
+| ★★★★ 추천 | 데이터 파이프라인 다이어그램 | JSONL/PostgreSQL 저장 경계에서 dataset, LOGO/temporal holdout, parity, summary까지 이어지는 흐름은 일반 게임 프로젝트와 구분되는 부분이다. |
 | ★★★★ 추천 | Experimental V4 UI badge와 fallback 화면 | 모델을 과장하지 않고 정책과 provenance를 노출한 점을 보여준다. |
 | ★★★★ 추천 | README 첫 화면에 “확인된 것/확인되지 않은 것” 요약 | Docker와 CI가 있다고 실제 cloud 배포까지 했다고 오해하지 않게 한다. |
 | ★★★ 있으면 좋음 | 디렉토리 전체 트리 대신 핵심 12개 module만 강조한 그림 | 현재 파일 수가 많아 전체 tree는 면접관이 읽기 어렵다. |
@@ -1245,12 +1345,14 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 4. ML 모델을 production default로 올리지 않은 평가 기반 판단
 5. migration/experiment harness로 Agent 작업 범위를 통제한 경험
 6. source-less artifact, CSP, session rotation, Docker와 CI까지 연결한 release 경계
+7. canonical event identity, PostgreSQL 멱등 저장과 graceful shutdown을 운영 실패 의미까지 설계한 경험
 
 ## 줄이거나 삭제하면 좋은 내용
 
 - 기능 이름만 길게 나열한 설명
 - “AI 기반”, “확장 가능한”, “실무 수준”처럼 근거 없이 넓은 표현
-- 사용하지 않은 PostgreSQL, Redis, Kubernetes, cloud를 현재 기술 스택처럼 적는 내용
+- 사용하지 않은 Redis, Kubernetes와 특정 cloud provider를 현재 기술 스택처럼 적는 내용
+- PostgreSQL이 room/match 상태까지 영속화하거나 production에서 이미 활성화됐다는 표현
 - V4가 heuristic보다 강하거나 사용자를 완전히 복제한다는 표현
 - 50개 면접 질문 전체를 공개 포트폴리오 본문에 넣는 구성: 별도 면접 준비 문서로 두는 편이 읽기 좋다.
 
@@ -1259,7 +1361,7 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 - 실제 GitHub URL
 - 담당 역할의 본인 표현
 - 공개 배포 여부와 URL
-- main branch의 최신 CI green 상태
+- branch protection의 required check 설정
 - 실제 사용자 수·트래픽·운영 기간
 - 프로젝트 화면 캡처와 데모 영상
 - 개인 협업 경험과 회고
@@ -1275,10 +1377,11 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 | client 구조 | `src/client/pages`, `src/client/game`, `src/client/net` |
 | server 구조 | `src/server/init.ts`, `src/server/sockets`, `src/server/services` |
 | protocol·보안 | `src/shared/socketContracts.mjs`, `src/server/socketSecurity.ts`, `src/server/httpSecurity.ts` |
-| 저장 경계 | `src/server/repositories/jsonlLogRepository.ts`, `src/server/validators/gameLogValidator.ts` |
+| 저장 경계 | `src/server/services/runtimeEventStorage.ts`, `src/server/services/gameEventProjector.ts`, `src/server/repositories`, `src/server/db` |
+| PostgreSQL 운영 | `docs/database-event-storage-blueprint.md`, `docs/postgres-production-runbook.md`, `migration-harness/runs/goal-09a-*`~`goal-09d-*` |
 | AI/ML | `src/client/game/ai`, `scripts/ml`, `docs/placement-*`, `ai-harness/runs` |
-| test | `test`, `e2e`, `test-artifact`, `python_tests` |
-| Docker·CI | `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml` |
+| test | `test`, `test-integration`, `e2e`, `test-artifact`, `python_tests` |
+| Docker·CI | `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, `scripts/run-postgres-tests.js`, `scripts/verify-postgres-production.sh` |
 | migration 과정 | `migration-harness/goals`, `migration-harness/runs`, `docs/goal-11-security-docker-ci-history.md` |
 
 ---
@@ -1301,7 +1404,7 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 1. **질문**: 일반적인 Tetris 구현과 무엇이 다른가요?
 2. **면접관이 질문하는 이유**: 프로젝트의 차별점을 과장 없이 설명할 수 있는지 본다.
-3. **모범 답변**: 게임 화면만 구현한 것이 아니라 규칙을 DOM에서 분리해 서버가 같은 core를 실행하도록 만들었습니다. 여기에 client prediction, reconnect session, authoritative PVE, placement JSONL과 Node↔Python parity까지 연결했습니다. 다만 대규모 상용 서비스나 강한 gameplay AI라고 주장하지는 않습니다.
+3. **모범 답변**: 게임 화면만 구현한 것이 아니라 규칙을 DOM에서 분리해 서버가 같은 core를 실행하도록 만들었습니다. 여기에 client prediction, reconnect session, authoritative PVE, placement 분석, Node↔Python parity와 PostgreSQL event storage까지 연결했습니다. 다만 production DB를 활성화한 상용 서비스나 강한 gameplay AI라고 주장하지는 않습니다.
 4. **추가 꼬리 질문**: 포트폴리오에서 가장 먼저 보여줄 화면은 무엇인가요?
 5. **꼬리 질문에 대한 답변**: 두 브라우저 PVP 화면과 input→server→snapshot 흐름을 함께 보여주겠습니다. 이 화면이 핵심 구조와 rollback 해결을 가장 직접적으로 설명합니다.
 
@@ -1309,7 +1412,7 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 1. **질문**: 프로젝트 기간을 어떻게 산정했나요?
 2. **면접관이 질문하는 이유**: 문서의 숫자가 실제 근거에 기반하는지 확인한다.
-3. **모범 답변**: Git 이력의 최초 커밋 2025-03-13부터 현재 분석 기준 마지막 커밋 2026-07-23까지로 적었습니다. 상세 change-log는 2025-10-20부터 남아 있어, 초기 기간의 세부 작업은 Git 이력 이상으로 추정하지 않았습니다.
+3. **모범 답변**: Git 이력의 최초 커밋 2025-03-13부터 현재 분석 기준 마지막 커밋 2026-07-24까지로 적었습니다. 상세 change-log는 2025-10-20부터 남아 있어, 초기 기간의 세부 작업은 Git 이력 이상으로 추정하지 않았습니다.
 4. **추가 꼬리 질문**: 커밋 수를 개발 성과로 사용했나요?
 5. **꼬리 질문에 대한 답변**: 아닙니다. 커밋 수는 기간과 변경 흐름을 확인하는 보조 자료일 뿐이고, 성과는 현재 코드·테스트·실행 기록으로 설명합니다.
 
@@ -1361,7 +1464,7 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 1. **질문**: 이 프로젝트의 아키텍처를 어떤 형태라고 설명하겠습니까?
 2. **면접관이 질문하는 이유**: 구조를 이름만 붙이지 않고 실제 경계로 설명할 수 있는지 본다.
-3. **모범 답변**: 하나의 Node process와 저장소를 사용하는 모듈형 monolith입니다. browser는 Vite MPA이고 server는 Socket handler, domain service, pure game core와 JSONL repository로 나뉩니다. microservice나 database-backed architecture는 아닙니다.
+3. **모범 답변**: 하나의 Node process와 저장소를 사용하는 모듈형 monolith입니다. browser는 Vite MPA이고 server는 Socket handler, domain service, pure game core와 event repository로 나뉩니다. room/match는 memory에 있고 분석 이벤트만 JSONL 또는 PostgreSQL single-sink에 저장합니다.
 4. **추가 꼬리 질문**: monolith의 장점은 무엇이었나요?
 5. **꼬리 질문에 대한 답변**: game core와 Socket service를 같은 codebase에서 직접 공유하고, 배포·테스트 경계를 한 artifact로 유지할 수 있었습니다.
 
@@ -1427,7 +1530,7 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 1. **질문**: Placement log가 dataset이 되는 과정을 설명해 주세요.
 2. **면접관이 질문하는 이유**: 수집 데이터와 학습 sample 사이의 계약을 이해하는지 본다.
-3. **모범 답변**: authoritative placement commit을 확인한 뒤 boardBefore, 선택 placement, 결과와 lineage를 JSONL에 저장합니다. exporter가 같은 시작 상태에서 reachable 후보를 다시 생성하고 각 후보의 metric delta와 label을 만듭니다. decision을 gameId/playerId/pieceIndex로 묶고 gameId 기준으로 split합니다.
+3. **모범 답변**: authoritative placement commit을 확인한 뒤 boardBefore, 선택 placement, 결과와 lineage를 선택된 sink에 저장합니다. dataset 경로에서는 JSONL exporter가 같은 시작 상태에서 reachable 후보를 다시 생성하고 각 후보의 metric delta와 label을 만듭니다. decision을 gameId/playerId/pieceIndex로 묶고 gameId 기준으로 split합니다. PostgreSQL import도 같은 projector와 identity를 재사용합니다.
 4. **추가 꼬리 질문**: 왜 candidate row를 random split하지 않았나요?
 5. **꼬리 질문에 대한 답변**: 같은 decision과 game의 후보가 train과 validation에 나뉘면 board 문맥이 누수됩니다. 그래서 game 단위 split과 LOGO/temporal holdout을 사용했습니다.
 
@@ -1533,13 +1636,13 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 4. **추가 꼬리 질문**: SPA 재개 조건은 무엇인가요?
 5. **꼬리 질문에 대한 답변**: route 간 공유 UI/상태가 늘고 full reload가 실제 UX 문제로 확인되며, lifecycle test와 rollback 계획을 마련했을 때입니다.
 
-### Q30. 왜 데이터베이스를 아직 도입하지 않았나요?
+### Q30. 왜 PostgreSQL에는 분석 이벤트만 저장하나요?
 
-1. **질문**: 멀티플레이인데 왜 DB가 없나요?
-2. **면접관이 질문하는 이유**: 포트폴리오용 기술 추가가 아니라 요구 기반 판단을 했는지 본다.
-3. **모범 답변**: 현재 room은 2인 MVP이고 계정, 전적 조회, restart 복구 요구가 없습니다. process memory와 JSONL로 gameplay와 분석 계약을 검증할 수 있어 PostgreSQL Goal 9·10을 보류했습니다.
-4. **추가 꼬리 질문**: DB가 없어 생기는 가장 큰 한계는 무엇인가요?
-5. **꼬리 질문에 대한 답변**: server restart 시 session과 진행 중 room/match가 사라지고 multi-instance state를 공유할 수 없습니다.
+1. **질문**: PostgreSQL을 도입했는데 왜 room, session과 match state는 여전히 memory에 있나요?
+2. **면접관이 질문하는 이유**: 데이터의 수명과 접근 특성에 따라 저장 기술을 구분했는지 본다.
+3. **모범 답변**: PostgreSQL 도입 목적은 container 수명과 분석 이벤트 보존을 분리하고 중복·완전성을 SQL로 확인하는 것이었습니다. room과 match는 100ms ticker와 player별 mutation 순서가 중요한 짧은 수명의 상태라 현재 단일 instance에서는 memory가 단순합니다. event DB를 넣었다고 실시간 상태 문제까지 해결됐다고 보지 않았습니다.
+4. **추가 꼬리 질문**: DB가 있는데도 남는 가장 큰 한계는 무엇인가요?
+5. **꼬리 질문에 대한 답변**: server restart 시 session과 진행 중 room/match가 사라지고 multi-instance state를 공유할 수 없습니다. 필요해지면 match ownership, Socket.IO adapter와 shared ephemeral store를 별도로 설계해야 합니다.
 
 ### Q31. 왜 V4를 default AI로 올리지 않았나요?
 
@@ -1605,9 +1708,9 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 1. **질문**: JSONL을 계속 사용할 수 있는 한계는 어디인가요?
 2. **면접관이 질문하는 이유**: 단순 저장 방식의 trade-off를 이해하는지 본다.
-3. **모범 답변**: single writer, batch export와 append 중심인 현재 개인 실험에는 적절합니다. 실시간 query, multi-writer, retention, index, user deletion과 대용량 분석 요구가 생기면 한계가 분명합니다.
-4. **추가 꼬리 질문**: 바로 PostgreSQL로 바꾸지 않고 어떤 단계를 거치겠습니까?
-5. **꼬리 질문에 대한 답변**: schema와 checksum을 유지한 shadow write, row count/semantic comparison, read path 검증 뒤 cutover하겠습니다.
+3. **모범 답변**: single writer, local 개발과 batch export에는 여전히 적절합니다. 중앙 query, index, 동시 접근, retention과 container 수명 밖 보존이 필요해져 PostgreSQL 경로를 추가했습니다. runtime에서는 둘을 동시에 쓰지 않고 환경별 single-sink로 선택합니다.
+4. **추가 꼬리 질문**: production PostgreSQL로 전환할 때 어떤 단계를 거치겠습니까?
+5. **꼬리 질문에 대한 답변**: provider/TLS/role/backup을 먼저 검증하고 migration을 재실행한 뒤, JSONL import의 checksum과 completeness를 확인합니다. 별도 승인 후 PostgreSQL single-sink로 cutover하고 JSONL은 명시적 rollback 경로로 보존합니다.
 
 ## 보안
 
@@ -1673,7 +1776,7 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 1. **질문**: 테스트가 많아도 놓치는 부분은 무엇인가요?
 2. **면접관이 질문하는 이유**: 검증 결과를 과신하지 않는지 본다.
-3. **모범 답변**: Playwright는 Chromium desktop과 worker 1 중심입니다. packet loss, 높은 latency, WebKit/Firefox, mobile device, 장시간 soak, 외부 TLS/reverse proxy는 확인되지 않았습니다. main PVE timing flake 기록도 남아 있습니다.
+3. **모범 답변**: Playwright는 Chromium desktop과 worker 1 중심입니다. packet loss, 높은 latency, WebKit/Firefox, mobile device, 장시간 soak와 실제 외부 TLS/reverse proxy는 확인되지 않았습니다. PostgreSQL도 local/hosted 합성 환경은 검증했지만 managed provider와 운영 데이터는 확인하지 않았습니다.
 4. **추가 꼬리 질문**: 다음 테스트 하나만 추가한다면 무엇인가요?
 5. **꼬리 질문에 대한 답변**: pending input 중 transport reconnect와 jitter를 결합한 PVP convergence 테스트를 우선하겠습니다.
 
@@ -1683,9 +1786,9 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 
 1. **질문**: 새 기능이 아니라 현재 구조에서 가장 먼저 할 일은 무엇인가요?
 2. **면접관이 질문하는 이유**: 우선순위 판단과 운영 감각을 확인한다.
-3. **모범 답변**: `PLAN.md`에 남은 main PVE T-Spin timing flake를 재현하고 CI green을 복구하는 일입니다. 그 다음 공개 배포 전 network/browser 범위를 확장하겠습니다.
-4. **추가 꼬리 질문**: 왜 DB나 Kubernetes가 먼저가 아닌가요?
-5. **꼬리 질문에 대한 답변**: 현재 사용자/부하 요구가 확인되지 않았고, green baseline 없이 인프라를 늘리면 회귀 원인만 복잡해지기 때문입니다.
+3. **모범 답변**: 네 CI job은 green이므로 다음은 OCI read-only preflight와 JSONL 기반 HTTPS 기준선 배포입니다. PostgreSQL provisioning, 실제 JSONL import와 cutover는 각각 별도 승인으로 분리하겠습니다.
+4. **추가 꼬리 질문**: 왜 PostgreSQL부터 바로 켜지 않나요?
+5. **꼬리 질문에 대한 답변**: 합성 Docker gate와 실제 provider 운영은 다릅니다. 먼저 app·network·TLS·rollback 기준선을 만들고, DB credential·CA·backup/restore와 import 완전성을 확인해야 장애 원인을 분리할 수 있습니다.
 
 ### Q48. LLM coaching을 붙인다면 어떻게 시작하겠나요?
 
@@ -1728,3 +1831,43 @@ Docker smoke 전체 계약이 통과했고 GitHub Actions의 container job도 �
 3. **모범 답변**: zsh에서 `path`라는 loop 변수를 써 특수 PATH 배열을 덮어썼고 cleanup trap도 `docker`를 못 찾아 container가 남았습니다. 해당 Goal 자원만 식별해 제거하고 CI와 같은 bash로 재실행했습니다.
 4. **추가 꼬리 질문**: 이후 어떤 규칙을 적용했나요?
 5. **꼬리 질문에 대한 답변**: system option과 충돌할 일반 변수명을 피하고, shell을 명시하며, cleanup target은 run ID 기반 이름으로 좁히고 broad delete를 사용하지 않습니다.
+
+### Q53. PostgreSQL event identity를 어떻게 정의했나요?
+
+1. **질문**: 이벤트의 중복과 충돌을 어떤 기준으로 구분하나요?
+2. **면접관이 질문하는 이유**: 멱등성이라는 용어보다 실제 identity 계약을 설명할 수 있는지 본다.
+3. **모범 답변**: lifecycle은 event type과 gameId, placement는 event type·gameId·playerId·pieceIndex를 `identity-v1` tuple로 사용해 `event_id`를 만듭니다. 전체 immutable envelope에는 별도 `event_sha256`을 계산합니다. 같은 ID와 같은 hash는 재전송된 duplicate이고, 같은 identity인데 hash가 다르면 기존 row를 덮지 않고 conflict로 실패합니다.
+4. **추가 꼬리 질문**: DB의 unique key만으로 충분하지 않나요?
+5. **꼬리 질문에 대한 답변**: unique key는 중복 insert를 막지만 같은 논리 이벤트의 내용이 바뀐 것을 정상 duplicate와 구분하지 못합니다. envelope hash가 있어야 silent overwrite나 payload drift를 감지할 수 있습니다.
+
+### Q54. 왜 PostgreSQL과 JSONL을 dual-write하지 않았나요?
+
+1. **질문**: migration 안전성을 위해 두 저장소에 동시에 쓰는 편이 낫지 않나요?
+2. **면접관이 질문하는 이유**: 분산 저장의 부분 실패 의미를 고려했는지 본다.
+3. **모범 답변**: 현재 runtime은 transaction으로 묶을 수 없는 두 sink를 함께 쓰면 한쪽만 성공했을 때 어떤 결과를 정답으로 볼지와 재처리 책임이 커집니다. 그래서 환경별 single-sink를 명시하고 JSONL backfill은 별도 streaming importer로 분리했습니다.
+4. **추가 꼬리 질문**: PostgreSQL 장애 시 JSONL로 fallback하지 않는 이유는 무엇인가요?
+5. **꼬리 질문에 대한 답변**: silent fallback은 운영자가 PostgreSQL이 정상이라고 오해하게 만들고 데이터 위치가 나뉩니다. 실패를 metric과 안전한 log로 관찰하고 gameplay는 계속하되 해당 경기는 incomplete로 처리합니다.
+
+### Q55. PostgreSQL write 실패가 게임을 종료시키지 않는 이유는 무엇인가요?
+
+1. **질문**: 분석 저장에 실패해도 gameplay를 계속하는 정책은 데이터 유실을 허용하는 것 아닌가요?
+2. **면접관이 질문하는 이유**: 핵심 기능과 부가 수집 경계의 우선순위를 판단했는지 본다.
+3. **모범 답변**: 이 DB는 승패와 board의 원천이 아니라 분석 이벤트 sink입니다. DB 장애로 실시간 게임까지 중단시키는 비용이 더 크다고 판단해 최대 3회·약 2.7초 안에서만 재시도하고 gameplay를 계속합니다. 대신 누락 가능성을 숨기지 않고 incomplete game을 학습 export에서 제외합니다.
+4. **추가 꼬리 질문**: 전적 DB라면 같은 정책을 쓰겠습니까?
+5. **꼬리 질문에 대한 답변**: 아닙니다. 사용자에게 약속한 전적이나 결제처럼 business consistency가 필요한 데이터는 transaction, durable queue와 사용자 응답 의미를 다시 설계해야 합니다.
+
+### Q56. Graceful shutdown 순서가 왜 중요한가요?
+
+1. **질문**: 서버 종료 시 `reject writes → stop producers → drain → close pool → close Socket/HTTP` 순서를 택한 이유는 무엇인가요?
+2. **면접관이 질문하는 이유**: 비동기 자원 수명과 데이터 손실 경계를 이해하는지 본다.
+3. **모범 답변**: producer가 계속 이벤트를 만들면 drain이 끝나지 않고, pool을 먼저 닫으면 이미 accepted된 write가 실패합니다. 새 write를 막고 producer를 정지한 뒤 in-flight를 기다려야 snapshot과 종료 결과의 기준 시점이 생깁니다. 이후 DB pool과 network를 닫습니다.
+4. **추가 꼬리 질문**: drain이 끝나지 않으면 어떻게 하나요?
+5. **꼬리 질문에 대한 답변**: event drain은 3초, 전체 shutdown은 8초로 제한합니다. 무한 대기하지 않고 종료 outcome과 남은 connection을 안전 코드로 구분해 관찰합니다.
+
+### Q57. PostgreSQL CI의 late commit 문제에서 무엇을 배웠나요?
+
+1. **질문**: 첫 hosted PostgreSQL job이 마지막에 실패한 원인은 무엇이었나요?
+2. **면접관이 질문하는 이유**: 실패를 단순 flake로 넘기지 않고 시간 순서로 분석했는지 본다.
+3. **모범 답변**: producer가 살아 있고 write가 in-flight인 상태에서 row snapshot을 만든 뒤 shutdown drain을 실행했습니다. drain 중 정상 commit된 row 때문에 restart snapshot이 커졌고 코드가 이를 불일치로 오판했습니다. producer stop과 drain을 snapshot보다 앞으로 옮겨 기준 시점을 고정했습니다.
+4. **추가 꼬리 질문**: 단순히 equality assertion을 느슨하게 하면 되지 않았나요?
+5. **꼬리 질문에 대한 답변**: 그러면 실제 restart나 backup/restore 데이터 손실도 놓칠 수 있습니다. assertion을 약화하지 않고 측정 순서를 시스템 수명 주기에 맞춘 것이 핵심입니다.
