@@ -11,10 +11,13 @@ const {
 } = require("../dist/server/server/repositories/postgresEventRepository.js");
 const {
     createRuntimeEventStorage,
+    POSTGRES_RUNTIME_CONNECTION_TIMEOUT_MS,
     POSTGRES_RUNTIME_IN_FLIGHT_MAX,
     POSTGRES_RUNTIME_POOL_MAX,
+    POSTGRES_RUNTIME_QUERY_TIMEOUT_MS,
     POSTGRES_RUNTIME_DRAIN_TIMEOUT_MS,
     POSTGRES_RUNTIME_WRITE_ATTEMPTS,
+    POSTGRES_RUNTIME_WRITE_BUDGET_MS,
     resolveGameEventStorageMode,
 } = require("../dist/server/server/services/runtimeEventStorage.js");
 
@@ -207,6 +210,40 @@ test("transient append는 같은 canonical event로 최대 3회만 재시도한�
     assert.strictEqual(seen[0], seen[1]);
     assert.strictEqual(seen[1], seen[2]);
     assert.equal(storage.getMetrics().attempts, 3);
+    await storage.close();
+});
+
+test("conflict lookup까지 포함한 retry 최악 경로는 2.7초 budget 안에 끝난다", async () => {
+    let elapsed = 0;
+    let appendCount = 0;
+    const stub = repositoryStub({
+        async append() {
+            appendCount += 1;
+            elapsed += 2 * (
+                POSTGRES_RUNTIME_CONNECTION_TIMEOUT_MS
+                + POSTGRES_RUNTIME_QUERY_TIMEOUT_MS
+            );
+            throw new PostgresEventRepositoryError(
+                "POSTGRES_EVENT_APPEND_FAILED",
+                true,
+            );
+        },
+    });
+    const storage = await createRuntimeEventStorage({
+        env: postgresEnv(),
+        repository: stub.repository,
+        now: () => elapsed,
+        sleep: async milliseconds => {
+            elapsed += milliseconds;
+        },
+        warn() {},
+    });
+
+    const result = await storage.saveGameEventLog(gameStart());
+
+    assert.equal(result.ok, false);
+    assert.equal(appendCount, POSTGRES_RUNTIME_WRITE_ATTEMPTS);
+    assert.ok(elapsed <= POSTGRES_RUNTIME_WRITE_BUDGET_MS);
     await storage.close();
 });
 
