@@ -2488,9 +2488,10 @@ client input
 ## Goal 11E와 PostgreSQL roadmap 재개
 
 - 실제 사용자 gameplay event를 container 수명과 분리해 보존한다는 요구에 따라 실행 순서를 `11E → 9A → 9B → 9C → 9D`로 문서화했다.
-- Goal 11E는 production code, timeout과 retry를 바꾸지 않고 PVE T-Spin/pending garbage E2E를 authoritative snapshot 기준으로 안정화한다. 현재는 계획과 branch만 준비됐고 구현하지 않았다.
+- Goal 11E는 최종 `8cc16d9`까지 main과 origin/main에 반영됐다. 자연 중력과 GitHub-hosted runner scheduling에 의존하던 PVE T-Spin E2E와 전용 helper를 제거하고 pending-garbage authoritative/UI 일관성 검증은 유지했다. T-Spin 보장은 `test/testTSpin.js`, `test/testPlayerGameplayStep.js`, `test/testTetrisRuntime.js`의 결정론적 core·authoritative·runtime 테스트가 담당한다.
+- 최종 production Playwright는 36/36이며, 동일 SHA의 hosted Fast gate와 Production container smoke, Chromium PVP and PVE 연속 2회가 모두 성공했다. production code, workflow와 dependency는 변경하지 않았다.
 - Goal 9A는 raw SQL migration과 `pg` repository, 9B는 canonical runtime storage, 9C는 기존 JSONL의 streaming·멱등 import, 9D는 실제 PostgreSQL CI/release와 운영 gate를 담당한다.
 - event identity, immutable `event_sha256`, server-owned `gameId`, privacy allowlist, bounded retry, pool/in-flight 상한, 8초 shutdown과 retention 경계를 공통 계약으로 고정했다.
 - 과거 `codex/add-postgres-event-shadow`는 merge/rebase나 commit 전체 cherry-pick 없이 identity·parameterized SQL·TLS·integration test 아이디어만 참고한다.
 - Goal 9D와 별도 production 활성화 승인 후에는 `GAME_EVENT_STORAGE=postgres`만 사용하고 JSONL writer와 writable volume을 끈다. 기존 JSONL file과 repository code는 local/test 및 명시적 rollback용으로 보존한다.
-- 문서 commit `c7614e4`, `a1cf812`까지 반영했으며 SQL, dependency, production DB, 실제 JSONL import와 배포는 아직 수행하지 않았다.
+- 문서 commit `c7614e4`, `a1cf812`의 PostgreSQL 계약은 유지한다. Goal 9A~9D의 SQL, dependency, production DB, 실제 JSONL import와 배포는 아직 구현하지 않았다.
