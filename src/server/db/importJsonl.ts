@@ -37,6 +37,11 @@ import {
 
 const REPORT_VERSION = 1;
 const MAX_REPORTED_ISSUES = 100;
+const SOURCE_EVENT_TYPES = new Set([
+    "game_start",
+    "placement_decision",
+    "game_over",
+]);
 const PRIVATE_KEYS = new Set([
     "authorization",
     "cookie",
@@ -82,6 +87,7 @@ type GameState = {
     starts: LifecycleState[];
     overs: LifecycleState[];
     placements: Map<string, PlacementState>;
+    idempotencyConflict: boolean;
 };
 
 export type JsonlImportReport = {
@@ -247,6 +253,7 @@ function addCompletenessEvent(
             starts: [],
             overs: [],
             placements: new Map(),
+            idempotencyConflict: false,
         };
         games.set(event.gameId, game);
     }
@@ -284,6 +291,7 @@ function gameCompleteness(game: GameState): {
     if (game.starts.length > 1) reasons.add("lifecycle_start_duplicate");
     if (game.overs.length === 0) reasons.add("lifecycle_over_missing");
     if (game.overs.length > 1) reasons.add("lifecycle_over_duplicate");
+    if (game.idempotencyConflict) reasons.add("idempotency_conflict");
 
     const start = game.starts.length === 1 ? game.starts[0] : null;
     const over = game.overs.length === 1 ? game.overs[0] : null;
@@ -502,7 +510,10 @@ export async function runJsonlImport(
                 continue;
             }
             if (isRecord(raw) && typeof raw.eventType === "string") {
-                increment(sourceEventCounts, raw.eventType);
+                increment(
+                    sourceEventCounts,
+                    SOURCE_EVENT_TYPES.has(raw.eventType) ? raw.eventType : "unknown",
+                );
             }
             if (containsPrivateField(raw)) {
                 addIssue("PRIVATE_FIELD_PRESENT", lineCount);
@@ -535,6 +546,7 @@ export async function runJsonlImport(
                 duplicateIdentityCount += 1;
             } else if (previousHash !== undefined) {
                 conflictIdentityCount += 1;
+                games.get(prepared.snapshot.gameId)!.idempotencyConflict = true;
                 if (dryRun) {
                     addIssue("IDEMPOTENCY_CONFLICT", lineCount, prepared.eventId);
                 }
@@ -551,6 +563,7 @@ export async function runJsonlImport(
                 if (result.status === "duplicate") writes.duplicate += 1;
                 if (result.status === "conflict") {
                     writes.conflict += 1;
+                    games.get(prepared.snapshot.gameId)!.idempotencyConflict = true;
                     addIssue("IDEMPOTENCY_CONFLICT", lineCount, prepared.eventId);
                 }
             } catch {

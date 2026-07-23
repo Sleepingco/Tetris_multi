@@ -248,6 +248,10 @@ test("completeness는 lifecycle, duplicate, internal gap, tail과 legacy를 구�
 test("malformed, private, conflict와 oversized row는 safe reason으로 실패한다", async () => {
     await withFixture([
         "{not-json",
+        {
+            eventType: "DATABASE_URL=postgresql://private-credential.invalid/db",
+            schemaVersion: 1,
+        },
         gameStart("private-game", { token: "must-not-leak" }),
         gameStart("conflict-game"),
         gameStart("conflict-game", { mode: "pve" }),
@@ -258,10 +262,18 @@ test("malformed, private, conflict와 oversized row는 safe reason으로 실패�
         assert.equal(report.ok, false);
         assert.deepEqual(report.failures.reasonCodeCounts, {
             IDEMPOTENCY_CONFLICT: 1,
+            INVALID_EVENT_TYPE: 1,
             INVALID_JSON: 1,
             PRIVATE_FIELD_PRESENT: 1,
         });
-        assert.doesNotMatch(serialized, /must-not-leak|not-json|private-game/);
+        assert.deepEqual(report.source.eventTypeCounts, {
+            game_start: 3,
+            unknown: 1,
+        });
+        assert.doesNotMatch(
+            serialized,
+            /must-not-leak|not-json|private-game|private-credential|postgresql:\/\//,
+        );
         await assert.rejects(
             runJsonlImport({
                 inputPath: filePath,
@@ -274,6 +286,48 @@ test("malformed, private, conflict와 oversized row는 safe reason으로 실패�
                 return true;
             },
         );
+    });
+});
+
+test("DB idempotency conflict가 난 game은 ML export 대상이 아니다", async () => {
+    const gameId = "db-conflict-game";
+    await withFixture([
+        gameStart(gameId),
+        placement(gameId, "player-1", 0),
+        gameOver(gameId, [{
+            playerId: "player-1",
+            playerType: "human",
+            expectedPlacementEventCount: 1,
+        }, {
+            playerId: "player-2",
+            playerType: "human",
+            expectedPlacementEventCount: 0,
+        }]),
+    ], async filePath => {
+        const report = await runJsonlImport({
+            inputPath: filePath,
+            repository: {
+                async append(event) {
+                    const prepared = prepareCanonicalGameEvent(event);
+                    return event.eventType === "game_start"
+                        ? {
+                            status: "conflict",
+                            eventId: prepared.eventId,
+                            code: "IDEMPOTENCY_CONFLICT",
+                        }
+                        : { status: "inserted", eventId: prepared.eventId };
+                },
+                async close() {},
+            },
+        });
+
+        assert.equal(report.ok, false);
+        assert.equal(report.writes.conflict, 1);
+        assert.deepEqual(report.completeness.reasonCodeCounts, {
+            idempotency_conflict: 1,
+        });
+        assert.equal(report.completeness.games[0].status, "incomplete");
+        assert.equal(report.completeness.games[0].mlExportEligible, false);
     });
 });
 

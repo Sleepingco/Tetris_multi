@@ -1690,26 +1690,41 @@ async function verifyJsonlImporter(plainUrl) {
 
         const conflictGame = `goal9c-conflict-${randomBytes(4).toString("hex")}`;
         const conflictRows = importFixtureEvents(conflictGame);
+        const seededConflict = await runJsonlImport({
+            inputPath: await writeImportFixture(
+                fixtureDirectory,
+                "conflict-seed.jsonl",
+                [conflictRows[0]],
+            ),
+            repository: importRepository(importUrl),
+        });
+        assert.equal(seededConflict.ok, true);
+        assert.equal(seededConflict.writes.inserted, 1);
         const changedStart = {
             ...conflictRows[0],
-            mode: "pve",
-            roomId: "PVERUN01",
+            startedAt: conflictRows[0].startedAt + 1,
         };
         const conflictPath = await writeImportFixture(
             fixtureDirectory,
             "conflict.jsonl",
-            [conflictRows[0], changedStart],
+            [changedStart, ...conflictRows.slice(1)],
         );
         const conflict = await runJsonlImport({
             inputPath: conflictPath,
             repository: importRepository(importUrl),
         });
         assert.equal(conflict.ok, false);
-        assert.equal(conflict.writes.inserted, 1);
+        assert.equal(conflict.writes.inserted, 3);
         assert.equal(conflict.writes.conflict, 1);
         assert.deepEqual(conflict.failures.reasonCodeCounts, {
             IDEMPOTENCY_CONFLICT: 1,
         });
+        assert.deepEqual(conflict.completeness.reasonCodeCounts, {
+            idempotency_conflict: 1,
+        });
+        assert.equal(conflict.completeness.completeGameCount, 0);
+        assert.equal(conflict.completeness.incompleteGameCount, 1);
+        assert.equal(conflict.completeness.games[0].mlExportEligible, false);
 
         const localCopyPath = process.env.GOAL9C_LOCAL_JSONL_COPY;
         if (!localCopyPath) return;
