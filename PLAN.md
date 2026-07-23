@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11E의 두 PVE timing 경로를 authoritative snapshot 결과 기준으로 보강했고 local gate를 통과했다. production·workflow·dependency는 변경하지 않았으며 hosted CI gate와 main 반영은 아직 수행하지 않았다.
+- Last update: 2026-07-23 기준. Goal 11E의 첫 hosted Browser 실행에서 T-Spin 회전 입력과 authoritative 결과 사이의 관찰 경쟁이 다시 확인됐다. 같은 조각의 정확한 회전 전·후 snapshot을 인과적으로 확인한 뒤 hard drop하도록 보강했고 local gate를 다시 통과했다. production·workflow·dependency는 변경하지 않았으며 새 SHA의 hosted CI gate와 main 반영은 아직 수행하지 않았다.
 
 ## Document Role
 
@@ -867,7 +867,7 @@
 
 ### 현재 단계
 
-- 이름: Goal 11E local merge gate
+- 이름: Goal 11E hosted revalidation gate
 
 ### 진행 현황
 
@@ -880,7 +880,7 @@
 - [x] CSP/security headers와 dependency hardening 반영
 - [x] production Docker image와 graceful shutdown 반영
 - [~] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됨. 이후 main runs의 Fast/Docker는 통과했고 Browser는 각각 PVE T-Spin과 pending garbage timing 경계에서 36/37로 실패함
-- [~] Goal 11E는 authoritative snapshot 기준 E2E 보강과 local gate를 완료했고 hosted CI 검증과 main 반영을 대기 중
+- [~] Goal 11E는 PR #2의 첫 hosted 실행에서 Fast/Docker가 통과했지만 Browser가 이전 SHA `2dd4ec7`의 T-Spin score 경계에서 실패했다. 회전 전·후 authoritative snapshot의 인과관계를 보강한 새 local gate를 완료했고 새 SHA의 hosted 검증을 대기 중
 
 ### 현재 단계의 핵심 문제
 
@@ -888,7 +888,8 @@
 - room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
 - JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. PostgreSQL Goal 9A~9D를 승인된 순서로 실행한다.
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
-- Goal 11D와 무관한 기존 PVE E2E의 두 timing 경로는 authoritative 결과 기준으로 보강했다. 같은 commit의 hosted Browser 연속 성공과 main push 세 job green은 아직 확인하지 않았다.
+- Goal 11D와 무관한 기존 PVE E2E의 두 timing 경로는 authoritative 결과 기준으로 보강했다. T-Spin은 같은 human/piece의 `tree`, rotation 0, row 16, col 0과 코너 board를 최신 snapshot에서 동시에 확인하고, 입력 뒤 더 최신 sequence의 rotation 1, row 16, col -1 wall-kick 결과가 확인된 뒤에만 hard drop한다. 새 AI garbage가 정확한 최종 board cell을 밀어 올리지 않도록 두 입력 경계에서 authoritative pending 0도 확인한다.
+- PR #2의 이전 SHA `2dd4ec7`에서는 Fast와 Docker가 통과했지만 Browser가 score delta 0으로 실패했다. 후속 commit의 hosted Browser 연속 2회 성공과 Fast/Docker green은 아직 확인하지 않았다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
 
 ### 현재 단계에서 하지 않을 것
@@ -906,7 +907,7 @@
 ### 바로 해야 할 일
 
 1. Goal 11E hosted CI와 main green 확인
-   - local gate가 통과한 동일 SHA로 hosted Browser 연속 성공을 확인한다.
+   - 후속 local gate가 통과한 새 SHA로 hosted Fast/Docker 성공과 Browser 연속 2회 성공을 확인한다.
    - 별도 승인 후 main에 반영하고 main push의 Fast/Browser/Docker 세 job green을 확인한다.
 2. PostgreSQL Goal 순차 실행
    - 9A 실제 schema/migration/repository
@@ -918,7 +919,7 @@
 
 ### 이후 단계
 
-- [~] Goal 11E local gate 완료. hosted Browser 연속 성공과 main push 세 job green 확인 대기
+- [~] Goal 11E 후속 local gate 완료. 새 SHA의 hosted Fast/Docker와 Browser 연속 2회 성공 확인 대기
 - [ ] Goal 11E main/hosted CI green 확인 후 9A 시작
 - [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
