@@ -47,11 +47,13 @@ const RUNTIME_ROLE = "tetris_goal9a_runtime";
 const MAIN_DATABASE = "tetris_goal9a_test";
 const CONCURRENT_DATABASE = "tetris_goal9a_concurrent";
 const FAILURE_DATABASE = "tetris_goal9a_failure";
+const HOSTILE_DATABASE = "tetris_goal9a_hostile";
 const RELEASE_DATABASE = "tetris_goal9a_release";
 const DATABASES = [
     MAIN_DATABASE,
     CONCURRENT_DATABASE,
     FAILURE_DATABASE,
+    HOSTILE_DATABASE,
     RELEASE_DATABASE,
 ];
 const ADVISORY_LOCK_KEY = "9026072300090001";
@@ -72,7 +74,6 @@ function quoteIdentifier(value) {
 function databaseUrl(baseUrl, user, database) {
     const url = new URL(baseUrl);
     url.username = user;
-    url.password = "";
     url.pathname = `/${database}`;
     return url.toString();
 }
@@ -357,6 +358,58 @@ async function verifyMigrations(plainUrl) {
         }
     });
 
+    const hostileAdminUrl = databaseUrl(plainUrl, "postgres", HOSTILE_DATABASE);
+    await withClient(clientConfig(hostileAdminUrl), async client => {
+        await client.query(`
+            CREATE SCHEMA tetris_analytics
+                AUTHORIZATION ${quoteIdentifier(RUNTIME_ROLE)};
+            CREATE TABLE tetris_analytics.schema_migrations (
+                version integer PRIMARY KEY,
+                name text NOT NULL,
+                checksum text NOT NULL,
+                applied_at timestamp with time zone NOT NULL
+                    DEFAULT pg_catalog.clock_timestamp()
+            );
+            ALTER TABLE tetris_analytics.schema_migrations
+                OWNER TO ${quoteIdentifier(RUNTIME_ROLE)};
+            GRANT USAGE, CREATE ON SCHEMA tetris_analytics
+                TO ${quoteIdentifier(MIGRATION_ROLE)};
+            GRANT ALL ON TABLE tetris_analytics.schema_migrations
+                TO ${quoteIdentifier(MIGRATION_ROLE)};
+        `);
+    });
+    await assert.rejects(
+        runPostgresMigrations(
+            migrationOptions(plainUrl, HOSTILE_DATABASE, "goal9a-hostile-owner"),
+        ),
+        { code: "MIGRATION_BOOTSTRAP_OWNER_MISMATCH" },
+    );
+    await withClient(clientConfig(hostileAdminUrl), async client => {
+        const state = await client.query(`
+            SELECT pg_catalog.pg_get_userbyid(n.nspowner) AS schema_owner,
+                   pg_catalog.pg_get_userbyid(c.relowner) AS history_owner,
+                   pg_catalog.to_regclass(
+                       'tetris_analytics.game_events'
+                   ) AS game_events,
+                   (
+                       SELECT pg_catalog.count(*)
+                         FROM pg_catalog.pg_stat_activity
+                        WHERE application_name = 'goal9a-hostile-owner'
+                   )::integer AS open_runner_count
+              FROM pg_catalog.pg_namespace AS n
+              JOIN pg_catalog.pg_class AS c
+                ON c.relnamespace = n.oid
+               AND c.relname = 'schema_migrations'
+             WHERE n.nspname = 'tetris_analytics'
+        `);
+        assert.deepEqual(state.rows[0], {
+            schema_owner: RUNTIME_ROLE,
+            history_owner: RUNTIME_ROLE,
+            game_events: null,
+            open_runner_count: 0,
+        });
+    });
+
     const concurrentResults = await Promise.all([
         runPostgresMigrations(
             migrationOptions(plainUrl, CONCURRENT_DATABASE, "goal9a-concurrent-a"),
@@ -551,6 +604,10 @@ async function verifySchemaAndRoles(plainUrl) {
                 pieceIndex: null,
                 trustLevel: "server_authoritative",
             }),
+            rawEvent("valid-identity-byte-boundary", {
+                gameId: "\u00e9".repeat(32),
+                playerId: "\u00e9".repeat(32),
+            }),
         ];
         for (const row of validRows) {
             await insertRawEvent(client, row);
@@ -592,9 +649,39 @@ async function verifySchemaAndRoles(plainUrl) {
             rawEvent("placement-without-piece", { pieceIndex: null }),
             rawEvent("placement-v2-without-time", { occurredAt: null }),
             rawEvent("future-identity-schema", { schemaVersion: 3 }),
+            rawEvent("game-id-byte-overflow", {
+                gameId: `${"\u00e9".repeat(32)}x`,
+            }),
+            rawEvent("player-id-byte-overflow", {
+                playerId: `${"\u00e9".repeat(32)}x`,
+            }),
+            rawEvent("positive-infinity-time", {
+                occurredAt: "infinity",
+            }),
+            rawEvent("negative-infinity-time", {
+                occurredAt: "-infinity",
+            }),
         ];
         for (const row of invalidRows) {
             await assertSqlStateError(insertRawEvent(client, row), "23514");
+        }
+        await assertSqlStateError(
+            insertRawEvent(client, rawEvent("null-byte-game-id", {
+                gameId: "invalid\u0000game",
+            })),
+            "22021",
+        );
+        for (const [label, value, code] of [
+            ["null-byte-json-value", "\u0000", "22P05"],
+            ["unpaired-high-json-value", "\ud800", "22P02"],
+            ["unpaired-low-json-value", "\udc00", "22P02"],
+        ]) {
+            await assertSqlStateError(
+                insertRawEvent(client, rawEvent(label, {
+                    payload: { value },
+                })),
+                code,
+            );
         }
 
         const lifecycleUnique = rawEvent("duplicate-lifecycle", {

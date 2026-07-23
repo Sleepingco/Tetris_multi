@@ -11,7 +11,6 @@ export const DEFAULT_MIGRATION_LOCK_TIMEOUT_MILLIS = 5_000;
 
 const HISTORY_BOOTSTRAP_SQL = `
 CREATE SCHEMA IF NOT EXISTS tetris_analytics;
-REVOKE ALL ON SCHEMA tetris_analytics FROM PUBLIC;
 
 CREATE TABLE IF NOT EXISTS tetris_analytics.schema_migrations (
     version integer PRIMARY KEY,
@@ -22,7 +21,27 @@ CREATE TABLE IF NOT EXISTS tetris_analytics.schema_migrations (
     CONSTRAINT schema_migrations_name_check CHECK (pg_catalog.btrim(name) <> ''),
     CONSTRAINT schema_migrations_checksum_check CHECK (checksum ~ '^[0-9a-f]{64}$')
 );
+`;
 
+const HISTORY_OWNERSHIP_SQL = `
+SELECT (
+           SELECT pg_catalog.pg_get_userbyid(n.nspowner) = CURRENT_USER
+             FROM pg_catalog.pg_namespace AS n
+            WHERE n.nspname = 'tetris_analytics'
+       ) AS schema_owned,
+       (
+           SELECT pg_catalog.pg_get_userbyid(c.relowner) = CURRENT_USER
+             FROM pg_catalog.pg_class AS c
+             JOIN pg_catalog.pg_namespace AS n
+               ON n.oid = c.relnamespace
+            WHERE n.nspname = 'tetris_analytics'
+              AND c.relname = 'schema_migrations'
+              AND c.relkind = 'r'
+       ) AS history_owned
+`;
+
+const HISTORY_LOCKDOWN_SQL = `
+REVOKE ALL ON SCHEMA tetris_analytics FROM PUBLIC;
 REVOKE ALL ON TABLE tetris_analytics.schema_migrations FROM PUBLIC;
 `;
 
@@ -165,6 +184,17 @@ export async function runPostgresMigrations(
         await client.query("BEGIN");
         transactionOpen = true;
         await client.query(HISTORY_BOOTSTRAP_SQL);
+        const ownership = await client.query<{
+            schema_owned: boolean | null;
+            history_owned: boolean | null;
+        }>(HISTORY_OWNERSHIP_SQL);
+        if (
+            ownership.rows[0]?.schema_owned !== true
+            || ownership.rows[0]?.history_owned !== true
+        ) {
+            return fail("MIGRATION_BOOTSTRAP_OWNER_MISMATCH");
+        }
+        await client.query(HISTORY_LOCKDOWN_SQL);
         await client.query("COMMIT");
         transactionOpen = false;
 

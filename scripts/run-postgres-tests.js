@@ -64,8 +64,9 @@ function createCertificates(directory) {
 function waitForPostgres(containerName) {
     for (let attempt = 0; attempt < 100; attempt += 1) {
         const ready = spawnSync("docker", [
-            "exec", containerName,
-            "pg_isready", "--username", "postgres", "--dbname", "postgres",
+            "exec", containerName, "sh", "-c",
+            "test \"$(cat /proc/1/comm)\" = postgres "
+                + "&& pg_isready --username postgres --dbname postgres",
         ], { stdio: "ignore" });
         if (ready.status === 0) return;
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 200);
@@ -73,28 +74,59 @@ function waitForPostgres(containerName) {
     throw new Error("GOAL9A_POSTGRES_START_TIMEOUT");
 }
 
-function createTestEnvironment(port, certificateDirectory) {
+function createTestEnvironment(port, certificateDirectory, password) {
     const environment = { ...process.env };
     for (const name of [
         "DATABASE_URL",
         "MIGRATION_DATABASE_URL",
         "TEST_DATABASE_URL",
+        "PGAPPNAME",
+        "PGBINARY",
+        "PGCHANNELBINDING",
+        "PGCLIENTENCODING",
+        "PGCLIENT_ENCODING",
+        "PGCONNECT_TIMEOUT",
         "PGDATABASE",
+        "PGGSSLIB",
         "PGHOST",
+        "PGHOSTADDR",
+        "PGKRBSRVNAME",
+        "PGOPTIONS",
         "PGPASSWORD",
+        "PGPASSFILE",
+        "PGPASS_NO_DEESCAPE",
         "PGPORT",
+        "PGREPLICATION",
+        "PGREQUIREPEER",
         "PGSERVICE",
+        "PGSERVICEFILE",
+        "PGSSLCERT",
+        "PGSSLCRL",
+        "PGSSLCRLDIR",
+        "PGSSLKEY",
+        "PGSSLMAXPROTOCOLVERSION",
+        "PGSSLMINPROTOCOLVERSION",
         "PGSSLMODE",
+        "PGSSLNEGOTIATION",
         "PGSSLROOTCERT",
+        "PGTARGETSESSIONATTRS",
         "PGUSER",
         "NODE_TLS_REJECT_UNAUTHORIZED",
     ]) {
         delete environment[name];
     }
-    environment.GOAL9A_TEST_PLAIN_URL =
-        `postgresql://postgres@127.0.0.1:${port}/postgres?sslmode=disable`;
-    environment.GOAL9A_TEST_TLS_URL =
-        `postgresql://postgres@localhost:${port}/postgres?sslmode=verify-full`;
+    const plainUrl = new URL(
+        `postgresql://127.0.0.1:${port}/postgres?sslmode=disable`,
+    );
+    plainUrl.username = "postgres";
+    plainUrl.password = password;
+    const tlsUrl = new URL(
+        `postgresql://localhost:${port}/postgres?sslmode=verify-full`,
+    );
+    tlsUrl.username = "postgres";
+    tlsUrl.password = password;
+    environment.GOAL9A_TEST_PLAIN_URL = plainUrl.toString();
+    environment.GOAL9A_TEST_TLS_URL = tlsUrl.toString();
     environment.GOAL9A_TEST_CA_PATH = path.join(certificateDirectory, "ca.crt");
     return environment;
 }
@@ -103,6 +135,7 @@ async function main() {
     const suffix = randomBytes(6).toString("hex");
     const containerName = `tetris-goal9a-postgres-${suffix}`;
     const volumeName = `tetris-goal9a-postgres-data-${suffix}`;
+    const password = randomBytes(32).toString("base64url");
     const certificateDirectory = await mkdtemp(
         path.join(os.tmpdir(), "tetris-goal9a-certificates-"),
     );
@@ -174,7 +207,7 @@ async function main() {
             ["--test", path.join(ROOT, "test-integration", "postgresSchemaRepository.js")],
             {
                 cwd: ROOT,
-                env: createTestEnvironment(port, certificateDirectory),
+                env: createTestEnvironment(port, certificateDirectory, password),
                 stdio: "inherit",
             },
         );

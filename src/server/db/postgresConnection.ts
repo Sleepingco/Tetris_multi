@@ -2,9 +2,44 @@ import { isIP } from "node:net";
 import type { ClientConfig } from "pg";
 
 const MAX_TIMEOUT_MILLIS = 60_000;
+const DEFAULT_CONNECTION_TIMEOUT_MILLIS = 10_000;
+const DEFAULT_APPLICATION_NAME = "tetris-multi-postgres";
 const POSTGRES_PROTOCOLS = new Set(["postgres:", "postgresql:"]);
 const ALLOWED_QUERY_OPTIONS = new Set(["sslmode"]);
 const APPLICATION_NAME_PATTERN = /^[a-z][a-z0-9_-]{0,62}$/;
+const AMBIENT_POSTGRES_ENV_NAMES = [
+    "PGAPPNAME",
+    "PGBINARY",
+    "PGCHANNELBINDING",
+    "PGCLIENTENCODING",
+    "PGCLIENT_ENCODING",
+    "PGCONNECT_TIMEOUT",
+    "PGDATABASE",
+    "PGGSSLIB",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGKRBSRVNAME",
+    "PGOPTIONS",
+    "PGPASSWORD",
+    "PGPASSFILE",
+    "PGPASS_NO_DEESCAPE",
+    "PGPORT",
+    "PGREPLICATION",
+    "PGREQUIREPEER",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGSSLCERT",
+    "PGSSLCRL",
+    "PGSSLCRLDIR",
+    "PGSSLKEY",
+    "PGSSLMAXPROTOCOLVERSION",
+    "PGSSLMINPROTOCOLVERSION",
+    "PGSSLMODE",
+    "PGSSLNEGOTIATION",
+    "PGSSLROOTCERT",
+    "PGTARGETSESSIONATTRS",
+    "PGUSER",
+] as const;
 
 export type PostgresConnectionOptions = {
     applicationName?: string;
@@ -42,9 +77,14 @@ function normalizeHost(hostname: string): string {
 }
 
 function isLoopbackHost(hostname: string): boolean {
-    return hostname === "localhost"
-        || hostname === "::1"
-        || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+    if (hostname === "localhost" || hostname === "::1") return true;
+    return isIP(hostname) === 4 && hostname.split(".")[0] === "127";
+}
+
+function rejectAmbientPostgresEnvironment(): void {
+    if (AMBIENT_POSTGRES_ENV_NAMES.some(name => process.env[name] !== undefined)) {
+        return fail("POSTGRES_CONNECTION_AMBIENT_ENV_NOT_ALLOWED");
+    }
 }
 
 function validateTimeout(value: number | undefined): number | undefined {
@@ -66,6 +106,7 @@ export function createPostgresClientConfig(
     if (typeof databaseUrl !== "string" || databaseUrl.trim().length === 0) {
         return fail("POSTGRES_CONNECTION_URL_REQUIRED");
     }
+    rejectAmbientPostgresEnvironment();
 
     let parsed: URL;
     try {
@@ -111,6 +152,9 @@ export function createPostgresClientConfig(
     if (!host || !user || !database || database.includes("/")) {
         return fail("POSTGRES_CONNECTION_FIELDS_REQUIRED");
     }
+    if (!password) {
+        return fail("POSTGRES_CONNECTION_PASSWORD_REQUIRED");
+    }
 
     const port = parsed.port ? Number(parsed.port) : 5432;
     if (!Number.isInteger(port) || port <= 0 || port > 65_535) {
@@ -135,12 +179,21 @@ export function createPostgresClientConfig(
         return fail("POSTGRES_CONNECTION_CA_WITHOUT_TLS");
     }
 
-    const config: ClientConfig = {
+    const config: ClientConfig & {
+        replication: "false";
+        sslnegotiation: "postgres";
+    } = {
         host,
         port,
         database,
         user,
         password,
+        application_name: options.applicationName ?? DEFAULT_APPLICATION_NAME,
+        client_encoding: "UTF8",
+        connectionTimeoutMillis:
+            connectionTimeoutMillis ?? DEFAULT_CONNECTION_TIMEOUT_MILLIS,
+        options: "-c standard_conforming_strings=on",
+        replication: "false",
         ssl: sslMode === "verify-full"
             ? {
                 rejectUnauthorized: true,
@@ -148,14 +201,9 @@ export function createPostgresClientConfig(
                 ...(options.ca === undefined ? {} : { ca: options.ca }),
             }
             : false,
+        sslnegotiation: "postgres",
     };
 
-    if (options.applicationName !== undefined) {
-        config.application_name = options.applicationName;
-    }
-    if (connectionTimeoutMillis !== undefined) {
-        config.connectionTimeoutMillis = connectionTimeoutMillis;
-    }
     if (queryTimeoutMillis !== undefined) {
         config.query_timeout = queryTimeoutMillis;
         config.statement_timeout = queryTimeoutMillis;
