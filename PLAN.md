@@ -4,7 +4,7 @@
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
 - Last update: 2026-07-23 기준. Goal 11E는 최종 `8cc16d9`까지 main과 origin/main에 반영됐다. 자연 중력과 runner scheduling에 의존하던 PVE T-Spin E2E와 전용 helper는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트가 담당한다. pending-garbage E2E 보강은 유지했다. `main@8087712`는 portfolio 문서 trailing whitespace와 PLAN 상태를 정정했으며 hosted Fast/Docker와 Browser가 모두 통과했다. production·workflow·dependency는 변경하지 않았다.
 
-## Document Role
+## Current Project Status
 
 - 이 문서는 `ROADMAP.md`, `PROTOCOL.md`, `PHASE1_PLAN.md`의 핵심 내용을 현재 코드 기준으로 통합한 문서다.
 - 이상적인 장기 계획보다 현재 구현 상태와 바로 다음 작업을 우선한다.
@@ -15,6 +15,601 @@
   - `tick`: 입력과 진행 순서를 맞추기 위한 시간 단위
   - `snapshot`: 직렬화 가능한 게임 상태 복사본
   - `authoritative`: 최종 진실의 원천. 멀티에서는 서버 기준
+
+### Project Direction
+
+- 핵심 목표는 멀티플레이 가능한 테트리스 구조를 만드는 것이다.
+- 현재 우선순위는 새 프레임워크 확장이 아니라 이미 도입한 Vite/React/TypeScript, server authoritative gameplay, 보안·운영 gate를 안정화하는 것이다.
+- 방향은 유지한다.
+  - 엔진은 최대한 순수하게 유지
+  - 런타임은 orchestration 중심
+  - 렌더러는 상태 소비자
+  - 멀티는 서버 authoritative
+- 장기적으로는 deterministic loop를 지향한다.
+- 하지만 현재 MVP 멀티는 `seed` 기반 완전 결정론보다 `server bag` 정책이 더 현실적이다.
+- LLM 기능은 현재 MVP 범위가 아니다.
+- 추후 LLM은 게임 판단이나 AI 의사결정의 원천이 아니라, 플레이 로그와 AI 분석 결과를 사용자에게 설명하는 코칭 리포트 계층으로 둔다.
+- 기본 AI 축은 휴리스틱 PVE AI 상대와 placement 로그·평가다.
+- PVE AI는 추천 코치가 아니라 실제 게임에 참여하는 AI 상대이며, 사람과 같은 authoritative input 경로를 사용한다.
+- V4 placement model은 사용자 선택형 Experimental PVE와 offline imitation 분석에만 사용한다. 기본 production PVE 정책은 heuristic이다.
+- Python AI 서버, 강화학습, LLM 코칭은 현재 범위가 아니며, LLM은 분석 결과 설명 계층으로만 검토한다.
+
+### Current Implementation
+
+### 2026-07-23 요약
+
+- 멀티 MVP는 기존 `client snapshot relay` 중심 구조에서 `server authoritative snapshot` 중심 구조로 전환됐다.
+- 서버는 player별 `authoritativeState`를 들고 `game:input`과 room ticker gravity step으로 상태를 갱신한다.
+- 상대 보드는 `game:authoritative:snapshot`만 full apply한다.
+- 내 보드는 client prediction을 우선하고, server snapshot은 제한적으로 적용한다.
+- client-driven `game:snapshot`, `game:garbage:attack`, `game:over` gameplay 경로는 제거됐다.
+- garbage 원천은 server `authoritativeState.pendingGarbageQueue`다.
+- client DTO에는 표시용 `pendingGarbageLines` scalar를 내려준다.
+- server gameOver가 match finish의 원천이다.
+- match cleanup, client sequence acknowledgment, roomId collision retry가 보강됐다.
+- `src/client/game/core/boardMetrics.ts`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현됐다.
+- `test/testBoardMetrics.js`가 board metric 계산과 원본 board mutation 방지를 검증한다.
+- PVE room, heuristic AI player, reachable placement planner, placement decision log, dataset/export/evaluation, V4 parity와 Experimental PVE 경로가 구현됐다.
+- Vite multi-page, page-local React shell, client/runtime/server TypeScript migration과 production Docker image가 main에 반영됐다.
+- 자동 테스트 기준으로 PVP/PVE 핵심 gameplay와 production artifact는 고정돼 있다.
+- 포트폴리오 시연 완료 판정은 현재 README와 Goal run 기록의 production/browser gate를 기준으로 본다. 추가 수동 2탭 검증은 release 전 보조 확인이다.
+
+### 구현된 것
+
+- [x] `createTetrisRuntime(...)` 도입
+- [x] 기존 Canvas runtime bootstrap은 유지되며 `tetrisSingle.tsx`가 React HUD와 lifecycle을 조율
+- [x] 기존 local/remote runtime 연결은 유지되며 `tetrisMulti.tsx`가 React HUD/overlay와 session lifecycle을 조율
+
+### Legacy JavaScript implementation record
+
+- [x] `[Legacy]` `src/client/pages/tetrisSingle.html`의 module script가 싱글 runtime bootstrap, DOM 조회와 keyboard input 연결을 구현했다.
+- [x] `[Legacy]` `src/client/pages/tetrisMulti.html`이 local/remote runtime, authoritative snapshot, server bag과 match finish 화면 연결을 구현했다.
+- [x] `[Legacy]` `src/client/pages/multiLobby.html`이 방 코드·상태·인원 표시와 create/join/leave UI 연결을 구현했다.
+- [x] `[Legacy]` client core는 board 생성·충돌·고정·줄 삭제, move/rotation, T-Spin, combo/back-to-back, garbage 판정을 JavaScript 순수 함수로 구현했다.
+- [x] `[Legacy]` client state/runtime은 piece queue·snapshot 직렬화·input queue·gravity·hold·line clear·Canvas render·sound·snapshot correction을 JavaScript 모듈로 구현했다.
+- [x] `[Legacy]` browser network와 lobby는 `roomClient`, room/chat UI, `game:input`/bag/snapshot/match finish 흐름을 JavaScript로 구현했다.
+- [x] `[Legacy]` server는 room/match/player state, authoritative input·ticker·game-over, session·rate limit, Socket/chat handler와 JSONL repository를 JavaScript로 구현했다.
+- [x] `[Legacy]` PVE AI와 분석은 board metrics, placement generation/reachability/simulation/heuristic, placement JSONL·dataset/export/evaluation·JS/Python parity를 JavaScript 경로로 구현했다.
+- [x] `[Legacy]` unit/integration/browser 회귀와 production artifact 검증을 구축해 위 gameplay·network·AI 구현을 고정했다.
+- 위 작업은 완료된 구현 이력이다. 이후 migration은 동일 책임의 source를 `.ts`/`.tsx`로 옮긴 것이며, HTML은 mount/head 경계로 남기고 화면 lifecycle과 HUD 소유권만 TSX shell로 옮긴 것이다.
+- [x] tick-tagged input queue 도입
+- [x] `src/client/game/core/board.ts`에 보드 생성, 충돌, 고정, 줄 삭제 순수 함수 존재
+- [x] `src/client/game/core/step.ts`에 `resolveMoveAttempt`, `resolveMoveIntent` 존재
+- [x] `src/client/game/state/stateSerialization.ts`에 snapshot serialize/deserialize 보조 함수 존재
+- [x] `src/client/game/state/pieceQueue.ts`에 7-bag/next queue 유틸리티 존재
+- [x] `src/client/game/runtime/snapshotCorrection.ts`에 원격 snapshot 보정 판단 유틸리티 존재
+- [x] `src/server/services/roomService.ts`에 room 생성/참가/퇴장/시작/종료/동기화 로직 존재
+- [x] `src/server/services/matchService.ts`에 match 생성, player별 server bag chunk와 authoritative state 로직 존재
+- [x] `src/server/sockets/multiplayerHandlers.ts`에 `room:create`, `room:join`, `room:leave`, `room:start`, `game:join`, `game:input`, `game:bag:request`, `disconnect` 흐름 존재
+- [x] `src/server/sockets/chatHandlers.ts`에 `global:chat`, `room:chat` 흐름 분리
+- [x] `src/client/net/roomClient.ts`에 room/chat/game 이벤트 adapter 함수 존재
+- [x] 기존 방 UI 연결은 유지되며 `multiLobby.tsx`가 React 화면에 방 코드, 상태, player 수를 반영
+- [x] 로비 채팅을 `global:chat` / `room:chat`으로 분리
+- [x] 채팅 입력은 1초 1회 서버 rate limit과 plain text 렌더링 기준 적용
+- [x] `game:input` 배관: 클라이언트 입력을 서버 검증 후 authoritative state에 적용하고 ack/snapshot 전송
+- [x] `game:snapshot` 1차 배관 추가: 클라이언트 snapshot을 서버 검증 후 상대에게 전달했던 초기 단계 완료. 현재 gameplay 경로에서는 제거된 legacy 흐름이다.
+- [x] `game:bag:request` / `game:bag:append` 1차 배관 추가: 서버가 player별 bag chunk를 생성해 room에 전달
+- [x] `match:finish` 배관: server authoritative top-out 기준 승패 결과 broadcast. client `game:over` handler는 제거됐다.
+- [x] 멀티플레이 garbage cancel / combo / back-to-back / T-Spin attack 규칙 1차 추가
+- [x] `src/client/game/core/tSpin.ts`에 T-Spin lock 판정 pure function 추가
+- [x] `src/client/game/core/attackState.ts`에 combo/back-to-back 상태 전이 pure function 추가
+- [x] `src/client/game/core/garbage.ts`에 garbage cancel/apply/attack 계산 pure function 정리
+- [x] 상대 보드 score/lines drift를 snapshot correction에서 보정하도록 수정
+- [x] runtime 통합 테스트로 T-Spin, back-to-back, combo, 일반 line clear의 B2B reset이 `placementResult`에 반영되는지 검증
+- [x] `npm test`로 roomService, matchService, multiplayerSocket, runtime, move step, snapshot correction 주요 흐름 검증 가능
+- [x] `.gitignore`에 `node_modules/`, `.DS_Store`, `coverage/`, `dist/` 제외
+- [x] server authoritative player state 초기화
+- [x] `applyAuthoritativeInput()` 단일 public entry로 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold` 처리
+- [x] server lock 경로에서 line clear, score, combo, B2B, T-Spin, garbage cancel/apply, top-out 처리
+- [x] `authoritativeTickerService`로 room별 gravity tick과 authoritative snapshot emit 처리
+- [x] `game:authoritative:snapshot` 추가
+- [x] 상대 보드는 authoritative snapshot만 적용하도록 변경
+- [x] 내 보드는 prediction 우선, `gameOver` 또는 garbage 적용 snapshot만 제한적으로 full apply
+- [x] client-driven `game:snapshot`, `game:garbage:attack`, `game:over` gameplay 경로 제거
+- [x] `pendingGarbageLines` DTO로 incoming garbage 표시와 적용 correction 분리
+- [x] server authoritative match finish 공통 helper 추가
+- [x] 정상 gameOver와 `game:leave`에서 match cleanup 수행
+- [x] roomId 충돌 재시도와 client sequence acknowledgment 추가
+- [x] `src/client/game/core/boardMetrics.ts`에 `columnHeights`, `aggregateHeight`, `maxHeight`, `holes`, `bumpiness`, `completeLines` 계산 순수 함수 추가
+- [x] `test/testBoardMetrics.js`로 board metric과 mutation 방지 검증
+- [x] `placementGenerator`, `reachablePlacementPlanner`, `simulatePlacement`, `heuristicEvaluator` 기반 휴리스틱 PVE decision path 구현
+- [x] `pveAiPlayerService`가 AI plan을 사람과 같은 authoritative input으로 실행
+- [x] placement decision JSONL log, dataset exporter/evaluator, JS/Python parity 검증 경로 구현
+- [x] 사용자 선택형 Experimental PVE V4 model 경로와 heuristic fallback 구현
+- [x] Vite multi-page + page-local React shell + TypeScript client/runtime/server migration 반영
+- [x] CSP/security headers, dependency hardening, production Docker image 반영
+
+### 부분 완료
+
+- [~] `src/client/game/runtime/tetris.ts`는 예전의 전역 싱글 파일 단계에서는 벗어남
+- [~] `src/client/game/runtime/tetris.ts`는 여전히 크고 orchestration 외 책임이 남아 있음
+- [~] RNG 주입 구조는 있음
+- [~] 기본 RNG는 아직 `Math.random`
+- [~] 로비와 멀티 게임 흐름은 자동 브라우저 회귀로 고정돼 있다. 공개 release 전 실제 배포 환경의 수동 smoke는 별도 확인 대상이다.
+- [x] 내 보드 prediction/correction 정책은 sequence/ack·gravity timing 보강 후 rollback 전용 2탭 E2E 반복 검증을 통과함
+- [x] `startMultiplayerGame()`이 bag request, authoritative snapshot과 match finish를 session 경계에서 처리한다.
+- [x] `src/client/game/runtime/tetris.ts`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
+- [~] `placementResult.backToBack`은 현재 “이번 lock 이후 상태”가 아니라 “이번 공격 계산에 사용된 이전 B2B 상태”에 가깝다. 추후 필요하면 `backToBackBefore` / `backToBackAfter`처럼 의미를 명확히 나누는 정리를 검토한다.
+
+### 아직 미구현
+
+- [ ] 완전한 deterministic multiplayer
+- [ ] 서버/클라이언트 완전 동일 deterministic replay
+- [x] 상대 보드 line clear `presentationEffect` 처리
+- [ ] `match:ready` 같은 명시적 준비 상태
+- [ ] 방 목록, quick match, match 결과 화면
+
+### 현재 판단
+
+- 현재 구조는 "싱글 런타임 정리 + 멀티 로비 + server authoritative 멀티 MVP" 단계다.
+- 실제 멀티 게임의 최종 진실 원천은 server authoritative state로 이동했다.
+- 내 보드는 조작감을 위해 client prediction을 유지하고, 서버 snapshot은 gameOver/garbage 적용 등 제한된 상황에서만 full apply한다.
+- shadow/debug 방향은 현재 main 우선순위가 아니다. 해결된 rollback 경로는 기존 회귀 테스트로 감시하고, 재현 증거 없이 debug 시스템이나 correction 방어를 추가하지 않는다.
+- AI 쪽은 휴리스틱 PVE와 Experimental V4 체험까지 구현됐다. 새 AI 작업은 기본 PVE 정책 변경이 아니라 별도 승인된 실험·평가 질문에서 시작한다.
+- 현재 `boardMetrics`는 core board 표현을 그대로 읽는 DOM-free 순수 함수라서 `src/client/game/core`에 둔다. 서버/클라이언트/AI가 더 넓게 공유하는 시점이 오면 `shared` 계층으로 이동할 수 있다.
+
+### 2026-07-19 멀티 안정화 상태
+
+#### P0: 간헐적 own board rollback — 해결, 회귀 감시
+
+- 기존 증상:
+  - 사용자가 조각을 lock 직전 위치까지 이동하거나 회전했을 때 own authoritative correction이 적용되며 직전 위치로 되돌아가는 현상이 간헐적으로 관찰됐다.
+- 해결 판정:
+  - 2026-07-16 gravity lock timing 정렬과 rollback E2E 강화 이후 알려진 재현 경로에서 rollback이 다시 관찰되지 않았다.
+  - 현재 관찰·자동 회귀 기준으로 P0는 해결된 것으로 본다.
+- 적용된 방어:
+  - client input마다 단조 증가하는 `clientSequence`를 전송한다.
+  - server player metadata의 `lastProcessedClientSequence`로 처리 완료 경계를 관리한다.
+  - server acknowledgment 전 input이 있으면 own snapshot full correction을 보류한다.
+  - 최신 acknowledgment보다 오래된 deferred snapshot은 폐기한다.
+  - 같은 player의 input과 gravity mutation을 FIFO로 직렬 처리한다.
+  - 중복·역순 sequence는 authoritative state 적용 전에 거부한다.
+  - `PIECE_INDEX_MISMATCH`와 authoritative 내부 예외도 terminal result로 acknowledgment한다.
+- 검증 근거:
+  - 2026-07-19 관련 unit/integration 테스트 172개가 통과했다.
+  - `e2e/multiplayerRollback.spec.js`를 5회 반복해 5/5 통과했다.
+  - E2E는 Host/Guest 양방향 빠른 좌우 이동·회전·soft drop 1회·hard drop과 lock 이후 양쪽 board 수렴을 확인한다.
+- 남은 회귀 위험:
+  - key repeat 기반 soft drop 유지와 자연 lock 경계
+  - 인위적인 latency/jitter와 pending input 중 reconnect
+  - garbage·line clear·gameOver와 lock timing이 겹치는 조합
+  - 위 항목은 현재 재현된 버그가 아니라 rollback E2E에서 직접 다루지 않은 조합이다. 재현 전에는 correction 조건이나 lock delay를 추가로 변경하지 않는다.
+- 이 문제는 전체 rollback netcode 구현과 다르다. 현재 해결 범위는 stale authoritative snapshot이 정상적인 local prediction을 되감던 알려진 경로다.
+
+#### P2: 입력별 full snapshot 전송 최적화
+
+- 현재 구조는 authoritative input이 성공할 때마다 room에 full snapshot을 보내므로 소수 사용자 MVP에는 충분하지만 동시 room이 많아지면 board 복사, JSON 직렬화, 네트워크 전송 비용이 커질 수 있다.
+- rollback 안정화 gate는 통과했다. 이 최적화는 동시 room 부하가 실제 병목으로 확인되거나 명시적으로 우선순위가 정해질 때 별도 작업으로 진행한다.
+- 목표 전송 정책:
+  - 매 input: sender에게 작은 `game:input:result` acknowledgment만 전송한다.
+  - 일반 이동 상태: player별 최신 snapshot을 모아 약 100ms 주기로 trailing coalescing한다.
+  - lock, line clear presentation, garbage 적용, gameOver: 즉시 full snapshot을 전송한다.
+  - `PIECE_INDEX_MISMATCH`, `AUTHORITATIVE_INPUT_FAILED`, game join/reconnect: 즉시 correction snapshot을 전송한다.
+  - 상대 client가 소비하지 않던 `game:input` relay는 제거됐다.
+- 구현 시 지켜야 할 조건:
+  - coalescing 구간의 마지막 authoritative state를 반드시 전송한다.
+  - `presentationEffect` 같은 일회성 결과를 일반 snapshot 병합 과정에서 잃지 않는다.
+  - own board는 local prediction으로 즉시 반응하고, 상대 보드는 주기적 authoritative snapshot으로 갱신한다.
+  - rapid input 5개가 100ms 안에 들어오면 acknowledgment는 5개, 일반 movement snapshot은 최대 1개가 되는지 테스트한다.
+  - lock/garbage/gameOver snapshot은 주기적 flush를 기다리지 않는지 테스트한다.
+
+### 코드베이스 정리 실행 계획
+
+- 상세 계획: `docs/codebase-cleanup-plan.md`
+- Goal 실행 프롬프트: `docs/codebase-cleanup-goal-prompt.md`
+- 상태: Phase 0~5 완료, 최종 검증 통과
+- 순서: 확정된 dead leaf 삭제 → client local garbage 제거 → 미사용 input relay 제거 → 조건부 server inputLog 제거 → 남은 test setup 축소
+- cleanup은 migration이나 새 기능과 섞지 않고, 각 단계를 독립 검증·커밋한다.
+
+## Current Architecture and Responsibility Boundaries
+
+### Page bootstrap
+
+- HTML은 head, theme pre-paint, stylesheet와 React mount point만 유지한다.
+- `src/client/pages/tetrisSingle.tsx`는 React HUD와 Canvas runtime mount, input lifecycle을 조율한다.
+- `src/client/pages/tetrisMulti.tsx`는 공개 room/session 정보와 React HUD/overlay를 소유하고 `startMultiplayerGame(...)`을 연결한다.
+- `src/client/game/entry/multiplayerGameSession.ts`는 local/opponent runtime, authoritative snapshot, server bag, placement log와 cleanup을 조율한다.
+- `src/client/pages/multiLobby.tsx`는 room create/join/leave UI와 Socket.IO room 상태를 React 화면에 반영한다.
+
+### Runtime layer
+
+- `src/client/game/runtime/tetris.ts`
+  - 현재 런타임 진입점은 `createTetrisRuntime(...)`
+  - 내부에서 다음을 조율한다.
+    - game state 초기화
+    - input queue 소비
+    - gravity 진행
+    - engine 판정 호출
+    - piece spawn/hold/seize
+    - line clear sequencing
+    - canvas/UI 반영
+  - 반환값은 현재 runtime 제어 API 역할을 한다.
+    - `init`
+    - `enqueueInput`
+    - `render`
+    - `stop`
+    - `destroy`
+    - `getSnapshot`
+    - `applySnapshot`
+    - `appendServerBag`
+    - `getServerBagRemainingCount`
+    - `hideGameOver`
+    - `showGameOver`
+    - `runtime`
+
+### Core engine layer
+
+- `src/client/game/core/board.ts`
+  - `createEmptyBoard`
+  - `canPlacePiece`
+  - `lockPieceOnBoard`
+  - `clearFilledLines`
+- `src/client/game/core/step.ts`
+  - `resolveMoveAttempt`
+  - `resolveMoveIntent`
+- `src/client/game/core/tSpin.ts`
+  - `isTSpinLock`
+- `src/client/game/core/attackState.ts`
+  - `resolveAttackState`
+- `src/client/game/core/garbage.ts`
+  - `calculateGarbageAttack`
+  - `resolveGarbageCancel`
+  - `applyGarbageLines`
+- 현재 core는 순수 함수 중심으로 유지되고 있다.
+- 이 방향은 맞다.
+
+### State and snapshot layer
+
+- `src/client/game/state/stateSerialization.ts`
+  - `serializeGameState`
+  - `deserializeGameState`
+- `src/client/game/state/pieceQueue.ts`
+  - `pickRandomPiece`
+  - `ensureQueueFilled`
+  - `takeNextFromQueue`
+- `src/client/game/runtime/snapshotCorrection.ts`
+  - `isSamePiece`
+  - `shouldCorrectSnapshot`
+- `shouldCorrectSnapshot`은 own authoritative snapshot correction 기준을 판정한다.
+- 현재 멀티 gameplay의 주 snapshot은 서버가 만든 `game:authoritative:snapshot`이다.
+- 상대 보드는 authoritative snapshot을 full apply한다.
+- 내 보드는 prediction 우선 정책을 유지하며, 다음 경우에만 full apply한다.
+  - `snapshot.phase === "gameOver"`
+  - local phase가 `lineClearing`이 아니고, `pendingGarbageLines`가 감소했으며, server board가 local board와 다른 경우
+
+### Server and room layer
+
+- `src/app.ts`
+  - TypeScript source 진입점이며 production은 compiled `dist/server/app.js`를 실행한다.
+  - `src/server/init.ts`를 source `.js` specifier로 로드하며 NodeNext build가 compiled `init.js`를 만든다.
+- `src/server/init.ts`
+  - Express static server, HTTP server, Socket.IO server를 조립한다.
+  - production static root는 `dist/client`다.
+- `src/server/services/roomService.ts`
+  - `Map` 기반 메모리 room 상태를 관리한다.
+  - `createRoom`, `joinRoom`, `removePlayer`, `leaveRoom`, `startGame`, `leaveGame`, `syncRoom`, `finishGame`, `getRoomState`를 제공한다.
+- `src/server/services/matchService.ts`
+  - `Map` 기반 메모리 match 상태를 관리한다.
+  - `createMatch`, `getMatchState`, `deleteMatch`, `appendPlayerBagChunk`, `getAuthoritativePlayerSnapshotDto`, `resetMatches`를 제공한다.
+  - player별 `lastProcessedClientSequence`, `bagChunks`, `authoritativeState`를 갖는다.
+- `src/server/services/authoritativeTickerService.ts`
+  - room별 authoritative gravity ticker lifecycle을 관리한다.
+  - 100ms interval에서 500ms 누적 기준으로 gravity step과 snapshot emit을 처리한다.
+- `src/server/services/authoritativeMatchFinish.ts`
+  - input 경로와 ticker 경로의 authoritative gameOver side effect를 공통 처리한다.
+  - ticker stop, `match:finish`, `deleteMatch`, `game_over` log 저장을 한 곳에서 관리한다.
+- `src/server/sockets/multiplayerHandlers.ts`
+  - room/game Socket.IO 이벤트 입구다.
+  - `room:create`, `room:join`, `room:leave`, `room:sync`, `room:start`, `game:*`, `disconnect`를 등록한다.
+  - room 단위 join/broadcast를 수행한다.
+- `src/server/sockets/chatHandlers.ts`
+  - chat Socket.IO 이벤트 입구다.
+  - `global:chat`, `room:chat`, `chat:result` 흐름을 담당한다.
+  - 채팅 입력 검증, 1초 rate limit, room 채팅 권한 확인을 담당한다.
+
+### Client network layer
+
+- `src/client/net/roomClient.ts`
+  - 브라우저 Socket.IO room adapter다.
+  - create/join/leave/start 요청, room result/update/message 구독, global/room chat 송수신, game join/input/bag/authoritative snapshot/finish 함수를 제공한다.
+  - 제거된 legacy gameplay source `game:snapshot`, `game:garbage:attack`, `game:over` 경로는 제공하지 않는다.
+
+### 현재 구조에 대한 짧은 평가
+
+- 구조는 이전보다 훨씬 좋아졌다.
+- 특히 page bootstrap 분리와 runtime factory 도입은 큰 진전이다.
+- 다만 `src/client/game/runtime/tetris.ts`는 아직 다음 책임이 남아 있다.
+  - line clear sequencing
+  - piece lifecycle 세부 흐름
+  - 일부 state helper
+  - runtime loop 세부 구현
+
+## Gameplay, PVP, PVE, AI, and Logs
+
+### 기본 원칙
+
+- 서버 authoritative 방향을 유지한다.
+- 클라이언트는 `action`을 보낸다.
+- 서버는 room 상태와 match 상태를 관리한다.
+- remote 화면은 결국 authoritative snapshot 또는 그에 준하는 state apply 결과를 보여준다.
+
+### 현재 기준 MVP 정책
+
+- MVP에서는 `seed`보다 `server bag`이 더 현실적이다.
+- 의미:
+  - 서버가 각 플레이어의 조각 순서를 소유한다.
+  - 클라이언트의 RNG는 authoritative source가 아니다.
+  - 클라이언트는 서버가 정한 bag/queue 또는 spawn 결과를 따른다.
+- 이유:
+  - 지금은 완전 deterministic loop가 아직 아니다.
+  - 기본 RNG가 여전히 `Math.random`이다.
+  - runtime 구조는 정리 중이고, 먼저 작동하는 멀티 MVP가 필요하다.
+
+### 채팅 이벤트와 XSS 방어 정책
+
+- 채팅 범위는 이벤트 이름으로 분리한다.
+  - `global:chat`: 로비 전체 채팅 요청
+  - `global:message`: 서버가 전체 socket에 broadcast하는 전체 채팅 메시지
+  - `room:chat`: 현재 room 참가자에게만 보내는 채팅 요청
+  - `room:message`: room 단위 시스템 메시지와 room 채팅 메시지
+  - `chat:result`: 채팅 검증 실패 결과
+- 채팅 도배 방지는 서버 socket 기준으로 먼저 적용한다.
+  - 현재 MVP 규칙: 같은 socket은 1초에 1회만 채팅을 보낼 수 있다.
+  - 이 제한은 global/room 채팅에 공통 적용한다.
+- 사용자 입력 문자열은 HTML이 아니라 plain text로 취급한다.
+  - 서버는 빈 메시지, 최대 길이, 권한, rate limit만 검증한다.
+  - 서버는 사용자 메시지를 HTML로 만들지 않는다.
+  - 클라이언트는 사용자 문자열을 `innerHTML`에 넣지 않고 `textContent` 또는 text node로 렌더링한다.
+  - `<script>alert(1)</script>` 같은 입력은 실행 대상이 아니라 그대로 보이는 텍스트여야 한다.
+- 추후 DB 저장이 생기면 저장 전/후에도 같은 원칙을 유지한다.
+  - 저장 데이터는 plain text다.
+  - 화면 출력 시점에는 반드시 DOM text API로 렌더링한다.
+
+### action과 moveCause 규약
+
+- 네트워크로 보내는 값은 `action`이다.
+- 예:
+  - `move_left`
+  - `move_right`
+  - `soft_drop`
+  - `rotate`
+  - `hard_drop`
+  - `hold`
+- `moveCause`는 엔진 내부 판정 문맥으로 유지한다.
+- 예:
+  - `horizontal`
+  - `fall`
+  - `rotate`
+  - `hardDrop`
+  - `spawn`
+
+### snapshot 방향
+
+- `snapshot`은 멀티 sync와 remote render를 위한 상태 복사본이다.
+- 현재 멀티 gameplay의 기준 snapshot은 서버가 만든 `game:authoritative:snapshot`이다.
+- 클라이언트가 만든 `game:snapshot` relay는 gameplay 경로에서 제거됐다.
+- 상대 보드는 authoritative snapshot을 full apply한다.
+- 내 보드는 client prediction을 우선한다.
+- 내 playerId snapshot 처리 정책:
+  - `pendingGarbageLines`는 표시용으로 갱신한다.
+  - `phase: "gameOver"` snapshot은 full apply한다.
+  - `pendingGarbageLines`가 감소했고 board가 달라진 snapshot은 server garbage가 실제 board에 적용된 결과로 보고 full apply한다.
+  - local phase가 `lineClearing`이면 gameOver가 아닌 full apply는 막는다.
+  - 단순 `pieceIndex` ahead만으로는 full apply하지 않는다.
+- snapshot DTO에는 `pendingGarbageQueue`를 직접 노출하지 않는다.
+- 표시용 scalar인 `pendingGarbageLines`만 포함한다.
+
+### placementResult 의미
+
+- `placementResult`는 조각 lock 1회에 대한 결과 기록이다.
+- 현재는 runtime의 placement decision log 안에 포함되며, 다음 정보를 함께 담는다.
+  - score 변화
+  - line clear 결과
+  - T-Spin, combo, back-to-back 기반 attack 계산 결과
+  - pending garbage cancel/apply 결과
+  - game over 여부
+- 이 값은 AI 분석, replay 검증, 서버 authoritative 전환 시 client/server 결과 비교 후보 데이터다.
+
+#### 주요 필드
+
+- `linesCleared`
+  - 이번 lock 이후 실제로 삭제된 줄 수.
+- `scoreBefore`
+  - 이번 lock 결과를 반영하기 전 점수.
+- `scoreAfter`
+  - 이번 lock 결과를 반영한 뒤 점수.
+- `scoreDelta`
+  - `scoreAfter - scoreBefore`.
+  - 점수 drift 확인과 서버 검증에 사용하기 좋다.
+- `isTSpin`
+  - 이번 lock이 T-Spin으로 판정됐는지 여부.
+- `combo`
+  - 이번 attack 계산에 사용된 combo 값.
+  - 저장될 다음 combo 상태와 같은 의미로 단정하지 않는다.
+- `backToBack`
+  - 현재 의미는 "이번 lock 이후의 B2B 상태"가 아니다.
+  - 현재 의미는 "이번 공격 계산에 사용된 이전 B2B 상태"에 가깝다.
+  - 예를 들어 Tetris 다음 일반 Double clear가 발생하면, 그 Double clear는 B2B를 끊는 역할을 하지만 해당 clear의 `placementResult.backToBack`만 보면 true일 수 있다.
+  - 현재 테스트에서는 B2B reset을 "일반 line clear 직후 값"만으로 판단하지 않고, 다음 eligible clear에 B2B bonus가 붙지 않는지로 검증한다.
+- `rawAttackLines`
+  - combo/back-to-back/T-Spin 규칙을 반영한 원 공격량.
+  - pending garbage cancel을 적용하기 전 값이다.
+- `attackLines`
+  - pending garbage cancel 후 실제 상대에게 보낼 공격량.
+- `incomingGarbageLines`
+  - 이번 lock 시점에 대기 중이던 incoming garbage 총량.
+- `canceledGarbageLines`
+  - 이번 공격으로 상쇄한 incoming garbage 줄 수.
+- `appliedGarbageLines`
+  - cancel 후 남아서 실제 보드에 적용된 pending garbage 줄 수.
+- `gameOver`
+  - 이번 lock 처리 결과로 game over가 발생했는지 여부.
+  - top out뿐 아니라 garbage apply overflow도 포함될 수 있다.
+
+#### 추후 정리 후보
+
+- 서버 authoritative 전환 전에 필요하면 `backToBack` 의미를 더 명확한 필드로 나눌 수 있다.
+  - `backToBackBefore`
+  - `backToBackAfter`
+  - `usedBackToBack`
+- 이번 단계에서는 새 필드를 추가하지 않는다.
+- 지금은 기존 runtime/log 의미를 문서화하고, 테스트 작성 시 혼동을 줄이는 것을 우선한다.
+
+#### server authoritative 연결
+
+- 서버가 나중에 placement 결과를 직접 계산하려면 `placementResult` 필드 의미가 client와 server에서 같아야 한다.
+- 특히 다음 필드는 서버 garbage 판정 후보가 된다.
+  - `rawAttackLines`
+  - `attackLines`
+  - `canceledGarbageLines`
+  - `appliedGarbageLines`
+- `scoreBefore`, `scoreAfter`, `scoreDelta`는 client 예측 점수와 서버 계산 점수의 drift를 확인하는 데 필요하다.
+- `linesCleared`, `isTSpin`, `combo`, `backToBack`은 attack 계산의 입력/중간 상태 검증에 필요하다.
+
+### 현재 멀티 진행 상태
+
+- [x] 로비에서 `room:create` 요청 가능
+- [x] 로비에서 생성된 roomId, 상태, player 수 표시 가능
+- [x] 로비에서 `room:join` 요청 가능
+- [x] 로비에서 `room:leave` 요청 가능
+- [x] 서버에서 `disconnect` 발생 시 room player 제거 가능
+- [x] Socket.IO room 단위 `room:updated`, `room:message` broadcast 가능
+- [x] 멀티 게임 페이지에서 local/remote runtime 연결
+- [x] local 입력을 `game:input`으로 서버에 전송하고, 서버가 room/player/action 검증 후 authoritative state에 적용
+- [x] server authoritative snapshot 수신 후 상대 runtime full apply
+- [x] `server bag`을 match/player별로 생성하고 클라이언트 runtime에 공급
+- [x] `pieceIndex`를 snapshot/input에 포함하고, 오래된 입력이 현재 조각에 적용되지 않도록 제한
+- [x] 같은 tick/pieceIndex에 과도한 입력이 쌓이지 않도록 runtime input queue에서 제한
+- [x] 상대 보드는 `autoStart: false`로 두고 server authoritative snapshot으로만 갱신
+- [x] 내 보드는 prediction 우선, pending garbage/gameOver/garbage apply snapshot만 제한적으로 correction
+- [ ] 두 브라우저 탭 기준 create/join/start/play/finish/lobby 복귀 수동 회귀 검증
+- [ ] 명시적 ready 흐름 도입 여부 결정
+- [x] 서버 match 상태 초안
+- [x] server bag 전달
+- [x] 승패 판정과 match finish broadcast
+
+## Authentication, Socket, and Security
+
+- 인증은 client `playerId`나 `socketId`가 아니라 opaque session token과 서버가 보관한 session identity로 처리한다. token은 SHA-256 digest만 server memory에 남기며, active socket과 generation이 현재 session과 일치할 때만 mutation을 허용한다.
+- `playerId`는 서버가 session에서 파생하는 공개 식별자이고, client payload의 `playerId`와 nickname은 권한 근거가 아니다. `socketId`는 연결 주소일 뿐 신원이나 room 권한의 원천이 아니다.
+- 최신 Socket payload와 타입 계약은 `src/shared/socketContracts.mjs`, `src/shared/socketContractTypes.d.ts`를 단일 기준으로 둔다. 이 문서는 이벤트 이름과 소유권만 요약하며 payload 예시는 중복 유지하지 않는다.
+- 핵심 흐름은 `room:create`/`join`/`leave`/`sync`/`start`, `game:join`/`input`/`bag:request`/`leave`, 그리고 server-to-client 결과·snapshot·finish다. legacy client-driven `game:snapshot`과 `game:over` handler는 없다.
+- `game:authoritative:snapshot`의 optional `presentationEffect`는 구현 완료 상태다. line clear 효과는 runtime에서 중복 없이 소비하며 gameplay state의 원천은 계속 server authoritative snapshot이다.
+- Zod schema, active-session 확인, rate limit, origin allowlist와 CSP를 server 경계에 적용한다. 채팅은 plain text/JSX text로 렌더링한다.
+
+## Docker, CI, and Verification
+
+### 현재 상태
+
+- 이름: Goal 9A 설계 준비
+
+### 진행 현황
+
+- [x] server authoritative PVP/PVE gameplay MVP 구현
+- [x] own-board rollback 주요 재현 경로 E2E 회귀 고정
+- [x] 휴리스틱 PVE AI와 authoritative input executor 구현
+- [x] placement decision log, dataset/export/evaluation, JS/Python parity 경로 구현
+- [x] 사용자 선택형 Experimental PVE V4 경로와 fallback 구현
+- [x] Vite multi-page, React page shell, TypeScript client/runtime/server 전환
+- [x] CSP/security headers와 dependency hardening 반영
+- [x] production Docker image와 graceful shutdown 반영
+- [x] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됐으며, 이후 발견된 PVE timing 경계는 Goal 11E에서 별도로 안정화했다.
+- [x] Goal 11E 최종 `8cc16d9`은 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 SHA Browser 연속 2회가 통과했다.
+
+### 알려진 위험과 보류 범위
+
+- `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
+- room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
+- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. PostgreSQL Goal 9A~9D는 아직 구현하지 않았으며, 다음 작업은 Goal 9A 설계 준비다.
+- Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
+- pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
+- T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
+- Goal 11E 최종 `8cc16d9`의 hosted Fast/Docker와 Browser 연속 2회가 성공했다. 자연 중력과 browser scheduling에 의존하던 PVE 7-bag T-Spin E2E는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트로 보장한다. `main@8087712`의 hosted Fast/Docker/Browser도 모두 성공했다.
+- WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
+
+### 현재 단계에서 하지 않을 것
+
+- SPA 전환
+- 문서 branch에서 PostgreSQL code/dependency/CI를 선행 구현
+- Goal 9D 이전 production PostgreSQL enable과 실제 사용자 data import
+- Redis/Socket.IO adapter와 multi-instance 운영
+- rollback netcode
+- V4를 기본 PVE 또는 production gameplay AI로 승격
+- CI 통과 전 CD, registry publish, 실제 배포 자동화
+
+## Data Storage Plan and Next Work
+
+### 바로 해야 할 일
+
+1. Goal 9A 설계 준비
+   - PostgreSQL event storage의 schema, migration과 repository 경계를 구현 전에 별도 설계 gate에서 확정한다.
+2. PostgreSQL Goal 순차 실행
+   - 9A 실제 schema/migration/repository는 별도 구현 승인 뒤에만 시작한다.
+   - 9B runtime canonical storage와 shutdown
+   - 9C 기존 JSONL streaming import와 completeness
+   - 9D 실제 PostgreSQL CI/release/Docker gate
+3. `PLAN.md` 단일 기준성 유지
+   - 실행 결과는 각 `runs/goal-*`에 남기고 현재 우선순위만 이 섹션에서 갱신한다.
+
+### 이후 단계
+
+- [x] Goal 11E는 `8cc16d9`으로 main/origin/main에 반영됐고 hosted Fast/Docker 및 Browser 연속 2회가 통과함
+- [x] `main@8087712`의 Fast/Docker/Browser도 통과해 portfolio trailing whitespace와 PLAN 상태 정정 뒤 main CI green을 확인함
+- [ ] Goal 9A 설계 준비 후 별도 구현 승인
+- [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
+- [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
+- [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
+- [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
+- [ ] 실제 gameplay 성능 목표가 생기면 heuristic/V4/hybrid를 새 실험 문서와 benchmark로 분리 검토
+- [ ] LLM 코칭 리포트는 분석 지표와 사용자-vs-AI 비교 결과가 준비된 뒤 별도 승인으로 검토
+
+## Known Risks and Deferred Work
+
+### production hardening 이후
+
+- [x] Goal 11D PR 원격 실행 증거와 main 반영
+- [x] main push에서 확인된 PVE timing failure는 Goal 11E에서 deterministic coverage로 재배치하고 hosted CI green을 확인함
+- [x] `main@8087712`의 portfolio trailing whitespace와 PLAN 상태 정정 뒤 hosted Fast/Docker/Browser green을 확인함
+- [ ] Goal 9A~9D PostgreSQL event storage 구현과 실제 DB CI 검증
+- [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
+- [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
+- [ ] Goal 9D 이후 DB export/read-source 전환이 필요하면 Goal 10 재검토
+- [ ] deterministic seed/replay 고도화
+- [ ] 사용자 행동과 PVE AI 선택 비교 리포트 고도화
+- [ ] LLM 기반 코칭 리포트 추가 검토
+
+### 운영과 검증
+
+- [x] `start` script
+- [x] `test` script
+- [x] `dev` / `dev:server` script
+- [x] `build` script
+- [x] `env` / `port` 기본 경계 정리
+- [x] disconnect 기반 room cleanup
+- [x] production Docker health check
+- [ ] TTL 또는 오래된 room cleanup
+- [ ] external TLS/reverse proxy 환경 검증
+- [x] GitHub-hosted CI: `main@8087712`에서 Fast, Docker, Browser가 모두 성공
+
+### AI 원칙
+
+- AI는 DOM이 아니라 game state를 읽는다.
+- AI 출력은 사람과 같은 `action` 형식을 사용한다.
+- 현재 구현된 AI 기반은 `boardMetrics`, reachable placement planning, simulation, heuristic evaluation, PVE AI Player다.
+- PVE AI는 추천 코치가 아니라 실제 AI 상대다.
+- production 기본 PVE는 heuristic이다.
+- V4는 사용자 선택형 Experimental PVE와 offline Human imitation 분석용이다.
+- Python AI 서버와 강화학습은 현재 범위가 아니며, 별도 gameplay 목표와 benchmark가 생긴 뒤 검토한다.
+- LLM은 보조 설명 계층이다.
+- LLM 입력은 원본 게임 로그 전체가 아니라 요약 통계, 주요 실수 장면, PVE AI 선택 행동, 사용자 행동 차이를 중심으로 구성한다.
+- LLM이 판단을 대신하지 않는다. 판단은 휴리스틱/ML 분석 계층에서 만들고, LLM은 그 결과를 자연어로 설명한다.
+
+### Existing Docs Note
+
+- `ROADMAP.md`: 상위 방향 문서였음. 핵심 방향은 이 문서에 흡수했다.
+- `PROTOCOL.md`: 멀티 철학은 유지하되, MVP 기준은 `seed`보다 `server bag`으로 수정 반영했다.
+- `PHASE1_PLAN.md`: 오래된 계획서 성격이 강해서 "진행 현황"과 "다음 액션"으로 흡수했다.
+- 가능하면 이후에는 이 `PLAN`을 기준으로 유지하고, 나머지 문서는 보조 기록 또는 아카이브로 두는 편이 좋다.
 
 ## Migration Baseline Gate (2026-07-17)
 
@@ -357,955 +952,3 @@
 - workflow 권한은 `contents: read`뿐이며 공식 `actions/checkout`과 `actions/setup-node`를 검증된 full commit SHA로 고정했다. npm cache는 `package-lock.json`에 연결하되 모든 job이 clean install을 수행해 cache miss에도 동작한다. trace, HTML report, JSONL을 포함한 실패 artifact는 redaction 정책 전까지 업로드하지 않는다.
 - token rotation, stale credential 보존과 URL/DOM/console 비노출 E2E는 token 원문을 matcher에 넘기지 않는 boolean 비교로 바꿨다. 관련 production Playwright 19/19, canonical Node 594 pass·기존 조건부 1 skip, source-less release 1/1, Vite-dev 10 pass·2 skip, production Playwright 37/37과 Docker smoke가 통과했다. Docker smoke는 root HTML에서 동적으로 찾은 hashed module을 실제 HTTP 200으로 확인한 뒤 같은 module의 map 404를 확인한다.
 - Draft PR [#1](https://github.com/Sleepingco/Tetris_multi/pull/1)의 GitHub-hosted `ubuntu-24.04` clean run [#1](https://github.com/Sleepingco/Tetris_multi/actions/runs/29960528790)에서 `Fast gate`, `Chromium PVP and PVE`, `Production container smoke`가 모두 통과했다. fast는 cache miss 후 저장, browser는 cache hit였고 Node 594 pass·기존 조건부 1 skip, release 1/1, Vite-dev 10 pass·2 skip, production 37/37과 Docker health/HTTP/CSP/artifact/shutdown이 통과했다. 의도적인 type/build/unit/E2E 실패 routing, main push·수동 dispatch event와 branch protection 연결은 실행하지 않았으며 사용자가 포트폴리오 범위의 수용된 미검증 위험으로 보류했다. 이를 검증했다고 주장하지 않고 workflow/branch-protection 변경 시 재검토한다. registry/deployment와 optional ML workflow는 수행하지 않았으며 Goal 11D는 PR merge gate다.
-
-## Project Direction
-
-- 핵심 목표는 멀티플레이 가능한 테트리스 구조를 만드는 것이다.
-- 현재 우선순위는 새 프레임워크 확장이 아니라 이미 도입한 Vite/React/TypeScript, server authoritative gameplay, 보안·운영 gate를 안정화하는 것이다.
-- 방향은 유지한다.
-  - 엔진은 최대한 순수하게 유지
-  - 런타임은 orchestration 중심
-  - 렌더러는 상태 소비자
-  - 멀티는 서버 authoritative
-- 장기적으로는 deterministic loop를 지향한다.
-- 하지만 현재 MVP 멀티는 `seed` 기반 완전 결정론보다 `server bag` 정책이 더 현실적이다.
-- LLM 기능은 현재 MVP 범위가 아니다.
-- 추후 LLM은 게임 판단이나 AI 의사결정의 원천이 아니라, 플레이 로그와 AI 분석 결과를 사용자에게 설명하는 코칭 리포트 계층으로 둔다.
-- 기본 AI 축은 휴리스틱 PVE AI 상대와 placement 로그·평가다.
-- PVE AI는 추천 코치가 아니라 실제 게임에 참여하는 AI 상대이며, 사람과 같은 authoritative input 경로를 사용한다.
-- V4 placement model은 사용자 선택형 Experimental PVE와 offline imitation 분석에만 사용한다. 기본 production PVE 정책은 heuristic이다.
-- Python AI 서버, 강화학습, LLM 코칭은 현재 범위가 아니며, LLM은 분석 결과 설명 계층으로만 검토한다.
-
-## Current Status
-
-### 2026-07-23 요약
-
-- 멀티 MVP는 기존 `client snapshot relay` 중심 구조에서 `server authoritative snapshot` 중심 구조로 전환됐다.
-- 서버는 player별 `authoritativeState`를 들고 `game:input`과 room ticker gravity step으로 상태를 갱신한다.
-- 상대 보드는 `game:authoritative:snapshot`만 full apply한다.
-- 내 보드는 client prediction을 우선하고, server snapshot은 제한적으로 적용한다.
-- client-driven `game:snapshot`, `game:garbage:attack`, `game:over` gameplay 경로는 제거됐다.
-- garbage 원천은 server `authoritativeState.pendingGarbageQueue`다.
-- client DTO에는 표시용 `pendingGarbageLines` scalar를 내려준다.
-- server gameOver가 match finish의 원천이다.
-- match cleanup, client sequence acknowledgment, roomId collision retry가 보강됐다.
-- `src/client/game/core/boardMetrics.ts`에 휴리스틱 AI와 향후 ML feature 재사용을 위한 순수 board metric 함수가 구현됐다.
-- `test/testBoardMetrics.js`가 board metric 계산과 원본 board mutation 방지를 검증한다.
-- PVE room, heuristic AI player, reachable placement planner, placement decision log, dataset/export/evaluation, V4 parity와 Experimental PVE 경로가 구현됐다.
-- Vite multi-page, page-local React shell, client/runtime/server TypeScript migration과 production Docker image가 main에 반영됐다.
-- 자동 테스트 기준으로 PVP/PVE 핵심 gameplay와 production artifact는 고정돼 있다.
-- 포트폴리오 시연 완료 판정은 현재 README와 Goal run 기록의 production/browser gate를 기준으로 본다. 추가 수동 2탭 검증은 release 전 보조 확인이다.
-
-### 구현된 것
-
-- [x] `createTetrisRuntime(...)` 도입
-- [x] `src/client/pages/tetrisSingle.html` module script에서 싱글 런타임 bootstrap
-- [x] `src/client/pages/tetrisMulti.html` 멀티 게임 local/remote runtime 연결
-- [x] tick-tagged input queue 도입
-- [x] `src/client/game/core/board.ts`에 보드 생성, 충돌, 고정, 줄 삭제 순수 함수 존재
-- [x] `src/client/game/core/step.ts`에 `resolveMoveAttempt`, `resolveMoveIntent` 존재
-- [x] `src/client/game/state/stateSerialization.ts`에 snapshot serialize/deserialize 보조 함수 존재
-- [x] `src/client/game/state/pieceQueue.ts`에 7-bag/next queue 유틸리티 존재
-- [x] `src/client/game/runtime/snapshotCorrection.ts`에 원격 snapshot 보정 판단 유틸리티 존재
-- [x] `src/server/services/roomService.ts`에 room 생성/참가/퇴장/시작/종료/동기화 로직 존재
-- [x] `src/server/services/matchService.ts`에 match 생성, player별 server bag chunk와 authoritative state 로직 존재
-- [x] `src/server/sockets/multiplayerHandlers.ts`에 `room:create`, `room:join`, `room:leave`, `room:start`, `game:join`, `game:input`, `game:bag:request`, `disconnect` 흐름 존재
-- [x] `src/server/sockets/chatHandlers.ts`에 `global:chat`, `room:chat` 흐름 분리
-- [x] `src/client/net/roomClient.ts`에 room/chat/game 이벤트 adapter 함수 존재
-- [x] `src/client/pages/multiLobby.html`에서 방 코드, 상태, player 수 표시와 방 입장/나가기 UI 연결
-- [x] 로비 채팅을 `global:chat` / `room:chat`으로 분리
-- [x] 채팅 입력은 1초 1회 서버 rate limit과 plain text 렌더링 기준 적용
-- [x] `game:input` 배관: 클라이언트 입력을 서버 검증 후 authoritative state에 적용하고 ack/snapshot 전송
-- [x] `game:snapshot` 1차 배관 추가: 클라이언트 snapshot을 서버 검증 후 상대에게 전달했던 초기 단계 완료. 현재 gameplay 경로에서는 제거된 legacy 흐름이다.
-- [x] `game:bag:request` / `game:bag:append` 1차 배관 추가: 서버가 player별 bag chunk를 생성해 room에 전달
-- [x] `match:finish` 배관: server authoritative top-out 기준 승패 결과 broadcast. client `game:over` handler는 제거됐다.
-- [x] 멀티플레이 garbage cancel / combo / back-to-back / T-Spin attack 규칙 1차 추가
-- [x] `src/client/game/core/tSpin.ts`에 T-Spin lock 판정 pure function 추가
-- [x] `src/client/game/core/attackState.ts`에 combo/back-to-back 상태 전이 pure function 추가
-- [x] `src/client/game/core/garbage.ts`에 garbage cancel/apply/attack 계산 pure function 정리
-- [x] 상대 보드 score/lines drift를 snapshot correction에서 보정하도록 수정
-- [x] runtime 통합 테스트로 T-Spin, back-to-back, combo, 일반 line clear의 B2B reset이 `placementResult`에 반영되는지 검증
-- [x] `npm test`로 roomService, matchService, multiplayerSocket, runtime, move step, snapshot correction 주요 흐름 검증 가능
-- [x] `.gitignore`에 `node_modules/`, `.DS_Store`, `coverage/`, `dist/` 제외
-- [x] server authoritative player state 초기화
-- [x] `applyAuthoritativeInput()` 단일 public entry로 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold` 처리
-- [x] server lock 경로에서 line clear, score, combo, B2B, T-Spin, garbage cancel/apply, top-out 처리
-- [x] `authoritativeTickerService`로 room별 gravity tick과 authoritative snapshot emit 처리
-- [x] `game:authoritative:snapshot` 추가
-- [x] 상대 보드는 authoritative snapshot만 적용하도록 변경
-- [x] 내 보드는 prediction 우선, `gameOver` 또는 garbage 적용 snapshot만 제한적으로 full apply
-- [x] client-driven `game:snapshot`, `game:garbage:attack`, `game:over` gameplay 경로 제거
-- [x] `pendingGarbageLines` DTO로 incoming garbage 표시와 적용 correction 분리
-- [x] server authoritative match finish 공통 helper 추가
-- [x] 정상 gameOver와 `game:leave`에서 match cleanup 수행
-- [x] roomId 충돌 재시도와 client sequence acknowledgment 추가
-- [x] `src/client/game/core/boardMetrics.ts`에 `columnHeights`, `aggregateHeight`, `maxHeight`, `holes`, `bumpiness`, `completeLines` 계산 순수 함수 추가
-- [x] `test/testBoardMetrics.js`로 board metric과 mutation 방지 검증
-- [x] `placementGenerator`, `reachablePlacementPlanner`, `simulatePlacement`, `heuristicEvaluator` 기반 휴리스틱 PVE decision path 구현
-- [x] `pveAiPlayerService`가 AI plan을 사람과 같은 authoritative input으로 실행
-- [x] placement decision JSONL log, dataset exporter/evaluator, JS/Python parity 검증 경로 구현
-- [x] 사용자 선택형 Experimental PVE V4 model 경로와 heuristic fallback 구현
-- [x] Vite multi-page + page-local React shell + TypeScript client/runtime/server migration 반영
-- [x] CSP/security headers, dependency hardening, production Docker image 반영
-
-### 부분 완료
-
-- [~] `src/client/game/runtime/tetris.ts`는 예전의 전역 싱글 파일 단계에서는 벗어남
-- [~] `src/client/game/runtime/tetris.ts`는 여전히 크고 orchestration 외 책임이 남아 있음
-- [~] RNG 주입 구조는 있음
-- [~] 기본 RNG는 아직 `Math.random`
-- [~] 로비와 멀티 게임 흐름은 자동 브라우저 회귀로 고정돼 있다. 공개 release 전 실제 배포 환경의 수동 smoke는 별도 확인 대상이다.
-- [x] 내 보드 prediction/correction 정책은 sequence/ack·gravity timing 보강 후 rollback 전용 2탭 E2E 반복 검증을 통과함
-- [x] `src/client/pages/tetrisMulti.html`의 `snapshotTimer`에서 bag request와 game over 보고 조건을 함수 단위로 분리했다.
-- [x] `src/client/game/runtime/tetris.ts`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
-- [~] `placementResult.backToBack`은 현재 “이번 lock 이후 상태”가 아니라 “이번 공격 계산에 사용된 이전 B2B 상태”에 가깝다. 추후 필요하면 `backToBackBefore` / `backToBackAfter`처럼 의미를 명확히 나누는 정리를 검토한다.
-
-### 아직 미구현
-
-- [ ] 완전한 deterministic multiplayer
-- [ ] 서버/클라이언트 완전 동일 deterministic replay
-- [ ] 상대 보드 line clear 표시용 effect
-- [ ] `match:ready` 같은 명시적 준비 상태
-- [ ] 방 목록, quick match, match 결과 화면
-
-### 현재 판단
-
-- 현재 구조는 "싱글 런타임 정리 + 멀티 로비 + server authoritative 멀티 MVP" 단계다.
-- 실제 멀티 게임의 최종 진실 원천은 server authoritative state로 이동했다.
-- 내 보드는 조작감을 위해 client prediction을 유지하고, 서버 snapshot은 gameOver/garbage 적용 등 제한된 상황에서만 full apply한다.
-- shadow/debug 방향은 현재 main 우선순위가 아니다. 해결된 rollback 경로는 기존 회귀 테스트로 감시하고, 재현 증거 없이 debug 시스템이나 correction 방어를 추가하지 않는다.
-- AI 쪽은 휴리스틱 PVE와 Experimental V4 체험까지 구현됐다. 새 AI 작업은 기본 PVE 정책 변경이 아니라 별도 승인된 실험·평가 질문에서 시작한다.
-- 현재 `boardMetrics`는 core board 표현을 그대로 읽는 DOM-free 순수 함수라서 `src/client/game/core`에 둔다. 서버/클라이언트/AI가 더 넓게 공유하는 시점이 오면 `shared` 계층으로 이동할 수 있다.
-
-### 2026-07-19 멀티 안정화 상태
-
-#### P0: 간헐적 own board rollback — 해결, 회귀 감시
-
-- 기존 증상:
-  - 사용자가 조각을 lock 직전 위치까지 이동하거나 회전했을 때 own authoritative correction이 적용되며 직전 위치로 되돌아가는 현상이 간헐적으로 관찰됐다.
-- 해결 판정:
-  - 2026-07-16 gravity lock timing 정렬과 rollback E2E 강화 이후 알려진 재현 경로에서 rollback이 다시 관찰되지 않았다.
-  - 현재 관찰·자동 회귀 기준으로 P0는 해결된 것으로 본다.
-- 적용된 방어:
-  - client input마다 단조 증가하는 `clientSequence`를 전송한다.
-  - server player metadata의 `lastProcessedClientSequence`로 처리 완료 경계를 관리한다.
-  - server acknowledgment 전 input이 있으면 own snapshot full correction을 보류한다.
-  - 최신 acknowledgment보다 오래된 deferred snapshot은 폐기한다.
-  - 같은 player의 input과 gravity mutation을 FIFO로 직렬 처리한다.
-  - 중복·역순 sequence는 authoritative state 적용 전에 거부한다.
-  - `PIECE_INDEX_MISMATCH`와 authoritative 내부 예외도 terminal result로 acknowledgment한다.
-- 검증 근거:
-  - 2026-07-19 관련 unit/integration 테스트 172개가 통과했다.
-  - `e2e/multiplayerRollback.spec.js`를 5회 반복해 5/5 통과했다.
-  - E2E는 Host/Guest 양방향 빠른 좌우 이동·회전·soft drop 1회·hard drop과 lock 이후 양쪽 board 수렴을 확인한다.
-- 남은 회귀 위험:
-  - key repeat 기반 soft drop 유지와 자연 lock 경계
-  - 인위적인 latency/jitter와 pending input 중 reconnect
-  - garbage·line clear·gameOver와 lock timing이 겹치는 조합
-  - 위 항목은 현재 재현된 버그가 아니라 rollback E2E에서 직접 다루지 않은 조합이다. 재현 전에는 correction 조건이나 lock delay를 추가로 변경하지 않는다.
-- 이 문제는 전체 rollback netcode 구현과 다르다. 현재 해결 범위는 stale authoritative snapshot이 정상적인 local prediction을 되감던 알려진 경로다.
-
-#### P2: 입력별 full snapshot 전송 최적화
-
-- 현재 구조는 authoritative input이 성공할 때마다 room에 full snapshot을 보내므로 소수 사용자 MVP에는 충분하지만 동시 room이 많아지면 board 복사, JSON 직렬화, 네트워크 전송 비용이 커질 수 있다.
-- rollback 안정화 gate는 통과했다. 이 최적화는 동시 room 부하가 실제 병목으로 확인되거나 명시적으로 우선순위가 정해질 때 별도 작업으로 진행한다.
-- 목표 전송 정책:
-  - 매 input: sender에게 작은 `game:input:result` acknowledgment만 전송한다.
-  - 일반 이동 상태: player별 최신 snapshot을 모아 약 100ms 주기로 trailing coalescing한다.
-  - lock, line clear presentation, garbage 적용, gameOver: 즉시 full snapshot을 전송한다.
-  - `PIECE_INDEX_MISMATCH`, `AUTHORITATIVE_INPUT_FAILED`, game join/reconnect: 즉시 correction snapshot을 전송한다.
-  - 상대 client가 소비하지 않던 `game:input` relay는 제거됐다.
-- 구현 시 지켜야 할 조건:
-  - coalescing 구간의 마지막 authoritative state를 반드시 전송한다.
-  - `presentationEffect` 같은 일회성 결과를 일반 snapshot 병합 과정에서 잃지 않는다.
-  - own board는 local prediction으로 즉시 반응하고, 상대 보드는 주기적 authoritative snapshot으로 갱신한다.
-  - rapid input 5개가 100ms 안에 들어오면 acknowledgment는 5개, 일반 movement snapshot은 최대 1개가 되는지 테스트한다.
-  - lock/garbage/gameOver snapshot은 주기적 flush를 기다리지 않는지 테스트한다.
-
-### 코드베이스 정리 실행 계획
-
-- 상세 계획: `docs/codebase-cleanup-plan.md`
-- Goal 실행 프롬프트: `docs/codebase-cleanup-goal-prompt.md`
-- 상태: Phase 0~5 완료, 최종 검증 통과
-- 순서: 확정된 dead leaf 삭제 → client local garbage 제거 → 미사용 input relay 제거 → 조건부 server inputLog 제거 → 남은 test setup 축소
-- cleanup은 migration이나 새 기능과 섞지 않고, 각 단계를 독립 검증·커밋한다.
-
-## Current Architecture
-
-### Page bootstrap
-
-- `src/client/pages/tetrisSingle.html`
-  - module script에서 싱글 페이지용 DOM 조회
-  - `createTetrisRuntime(...)` 생성
-  - keyboard input 연결
-  - `init()` 호출
-- `src/client/pages/tetrisMulti.html`
-  - 세션의 room/player 정보를 검증하고 실패 시 로비로 되돌린다.
-  - host/guest 역할에 따라 local canvas와 remote canvas를 배정한다.
-  - `startMultiplayerGame(...)`을 호출해 local runtime과 opponent runtime, socket listener, heartbeat cleanup을 구성한다.
-  - local 입력은 `game:input`으로 서버에 보내고, local runtime prediction에도 enqueue한다.
-  - 상대 runtime은 `autoStart: false`이며, server input relay 없이 authoritative snapshot만 적용한다.
-  - 상대 보드는 `game:authoritative:snapshot`을 full apply한다.
-  - 내 보드는 client prediction을 우선하고, own authoritative snapshot은 pending garbage 표시와 제한된 correction에만 사용한다.
-  - server bag chunk를 받아 local/opponent runtime에 append한다.
-  - `match:finish`를 받아 승패 표시와 로비 복귀 버튼을 처리한다.
-  - 현재 heartbeat는 server bag 부족 확인/request만 유지한다.
-- `src/client/pages/multiLobby.html`
-  - room create/join/leave UI와 Socket.IO room 상태 표시 연결
-  - `room:result`, `room:updated`, `room:message`를 받아 방 코드, 상태, 인원 수, 시스템 메시지 반영
-
-### Runtime layer
-
-- `src/client/game/runtime/tetris.ts`
-  - 현재 런타임 진입점은 `createTetrisRuntime(...)`
-  - 내부에서 다음을 조율한다.
-    - game state 초기화
-    - input queue 소비
-    - gravity 진행
-    - engine 판정 호출
-    - piece spawn/hold/seize
-    - line clear sequencing
-    - canvas/UI 반영
-  - 반환값은 현재 runtime 제어 API 역할을 한다.
-    - `init`
-    - `enqueueInput`
-    - `render`
-    - `stop`
-    - `destroy`
-    - `getSnapshot`
-    - `applySnapshot`
-    - `applyServerBag`
-    - `appendServerBag`
-    - `getServerBagRemainingCount`
-    - `hideGameOver`
-    - `showGameOver`
-    - `runtime`
-
-### Core engine layer
-
-- `src/client/game/core/board.ts`
-  - `createEmptyBoard`
-  - `canPlacePiece`
-  - `lockPieceOnBoard`
-  - `clearFilledLines`
-- `src/client/game/core/step.ts`
-  - `resolveMoveAttempt`
-  - `resolveMoveIntent`
-- `src/client/game/core/tSpin.ts`
-  - `isTSpinLock`
-- `src/client/game/core/attackState.ts`
-  - `resolveAttackState`
-- `src/client/game/core/garbage.ts`
-  - `calculateGarbageAttack`
-  - `resolveGarbageCancel`
-  - `applyGarbageLines`
-- 현재 core는 순수 함수 중심으로 유지되고 있다.
-- 이 방향은 맞다.
-
-### State and snapshot layer
-
-- `src/client/game/state/stateSerialization.ts`
-  - `serializeGameState`
-  - `deserializeGameState`
-- `src/client/game/state/pieceQueue.ts`
-  - `pickRandomPiece`
-  - `ensureQueueFilled`
-  - `takeNextFromQueue`
-- `src/client/game/runtime/snapshotCorrection.ts`
-  - `isSamePiece`
-  - `shouldCorrectSnapshot`
-- `shouldCorrectSnapshot`은 own authoritative snapshot correction 기준을 판정한다.
-- 현재 멀티 gameplay의 주 snapshot은 서버가 만든 `game:authoritative:snapshot`이다.
-- 상대 보드는 authoritative snapshot을 full apply한다.
-- 내 보드는 prediction 우선 정책을 유지하며, 다음 경우에만 full apply한다.
-  - `snapshot.phase === "gameOver"`
-  - local phase가 `lineClearing`이 아니고, `pendingGarbageLines`가 감소했으며, server board가 local board와 다른 경우
-
-### Server and room layer
-
-- `src/app.ts`
-  - TypeScript source 진입점이며 production은 compiled `dist/server/app.js`를 실행한다.
-  - `src/server/init.ts`를 source `.js` specifier로 로드하며 NodeNext build가 compiled `init.js`를 만든다.
-- `src/server/init.ts`
-  - Express static server, HTTP server, Socket.IO server를 조립한다.
-  - production static root는 `dist/client`다.
-- `src/server/services/roomService.ts`
-  - `Map` 기반 메모리 room 상태를 관리한다.
-  - `createRoom`, `joinRoom`, `removePlayer`, `removePlayerBySocketId`, `leaveRoom`, `startGame`, `leaveGame`, `syncRoom`, `finishGame`, `getRoomState`를 제공한다.
-- `src/server/services/matchService.ts`
-  - `Map` 기반 메모리 match 상태를 관리한다.
-  - `createMatch`, `getMatchState`, `deleteMatch`, `appendPlayerBagChunk`, `getAuthoritativePlayerSnapshotDto`, `resetMatches`를 제공한다.
-  - player별 `lastProcessedClientSequence`, `bagChunks`, `authoritativeState`를 갖는다.
-- `src/server/services/authoritativeTickerService.ts`
-  - room별 authoritative gravity ticker lifecycle을 관리한다.
-  - 100ms interval에서 500ms 누적 기준으로 gravity step과 snapshot emit을 처리한다.
-- `src/server/services/authoritativeMatchFinish.ts`
-  - input 경로와 ticker 경로의 authoritative gameOver side effect를 공통 처리한다.
-  - ticker stop, `match:finish`, `deleteMatch`, `game_over` log 저장을 한 곳에서 관리한다.
-- `src/server/sockets/multiplayerHandlers.ts`
-  - room/game Socket.IO 이벤트 입구다.
-  - `room:create`, `room:join`, `room:leave`, `room:sync`, `room:start`, `game:*`, `disconnect`를 등록한다.
-  - room 단위 join/broadcast를 수행한다.
-- `src/server/sockets/chatHandlers.ts`
-  - chat Socket.IO 이벤트 입구다.
-  - `global:chat`, `room:chat`, `chat:result` 흐름을 담당한다.
-  - 채팅 입력 검증, 1초 rate limit, room 채팅 권한 확인을 담당한다.
-
-### Client network layer
-
-- `src/client/net/roomClient.ts`
-  - 브라우저 Socket.IO room adapter다.
-  - create/join/leave/start 요청, room result/update/message 구독, global/room chat 송수신, game join/input/bag/authoritative snapshot/finish 함수를 제공한다.
-  - 제거된 legacy gameplay source `game:snapshot`, `game:garbage:attack`, `game:over` 경로는 제공하지 않는다.
-
-### 현재 구조에 대한 짧은 평가
-
-- 구조는 이전보다 훨씬 좋아졌다.
-- 특히 page bootstrap 분리와 runtime factory 도입은 큰 진전이다.
-- 다만 `src/client/game/runtime/tetris.ts`는 아직 다음 책임이 남아 있다.
-  - line clear sequencing
-  - piece lifecycle 세부 흐름
-  - 일부 state helper
-  - runtime loop 세부 구현
-
-## Multiplayer Direction
-
-### 기본 원칙
-
-- 서버 authoritative 방향을 유지한다.
-- 클라이언트는 `action`을 보낸다.
-- 서버는 room 상태와 match 상태를 관리한다.
-- remote 화면은 결국 authoritative snapshot 또는 그에 준하는 state apply 결과를 보여준다.
-
-### 현재 기준 MVP 정책
-
-- MVP에서는 `seed`보다 `server bag`이 더 현실적이다.
-- 의미:
-  - 서버가 각 플레이어의 조각 순서를 소유한다.
-  - 클라이언트의 RNG는 authoritative source가 아니다.
-  - 클라이언트는 서버가 정한 bag/queue 또는 spawn 결과를 따른다.
-- 이유:
-  - 지금은 완전 deterministic loop가 아직 아니다.
-  - 기본 RNG가 여전히 `Math.random`이다.
-  - runtime 구조는 정리 중이고, 먼저 작동하는 멀티 MVP가 필요하다.
-
-### 현재 MVP 인증/소켓 정책
-
-- 현재는 로그인, DB, 서버 세션이 없는 학습/MVP 단계다.
-- 따라서 `playerId`를 임시 신원 값처럼 사용하고, `socketId`는 현재 연결 검증에 사용한다.
-- `room:start`처럼 권한이 필요한 요청은 `playerId`와 현재 요청 socket을 함께 확인한다.
-- 페이지 이동이나 새로고침 후 Socket.IO 연결은 새로 만들어질 수 있으므로, 로비 복귀 시 `room:sync`에서 room에 저장된 player의 `socketId`를 최신 로비 socket id로 갱신한다.
-- 단, `game:join`에서는 room 권한 기준 socket id를 갱신하지 않는다.
-  - 게임 페이지 socket은 게임 sync용 연결이다.
-  - room host 권한 기준은 로비에서 다시 동기화되는 socket을 기준으로 둔다.
-  - 이렇게 해야 게임 페이지 이동, 종료, disconnect 흐름이 room 권한 상태를 덮어쓰지 않는다.
-
-### 실무형 인증/연결 관리 전환 계획
-
-- 실제 서비스에서는 `socketId`를 신원의 원천으로 두지 않는다.
-- `socketId`는 현재 연결 주소이고, 권한 판단의 기준은 로그인 세션, JWT, 서버 세션에서 확인된 `userId`가 된다.
-- 전환 시 room 상태는 의미 상태 중심으로 정리한다.
-  - `userId` 또는 서버가 발급한 안정적인 `playerId`
-  - `nickname`
-  - `role`
-  - `ready`
-  - `status`
-- socket 연결 정보는 room 상태와 분리된 connection map으로 관리한다.
-  - 예: `userId -> socketId`
-  - 예: `socketId -> userId`
-  - 예: `userId -> roomId`
-- Socket.IO 연결 시 인증 middleware에서 토큰/세션을 검증하고, 검증된 사용자만 room 이벤트를 처리한다.
-- 권한 검사는 `socketId === player.socketId`보다 `authenticatedUserId === room.hostUserId` 같은 형태로 이동한다.
-- 이 전환은 멀티 MVP가 동작한 뒤 별도 단계로 진행한다.
-  - 현재 단계에서 로그인, DB, JWT를 먼저 도입하지 않는다.
-  - 먼저 room/start/game sync 흐름을 이해 가능한 상태로 완성한다.
-
-### 채팅 이벤트와 XSS 방어 정책
-
-- 채팅 범위는 이벤트 이름으로 분리한다.
-  - `global:chat`: 로비 전체 채팅 요청
-  - `global:message`: 서버가 전체 socket에 broadcast하는 전체 채팅 메시지
-  - `room:chat`: 현재 room 참가자에게만 보내는 채팅 요청
-  - `room:message`: room 단위 시스템 메시지와 room 채팅 메시지
-  - `chat:result`: 채팅 검증 실패 결과
-- 채팅 도배 방지는 서버 socket 기준으로 먼저 적용한다.
-  - 현재 MVP 규칙: 같은 socket은 1초에 1회만 채팅을 보낼 수 있다.
-  - 이 제한은 global/room 채팅에 공통 적용한다.
-- 사용자 입력 문자열은 HTML이 아니라 plain text로 취급한다.
-  - 서버는 빈 메시지, 최대 길이, 권한, rate limit만 검증한다.
-  - 서버는 사용자 메시지를 HTML로 만들지 않는다.
-  - 클라이언트는 사용자 문자열을 `innerHTML`에 넣지 않고 `textContent` 또는 text node로 렌더링한다.
-  - `<script>alert(1)</script>` 같은 입력은 실행 대상이 아니라 그대로 보이는 텍스트여야 한다.
-- 추후 DB 저장이 생기면 저장 전/후에도 같은 원칙을 유지한다.
-  - 저장 데이터는 plain text다.
-  - 화면 출력 시점에는 반드시 DOM text API로 렌더링한다.
-
-### action과 moveCause 규약
-
-- 네트워크로 보내는 값은 `action`이다.
-- 예:
-  - `move_left`
-  - `move_right`
-  - `soft_drop`
-  - `rotate`
-  - `hard_drop`
-  - `hold`
-- `moveCause`는 엔진 내부 판정 문맥으로 유지한다.
-- 예:
-  - `horizontal`
-  - `fall`
-  - `rotate`
-  - `hardDrop`
-  - `spawn`
-
-### snapshot 방향
-
-- `snapshot`은 멀티 sync와 remote render를 위한 상태 복사본이다.
-- 현재 멀티 gameplay의 기준 snapshot은 서버가 만든 `game:authoritative:snapshot`이다.
-- 클라이언트가 만든 `game:snapshot` relay는 gameplay 경로에서 제거됐다.
-- 상대 보드는 authoritative snapshot을 full apply한다.
-- 내 보드는 client prediction을 우선한다.
-- 내 playerId snapshot 처리 정책:
-  - `pendingGarbageLines`는 표시용으로 갱신한다.
-  - `phase: "gameOver"` snapshot은 full apply한다.
-  - `pendingGarbageLines`가 감소했고 board가 달라진 snapshot은 server garbage가 실제 board에 적용된 결과로 보고 full apply한다.
-  - local phase가 `lineClearing`이면 gameOver가 아닌 full apply는 막는다.
-  - 단순 `pieceIndex` ahead만으로는 full apply하지 않는다.
-- snapshot DTO에는 `pendingGarbageQueue`를 직접 노출하지 않는다.
-- 표시용 scalar인 `pendingGarbageLines`만 포함한다.
-
-### placementResult 의미
-
-- `placementResult`는 조각 lock 1회에 대한 결과 기록이다.
-- 현재는 runtime의 placement decision log 안에 포함되며, 다음 정보를 함께 담는다.
-  - score 변화
-  - line clear 결과
-  - T-Spin, combo, back-to-back 기반 attack 계산 결과
-  - pending garbage cancel/apply 결과
-  - game over 여부
-- 이 값은 AI 분석, replay 검증, 서버 authoritative 전환 시 client/server 결과 비교 후보 데이터다.
-
-#### 주요 필드
-
-- `linesCleared`
-  - 이번 lock 이후 실제로 삭제된 줄 수.
-- `scoreBefore`
-  - 이번 lock 결과를 반영하기 전 점수.
-- `scoreAfter`
-  - 이번 lock 결과를 반영한 뒤 점수.
-- `scoreDelta`
-  - `scoreAfter - scoreBefore`.
-  - 점수 drift 확인과 서버 검증에 사용하기 좋다.
-- `isTSpin`
-  - 이번 lock이 T-Spin으로 판정됐는지 여부.
-- `combo`
-  - 이번 attack 계산에 사용된 combo 값.
-  - 저장될 다음 combo 상태와 같은 의미로 단정하지 않는다.
-- `backToBack`
-  - 현재 의미는 "이번 lock 이후의 B2B 상태"가 아니다.
-  - 현재 의미는 "이번 공격 계산에 사용된 이전 B2B 상태"에 가깝다.
-  - 예를 들어 Tetris 다음 일반 Double clear가 발생하면, 그 Double clear는 B2B를 끊는 역할을 하지만 해당 clear의 `placementResult.backToBack`만 보면 true일 수 있다.
-  - 현재 테스트에서는 B2B reset을 "일반 line clear 직후 값"만으로 판단하지 않고, 다음 eligible clear에 B2B bonus가 붙지 않는지로 검증한다.
-- `rawAttackLines`
-  - combo/back-to-back/T-Spin 규칙을 반영한 원 공격량.
-  - pending garbage cancel을 적용하기 전 값이다.
-- `attackLines`
-  - pending garbage cancel 후 실제 상대에게 보낼 공격량.
-- `incomingGarbageLines`
-  - 이번 lock 시점에 대기 중이던 incoming garbage 총량.
-- `canceledGarbageLines`
-  - 이번 공격으로 상쇄한 incoming garbage 줄 수.
-- `appliedGarbageLines`
-  - cancel 후 남아서 실제 보드에 적용된 pending garbage 줄 수.
-- `gameOver`
-  - 이번 lock 처리 결과로 game over가 발생했는지 여부.
-  - top out뿐 아니라 garbage apply overflow도 포함될 수 있다.
-
-#### 추후 정리 후보
-
-- 서버 authoritative 전환 전에 필요하면 `backToBack` 의미를 더 명확한 필드로 나눌 수 있다.
-  - `backToBackBefore`
-  - `backToBackAfter`
-  - `usedBackToBack`
-- 이번 단계에서는 새 필드를 추가하지 않는다.
-- 지금은 기존 runtime/log 의미를 문서화하고, 테스트 작성 시 혼동을 줄이는 것을 우선한다.
-
-#### server authoritative 연결
-
-- 서버가 나중에 placement 결과를 직접 계산하려면 `placementResult` 필드 의미가 client와 server에서 같아야 한다.
-- 특히 다음 필드는 서버 garbage 판정 후보가 된다.
-  - `rawAttackLines`
-  - `attackLines`
-  - `canceledGarbageLines`
-  - `appliedGarbageLines`
-- `scoreBefore`, `scoreAfter`, `scoreDelta`는 client 예측 점수와 서버 계산 점수의 drift를 확인하는 데 필요하다.
-- `linesCleared`, `isTSpin`, `combo`, `backToBack`은 attack 계산의 입력/중간 상태 검증에 필요하다.
-
-### 현재 멀티 진행 상태
-
-- [x] 로비에서 `room:create` 요청 가능
-- [x] 로비에서 생성된 roomId, 상태, player 수 표시 가능
-- [x] 로비에서 `room:join` 요청 가능
-- [x] 로비에서 `room:leave` 요청 가능
-- [x] 서버에서 `disconnect` 발생 시 room player 제거 가능
-- [x] Socket.IO room 단위 `room:updated`, `room:message` broadcast 가능
-- [x] 멀티 게임 페이지에서 local/remote runtime 연결
-- [x] local 입력을 `game:input`으로 서버에 전송하고, 서버가 room/player/action 검증 후 authoritative state에 적용
-- [x] server authoritative snapshot 수신 후 상대 runtime full apply
-- [x] `server bag`을 match/player별로 생성하고 클라이언트 runtime에 공급
-- [x] `pieceIndex`를 snapshot/input에 포함하고, 오래된 입력이 현재 조각에 적용되지 않도록 제한
-- [x] 같은 tick/pieceIndex에 과도한 입력이 쌓이지 않도록 runtime input queue에서 제한
-- [x] 상대 보드는 `autoStart: false`로 두고 server authoritative snapshot으로만 갱신
-- [x] 내 보드는 prediction 우선, pending garbage/gameOver/garbage apply snapshot만 제한적으로 correction
-- [ ] 두 브라우저 탭 기준 create/join/start/play/finish/lobby 복귀 수동 회귀 검증
-- [ ] 명시적 ready 흐름 도입 여부 결정
-- [x] 서버 match 상태 초안
-- [x] server bag 전달
-- [x] 승패 판정과 match finish broadcast
-
-## Current Phase
-
-### 현재 단계
-
-- 이름: Goal 9A 설계 준비
-
-### 진행 현황
-
-- [x] server authoritative PVP/PVE gameplay MVP 구현
-- [x] own-board rollback 주요 재현 경로 E2E 회귀 고정
-- [x] 휴리스틱 PVE AI와 authoritative input executor 구현
-- [x] placement decision log, dataset/export/evaluation, JS/Python parity 경로 구현
-- [x] 사용자 선택형 Experimental PVE V4 경로와 fallback 구현
-- [x] Vite multi-page, React page shell, TypeScript client/runtime/server 전환
-- [x] CSP/security headers와 dependency hardening 반영
-- [x] production Docker image와 graceful shutdown 반영
-- [x] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됐으며, 이후 발견된 PVE timing 경계는 Goal 11E에서 별도로 안정화했다.
-- [x] Goal 11E 최종 `8cc16d9`은 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 SHA Browser 연속 2회가 통과했다.
-
-### 현재 단계의 핵심 문제
-
-- `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
-- room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
-- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. PostgreSQL Goal 9A~9D는 아직 구현하지 않았으며, 다음 작업은 Goal 9A 설계 준비다.
-- Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
-- pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
-- T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
-- Goal 11E 최종 `8cc16d9`의 hosted Fast/Docker와 Browser 연속 2회가 성공했다. 자연 중력과 browser scheduling에 의존하던 PVE 7-bag T-Spin E2E는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트로 보장한다. `main@8087712`의 hosted Fast/Docker/Browser도 모두 성공했다.
-- WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
-
-### 현재 단계에서 하지 않을 것
-
-- SPA 전환
-- 문서 branch에서 PostgreSQL code/dependency/CI를 선행 구현
-- Goal 9D 이전 production PostgreSQL enable과 실제 사용자 data import
-- Redis/Socket.IO adapter와 multi-instance 운영
-- rollback netcode
-- V4를 기본 PVE 또는 production gameplay AI로 승격
-- CI 통과 전 CD, registry publish, 실제 배포 자동화
-
-## Next Actions
-
-### 바로 해야 할 일
-
-1. Goal 9A 설계 준비
-   - PostgreSQL event storage의 schema, migration과 repository 경계를 구현 전에 별도 설계 gate에서 확정한다.
-2. PostgreSQL Goal 순차 실행
-   - 9A 실제 schema/migration/repository는 별도 구현 승인 뒤에만 시작한다.
-   - 9B runtime canonical storage와 shutdown
-   - 9C 기존 JSONL streaming import와 completeness
-   - 9D 실제 PostgreSQL CI/release/Docker gate
-3. `PLAN.md` 단일 기준성 유지
-   - 실행 결과는 각 `runs/goal-*`에 남기고 현재 우선순위만 이 섹션에서 갱신한다.
-
-### 이후 단계
-
-- [x] Goal 11E는 `8cc16d9`으로 main/origin/main에 반영됐고 hosted Fast/Docker 및 Browser 연속 2회가 통과함
-- [x] `main@8087712`의 Fast/Docker/Browser도 통과해 portfolio trailing whitespace와 PLAN 상태 정정 뒤 main CI green을 확인함
-- [ ] Goal 9A 설계 준비 후 별도 구현 승인
-- [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
-- [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
-- [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
-- [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
-- [ ] 실제 gameplay 성능 목표가 생기면 heuristic/V4/hybrid를 새 실험 문서와 benchmark로 분리 검토
-- [ ] LLM 코칭 리포트는 분석 지표와 사용자-vs-AI 비교 결과가 준비된 뒤 별도 승인으로 검토
-
-## MVP Event Contract
-
-- 목적: 현재 코드에 구현된 Socket.IO 이벤트를 기준으로 MVP 계약을 작게 고정한다.
-- 현재 authoritative gameplay의 최신 runtime schema는 `src/shared/socketContracts.mjs`와 `src/shared/socketContractTypes.d.ts`를 우선한다.
-- 현재는 `matchId`가 따로 없고 `roomId`가 match 조회 key 역할을 한다.
-- 현재는 `match:start` 이벤트가 없다. 게임 시작 요청은 `room:start`이고, 성공 시 서버가 내부에서 `createMatch(room)`을 호출한다.
-- 네트워크에는 `action`을 보내고, 내부 판정 문맥은 `moveCause`로 유지한다.
-
-### `room:create`
-
-현재 구현 기준:
-
-```json
-{
-  "playerId": "player_a",
-  "nickname": "Host"
-}
-```
-
-### `room:join`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "player": {
-    "playerId": "player_b",
-    "nickname": "Guest"
-  }
-}
-```
-
-### `room:leave`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a"
-}
-```
-
-### `room:sync`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a"
-}
-```
-
-현재 서버 처리:
-- room 참가자인지 확인한다.
-- 로비 복귀 상황에서는 socket id를 최신 로비 연결로 갱신한다.
-- finished room의 두 플레이어가 모두 로비로 돌아오면 room status를 `waiting`으로 되돌린다.
-
-### `room:start`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a"
-}
-```
-
-현재 서버 처리:
-- 요청자가 host인지, 현재 socket이 host player의 socket인지 확인한다.
-- player가 2명이고 room status가 `waiting`일 때만 `playing`으로 변경한다.
-- 성공 시 `room:result`, `room:updated`, `room:message`를 보내고 `createMatch(room)`으로 match 상태를 만든다.
-
-### `room:result`
-
-현재 구현 기준:
-
-```json
-{
-  "ok": true,
-  "room": {
-    "roomId": "ABCD1234",
-    "players": [],
-    "status": "waiting",
-    "createdAt": 1710000000000
-  },
-  "reason": null
-}
-```
-
-### `room:updated`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "players": [],
-  "status": "waiting",
-  "createdAt": 1710000000000
-}
-```
-
-### `room:message`
-
-현재 구현 기준:
-
-```json
-{
-  "type": "system",
-  "text": "Guest님이 입장하였습니다.",
-  "roomId": "ABCD1234"
-}
-```
-
-### `game:join`
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a"
-}
-```
-
-현재 서버 응답 `game:join:result`:
-
-```json
-{
-  "ok": true,
-  "room": {
-    "roomId": "ABCD1234",
-    "status": "playing"
-  },
-  "match": {
-    "roomId": "ABCD1234",
-    "status": "playing",
-    "players": [
-      {
-        "playerId": "player_a",
-        "lastProcessedClientSequence": 0,
-        "bagChunks": [["bar", "eleft", "eright", "ess", "square", "tree", "zee"]]
-      }
-    ]
-  },
-  "reason": null
-}
-```
-
-현재 처리:
-- room 참가자인지 확인한다.
-- 성공 시 socket을 room에 join시킨다.
-- 현재 match state를 함께 내려준다.
-
-### `game:input`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a",
-  "action": "move_left",
-  "tick": 42,
-  "pieceIndex": 10
-}
-```
-
-현재 서버 처리:
-- `syncRoom(roomId, playerId)`로 room 참가자만 허용한다.
-- 허용 action은 `move_left`, `move_right`, `soft_drop`, `rotate`, `hard_drop`, `hold`다.
-- `clientSequence`를 검증해 중복·역순 입력을 거부한다.
-- 정상 input을 server authoritative state에 적용한다.
-- authoritative apply 성공 시 `game:authoritative:snapshot`을 emit한다.
-- lock 결과로 garbage attack이 생기면 target player의 authoritative snapshot도 즉시 emit한다.
-- 실패 시 요청자에게 `game:input:result`를 보낸다.
-
-### `game:snapshot`
-
-현재 상태:
-- legacy client-driven snapshot handler는 제거됐다.
-- client session은 `game:snapshot`을 송신하지 않으며 상대 보드는 `game:authoritative:snapshot`만 따른다.
-
-과거 payload 형태:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a",
-  "snapshot": {
-    "board": [],
-    "activePiece": {
-      "pieceType": "tree",
-      "rotation": 1,
-      "row": 5,
-      "col": 4
-    },
-    "holdPieceType": "bar",
-    "nextQueue": ["square", "zee"],
-    "score": 1200,
-    "lines": 4,
-    "phase": "playing",
-    "pieceIndex": 10
-  }
-}
-```
-
-현재 서버에는 `game:snapshot` listener가 없다.
-
-### `game:authoritative:snapshot`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a",
-  "snapshot": {
-    "board": [],
-    "activePiece": {
-      "pieceType": "tree",
-      "rotation": 1,
-      "row": 5,
-      "col": 4
-    },
-    "pieceQueue": ["square", "zee"],
-    "holdPieceType": "bar",
-    "holdUsedThisDrop": false,
-    "score": 1200,
-    "lines": 4,
-    "phase": "playing",
-    "combo": 1,
-    "backToBack": true,
-    "tick": 42,
-    "pieceIndex": 10,
-    "pendingGarbageLines": 3
-  }
-}
-```
-
-현재 클라이언트 처리:
-- `playerId === opponentPlayerId`이면 opponent runtime에 full apply한다.
-- `playerId === my playerId`이면 `pendingGarbageLines`를 표시한다.
-- 내 snapshot full apply는 `gameOver` 또는 garbage 적용 correction 조건을 통과한 경우로 제한한다.
-
-### `game:bag:request`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a"
-}
-```
-
-현재 서버 처리:
-- room 참가자인지 확인한다.
-- `matchService.appendPlayerBagChunk()`로 player의 bag chunk를 추가한다.
-- 성공 시 room 전체에 `game:bag:append`를 보낸다.
-
-`game:bag:append` 예:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a",
-  "bagChunk": ["bar", "eleft", "eright", "ess", "square", "tree", "zee"]
-}
-```
-
-### `game:leave`
-
-현재 구현 기준:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a"
-}
-```
-
-현재 서버 처리:
-- playing room에서만 처리한다.
-- 정상 처리 시 요청 socket을 room에서 leave하고 상대에게 `game:opponent-left`를 보낸다.
-- room ticker를 멈추고 `deleteMatch(roomId)`로 match를 정리한다.
-- 요청자에게 `game:leave:result`를 보낸다.
-
-### `game:over`
-
-현재 상태:
-- legacy client report handler는 제거됐다.
-- client session은 `game:over`를 송신하지 않는다.
-
-과거 payload 형태:
-
-```json
-{
-  "roomId": "ABCD1234",
-  "playerId": "player_a",
-  "reason": "top_out"
-}
-```
-
-현재 서버 처리:
-- `game:over` listener는 없다.
-- 실제 game over는 server authoritative input/ticker lock 결과에서 발생한다.
-- authoritative game over는 `finishAuthoritativeMatch()`가 처리한다.
-
-### `match:finish`
-
-현재 구현 기준:
-
-```json
-{
-  "room": {
-    "roomId": "ABCD1234",
-    "status": "finished"
-  },
-  "winnerPlayerId": "player_a",
-  "loserPlayerId": "player_b",
-  "reason": "top_out"
-}
-```
-
-### 아직 없는 이벤트
-
-- `match:ready`
-- `match:start`
-- 상대 line clear 표시용 effect event 또는 snapshot field
-
-## Later Roadmap
-
-### production hardening 이후
-
-- [x] Goal 11D PR 원격 실행 증거와 main 반영
-- [x] main push에서 확인된 PVE timing failure는 Goal 11E에서 deterministic coverage로 재배치하고 hosted CI green을 확인함
-- [x] `main@8087712`의 portfolio trailing whitespace와 PLAN 상태 정정 뒤 hosted Fast/Docker/Browser green을 확인함
-- [ ] Goal 9A~9D PostgreSQL event storage 구현과 실제 DB CI 검증
-- [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
-- [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
-- [ ] Goal 9D 이후 DB export/read-source 전환이 필요하면 Goal 10 재검토
-- [ ] deterministic seed/replay 고도화
-- [ ] 사용자 행동과 PVE AI 선택 비교 리포트 고도화
-- [ ] LLM 기반 코칭 리포트 추가 검토
-
-### 운영 체크리스트 최소 항목
-
-- [x] `start` script
-- [x] `test` script
-- [x] `dev` / `dev:server` script
-- [x] `build` script
-- [x] `env` / `port` 기본 경계 정리
-- [x] disconnect 기반 room cleanup
-- [x] production Docker health check
-- [ ] TTL 또는 오래된 room cleanup
-- [ ] external TLS/reverse proxy 환경 검증
-- [~] GitHub Actions PR remote green, 첫 main push browser gate 36/37
-
-### AI 원칙
-
-- AI는 DOM이 아니라 game state를 읽는다.
-- AI 출력은 사람과 같은 `action` 형식을 사용한다.
-- 현재 구현된 AI 기반은 `boardMetrics`, reachable placement planning, simulation, heuristic evaluation, PVE AI Player다.
-- PVE AI는 추천 코치가 아니라 실제 AI 상대다.
-- production 기본 PVE는 heuristic이다.
-- V4는 사용자 선택형 Experimental PVE와 offline Human imitation 분석용이다.
-- Python AI 서버와 강화학습은 현재 범위가 아니며, 별도 gameplay 목표와 benchmark가 생긴 뒤 검토한다.
-- LLM은 보조 설명 계층이다.
-- LLM 입력은 원본 게임 로그 전체가 아니라 요약 통계, 주요 실수 장면, PVE AI 선택 행동, 사용자 행동 차이를 중심으로 구성한다.
-- LLM이 판단을 대신하지 않는다. 판단은 휴리스틱/ML 분석 계층에서 만들고, LLM은 그 결과를 자연어로 설명한다.
-
-## Existing Docs Note
-
-- `ROADMAP.md`: 상위 방향 문서였음. 핵심 방향은 이 문서에 흡수했다.
-- `PROTOCOL.md`: 멀티 철학은 유지하되, MVP 기준은 `seed`보다 `server bag`으로 수정 반영했다.
-- `PHASE1_PLAN.md`: 오래된 계획서 성격이 강해서 "진행 현황"과 "다음 액션"으로 흡수했다.
-- 가능하면 이후에는 이 `PLAN`을 기준으로 유지하고, 나머지 문서는 보조 기록 또는 아카이브로 두는 편이 좋다.
