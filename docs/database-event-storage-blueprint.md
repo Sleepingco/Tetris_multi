@@ -108,8 +108,8 @@ Goal 10과 DB 기반 dataset read cutover는 현재 보류다. 이 Blueprint는 
 | `identityVersion` | 현재 identity 규칙인 `identity-v1` |
 | `eventType` | 저장 event 종류 |
 | `schemaVersion` | event payload schema version |
-| `gameId` | server가 소유하는 game identity |
-| `playerId` | placement의 player identity, lifecycle은 null |
+| `gameId` | server가 소유하는 game identity, UTF-8 최대 64 bytes |
+| `playerId` | placement의 player identity, lifecycle은 null, UTF-8 최대 64 bytes |
 | `pieceIndex` | placement의 0 이상 PostgreSQL integer, lifecycle은 null |
 | `trustLevel` | `server_authoritative` 또는 `client_reported` |
 | `occurredAt` | null 또는 exact UTC ISO 문자열 |
@@ -117,13 +117,17 @@ Goal 10과 DB 기반 dataset read cutover는 현재 보류다. 이 Blueprint는 
 
 ### Canonical serialization
 
-canonicalization은 JSON primitive, array, plain object만 허용한다. object key는 재귀적으로 `Object.keys(value).sort()` 순서로 정렬하고 array 순서는 보존한다. `localeCompare`와 Unicode normalization은 사용하지 않는다. `occurredAt`은 UTC millisecond ISO 문자열로 정규화한다. number는 finite 값만 허용하며 BigInt, `undefined`, function, symbol, sparse array, custom prototype, `toJSON`, getter, 순환 참조는 거부한다.
+canonicalization은 JSON primitive, array, plain object만 허용한다. object key는 재귀적으로 `Object.keys(value).sort()`의 UTF-16 code-unit 순서로 정렬하고 array 순서는 보존한다. `localeCompare`와 Unicode normalization은 사용하지 않는다. array own key는 `length`와 실제 `0..length-1` index만 허용하며 `4294967295` 같은 배열 밖 key도 거부한다. own `__proto__`는 일반 key처럼 보존한다. `occurredAt`은 UTC millisecond ISO 문자열로 정규화한다.
 
-검증된 canonical object를 `JSON.stringify`한 UTF-8 bytes가 hash 입력이다. identity preimage는 `event_id = SHA256(UTF8(canonicalJson(identityTuple)))`로 고정한다. `event_sha256`은 같은 `canonicalJson` 함수로 immutable envelope를 직렬화한 UTF-8 bytes의 SHA-256이다.
+number는 finite 값만 허용하고 JSON이 `0`으로 축약하는 `-0`도 거부한다. 문자열 값과 object key에는 PostgreSQL text/JSONB가 저장하지 못하는 U+0000 또는 unpaired surrogate를 허용하지 않는다. 그 밖에 BigInt, `undefined`, function, symbol, sparse array, custom prototype, `toJSON`, getter, 순환 참조를 거부한다.
 
-hash fixture는 중첩 object key 순서가 달라도 같은 hash인지, 같은 identity에서 payload만 바꾸면 `event_id`는 같고 `event_sha256`은 달라지는지, 각 fixture의 exact expected digest가 일치하는지를 검증한다. 이를 위해 새 canonicalization dependency를 추가하지 않는다.
+`canonicalJson`은 정렬된 key와 value token을 직접 직렬화한다. 정렬한 값을 임시 일반 object에 할당한 뒤 `JSON.stringify`의 property enumeration에 의존하지 않는다. JSON string/key escaping에는 표준 `JSON.stringify`를 사용하며, 완성된 canonical JSON의 UTF-8 bytes가 hash 입력이다. identity preimage는 `event_id = SHA256(UTF8(canonicalJson(identityTuple)))`로 고정한다. `event_sha256`은 같은 `canonicalJson` 함수로 immutable envelope를 직렬화한 UTF-8 bytes의 SHA-256이다.
+
+hash fixture는 primitive와 null, nested own `__proto__`, integer-like key의 code-unit 순서, 중첩 object key 순서가 달라도 같은 hash인지, 같은 identity에서 payload만 바꾸면 `event_id`는 같고 `event_sha256`은 달라지는지, 각 fixture의 exact expected digest가 일치하는지를 검증한다. 이를 위해 새 canonicalization dependency를 추가하지 않는다.
 
 256 KiB 상한은 serialized canonical envelope 전체에 적용한다. 현재 JSONL validator의 raw log 전체 256 KiB 상한도 그대로 유지한다. 한 번 만든 immutable snapshot을 hash 계산과 INSERT 양쪽에서 그대로 사용해, 서로 다른 표현이 같은 event로 섞이지 않게 한다.
+
+현재 production identity 생성 경로에서 room ID는 UUID 앞 8 ASCII, lifecycle/placement game ID는 그 room ID와 `Date.now()`를 결합해 현재 22 ASCII bytes, human player ID는 UUID 36 ASCII bytes, heuristic AI player ID는 `heuristic-ai-`와 room ID를 합쳐 21 ASCII bytes다. canonical 경계는 이 현재 최대값을 포함하면서 future projector가 무제한 identity를 만들지 못하도록 `gameId`와 `playerId`를 각각 UTF-8 64 bytes로 제한한다. SQL도 같은 `octet_length <= 64`를 검사한다.
 
 ## 7. Identity와 멱등성
 
@@ -182,7 +186,7 @@ tetris_analytics.game_events
 | `event_sha256` | immutable persistence envelope hash |
 | `ingested_at` | DB가 생성하는 수집 시각 |
 
-index는 primary event ID, lifecycle semantic identity, placement semantic identity, `gameId` 조회, `(eventType, ingestedAt)` 운영 조회를 위해서만 둔다. append-only event table에는 mutable status, UPDATE 기반 upsert, 미사용 파생 table을 만들지 않는다. 정확한 constraint와 index 정의는 `src/server/db/migrations/001_game_events.sql`의 책임이다.
+index는 primary event ID, lifecycle semantic identity, placement semantic identity, `gameId` 조회, `(eventType, ingestedAt)` 운영 조회를 위해서만 둔다. SQL은 `game_id`와 non-null `player_id`의 UTF-8 길이를 canonical 경계와 같은 64 bytes로 제한하고, non-null `occurred_at`에 PostgreSQL finite timestamp만 허용해 `infinity`와 `-infinity`를 거부한다. append-only event table에는 mutable status, UPDATE 기반 upsert, 미사용 파생 table을 만들지 않는다. 정확한 constraint와 index 정의는 `src/server/db/migrations/001_game_events.sql`의 책임이다.
 
 현재 migration은 `identity-v1`만 CHECK로 허용한다. 미래 identity version은 기존 CHECK와 identity에 의존하는 index를 함께 바꾸는 새 migration으로만 도입한다.
 
@@ -199,7 +203,7 @@ migration CLI
   → unlock 및 connection close
 ```
 
-history는 version, checksum, 적용 시각을 보관한다. checksum이 이미 적용된 version과 다르면 fail closed한다. empty DB와 동일 migration 재실행을 모두 지원한다. lock wait는 bounded이며, migration 실패 시 rollback, unlock, connection close를 순서대로 시도한다.
+history는 version, checksum, 적용 시각을 보관한다. `CREATE ... IF NOT EXISTS` 직후 analytics schema와 history table의 owner가 모두 `current_user`인지 확인하고, 다른 role이 미리 만든 객체는 migration role에 권한을 grant했더라도 `MIGRATION_BOOTSTRAP_OWNER_MISMATCH`로 거부한다. checksum이 이미 적용된 version과 다르면 fail closed한다. empty DB와 동일 migration 재실행을 모두 지원한다. lock wait는 bounded이며, migration 실패 시 rollback, unlock, connection close를 순서대로 시도한다.
 
 advisory lock은 PostgreSQL server 기능이다. 이 한 table을 위해 별도 migration framework를 도입하지 않는다.
 
@@ -233,9 +237,11 @@ application migration이 role을 자동 생성하지 않는다. role과 database
 - unknown query option과 query override 거부
 - 허용된 필드만으로 최종 pg `ClientConfig` 생성
 
-local test의 loopback만 TLS 없이 허용한다. non-loopback 연결은 DNS hostname, `sslmode=verify-full`, `rejectUnauthorized: true`, hostname 검증을 요구한다. `host`, `ssl`, `sslcert`, `sslkey`, `sslrootcert` 같은 query override는 거부한다. 검증 뒤 원래 `connectionString`을 pg에 다시 넘기지 않고, 허용된 field와 명시적 `servername`으로 `ClientConfig`를 구성한다. provider CA는 필요한 환경에서만 명시한다.
+local test의 loopback만 TLS 없이 허용한다. loopback은 `localhost`, `::1`, `node:net.isIP()`가 유효하다고 판정한 127/8 IPv4로만 한정하며 `127.999.999.999`, `127.256.0.1` 같은 hostname은 거부한다. non-loopback 연결은 DNS hostname, `sslmode=verify-full`, `rejectUnauthorized: true`, hostname 검증을 요구한다. `host`, `ssl`, `sslcert`, `sslkey`, `sslrootcert` 같은 query override는 거부한다.
 
-URL과 credential은 error, console, artifact, process argument에 출력하지 않는다. TLS 검증은 private CA 연결 성공, untrusted CA 실패, hostname mismatch 실패를 포함해 계획한다. 실제 provider CA와 managed DB 설정은 Goal 9D 또는 배포 환경에서 확정한다.
+user, database와 non-empty password는 모두 URL에 명시해야 하며 `PGPASSWORD`나 `.pgpass` fallback은 없다. 연결에 영향을 주는 ambient `PG*` 환경변수가 있으면 fail closed한다. 검증 뒤 원래 `connectionString`을 pg에 다시 넘기지 않고 host/user/database/password, UTF-8 encoding, non-replication, safe options, bounded timeout, application name과 TLS field를 명시한 `ClientConfig`를 만든다. 검증 직후 ambient 값이 생겨도 `new Client(config).connectionParameters`의 최종값이 바뀌지 않는지 sentinel fixture로 확인한다.
+
+URL과 credential은 error, assertion, console, artifact, process argument에 출력하지 않는다. TLS 검증은 private CA 연결 성공, untrusted CA 실패, hostname mismatch 실패를 포함한다. 실제 provider CA와 managed DB 설정은 Goal 9D 또는 배포 환경에서 확정한다.
 
 ## 12. Trust와 개인정보
 
@@ -265,12 +271,14 @@ Goal 9A local 구현에서 다음을 검증했다.
 
 - empty migration과 재실행
 - checksum mismatch와 concurrent migration runner
+- hostile pre-existing schema/history owner 거부와 failure cleanup
 - 세 event insert
 - 반복·동시 duplicate와 immutable conflict
-- CHECK와 partial unique constraint
+- identity UTF-8 byte, finite timestamp, event shape CHECK와 partial unique constraint
 - runtime role의 허용/거부 권한
 - secret과 payload 비노출
-- canonical fixture의 event ID/hash 재현성
+- `__proto__`, integer-like key, array own key와 canonical event ID/hash 재현성
+- strict loopback, ambient `PG*`와 최종 `pg` connection parameter
 - private CA 성공, untrusted CA와 hostname mismatch 실패
 - compiled migration/SQL artifact
 - source-less fixture에서 migration 두 번
