@@ -340,26 +340,68 @@ test("PVE human은 실제 7-bag 입력으로 코너를 빌드업하고 T-Spin을
 
         await test.step("SRS wall kick 후 hard drop으로 T-Spin 보너스를 받는다", async () => {
             await moveActivePieceToColumn(page, monitor, humanPlayerId, 0);
-            const beforeTSpin = await softDropActivePieceToMinimumRow(
+            const descendingSnapshot = await softDropActivePieceToMinimumRow(
                 page,
                 monitor,
                 humanPlayerId,
                 12,
             );
-            expect(beforeTSpin.activePiece.row).toBeLessThan(16);
+            expect(descendingSnapshot.activePiece.row).toBeLessThan(16);
             const scoreText = page.locator('.player-column[data-player="1"] .score');
             const clientScoreBefore = Number(await scoreText.textContent());
             const boardBeforeTSpin = await readBottomBoardFingerprint(page, 1, 8);
+            let positionPreconditionFailure = null;
 
             await expect.poll(() => {
-                return monitor.getSnapshots(humanPlayerId).some(snapshot => {
-                    return snapshot.sequence > beforeTSpin.sequence &&
-                        snapshot.pieceIndex === beforeTSpin.pieceIndex &&
-                        snapshot.activePiece?.row === 16;
-                });
-            }).toBe(true);
+                const latest = getLatestSnapshot(monitor, humanPlayerId);
+                if (latest?.pieceIndex > descendingSnapshot.pieceIndex) {
+                    positionPreconditionFailure = new Error(
+                        "T-Spin piece locked before the row-16 rotation precondition.",
+                    );
+                    return true;
+                }
 
+                return latest?.playerId === humanPlayerId &&
+                    latest.pieceIndex === descendingSnapshot.pieceIndex &&
+                    latest.activePiece?.pieceType === "tree" &&
+                    latest.activePiece.rotation === 0 &&
+                    latest.activePiece.row === 16 &&
+                    latest.activePiece.col === 0 &&
+                    latest.pendingGarbageLines === 0 &&
+                    latest.board[16][0] === null &&
+                    latest.board[17][0] === null &&
+                    latest.board[17][1] === null &&
+                    latest.board[18][0] === null &&
+                    latest.board[18][1] === "square" &&
+                    latest.board[18][2] === "square" &&
+                    latest.board[19][1] === "square" &&
+                    latest.board[19][2] === "square";
+            }).toBe(true);
+            if (positionPreconditionFailure) throw positionPreconditionFailure;
+
+            const beforeTSpin = getLatestSnapshot(monitor, humanPlayerId);
             await page.keyboard.press("ArrowUp");
+            let rotationPreconditionFailure = null;
+
+            await expect.poll(() => {
+                const latest = getLatestSnapshot(monitor, humanPlayerId);
+                if (latest?.pieceIndex > beforeTSpin.pieceIndex) {
+                    rotationPreconditionFailure = new Error(
+                        "T-Spin piece locked before the authoritative wall-kick result.",
+                    );
+                    return true;
+                }
+
+                return latest?.sequence > beforeTSpin.sequence &&
+                    latest.pieceIndex === beforeTSpin.pieceIndex &&
+                    latest.activePiece?.pieceType === "tree" &&
+                    latest.activePiece.rotation === 1 &&
+                    latest.activePiece.row === 16 &&
+                    latest.activePiece.col === -1 &&
+                    latest.pendingGarbageLines === 0;
+            }).toBe(true);
+            if (rotationPreconditionFailure) throw rotationPreconditionFailure;
+
             await page.keyboard.press("Space");
 
             await expect.poll(() => {
