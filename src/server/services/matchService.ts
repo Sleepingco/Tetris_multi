@@ -365,11 +365,22 @@ export function authenticateHumanPlacementReceipt(
     pieceIndex: number,
     now = Date.now(),
 ): HumanPlacementReceiptResult {
-    const receipt = purgeExpiredReceipts(receiptKey(roomId, playerId), now)
-        .find(candidate => (
+    const key = receiptKey(roomId, playerId);
+    const receipts = purgeExpiredReceipts(key, now);
+    const receiptIndex = receipts.findIndex(candidate => (
             candidate.clientSequence === clientSequence
             && candidate.pieceIndex === pieceIndex
         ));
+    if (receiptIndex < 0) {
+        return {
+            ok: false,
+            receipt: null,
+            reason: "PLACEMENT_RECEIPT_NOT_FOUND",
+        };
+    }
+
+    const receipt = receipts.splice(receiptIndex, 1)[0];
+    if (receipts.length === 0) recentHumanPlacementReceipts.delete(key);
     return receipt
         ? { ok: true, receipt, reason: null }
         : {

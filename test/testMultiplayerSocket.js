@@ -2714,7 +2714,7 @@ test("game:input authoritative 예외는 sequence를 ack하고 현재 snapshot�
     })
 })
 
-test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 반환한다", async () => {
+test("game:log:placement_decision은 유효한 로그를 한 번만 저장하고 replay를 거부한다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("log-host-socket")
     const guestSocket = new FakeClientSocket("log-guest-socket")
@@ -2810,6 +2810,16 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
     assert.equal(savedLogs[0].playerId, "log-host-player")
     assert.equal(logResult.ok, true)
     assert.equal(logResult.reason, null)
+
+    await hostSocket.triggerAsync("game:log:placement_decision", {
+        roomId,
+        log: savedLogs[0],
+    })
+    assert.equal(savedLogs.length, 1)
+    assert.equal(
+        hostSocket.lastClientEvent("game:log:result")?.payload.reason,
+        "PLACEMENT_RECEIPT_NOT_FOUND",
+    )
 })
 
 test("game:log:placement_decision은 waiting 상태이면 저장하지 않는다", async () => {

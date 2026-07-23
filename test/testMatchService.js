@@ -81,7 +81,7 @@ test("createMatch는 room 정보를 기준으로 authoritative match를 만든�
     assert.equal(typeof result.match.createdAt, "number");
 });
 
-test("human placement receipt는 exact tuple, TTL과 player별 128개 상한을 강제한다", () => {
+test("human placement receipt는 exact tuple, 1회 사용, TTL과 player별 128개 상한을 강제한다", () => {
     resetMatches();
     const matchResult = createMatch(createPlayingRoom("RECEIPT1"));
     const gameId = matchResult.match.gameId;
@@ -109,15 +109,20 @@ test("human placement receipt는 exact tuple, TTL과 player별 128개 상한을 
         true,
     );
     assert.equal(
+        authenticateHumanPlacementReceipt("RECEIPT1", "host-player", 1, 1, 1_002).reason,
+        "PLACEMENT_RECEIPT_NOT_FOUND",
+    );
+    assert.equal(
         authenticateHumanPlacementReceipt("RECEIPT1", "host-player", 2, 1, 1_002).reason,
         "PLACEMENT_RECEIPT_NOT_FOUND",
     );
+    recordHumanPlacementReceipt("RECEIPT1", "host-player", 2, 2, 1_000);
     assert.equal(
         authenticateHumanPlacementReceipt(
             "RECEIPT1",
             "host-player",
-            1,
-            1,
+            2,
+            2,
             1_000 + HUMAN_PLACEMENT_RECEIPT_TTL_MS,
         ).reason,
         "PLACEMENT_RECEIPT_NOT_FOUND",
