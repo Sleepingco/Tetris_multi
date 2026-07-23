@@ -4284,3 +4284,636 @@ gameOver hard-safety filter                    X
 ```
 
 따라서 `candidate_artifact_validated`는 artifact 형식, 학습, 결정성, 저장 연결이 정상이라는 뜻이다. `productionIntegration=false`는 아직 실제 게임 AI 판단에 연결하지 않았다는 뜻이고, `heldOutEvidence=false`는 이번 125게임 전체 학습의 training loss만으로는 새 게임 성능을 증명하지 못한다는 뜻이다.
+
+## Q. Docker 또는 무료 PaaS에 배포한 뒤에도 사용자 행동 로그를 학습용으로 보존하려면 유료 Persistent Disk가 꼭 필요해? (2026-07-23)
+
+꼭 Persistent Disk가 필요한 것은 아니다. 다만 컨테이너 내부 JSONL 파일만 원본 저장소로 쓰면 재배포, 장애 재시작, 컨테이너 교체 때 로그가 사라질 수 있다.
+
+```txt
+컨테이너 내부 /app/data/logs/game-events.jsonl
+-> 컨테이너가 교체되면 유실 가능
+```
+
+종료 직전에 사람이 파일을 복사하는 방식은 근본 해결이 아니다.
+
+```txt
+수동 백업이 가능한 경우
+-> 계획된 종료 전에 사람이 접속해 파일을 복사할 수 있음
+
+수동 백업이 불가능한 경우
+-> 자동 재배포
+-> 서버 장애 또는 강제 재시작
+-> 배포 플랫폼의 인스턴스 교체
+```
+
+학습용 행동 로그를 실제로 보존하려면, 배포 서버 파일이 아니라 외부 저장소에 이벤트를 기록해야 한다. 현재 프로젝트에서는 PostgreSQL이 가장 자연스러운 선택이다.
+
+```txt
+authoritative placement_decision 발생
+-> PostgreSQL game_events에 저장
+-> 나중에 DB에서 dataset용 JSONL export
+-> Python 학습
+```
+
+DB에는 최소한 아래 이벤트만 저장하면 된다.
+
+```txt
+game_start
+placement_decision
+game_over
+```
+
+동일 이벤트가 재시도되어도 중복 저장되지 않도록 `(gameId, playerId, pieceIndex)` 기반의 고유 키를 둔다. 이 구조에서는 Docker 컨테이너가 교체되어도 이미 DB에 저장된 행동 기록은 남는다.
+
+```txt
+PostgreSQL
+= 사용자, 전적, 게임 결과, 학습용 placement event의 영구 저장소
+
+JSONL
+= DB에서 export해 만든 학습용 파일 또는 로컬 실험 로그
+```
+
+현재 PostgreSQL shadow storage는 게임을 멈추지 않기 위해 DB 실패 시 로그 일부를 잃을 수 있는 보조 저장 방식이다. 학습 로그를 완전하게 수집하는 원본 저장소로 승격하려면 DB 장애 시 재시도, 누락 구간 표시, dataset export 기준을 별도로 정해야 한다.
+
+따라서 단계별 권장은 다음과 같다.
+
+```txt
+현재 로컬 학습
+-> Mac의 JSONL 로그 사용, 비용 없음
+
+무료 공개 데모
+-> 로그 유실 가능성을 허용하거나 DB 무료 플랜으로 제한적 수집
+
+장기 사용자 행동 수집
+-> PostgreSQL 또는 외부 저장소를 원본으로 사용
+```
+
+## Q. Docker, 배포, 로그 보존 관련 질문 (2026-07-22 ~ 2026-07-23)
+
+### 1. Docker 적용 설계는 무엇을 하려는 작업인가?
+
+Docker는 게임 로직을 바꾸는 도구가 아니라, 서버 실행 환경을 하나의 이미지로 고정하는 도구다.
+
+```txt
+소스 코드
+-> Docker build 단계에서 npm run build
+-> dist/client + dist/server 생성
+-> 실행에 필요한 파일만 담은 Docker image 생성
+-> 어느 Linux 서버에서도 같은 방식으로 실행
+```
+
+최종 image에는 개발용 source, 테스트, 문서, 개발 의존성을 빼고 아래만 남기는 것이 목표다.
+
+```txt
+dist/client       브라우저에 제공할 Vite build 결과
+dist/server       Node가 실행할 compiled server
+production node_modules
+/app/data/logs    로그를 쓸 수 있는 경로
+```
+
+Docker가 해결하는 것은 실행 환경 차이다.
+
+```txt
+내 Mac에서만 실행됨
+-> Docker image에서 실행 확인
+-> 배포 Linux에서도 같은 Node와 같은 파일로 실행
+```
+
+Docker만으로 room, match, Socket.IO 연결 상태가 보존되지는 않는다. 현재 게임 상태는 Node 메모리에 있으므로 컨테이너가 종료되면 진행 중 게임도 끝난다.
+
+### 2. Docker 적용 전에 승인해야 할 다섯 가지는 무엇인가?
+
+이는 Dockerfile 문법 문제가 아니라, 배포된 서버를 어떤 규칙으로 만들고 운영할지 정하는 기준이다.
+
+```txt
+1. 정확한 Node image
+2. build와 production 실행을 분리하는 multi-stage 구조
+3. non-root 실행, 로그 경로, secret 주입 방식
+4. health check와 SIGTERM 종료 방식
+5. commit SHA image tag와 rollback 방식
+```
+
+각 항목의 의미는 다음과 같다.
+
+```txt
+정확한 Node image
+-> node:24.18.0 같은 버전과 Linux base를 고정
+-> 개발/배포 환경 차이를 줄임
+
+multi-stage build
+-> 첫 단계에서 source로 dist를 build
+-> 마지막 단계에는 dist와 production dependency만 복사
+
+non-root, logs, secrets
+-> root 대신 node 사용자로 실행
+-> 로그 폴더만 쓰기 허용
+-> token, origin, CSP 설정은 image가 아니라 deploy 환경 변수로 전달
+
+health check와 SIGTERM
+-> Docker가 서버의 HTTP 응답을 확인
+-> 종료 시 Socket.IO와 ticker를 정리할 시간을 줌
+
+commit SHA tag와 rollback
+-> 예: tetris:<git-commit-sha>
+-> 새 버전에 문제가 있으면 이전 SHA image로 되돌림
+```
+
+### 3. Docker로 무중단 배포도 가능한가?
+
+일부는 가능하지만 Docker만으로 자동 해결되지는 않는다.
+
+```txt
+Load Balancer
+-> 기존 컨테이너 A는 서비스 유지
+-> 새 컨테이너 B를 먼저 시작하고 health check
+-> 정상일 때 새 연결을 B로 전환
+-> A에 SIGTERM을 보내 정리 후 종료
+```
+
+현재 프로젝트에서는 신규 HTTP 접속과 로비는 거의 끊기지 않게 만들 수 있다. 하지만 room, match, board, Socket.IO 연결이 A의 메모리에 있으므로 A에서 진행 중인 멀티 게임은 B로 자동 이동할 수 없다.
+
+```txt
+현재 가능한 수준
+-> 신규 접속/로비의 배포 중단 최소화
+-> 진행 중 게임은 disconnect 또는 종료 가능
+
+진짜 게임 중 무중단 복구에 필요한 것
+-> 공유 room/match 상태 저장소
+-> Socket.IO 다중 인스턴스 adapter
+-> 재연결 및 match 복원 정책
+```
+
+현재 단계에서는 재배포 전에 신규 매치를 막고, 진행 중 게임을 짧게 기다린 뒤 종료하는 graceful shutdown이 현실적인 범위다.
+
+### 4. `dist` 폴더는 무엇인가?
+
+`dist`는 distribution의 줄임말이며, 원본 `src`를 실제 실행과 배포에 맞게 변환한 결과물이다.
+
+```txt
+src/client
+-> Vite build
+-> dist/client
+
+src/server
+-> TypeScript compile
+-> dist/server
+```
+
+예를 들면:
+
+```txt
+src/client/pages/multiLobby.tsx
+-> dist/client/assets/multiLobby-<hash>.js
+
+src/app.ts
+-> dist/server/app.js
+```
+
+배포 시에는 원칙적으로 `src`가 아니라 build된 결과를 실행한다.
+
+```bash
+npm run build
+npm start
+```
+
+`dist`는 직접 수정하는 폴더가 아니다. `src`를 수정한 뒤 다시 build하면 새로 만들어진다.
+
+### 5. 파일을 수정할 때마다 build해야 하는가? Vite는 백엔드인가?
+
+프론트엔드 개발 중에는 매번 수동 build할 필요가 없다.
+
+```txt
+npm run dev
+-> Vite 개발 서버 실행
+-> src/client 변경 감지
+-> 브라우저 화면 자동 갱신
+```
+
+Vite는 백엔드가 아니라 프론트엔드 개발 및 build 도구다.
+
+```txt
+Vite
+= React, TypeScript, CSS를 브라우저용 파일로 변환
+
+Express + Socket.IO
+= room, match, 게임 판정, 실시간 통신을 처리하는 백엔드
+```
+
+배포 시에는 Vite 개발 서버를 계속 실행하지 않는다. Vite가 미리 만든 `dist/client`를 Express가 정적 파일로 제공한다.
+
+### 6. JSONL 로그는 Linux 서버 폴더에 쓰는 것 아닌가? 왜 Persistent Disk가 필요한가?
+
+코드에서는 단순히 지정된 파일 경로에 append한다.
+
+```txt
+/app/data/logs/game-events.jsonl
+```
+
+문제는 그 경로가 실제 Linux VM의 영구 디스크인지, 컨테이너 내부의 임시 파일 시스템인지다.
+
+```txt
+직접 관리하는 Linux VM
+-> /srv/tetris/logs/game-events.jsonl
+-> 서버 재시작 뒤에도 파일 유지
+
+PaaS 컨테이너 내부
+-> /app/data/logs/game-events.jsonl
+-> 재배포/교체 시 컨테이너와 함께 사라질 수 있음
+```
+
+Persistent Disk는 컨테이너의 특정 경로를 컨테이너 밖의 영구 디스크와 연결하는 기능이다. 코드는 같은 `/app/data/logs`에 쓰지만, 실제 데이터는 컨테이너 교체 뒤에도 남는다.
+
+### 7. Persistent Disk는 유료인가? 다른 해결책은 없는가?
+
+Render 기준으로 Persistent Disk는 유료 Web Service에서만 사용할 수 있다. 무료 배포 환경에서 "무료 + 장기 보존 + 서버 내부 파일"을 동시에 보장하기는 어렵다.
+
+대안은 저장 책임을 서버 파일에서 분리하는 것이다.
+
+```txt
+로컬 실험
+-> Mac의 JSONL에 저장, 비용 없음
+
+공개 데모
+-> 로그 유실을 허용하고 무료 배포
+
+서비스 기능 데이터
+-> PostgreSQL 저장
+
+대량 파일/backup
+-> object storage 사용
+
+직접 운영
+-> Linux VM의 실제 디스크에 저장
+```
+
+컨테이너 종료 직전에 수동으로 JSONL을 복사하는 것은 계획된 종료에는 가능하지만, 자동 재배포나 장애 재시작에서는 시점을 보장할 수 없다. 자동 backup도 결국 DB, object storage, 영구 디스크 중 하나에 저장해야 한다.
+
+### 8. 사용자 행동을 모방하려면 유료 저장소가 무조건 필요한가?
+
+아니다. 자신의 플레이를 수집하고 학습하는 단계에서는 로컬 JSONL만으로 충분하다.
+
+```txt
+내 Mac에서 게임 실행
+-> game-events.jsonl 기록
+-> dataset export
+-> Python 학습
+```
+
+비용이 필요한 시점은 공개 서비스에서 여러 사용자의 행동을 장기간 안정적으로 수집하고자 할 때다. 이때는 행동 로그를 DB 또는 외부 저장소에 기록해야 한다.
+
+### 9. 사용자 행동 로그 보존에는 DB가 가장 쉬운가?
+
+현재 요구에는 그렇다. 특히 JSONL 파일을 배포 컨테이너에 보존하려는 문제보다 PostgreSQL에 authoritative 이벤트를 저장하는 편이 구조가 단순하다.
+
+```txt
+authoritative placement_decision 발생
+-> PostgreSQL game_events 저장
+-> 나중에 DB에서 JSONL dataset export
+-> 학습
+```
+
+DB에는 현재 학습에 필요한 이벤트만 저장하면 된다.
+
+```txt
+game_start
+placement_decision
+game_over
+```
+
+`gameId + playerId + pieceIndex` 같은 고유 키를 두면 재시도되어도 같은 placement가 중복 저장되지 않는다. 반면 사용자, 전적, ranking, rating 같은 서비스 기능도 PostgreSQL에 적합하다.
+
+현재 PostgreSQL shadow storage는 DB 장애가 gameplay를 멈추지 않도록 일부 로그 유실을 허용하는 보조 경로다. 학습 로그의 원본 저장소로 쓸 때는 재시도와 누락 구간 정책을 별도로 정해야 한다.
+
+## Q. Redis와 재접속은 현재 어떻게 동작하는가? (2026-07-23)
+
+### 1. 현재도 재접속 로직이 있는가?
+
+있다. Redis 없이 브라우저 `sessionStorage`와 Node 메모리의 session service를 이용한다.
+
+```txt
+처음 연결
+-> 서버가 playerId + token 발급
+-> 브라우저 sessionStorage에 저장
+
+연결 끊김
+-> Socket.IO가 재연결 시도
+-> playerId + token + nickname을 handshake auth로 재전송
+-> 서버가 같은 사용자로 인증
+-> session:ready 전송
+-> 로비는 room:sync, 게임은 game:join 재실행
+```
+
+서버는 연결이 끊긴 사용자를 바로 내보내지 않고 30초 grace timer를 둔다.
+
+```txt
+30초 안에 재접속
+-> disconnect timer 취소
+-> room/match 유지
+
+30초 초과
+-> playing이면 disconnect 패배 처리
+-> lobby면 room에서 퇴장
+```
+
+단, session, room, match 모두 현재 Node 메모리이므로 서버 자체가 재시작되면 복구할 수 없다.
+
+### 2. Redis를 추가하면 무엇이 달라지고, 왜 범위가 커질 수 있는가?
+
+Redis에 session 정보만 옮기는 작은 범위는 가능하다.
+
+```txt
+Redis
+playerId -> token, nickname, expiresAt
+```
+
+그러면 서버 재시작 뒤에도 같은 사용자가 다시 인증받을 수 있다. 하지만 진행 중 game까지 이어 하려면 room, match, board, activePiece, bag, garbage, tick까지 Redis에 저장하고 복원해야 한다.
+
+```txt
+session 복구
+!= 진행 중 게임 복구
+```
+
+현재 단계에서는 Redis 없이 session 재연결과 로비 복귀까지만 지원하는 것이 적절하다.
+
+### 3. 게임 시작 및 재접속 countdown은 Redis 없이 가능한가?
+
+가능하다. 단일 Node 서버가 기준 시간을 결정하면 된다.
+
+```txt
+게임 시작
+host start 요청
+-> 서버가 startAt = now + 3초 결정
+-> 양쪽에 startAt 전송
+-> 클라이언트는 숫자만 표시
+-> 서버 timer가 끝났을 때 실제 game 시작
+```
+
+재접속 countdown도 이미 있는 30초 grace timer를 서버 규칙으로 유지하고, 클라이언트에는 남은 시간을 표시하면 된다.
+
+```txt
+서버 timer
+= 실제 패배/퇴장 판정
+
+클라이언트 countdown
+= 사용자에게 보여 주는 UI
+```
+
+## Q. 테트리스 조작감 향상 용어인 DAS, ARR, SDF, IRS는 무엇인가? (2026-07-23)
+
+```txt
+DAS
+= 좌우 키를 누른 뒤 자동 연속 이동이 시작되기까지의 지연 시간
+
+ARR
+= 자동 연속 이동이 시작된 뒤 좌우 반복 이동 속도
+
+SDF
+= soft drop 낙하 속도 배율
+
+IRS
+= 새 조각 spawn 순간 회전 키를 미리 누르면 회전된 상태로 spawn하는 기능
+
+IHS
+= 새 조각 spawn 순간 hold 키를 미리 누르면 즉시 hold하는 기능
+
+Lock Delay
+= 바닥에 닿아도 즉시 고정하지 않고 잠깐 이동/회전을 허용하는 시간
+```
+
+대회 테트리스에서 바닥에 닿은 조각을 잠깐 움직이거나 회전하는 모습은 주로 Lock Delay와 빠른 DAS/ARR, 강한 SDF가 결합된 결과다.
+
+```txt
+조각이 바닥에 닿음
+-> lock delay 동안 좌우 이동 또는 회전
+-> hard drop 또는 delay 종료
+-> board에 고정
+```
+
+현재 게임에 도입하려면 DAS/ARR/SDF는 입력 처리와, Lock Delay/IRS/IHS는 spawn 및 lock 상태 전이와 연결해야 한다.
+
+## Q. Git branch와 worktree는 왜 둘 다 필요한가? (2026-07-23)
+
+branch는 커밋 이력의 갈림길을 가리키는 이름이고, worktree는 특정 branch를 실제 파일로 펼쳐 둔 폴더다.
+
+```txt
+branch만 사용
+Tetris_multi 폴더 하나
+-> git switch main
+-> git switch feature
+-> 같은 폴더의 파일이 branch마다 바뀜
+
+worktree 사용
+Tetris_multi/      main 파일
+Tetris_multi-ai/   ai branch 파일
+-> 두 branch를 동시에 열고 편집 가능
+```
+
+처음에는 같은 commit에서 갈라졌으므로 파일 내용이 같아 보인다. 하지만 실제 디스크 파일은 각 worktree 폴더에 따로 존재한다.
+
+```txt
+Tetris_multi-ai/src/app.ts 수정
+-> Tetris_multi/src/app.ts는 변경되지 않음
+```
+
+두 worktree는 Git object와 commit 이력은 공유한다. AI worktree에서 만든 commit은 main worktree에서도 Git이 알고 있지만, main 파일에 자동 반영되지는 않는다. merge 또는 switch해야 반영된다.
+
+확인 명령은 다음과 같다.
+
+```bash
+git worktree list
+pwd
+git branch --show-current
+git status --short --branch
+```
+
+VS Code에서는 각 worktree의 실제 폴더를 `Open Folder...`로 각각 열면 된다.
+
+## Q. 현재 snapshot rollback 안정화는 어떻게 해결했는가? (2026-07-23)
+
+문제는 client가 입력을 먼저 적용한 뒤, 서버가 그 입력을 아직 처리하지 않은 이전 snapshot을 보내면서 내 조각이 되돌아가는 현상이었다.
+
+```txt
+client: 오른쪽 이동 적용
+server: 아직 처리 전 snapshot 전송
+client: snapshot 전체 적용
+-> 오른쪽 이동이 취소된 것처럼 보임
+```
+
+해결은 local input과 server acknowledgment를 구분하는 것이다.
+
+```txt
+local input 성공
+-> clientSequence 부여
+-> pendingServerInputs에 보관
+-> 서버에 전송
+
+server 처리 완료
+-> game:input:result(clientSequence)
+-> snapshot.lastProcessedClientSequence
+
+client
+-> 확인된 sequence까지 pendingServerInputs 제거
+-> 그 뒤에만 보류 snapshot 검토
+```
+
+각 값의 역할은 다음과 같다.
+
+```txt
+clientSequence
+= client가 성공한 입력마다 붙이는 단조 증가 번호
+
+lastProcessedClientSequence
+= server가 실제 처리 완료한 마지막 입력 번호
+
+pendingServerInputs
+= client에는 적용됐지만 server 확인 전인 입력들
+
+deferredOwnSnapshot
+= 미확인 입력 때문에 당장 적용하지 않고 보류한 snapshot
+```
+
+미확인 입력이 있으면 snapshot은 저장만 하고 바로 적용하지 않는다. server가 이미 최신 sequence를 확인한 뒤 도착한 오래된 snapshot도 버린다.
+
+또한 떨어지는 조각의 `row`, `col`, `rotation` 차이만으로 own board를 보정하지 않는다. 빠른 입력에서는 정상적인 처리 시간 차이일 수 있기 때문이다.
+
+```txt
+local prediction 우선
+-> 떨어지는 activePiece의 순간 위치
+
+server snapshot 우선
+-> gameOver
+-> 실제 garbage 적용
+-> settled board 불일치
+-> 큰 pieceIndex 차이
+```
+
+server에서는 input 처리와 gravity 처리를 mutation queue로 직렬화해 같은 player state를 동시에 바꾸는 경쟁도 줄였다. 최종 정답은 server board이며, client prediction은 빠른 조작감을 위한 임시 화면이다.
+
+## Q. TypeScript/React를 직접 작성하지 않았는데 읽고 이해할 가치가 있는가? 포트폴리오에는 어떻게 써야 하는가? (2026-07-23)
+
+가치는 있다. 다만 "React를 사용해 게임 엔진을 만들었다"가 아니라, 기존 Canvas runtime과 server authoritative 구조를 보존하면서 React/TypeScript가 담당하는 경계를 이해하는 것이 목표다.
+
+```txt
+React/TSX
+= 로비, 버튼, HUD, 페이지 lifecycle
+
+Canvas runtime/core
+= 입력, 낙하, 충돌, 줄 삭제, board render
+
+Express + Socket.IO
+= room, match, authoritative multiplayer
+```
+
+우선 `useState`, `useEffect`, mount/unmount 시 listener 정리, props와 TypeScript type, page가 `roomClient`와 runtime을 연결하는 흐름을 읽는 것이 적절하다. React Router, Context, 상태 관리 library까지 바로 확장할 필요는 없다.
+
+포트폴리오에는 다음처럼 사실대로 쓴다.
+
+> 기존 Vanilla Canvas 게임 런타임과 server-authoritative Socket.IO 구조를 유지한 채, Vite multi-page 환경과 page-local React/TypeScript UI shell을 점진적으로 도입했다. React는 로비·HUD·페이지 lifecycle을 담당하고, 테트리스 규칙과 Canvas rendering은 독립 runtime으로 분리했다.
+
+직접 작성하거나 설명할 수 없는 범위를 "React 기반 게임 엔진 구현" 또는 "TypeScript 전면 전환"이라고 쓰면 안 된다.
+
+### TypeScript 함수 선언에서 `): ReturnType`은 무엇인가?
+
+```ts
+function validateBaseLog(
+    log: unknown,
+    options: ValidationOptions = {},
+): LogValidationResult {
+    // function body
+}
+```
+
+구조는 다음과 같다.
+
+```txt
+function validateBaseLog(
+    ...
+)                         인자 목록 끝
+: LogValidationResult     반환값 type
+{ ... }                   함수 body
+```
+
+`):`는 하나의 특수 연산자가 아니다.
+
+```txt
+)  = parameter 목록을 닫음
+:  = TypeScript에서 반환 type을 표시
+```
+
+`options: ValidationOptions = {}`는 두 번째 인자를 생략하면 빈 객체를 기본값으로 사용한다는 뜻이다. `unknown`은 외부에서 들어온 `log`를 아직 신뢰하지 않으므로 검증 전에는 안전하게 사용할 수 없다는 type이다.
+
+## Q. GitHub Actions CI 관련 용어와 gate는 무엇인가? (2026-07-23)
+
+### 1. 정상 실행 gate가 통과했다는 것은 무엇인가?
+
+GitHub의 Ubuntu runner에서 다음 흐름이 실제로 실행되고 통과했다는 뜻이다.
+
+```txt
+Fast gate
+-> typecheck
+-> build
+-> unit test
+
+Browser/Docker gate
+-> Chromium PVP/PVE E2E
+-> Docker 관련 검증
+```
+
+즉 내 Mac에서만 통과한 것이 아니라, 깨끗한 GitHub Linux 환경에서도 프로젝트의 build와 검증 흐름이 동작한다는 증거다. 실제 서비스 배포가 완료됐다는 뜻은 아니다.
+
+### 2. "의도적인 실패 라우팅 검증"은 무엇인가?
+
+새 테스트를 만드는 것이 아니다. disposable branch에서 일부러 오류를 만든 뒤, 해당 오류가 담당 gate에서 실패하는지 보는 작업이다.
+
+```txt
+TypeScript 오류를 일부러 만듦
+-> Fast gate 실패를 기대
+
+E2E 오류를 일부러 만듦
+-> Fast gate는 통과
+-> Chromium PVP/PVE gate 실패를 기대
+```
+
+현재는 정상 코드가 통과하는지만 검증됐고, 고의 실패가 정확히 어느 job에 표시되는지는 확인하지 않았다는 의미다. 포트폴리오 기준에서는 미검증 위험으로 문서화하고 생략할 수 있다.
+
+### 3. flake는 무엇인가?
+
+flake는 코드가 바뀌지 않았는데 테스트가 어떤 실행에서는 통과하고, 다른 실행에서는 실패하는 불안정한 테스트다.
+
+```txt
+첫 실행: 통과
+두 번째 실행: 실패
+세 번째 실행: 통과
+```
+
+PVE timing flake는 AI ticker, timer, game loop의 실행 순서가 CI 부하나 기계 속도에 따라 달라져 기대 시간 안에 결과가 오지 않는 경우가 대표적이다.
+
+```txt
+항상 실패
+-> 재현 가능한 버그일 가능성
+
+가끔 실패
+-> timing, async 순서, 외부 환경에 의존한 flake일 가능성
+```
+
+## Q. 프로젝트를 포트폴리오에서 설명 가능한 단계까지 얼마나 걸리는가? (2026-07-23)
+
+모든 코드 줄을 설명하는 것이 목표가 아니라면, 현재 기준으로 약 20~30시간의 집중 학습이 현실적이다.
+
+```txt
+1. 전체 흐름을 3분 안에 설명
+2. multiplayer input -> server -> snapshot 흐름 설명
+3. clientSequence -> pendingServerInputs -> snapshot 보류 설명
+4. Vite, dist, Docker, CI의 역할 설명
+5. React/TSX의 작은 UI 변경 하나를 직접 수행
+```
+
+면접에서 중요한 것은 다음 질문에 답하는 것이다.
+
+```txt
+무슨 문제를 해결했는가?
+왜 이 구조를 골랐는가?
+상태의 최종 소유자는 누구인가?
+어떤 버그가 있었고 어떻게 검증했는가?
+무엇을 아직 해결하지 않았는가?
+```
