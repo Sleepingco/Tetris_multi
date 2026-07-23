@@ -188,10 +188,10 @@ async function buildTSpinCornerAndSelectTree(page, monitor, humanPlayerId) {
     return selectedTree;
 }
 
-async function softDropActivePieceToRow(page, monitor, playerId, targetRow) {
+async function softDropActivePieceToMinimumRow(page, monitor, playerId, minimumRow) {
     let snapshot = getLatestSnapshot(monitor, playerId);
 
-    while (snapshot?.activePiece?.row < targetRow) {
+    while (snapshot?.activePiece?.row < minimumRow) {
         const previousSequence = snapshot.sequence;
         const previousRow = snapshot.activePiece.row;
         const pieceIndex = snapshot.pieceIndex;
@@ -206,7 +206,7 @@ async function softDropActivePieceToRow(page, monitor, playerId, targetRow) {
         snapshot = getLatestSnapshot(monitor, playerId);
     }
 
-    expect(snapshot.activePiece.row).toBe(targetRow);
+    expect(snapshot.activePiece.row).toBeGreaterThanOrEqual(minimumRow);
     return snapshot;
 }
 
@@ -340,11 +340,25 @@ test("PVE human은 실제 7-bag 입력으로 코너를 빌드업하고 T-Spin을
 
         await test.step("SRS wall kick 후 hard drop으로 T-Spin 보너스를 받는다", async () => {
             await moveActivePieceToColumn(page, monitor, humanPlayerId, 0);
-            await softDropActivePieceToRow(page, monitor, humanPlayerId, 16);
-            const beforeTSpin = getLatestSnapshot(monitor, humanPlayerId);
+            const beforeTSpin = await softDropActivePieceToMinimumRow(
+                page,
+                monitor,
+                humanPlayerId,
+                12,
+            );
+            expect(beforeTSpin.activePiece.row).toBeLessThan(16);
             const scoreText = page.locator('.player-column[data-player="1"] .score');
             const clientScoreBefore = Number(await scoreText.textContent());
             const boardBeforeTSpin = await readBottomBoardFingerprint(page, 1, 8);
+
+            await expect.poll(() => {
+                return monitor.getSnapshots(humanPlayerId).some(snapshot => {
+                    return snapshot.sequence > beforeTSpin.sequence &&
+                        snapshot.pieceIndex === beforeTSpin.pieceIndex &&
+                        snapshot.activePiece?.row === 16;
+                });
+            }).toBe(true);
+
             await page.keyboard.press("ArrowUp");
             await page.keyboard.press("Space");
 
@@ -402,29 +416,35 @@ test("PVE AI attack은 human pending 표시 후 다음 lock에 적용된다", as
             return snapshot.pendingGarbageLines > 0;
         });
         expect(pendingSnapshot).toBeTruthy();
-        const boardBeforeLock = await readBottomBoardFingerprint(page, 1, 8);
+        const garbageCellsBeforeLock = pendingSnapshot.board
+            .flat()
+            .filter(cell => cell === "garbage").length;
 
         await page.keyboard.press("Space");
 
-        await expect.poll(async () => Number(await pendingGarbage.textContent()), {
-            timeout: 5_000,
-            intervals: [100, 150, 250],
-        }).toBe(0);
-        await expect(incomingStatus).not.toHaveClass(/is-danger/);
-        await expect.poll(() => {
-            return monitor.getSnapshots(humanPlayerId).some(snapshot => {
-                return snapshot.sequence > pendingSnapshot.sequence &&
-                    snapshot.pieceIndex > pendingSnapshot.pieceIndex &&
-                    snapshot.pendingGarbageLines === 0 &&
-                    snapshot.boardFingerprint !== pendingSnapshot.boardFingerprint;
-            });
-        }, {
-            timeout: 5_000,
-            intervals: [100, 150, 250],
-        }).toBe(true);
+        await expect.poll(async () => {
+            const snapshotBeforeUi = getLatestSnapshot(monitor, humanPlayerId);
+            const garbageCellCount = snapshotBeforeUi?.board
+                .flat()
+                .filter(cell => cell === "garbage").length;
+            if (!snapshotBeforeUi ||
+                snapshotBeforeUi.sequence <= pendingSnapshot.sequence ||
+                snapshotBeforeUi.pieceIndex <= pendingSnapshot.pieceIndex ||
+                snapshotBeforeUi.boardFingerprint === pendingSnapshot.boardFingerprint ||
+                garbageCellCount <= garbageCellsBeforeLock) {
+                return false;
+            }
 
-        const boardAfterLock = await readBottomBoardFingerprint(page, 1, 8);
-        expect(boardAfterLock).not.toBe(boardBeforeLock);
+            const displayedPending = Number(await pendingGarbage.textContent());
+            const isDanger = await incomingStatus.evaluate(element => {
+                return element.classList.contains("is-danger");
+            });
+            const snapshotAfterUi = getLatestSnapshot(monitor, humanPlayerId);
+
+            return snapshotBeforeUi.sequence === snapshotAfterUi?.sequence &&
+                displayedPending === snapshotAfterUi.pendingGarbageLines &&
+                isDanger === (snapshotAfterUi.pendingGarbageLines > 0);
+        }).toBe(true);
     } finally {
         monitor.dispose();
     }
