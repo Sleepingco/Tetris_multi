@@ -105,6 +105,7 @@ export function registerSocketHandlers(
     socketServer: AppSocketServer,
     dependencies: RegisterSocketDependencies = {},
 ): () => void {
+    let disposed = false
     const playerSessionService = dependencies.playerSessionService
         || createPlayerSessionService()
     const rateLimitProfile = dependencies.rateLimitProfile
@@ -118,7 +119,11 @@ export function registerSocketHandlers(
     const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
         || createAuthoritativePlayerMutationQueue()
     const authoritativeTickerService = dependencies.authoritativeTickerService
-        || createAuthoritativeTickerService({ authoritativePlayerMutationQueue })
+        || createAuthoritativeTickerService({
+            authoritativePlayerMutationQueue,
+            saveGameEventLog: dependencies.saveGameEventLog,
+            savePlacementDecisionLog: dependencies.savePlacementDecisionLog,
+        })
     const multiplayerDependencies = {
         ...dependencies,
         authoritativePlayerMutationQueue,
@@ -126,6 +131,7 @@ export function registerSocketHandlers(
         disconnectGraceContexts: dependencies.disconnectGraceContexts || new Map(),
         playerSessionService,
         socketRateLimitService,
+        isEventProductionStopped: () => disposed,
     } satisfies MultiplayerHandlerDependencies
     const pendingSessionReady = new WeakMap<AppSocket, PlayerSessionReady>()
 
@@ -211,8 +217,6 @@ export function registerSocketHandlers(
         })
     }, SESSION_CLEANUP_INTERVAL_MS)
     cleanupTimer.unref?.()
-
-    let disposed = false
 
     // shutdown과 테스트 teardown이 겹쳐도 timer를 중복 정리하지 않는다.
     function dispose(): void {

@@ -138,6 +138,7 @@ jobs:
               --mount "type=volume,src=$volume_name,dst=/app/data/logs" \
               -e SOCKET_ALLOWED_ORIGINS=http://127.0.0.1:5510 \
               -e CSP_CONNECT_ORIGINS=ws://127.0.0.1:5510 \
+              -e GAME_EVENT_STORAGE=jsonl \
               -e GAME_EVENTS_LOG_PATH=/app/data/logs/game-events.jsonl \
               "$image_tag" >/dev/null
 

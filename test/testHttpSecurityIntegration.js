@@ -88,6 +88,7 @@ for (const mode of ["enforce", "report-only"]) test(`compiled server는 ${mode} 
         cwd: ROOT,
         env: {
             NODE_ENV: "production",
+            GAME_EVENT_STORAGE: "jsonl",
             PORT: String(port),
             SOCKET_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
             CSP_CONNECT_ORIGINS: `ws://127.0.0.1:${port}`,

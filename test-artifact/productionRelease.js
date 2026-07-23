@@ -191,6 +191,7 @@ test("production dependencies만 있는 source-less release가 HTTP, PVP/PVE와 
             cwd: releaseRoot,
             env: {
                 NODE_ENV: "production",
+                GAME_EVENT_STORAGE: "jsonl",
                 PORT: String(port),
                 SOCKET_ALLOWED_ORIGINS: ALLOWED_ORIGIN,
                 CSP_CONNECT_ORIGINS: "wss://socket.example.com",

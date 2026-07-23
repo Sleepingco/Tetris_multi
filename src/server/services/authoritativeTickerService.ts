@@ -14,7 +14,10 @@ import {
 } from "./matchService.js";
 import { finishGame as defaultFinishGame } from "./roomService.js";
 import { loadGameCore as defaultLoadGameCore } from "./gameCoreLoader.js";
-import { saveGameEventLog as defaultSaveGameEventLog } from "./logService.js";
+import {
+    saveGameEventLog as defaultSaveGameEventLog,
+    savePlacementDecisionLog as defaultSavePlacementDecisionLog,
+} from "./logService.js";
 import { finishAuthoritativeMatch } from "./authoritativeMatchFinish.js";
 import { createPveAiPlayerService } from "./pveAiPlayerService.js";
 import { createAuthoritativePlayerMutationQueue } from "./authoritativePlayerMutationQueue.js";
@@ -73,6 +76,7 @@ type TickerDependencies = {
     deleteMatch?: typeof defaultDeleteMatch;
     finishGame?: typeof defaultFinishGame;
     saveGameEventLog?: typeof defaultSaveGameEventLog;
+    savePlacementDecisionLog?: typeof defaultSavePlacementDecisionLog;
     createGarbageHoleCol?: () => number;
     pveAiPlayerService?: PveAiPlayerService;
     authoritativePlayerMutationQueue?: AuthoritativePlayerMutationQueue;
@@ -157,10 +161,12 @@ export function createAuthoritativeTickerService(
     const deleteMatch = dependencies.deleteMatch || defaultDeleteMatch;
     const finishGame = dependencies.finishGame || defaultFinishGame;
     const saveGameEventLog = dependencies.saveGameEventLog || defaultSaveGameEventLog;
+    const savePlacementDecisionLog = dependencies.savePlacementDecisionLog
+        || defaultSavePlacementDecisionLog;
     const createGarbageHoleCol = dependencies.createGarbageHoleCol
         || (() => Math.floor(Math.random() * 10));
     const pveAiPlayerService = dependencies.pveAiPlayerService
-        || createPveAiPlayerService();
+        || createPveAiPlayerService({ savePlacementDecisionLog });
     const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
         || createAuthoritativePlayerMutationQueue();
     const tickers = new Map<string, TickerState>();

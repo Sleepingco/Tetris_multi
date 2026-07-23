@@ -56,6 +56,10 @@ export type AppendPostgresEventResult =
 export type CreatePostgresEventRepositoryOptions = {
     connectionUrl: string;
     ca?: string;
+    applicationName?: string;
+    max?: number;
+    connectionTimeoutMillis?: number;
+    queryTimeoutMillis?: number;
 };
 
 type ExistingIdentityRow = {
@@ -69,16 +73,48 @@ type ExistingIdentityRow = {
 
 export class PostgresEventRepositoryError extends Error {
     readonly code: string;
+    readonly retryable: boolean;
 
-    constructor(code: string) {
+    constructor(code: string, retryable = false) {
         super(code);
         this.name = "PostgresEventRepositoryError";
         this.code = code;
+        this.retryable = retryable;
     }
 }
 
-function fail(code: string): never {
-    throw new PostgresEventRepositoryError(code);
+function fail(code: string, retryable = false): never {
+    throw new PostgresEventRepositoryError(code, retryable);
+}
+
+const TRANSIENT_NETWORK_CODES = new Set([
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ETIMEDOUT",
+]);
+const PG_TIMEOUT_MESSAGES = new Set([
+    "Connection terminated due to connection timeout",
+    "Query read timeout",
+    "timeout exceeded when trying to connect",
+]);
+
+export function isRetryablePostgresAppendError(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    const code = "code" in error && typeof error.code === "string"
+        ? error.code
+        : "";
+    if (
+        TRANSIENT_NETWORK_CODES.has(code)
+        || code.startsWith("08")
+        || code === "40001"
+        || code === "40P01"
+    ) {
+        return true;
+    }
+    const message = "message" in error && typeof error.message === "string"
+        ? error.message
+        : "";
+    return PG_TIMEOUT_MESSAGES.has(message);
 }
 
 function isExactDuplicate(
@@ -101,12 +137,16 @@ function isExactDuplicate(
 export function createPostgresEventRepository(
     options: CreatePostgresEventRepositoryOptions,
 ) {
-    const pool = new Pool(createPostgresClientConfig(options?.connectionUrl ?? "", {
-        applicationName: "tetris-goal9a-repository",
+    const clientConfig = createPostgresClientConfig(options?.connectionUrl ?? "", {
+        applicationName: options?.applicationName ?? "tetris-goal9a-repository",
         ca: options?.ca,
-        connectionTimeoutMillis: 5_000,
-        queryTimeoutMillis: 10_000,
-    }));
+        connectionTimeoutMillis: options?.connectionTimeoutMillis ?? 5_000,
+        queryTimeoutMillis: options?.queryTimeoutMillis ?? 10_000,
+    });
+    const pool = new Pool({
+        ...clientConfig,
+        max: options?.max,
+    });
     const handlePoolError = () => {
         // Runtime observability와 retry 정책은 Goal 9B에서 연결한다.
     };
@@ -147,8 +187,11 @@ export function createPostgresEventRepository(
                     canonicalJson(snapshot.payload),
                     prepared.eventSha256,
                 ]);
-            } catch {
-                return fail("POSTGRES_EVENT_APPEND_FAILED");
+            } catch (error) {
+                return fail(
+                    "POSTGRES_EVENT_APPEND_FAILED",
+                    isRetryablePostgresAppendError(error),
+                );
             }
 
             if (insertResult.rows.length === 1) {
@@ -167,8 +210,11 @@ export function createPostgresEventRepository(
                     snapshot.playerId,
                     snapshot.pieceIndex,
                 ]);
-            } catch {
-                return fail("POSTGRES_EVENT_APPEND_FAILED");
+            } catch (error) {
+                return fail(
+                    "POSTGRES_EVENT_APPEND_FAILED",
+                    isRetryablePostgresAppendError(error),
+                );
             }
 
             if (
@@ -185,6 +231,42 @@ export function createPostgresEventRepository(
                 status: "conflict",
                 eventId: prepared.eventId,
                 code: "IDEMPOTENCY_CONFLICT",
+            };
+        },
+
+        async verifyReady(expectedMigrationVersion: number): Promise<void> {
+            if (closed) return fail("POSTGRES_EVENT_REPOSITORY_CLOSED");
+            if (!Number.isInteger(expectedMigrationVersion) || expectedMigrationVersion <= 0) {
+                return fail("POSTGRES_SCHEMA_VERSION_INVALID");
+            }
+            try {
+                const result = await pool.query<{ version: number | null }>(
+                    `SELECT pg_catalog.max(version)::integer AS version
+                       FROM tetris_analytics.schema_migrations`,
+                );
+                if (
+                    result.rows.length !== 1
+                    || result.rows[0]?.version !== expectedMigrationVersion
+                ) {
+                    return fail("POSTGRES_SCHEMA_VERSION_MISMATCH");
+                }
+            } catch (error) {
+                if (error instanceof PostgresEventRepositoryError) throw error;
+                return fail("POSTGRES_EVENT_STARTUP_FAILED");
+            }
+        },
+
+        getPoolStats(): {
+            totalCount: number;
+            idleCount: number;
+            waitingCount: number;
+            max: number;
+        } {
+            return {
+                totalCount: pool.totalCount,
+                idleCount: pool.idleCount,
+                waitingCount: pool.waitingCount,
+                max: pool.options.max,
             };
         },
 

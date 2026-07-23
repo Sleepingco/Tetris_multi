@@ -77,6 +77,7 @@ module.exports = defineConfig({
             url: baseURL,
             env: {
                 ...process.env,
+                GAME_EVENT_STORAGE: "jsonl",
                 PORT: "5510",
                 GAME_EVENTS_LOG_PATH: gameEventsLogPath,
                 SOCKET_RATE_LIMIT_PROFILE: "test",
