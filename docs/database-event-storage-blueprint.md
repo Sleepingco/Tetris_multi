@@ -4,16 +4,16 @@
 
 이 문서는 게임 이벤트를 컨테이너 수명과 분리해 장기 보존하기 위한 PostgreSQL 저장 구조의 설계 설명이다. 공부하는 개발자, 포트폴리오 검토자, 이후 Goal 9A~9D를 구현할 작업자, 운영 환경의 로그 저장 구조를 검토할 개발자를 독자로 둔다.
 
-- 상태: 설계 승인 전
-- PostgreSQL 구현: 미착수
+- 상태: Goal 9A local 구현·검증 완료, implementation review와 main merge gate 대기
+- PostgreSQL 구현: Goal 9A branch에 schema, migration, canonical event와 repository 구현
 - production DB 연결: 없음
 - 현재 runtime sink: JSONL
-- 실제 table, migration, repository: 아직 없음
-- 이 문서만으로 구현 완료를 주장하지 않음
+- 실제 table, migration, repository: 격리 PostgreSQL 17.10에서 검증
+- Goal 9B runtime wiring, push와 main 통합: 미수행
 
 현재 JSONL은 local 분석과 ML export에 계속 사용한다. PostgreSQL도 room, match, gameplay 상태의 원천이 아니다. 실시간 상태는 현재처럼 process memory가 소유하고, PostgreSQL은 확정된 gameplay event의 장기 보존 경계로만 계획한다.
 
-실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../migration-harness/goals/09-postgres-event-storage.md)와 [Goal 9A](../migration-harness/goals/09a-postgres-schema-repository.md)다. 정확한 SQL의 원천은 아직 만들지 않은 `src/server/db/migrations/001_game_events.sql`이 될 예정이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다.
+실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../migration-harness/goals/09-postgres-event-storage.md)와 [Goal 9A](../migration-harness/goals/09a-postgres-schema-repository.md)다. 정확한 SQL의 원천은 `src/server/db/migrations/001_game_events.sql`이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다. 구현·검증 근거는 [Goal 9A 실행 기록](../migration-harness/runs/goal-09a-2026-07-23.md)에 둔다.
 
 ## 2. 현재 JSONL 흐름
 
@@ -182,7 +182,7 @@ tetris_analytics.game_events
 | `event_sha256` | immutable persistence envelope hash |
 | `ingested_at` | DB가 생성하는 수집 시각 |
 
-index는 primary event ID, lifecycle semantic identity, placement semantic identity, `gameId` 조회, `(eventType, ingestedAt)` 운영 조회를 위해서만 둔다. append-only event table에는 mutable status, UPDATE 기반 upsert, 미사용 파생 table을 만들지 않는다. 정확한 constraint와 index 정의는 예정된 `src/server/db/migrations/001_game_events.sql`의 책임이다.
+index는 primary event ID, lifecycle semantic identity, placement semantic identity, `gameId` 조회, `(eventType, ingestedAt)` 운영 조회를 위해서만 둔다. append-only event table에는 mutable status, UPDATE 기반 upsert, 미사용 파생 table을 만들지 않는다. 정확한 constraint와 index 정의는 `src/server/db/migrations/001_game_events.sql`의 책임이다.
 
 현재 migration은 `identity-v1`만 CHECK로 허용한다. 미래 identity version은 기존 CHECK와 identity에 의존하는 index를 함께 바꾸는 새 migration으로만 도입한다.
 
@@ -225,7 +225,7 @@ application migration이 role을 자동 생성하지 않는다. role과 database
 
 ## 11. Connection과 TLS
 
-예정된 `postgresConnection.ts`는 URL을 한 번만 parse하고 다음 일을 한 번만 담당한다.
+구현된 `postgresConnection.ts`는 URL을 한 번만 parse하고 다음 일을 한 번만 담당한다.
 
 - URL parsing
 - protocol 검증
@@ -261,7 +261,7 @@ gameplay/runtime 연결, retry, in-flight shutdown drain, gameplay failure polic
 
 ## 14. 검증 전략
 
-Goal 9A 구현 시 다음을 검증한다.
+Goal 9A local 구현에서 다음을 검증했다.
 
 - empty migration과 재실행
 - checksum mismatch와 concurrent migration runner
@@ -276,7 +276,7 @@ Goal 9A 구현 시 다음을 검증한다.
 - source-less fixture에서 migration 두 번
 - actual PostgreSQL Docker test
 
-실제 명령, exact package version, test count는 구현 run 기록에 남긴다. 이 Blueprint에 고정하지 않는다.
+실제 명령, exact package version, test count는 [Goal 9A 실행 기록](../migration-harness/runs/goal-09a-2026-07-23.md)에 남긴다. 이 Blueprint에 중복하지 않는다.
 
 ## 15. 기존 PostgreSQL 실험 브랜치
 
@@ -292,7 +292,8 @@ Goal 9B 전까지 runtime JSONL 경로는 유지한다. production PostgreSQL mo
 
 ## 17. 아직 결정하지 않는 내용
 
-- exact `pg`와 `@types/pg` version
+Goal 9A는 production `pg@8.22.0`과 strict TypeScript compile에 필요한 devDependency `@types/pg@8.20.0`을 exact version으로 고정했다.
+
 - managed PostgreSQL provider
 - 실제 production credential과 CA
 - retention 일수

@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11E는 최종 `8cc16d9`까지 main과 origin/main에 반영됐다. 자연 중력과 runner scheduling에 의존하던 PVE T-Spin E2E와 전용 helper는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트가 담당한다. pending-garbage E2E 보강은 유지했다. `main@8087712`는 portfolio 문서 trailing whitespace와 PLAN 상태를 정정했으며 hosted Fast/Docker와 Browser가 모두 통과했다. production·workflow·dependency는 변경하지 않았다.
+- Last update: 2026-07-23 기준. Goal 11E와 portfolio 문서 정정은 `main@937dcda`까지 반영됐고 hosted Fast/Docker/Browser가 모두 통과했다. Goal 9A는 `codex/goal-09a-postgres-schema-repository`에서 raw PostgreSQL migration, canonical event와 idempotent repository의 local 구현·검증을 마쳤으며 main merge gate에서 대기한다. production storage mode와 현재 JSONL runtime은 변경하지 않았다.
 
 ## Current Project Status
 
@@ -501,7 +501,7 @@
 
 ### 현재 상태
 
-- 이름: Goal 9A 설계 준비
+- 이름: Goal 9A local 구현 검증 완료·main merge gate
 
 ### 진행 현황
 
@@ -515,12 +515,13 @@
 - [x] production Docker image와 graceful shutdown 반영
 - [x] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됐으며, 이후 발견된 PVE timing 경계는 Goal 11E에서 별도로 안정화했다.
 - [x] Goal 11E 최종 `8cc16d9`은 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 SHA Browser 연속 2회가 통과했다.
+- [x] Goal 9A branch에서 raw SQL migration, canonical identity와 parameterized PostgreSQL repository를 실제 PostgreSQL 17.10으로 검증했다. push와 main 통합은 아직 수행하지 않았다.
 
 ### 알려진 위험과 보류 범위
 
 - `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
 - room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
-- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. PostgreSQL Goal 9A~9D는 아직 구현하지 않았으며, 다음 작업은 Goal 9A 설계 준비다.
+- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. Goal 9A의 schema/repository는 local branch에서 준비됐지만 runtime wiring, import, CI와 production 활성화는 Goal 9B~9D 및 별도 merge gate 전까지 없다.
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
 - pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
 - T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
@@ -541,11 +542,10 @@
 
 ### 바로 해야 할 일
 
-1. Goal 9A 설계 준비
-   - PostgreSQL event storage의 schema, migration과 repository 경계를 구현 전에 별도 설계 gate에서 확정한다.
+1. Goal 9A main merge gate
+   - local 구현과 검증 기록을 리뷰하고, 별도 승인 전에는 push나 main merge를 수행하지 않는다.
 2. PostgreSQL Goal 순차 실행
-   - 9A 실제 schema/migration/repository는 별도 구현 승인 뒤에만 시작한다.
-   - 9B runtime canonical storage와 shutdown
+   - Goal 9A가 main에 반영된 뒤에만 9B runtime canonical storage와 shutdown을 별도 승인으로 시작한다.
    - 9C 기존 JSONL streaming import와 completeness
    - 9D 실제 PostgreSQL CI/release/Docker gate
 3. `PLAN.md` 단일 기준성 유지
@@ -555,8 +555,9 @@
 
 - [x] Goal 11E는 `8cc16d9`으로 main/origin/main에 반영됐고 hosted Fast/Docker 및 Browser 연속 2회가 통과함
 - [x] `main@8087712`의 Fast/Docker/Browser도 통과해 portfolio trailing whitespace와 PLAN 상태 정정 뒤 main CI green을 확인함
-- [ ] Goal 9A 설계 준비 후 별도 구현 승인
-- [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
+- [x] Goal 9A 설계와 local schema/migration/repository 구현·검증
+- [ ] Goal 9A main merge
+- [ ] Goal 9B → 9C → 9D를 각각 별도 승인과 main merge gate로 실행
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
 - [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
 - [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
@@ -570,7 +571,7 @@
 - [x] Goal 11D PR 원격 실행 증거와 main 반영
 - [x] main push에서 확인된 PVE timing failure는 Goal 11E에서 deterministic coverage로 재배치하고 hosted CI green을 확인함
 - [x] `main@8087712`의 portfolio trailing whitespace와 PLAN 상태 정정 뒤 hosted Fast/Docker/Browser green을 확인함
-- [ ] Goal 9A~9D PostgreSQL event storage 구현과 실제 DB CI 검증
+- [ ] Goal 9A main 통합과 Goal 9B~9D runtime/import/hosted PostgreSQL 검증
 - [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
 - [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
 - [ ] Goal 9D 이후 DB export/read-source 전환이 필요하면 Goal 10 재검토
