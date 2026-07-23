@@ -17,6 +17,9 @@ const {
     prepareCanonicalGameEvent,
 } = require("../dist/server/server/db/canonicalGameEvent.js");
 const {
+    runJsonlImport,
+} = require("../dist/server/server/db/importJsonl.js");
+const {
     runPostgresMigrations,
 } = require("../dist/server/server/db/migrate.js");
 const {
@@ -49,12 +52,14 @@ const SOURCE_MIGRATIONS_DIRECTORY = path.join(
 );
 const MIGRATION_ROLE = "tetris_goal9b_migration";
 const RUNTIME_ROLE = "tetris_goal9b_runtime";
+const IMPORT_ROLE = "tetris_goal9c_import";
 const MAIN_DATABASE = "tetris_goal9b_test";
 const CONCURRENT_DATABASE = "tetris_goal9b_concurrent";
 const FAILURE_DATABASE = "tetris_goal9b_failure";
 const HOSTILE_DATABASE = "tetris_goal9b_hostile";
 const RELEASE_DATABASE = "tetris_goal9b_release";
 const OLD_SCHEMA_DATABASE = "tetris_goal9b_old_schema";
+const LOCAL_IMPORT_DATABASE = "tetris_goal9c_local_import";
 const DATABASES = [
     MAIN_DATABASE,
     CONCURRENT_DATABASE,
@@ -62,6 +67,7 @@ const DATABASES = [
     HOSTILE_DATABASE,
     RELEASE_DATABASE,
     OLD_SCHEMA_DATABASE,
+    LOCAL_IMPORT_DATABASE,
 ];
 const ADVISORY_LOCK_KEY = "9026072300090001";
 
@@ -118,6 +124,10 @@ async function createRolesAndDatabases(adminUrl) {
             `CREATE ROLE ${quoteIdentifier(RUNTIME_ROLE)}
                 LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
         );
+        await client.query(
+            `CREATE ROLE ${quoteIdentifier(IMPORT_ROLE)}
+                LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
+        );
         for (const database of DATABASES) {
             await client.query(`CREATE DATABASE ${quoteIdentifier(database)}`);
             await client.query(
@@ -142,6 +152,17 @@ async function createRolesAndDatabases(adminUrl) {
                 IN DATABASE ${quoteIdentifier(MAIN_DATABASE)}
                 SET search_path TO tetris_analytics, pg_catalog`,
         );
+        for (const database of [MAIN_DATABASE, LOCAL_IMPORT_DATABASE]) {
+            await client.query(
+                `GRANT CONNECT ON DATABASE ${quoteIdentifier(database)}
+                    TO ${quoteIdentifier(IMPORT_ROLE)}`,
+            );
+            await client.query(
+                `ALTER ROLE ${quoteIdentifier(IMPORT_ROLE)}
+                    IN DATABASE ${quoteIdentifier(database)}
+                    SET search_path TO tetris_analytics, pg_catalog`,
+            );
+        }
     });
 
     for (const database of DATABASES) {
@@ -163,11 +184,19 @@ function migrationOptions(plainUrl, database, applicationName, extra = {}) {
 }
 
 async function grantRuntimePrivileges(plainUrl) {
-    const migrationUrl = databaseUrl(plainUrl, MIGRATION_ROLE, MAIN_DATABASE);
+    return grantEventWriterPrivileges(
+        plainUrl,
+        MAIN_DATABASE,
+        RUNTIME_ROLE,
+    );
+}
+
+async function grantEventWriterPrivileges(plainUrl, database, role) {
+    const migrationUrl = databaseUrl(plainUrl, MIGRATION_ROLE, database);
     await withClient(clientConfig(migrationUrl), async client => {
         await client.query(`
             GRANT USAGE ON SCHEMA tetris_analytics
-                TO ${quoteIdentifier(RUNTIME_ROLE)};
+                TO ${quoteIdentifier(role)};
             GRANT INSERT (
                 identity_version,
                 event_id,
@@ -181,7 +210,7 @@ async function grantRuntimePrivileges(plainUrl) {
                 payload,
                 event_sha256
             ) ON tetris_analytics.game_events
-                TO ${quoteIdentifier(RUNTIME_ROLE)};
+                TO ${quoteIdentifier(role)};
             GRANT SELECT (
                 event_id,
                 event_type,
@@ -190,10 +219,10 @@ async function grantRuntimePrivileges(plainUrl) {
                 piece_index,
                 event_sha256
             ) ON tetris_analytics.game_events
-                TO ${quoteIdentifier(RUNTIME_ROLE)};
+                TO ${quoteIdentifier(role)};
             GRANT SELECT (version, name, checksum)
                 ON tetris_analytics.schema_migrations
-                TO ${quoteIdentifier(RUNTIME_ROLE)};
+                TO ${quoteIdentifier(role)};
         `);
     });
 }
@@ -1473,6 +1502,295 @@ async function verifyRepository(plainUrl) {
     );
 }
 
+function importFixtureEvents(gameId) {
+    const playerRows = [
+        { playerId: "goal9c-player-1", role: "host", playerType: "human" },
+        { playerId: "goal9c-player-2", role: "guest", playerType: "human" },
+    ];
+    const expectedCounts = [
+        {
+            playerId: "goal9c-player-1",
+            playerType: "human",
+            expectedPlacementEventCount: 1,
+        },
+        {
+            playerId: "goal9c-player-2",
+            playerType: "human",
+            expectedPlacementEventCount: 1,
+        },
+    ];
+    const start = runtimeGameStart(gameId, "multi", playerRows);
+    const over = runtimeGameOver(gameId, "multi", expectedCounts);
+    delete start.token;
+    delete over.cookie;
+    return [
+        start,
+        runtimePlacement(gameId, "goal9c-player-1", 0, "human"),
+        runtimePlacement(gameId, "goal9c-player-2", 0, "human"),
+        over,
+    ];
+}
+
+async function writeImportFixture(directory, name, rows) {
+    const filePath = path.join(directory, name);
+    await writeFile(
+        filePath,
+        `${rows.map(row => JSON.stringify(row)).join("\n")}\n`,
+        "utf8",
+    );
+    return filePath;
+}
+
+function importRepository(url) {
+    return createPostgresEventRepository({
+        connectionUrl: url,
+        applicationName: "goal9c-integration-import",
+        max: 1,
+    });
+}
+
+async function verifyJsonlImporter(plainUrl) {
+    const fixtureDirectory = await mkdtemp(
+        path.join(os.tmpdir(), "tetris-goal9c-import-fixtures-"),
+    );
+    await grantEventWriterPrivileges(plainUrl, MAIN_DATABASE, IMPORT_ROLE);
+    const importUrl = databaseUrl(plainUrl, IMPORT_ROLE, MAIN_DATABASE);
+    const adminUrl = databaseUrl(plainUrl, "postgres", MAIN_DATABASE);
+    try {
+        const fixtureGame = `goal9c-fixture-${randomBytes(4).toString("hex")}`;
+        const fixturePath = await writeImportFixture(
+            fixtureDirectory,
+            "valid.jsonl",
+            importFixtureEvents(fixtureGame),
+        );
+        const dryRun = await runJsonlImport({
+            inputPath: fixturePath,
+            dryRun: true,
+        });
+        assert.equal(dryRun.ok, true);
+        assert.equal(dryRun.writes.attempted, 0);
+        assert.equal(dryRun.completeness.completeGameCount, 1);
+
+        const first = await runJsonlImport({
+            inputPath: fixturePath,
+            repository: importRepository(importUrl),
+        });
+        const second = await runJsonlImport({
+            inputPath: fixturePath,
+            repository: importRepository(importUrl),
+        });
+        assert.equal(first.ok, true);
+        assert.equal(first.writes.inserted, 4);
+        assert.equal(second.ok, true);
+        assert.equal(second.writes.duplicate, 4);
+        assert.equal(
+            first.canonical.orderedEventSha256,
+            second.canonical.orderedEventSha256,
+        );
+        const cliReportPath = path.join(fixtureDirectory, "cli-report.json");
+        const npmExecPath = requireEnvironment("npm_execpath");
+        const cli = spawnSync(process.execPath, [
+            npmExecPath,
+            "run",
+            "db:import-jsonl",
+            "--silent",
+            "--",
+            fixturePath,
+            "--report",
+            cliReportPath,
+        ], {
+            cwd: ROOT,
+            env: {
+                ...process.env,
+                IMPORT_DATABASE_URL: importUrl,
+            },
+            encoding: "utf8",
+        });
+        assert.equal(cli.status, 0, cli.stderr);
+        assert.doesNotMatch(
+            `${cli.stdout}${cli.stderr}`,
+            /postgresql:\/\/|Private Nickname|private-start/i,
+        );
+        const cliReport = JSON.parse(await readFile(cliReportPath, "utf8"));
+        assert.equal(cliReport.writes.duplicate, 4);
+
+        await withClient(clientConfig(adminUrl), async client => {
+            const rows = await client.query(`
+                SELECT pg_catalog.count(*)::integer AS count,
+                       pg_catalog.count(*) FILTER (
+                           WHERE payload::text ~* 'nickname|token|socketid|cookie|useragent'
+                       )::integer AS private_count
+                  FROM tetris_analytics.game_events
+                 WHERE game_id = $1
+            `, [fixtureGame]);
+            assert.deepEqual(rows.rows[0], { count: 4, private_count: 0 });
+        });
+        await withClient(clientConfig(importUrl), async client => {
+            const searchPath = await client.query("SHOW search_path");
+            assert.equal(
+                searchPath.rows[0].search_path,
+                "tetris_analytics, pg_catalog",
+            );
+            await assertSqlStateError(
+                client.query(
+                    "UPDATE tetris_analytics.game_events SET game_id = game_id",
+                ),
+                "42501",
+            );
+            await assertSqlStateError(
+                client.query(
+                    "CREATE TABLE tetris_analytics.import_denied (id integer)",
+                ),
+                "42501",
+            );
+        });
+
+        const partialGame = `goal9c-partial-${randomBytes(4).toString("hex")}`;
+        const partialPath = await writeImportFixture(
+            fixtureDirectory,
+            "partial.jsonl",
+            importFixtureEvents(partialGame),
+        );
+        const underlying = importRepository(importUrl);
+        let appendCount = 0;
+        const partial = await runJsonlImport({
+            inputPath: partialPath,
+            repository: {
+                append(event) {
+                    appendCount += 1;
+                    if (appendCount === 2) {
+                        throw new Error("goal9c-synthetic-db-failure");
+                    }
+                    return underlying.append(event);
+                },
+                close() {
+                    return underlying.close();
+                },
+            },
+        });
+        assert.equal(partial.ok, false);
+        assert.equal(partial.writes.inserted, 1);
+        assert.equal(partial.writes.failed, 1);
+
+        const recovered = await runJsonlImport({
+            inputPath: partialPath,
+            repository: importRepository(importUrl),
+        });
+        assert.equal(recovered.ok, true);
+        assert.equal(recovered.writes.duplicate, 1);
+        assert.equal(recovered.writes.inserted, 3);
+        await withClient(clientConfig(adminUrl), async client => {
+            const count = await client.query(`
+                SELECT pg_catalog.count(*)::integer AS count
+                  FROM tetris_analytics.game_events
+                 WHERE game_id = $1
+            `, [partialGame]);
+            assert.equal(count.rows[0].count, 4);
+        });
+
+        const conflictGame = `goal9c-conflict-${randomBytes(4).toString("hex")}`;
+        const conflictRows = importFixtureEvents(conflictGame);
+        const changedStart = {
+            ...conflictRows[0],
+            mode: "pve",
+            roomId: "PVERUN01",
+        };
+        const conflictPath = await writeImportFixture(
+            fixtureDirectory,
+            "conflict.jsonl",
+            [conflictRows[0], changedStart],
+        );
+        const conflict = await runJsonlImport({
+            inputPath: conflictPath,
+            repository: importRepository(importUrl),
+        });
+        assert.equal(conflict.ok, false);
+        assert.equal(conflict.writes.inserted, 1);
+        assert.equal(conflict.writes.conflict, 1);
+        assert.deepEqual(conflict.failures.reasonCodeCounts, {
+            IDEMPOTENCY_CONFLICT: 1,
+        });
+
+        const localCopyPath = process.env.GOAL9C_LOCAL_JSONL_COPY;
+        if (!localCopyPath) return;
+        const expectedSourceHash = requireEnvironment("GOAL9C_LOCAL_JSONL_SHA256");
+        assert.match(expectedSourceHash, /^[0-9a-f]{64}$/);
+        await runPostgresMigrations(
+            migrationOptions(
+                plainUrl,
+                LOCAL_IMPORT_DATABASE,
+                "goal9c-local-import-migrate",
+            ),
+        );
+        await grantEventWriterPrivileges(
+            plainUrl,
+            LOCAL_IMPORT_DATABASE,
+            IMPORT_ROLE,
+        );
+        const localImportUrl = databaseUrl(
+            plainUrl,
+            IMPORT_ROLE,
+            LOCAL_IMPORT_DATABASE,
+        );
+        const localAdminUrl = databaseUrl(
+            plainUrl,
+            MIGRATION_ROLE,
+            LOCAL_IMPORT_DATABASE,
+        );
+        const localDryRun = await runJsonlImport({
+            inputPath: localCopyPath,
+            dryRun: true,
+        });
+        const localFirst = await runJsonlImport({
+            inputPath: localCopyPath,
+            repository: importRepository(localImportUrl),
+        });
+        const localSecond = await runJsonlImport({
+            inputPath: localCopyPath,
+            repository: importRepository(localImportUrl),
+        });
+        assert.equal(localDryRun.ok, true);
+        assert.equal(localFirst.ok, true);
+        assert.equal(localSecond.ok, true);
+        assert.equal(localDryRun.source.sha256, expectedSourceHash);
+        assert.equal(localFirst.source.sha256, expectedSourceHash);
+        assert.equal(localSecond.source.sha256, expectedSourceHash);
+        assert.equal(localFirst.writes.inserted, localFirst.canonical.eventCount);
+        assert.equal(localSecond.writes.duplicate, localSecond.canonical.eventCount);
+        assert.equal(
+            localDryRun.canonical.orderedEventSha256,
+            localSecond.canonical.orderedEventSha256,
+        );
+
+        await withClient(clientConfig(localAdminUrl), async client => {
+            const state = await client.query(`
+                SELECT pg_catalog.count(*)::integer AS row_count,
+                       pg_catalog.count(*) FILTER (
+                           WHERE payload::text ~* 'nickname|token|socketid|cookie|useragent'
+                       )::integer AS private_count,
+                       pg_catalog.pg_total_relation_size(
+                           'tetris_analytics.game_events'::regclass
+                       )::bigint AS relation_bytes
+                  FROM tetris_analytics.game_events
+            `);
+            assert.equal(
+                state.rows[0].row_count,
+                localFirst.canonical.uniqueIdentityCount,
+            );
+            assert.equal(state.rows[0].private_count, 0);
+            console.log(
+                `[test:db] goal9c_local_import rows=${state.rows[0].row_count}`
+                + ` relation_bytes=${state.rows[0].relation_bytes}`
+                + ` completeness=${JSON.stringify(
+                    localFirst.completeness.reasonCodeCounts,
+                )}`,
+            );
+        });
+    } finally {
+        await rm(fixtureDirectory, { recursive: true, force: true });
+    }
+}
+
 function safeNpmEnvironment(extra = {}) {
     const names = [
         "HOME",
@@ -1578,6 +1896,37 @@ async function verifySourceLessArtifact(plainUrl) {
         assert.equal(first, "PostgreSQL migrations applied=2 skipped=0\n");
         assert.equal(second, "PostgreSQL migrations applied=0 skipped=2\n");
 
+        const importFixturePath = path.join(releaseRoot, "import-fixture.jsonl");
+        const releaseStart = runtimeGameStart(
+            "source-less-import",
+            "multi",
+            [
+                { playerId: "release-1", role: "host", playerType: "human" },
+                { playerId: "release-2", role: "guest", playerType: "human" },
+            ],
+        );
+        delete releaseStart.token;
+        await writeFile(
+            importFixturePath,
+            `${JSON.stringify(releaseStart)}\n`,
+            "utf8",
+        );
+        const importReport = JSON.parse(runReleaseNpm(
+            releaseRoot,
+            [
+                "run",
+                "db:import-jsonl",
+                "--silent",
+                "--",
+                "--dry-run",
+                importFixturePath,
+            ],
+            environment,
+        ));
+        assert.equal(importReport.ok, true);
+        assert.equal(importReport.canonical.eventCount, 1);
+        assert.equal(importReport.completeness.incompleteGameCount, 1);
+
         const repositoryProbe = `
 const { createPostgresEventRepository } =
     require("./dist/server/server/repositories/postgresEventRepository.js");
@@ -1679,6 +2028,9 @@ test("Goal 9B actual PostgreSQL contract", { timeout: 120_000 }, async t => {
     });
     await t.test("repository: inserts, duplicates, conflicts and lifecycle", () => {
         return verifyRepository(plainUrl);
+    });
+    await t.test("import: streaming, rerun, recovery and local copy", () => {
+        return verifyJsonlImporter(plainUrl);
     });
     await t.test("runtime: PVP/PVE single sink, startup gate, latency and DB down", () => {
         return verifyRuntimeStorage(plainUrl);

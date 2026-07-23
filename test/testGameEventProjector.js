@@ -231,6 +231,27 @@ test("lifecycle v2 projection은 nickname을 빼고 expected count를 보존한�
     });
 });
 
+test("legacy lifecycle game_over는 v1 의미와 privacy projection을 보존한다", () => {
+    const over = projectGameEventLog({
+        eventType: "game_over",
+        schemaVersion: 1,
+        gameId: "legacy-game",
+        roomId: "LEGACY01",
+        mode: "multi",
+        endedAt: 1784800001000,
+        winnerPlayerId: "player-1",
+        loserPlayerId: "player-2",
+        reason: "top_out",
+        finishType: "normal",
+        nickname: "Private Nickname",
+    });
+
+    assert.equal(over.schemaVersion, 1);
+    assert.equal(over.payload.expectedPlacementEventCounts, undefined);
+    assert.equal(over.payload.receiptPolicy, undefined);
+    assert.doesNotMatch(JSON.stringify(over), /Private Nickname|nickname/);
+});
+
 test("허용 field 안의 자유형 gameplay 문자열도 거부한다", () => {
     assert.throws(
         () => projectGameEventLog(placement({

@@ -164,6 +164,7 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
     }
 
     assert.doesNotThrow(() => {
+        require(path.join(SERVER_ROOT, "server", "db", "importJsonl.js"));
         require(path.join(SERVER_ROOT, "server", "services", "gameEventProjector.js"));
         require(path.join(SERVER_ROOT, "server", "services", "runtimeEventStorage.js"));
         require(path.join(SERVER_ROOT, "server", "serverShutdown.js"));
