@@ -202,7 +202,7 @@ jobs:
     name: PostgreSQL event storage
     needs: fast
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       GOAL9D_POSTGRES_TEST_PASSWORD: goal9d-ci-only-do-not-reuse
     services:
@@ -251,3 +251,9 @@ jobs:
 
       - name: Verify migration, repository, runtime, import and release
         run: npm run test:db
+
+      - name: Install Chromium for production-like storage smoke
+        run: npx --no-install playwright install --with-deps chromium
+
+      - name: Verify external PostgreSQL production boundary
+        run: npm run test:docker:postgres

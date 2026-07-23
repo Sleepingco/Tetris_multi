@@ -16,6 +16,7 @@
     "test:artifact": "node --test test-artifact/serverBuildArtifact.js",
     "pretest:db": "npm run build:server",
     "test:db": "node scripts/run-postgres-tests.js",
+    "test:docker:postgres": "bash scripts/verify-postgres-production.sh",
     "test:release": "node --test test-artifact/productionRelease.js",
     "pretest:e2e": "npm run build",
     "test:e2e": "playwright test",
