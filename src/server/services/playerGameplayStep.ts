@@ -1,3 +1,8 @@
+// =============================
+// 서버 확정 게임 상태 전이
+// input/gravity 한 단계를 받아 AuthoritativePlayerState 원본을 제자리에서 변경한다.
+// 동시 실행 방지는 이 파일이 아니라 상위 authoritativePlayerMutationQueue가 담당한다.
+// =============================
 import {
     applyServerInputToPlayerState,
 } from "./playerStateInput.js";
@@ -55,6 +60,10 @@ export type GravityStepResult = GameplayResult & {
     };
 };
 
+/**
+ * client 또는 AI의 action을 이동, drop, hold 경로로 분배한다.
+ * 각 경로는 공용 game core로 판정하며 render나 Socket.IO 전송은 여기서 하지 않는다.
+ */
 export function applyAuthoritativeInput(
     authoritativeState: AuthoritativePlayerState,
     input: AuthoritativeInput,
@@ -92,6 +101,11 @@ export function applyAuthoritativeInput(
     return createFailure("UNSUPPORTED_ACTION");
 }
 
+/**
+ * server timer의 gravity 한 단계를 처리한다.
+ * 조각이 내려가면 즉시 state를 갱신하고, 처음 바닥에 닿으면 `grounded`만 반환한다.
+ * 상위 ticker가 같은 piece의 다음 gravity에 `lockGroundedPiece`를 주어야 실제 lock된다.
+ */
 export function applyAuthoritativeGravityStep(
     authoritativeState: AuthoritativePlayerState,
     gameCore: GameCore,
@@ -292,6 +306,15 @@ function applyHold(
     };
 }
 
+/**
+ * 한 조각의 lock부터 다음 조각 spawn까지를 끊기지 않는 한 transaction으로 처리한다.
+ *
+ * 순서가 중요한 이유:
+ * 1. lock 전 board로 T-Spin/top-out을 판정한다.
+ * 2. 조각을 board에 고정하고 line clear 및 점수를 확정한다.
+ * 3. 공격으로 incoming garbage를 먼저 상쇄하고, 남은 garbage만 자신의 board에 적용한다.
+ * 4. top-out/garbage overflow를 확인한 뒤 살아 있으면 다음 queue 조각을 spawn한다.
+ */
 function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gameCore: GameCore, {
     lockedPiece,
     droppedRows,
@@ -325,6 +348,7 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
     const clearedRows = topOut
         ? []
         : findFilledRows(authoritativeState.board);
+    // line clear가 원본 board를 바꾸기 전에 animation용 모습을 복사해 둔다.
     const presentationEffect: PresentationEffect | null = clearedRows.length > 0
         ? {
             type: "line_clear",
@@ -357,11 +381,13 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
     authoritativeState.backToBack = attackState.nextBackToBack;
 
     const rawAttackLines = gameCore.calculateGarbageAttack(attackState);
+    // outgoing attack이 먼저 대기 garbage를 상쇄하고 남은 공격량만 상대에게 전달된다.
     const garbageResolution = gameCore.resolveGarbageCancel({
         pendingGarbageQueue: authoritativeState.pendingGarbageQueue,
         rawAttackLines,
     });
     authoritativeState.pendingGarbageQueue = garbageResolution.pendingGarbageQueue;
+    // 상쇄 뒤에도 남은 incoming garbage는 이 lock 직후 자신의 board에 모두 반영한다.
     const appliedGarbage = applyPendingGarbageQueue(authoritativeState, gameCore);
     const gameOver = topOut || appliedGarbage.overflow;
     authoritativeState.gameOver = gameOver;
@@ -435,6 +461,7 @@ function applyPendingGarbageQueue(
     let appliedLines = 0;
     let overflow = false;
 
+    // queue를 소비하는 함수이므로 호출 뒤 pendingGarbageQueue는 비어 있다.
     while (authoritativeState.pendingGarbageQueue.length > 0) {
         const garbage = authoritativeState.pendingGarbageQueue.shift();
         const result = gameCore.applyGarbageLines(authoritativeState.board, garbage);
@@ -479,6 +506,7 @@ function spawnPiece(
     );
 
     if (!canSpawn) {
+        // spawn 위치가 막힌 block-out은 active piece를 비우고 즉시 종료 상태로 남긴다.
         authoritativeState.activePiece = {
             ...spawnedPiece,
             pieceType: "",

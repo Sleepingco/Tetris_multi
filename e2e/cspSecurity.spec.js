@@ -1,3 +1,10 @@
+/**
+ * production 페이지의 CSP를 HTTP 응답과 실제 브라우저 실행 양쪽에서 검증한다.
+ *
+ * 준비: 각 entry의 응답 header와 빌드된 module 경로를 읽는다.
+ * 실행·검증: 격리된 context에서 페이지를 열어 CSP 위반과 브라우저 오류를 수집한다.
+ * 각 반복이 끝날 때 context를 닫아 다음 페이지의 console/event 상태와 섞이지 않게 한다.
+ */
 const { test, expect } = require("@playwright/test");
 
 const PAGES = [

@@ -1,3 +1,12 @@
+/**
+ * 브라우저와 AI가 만든 game log를 영속화하기 전 검사하는 신뢰 경계다.
+ *
+ * 공통 검사에서 JSON 직렬화 가능성, 최대 256 KiB, schema version을 확인한 뒤 event별
+ * 필드를 검사한다. game_start/game_over는 v1을, placement_decision은 legacy v1과
+ * dataset용 v2 계약을 검증한다. v2는 재생성에 필요한 board·piece·metrics·source/model
+ * 계약까지 포함한다.
+ */
+
 import {
     isValidAiDifficulty,
     isValidAiPolicy,
@@ -36,6 +45,11 @@ function createFailure(reason: string): LogValidationResult {
     };
 }
 
+/**
+ * placement_decision 공통 필드와 schema별 세부 계약을 검증한다.
+ * optional authoritative lineage가 있으면 client sequence와 pieceIndex가 쌍으로 존재하고
+ * 실제 placement의 `pieceIndex`와 일치해야 한다.
+ */
 export function validatePlacementDecisionLog(
     log: unknown,
     options: ValidationOptions = {},
@@ -282,6 +296,10 @@ export function validateGameOverLog(
     return createSuccess(log);
 }
 
+/**
+ * eventType에 따라 game_start, placement_decision, game_over validator로 분기한다.
+ * 알 수 없는 event는 append-only 원본에 섞지 않고 즉시 거부한다.
+ */
 export function validateGameEventLog(
     log: unknown,
     options: ValidationOptions = {},
@@ -318,6 +336,7 @@ function validateBaseLog(
 
     let payloadBytes;
     try {
+        // JSON.stringify 실패는 순환 참조처럼 JSONL로 저장할 수 없는 payload를 뜻한다.
         payloadBytes = Buffer.byteLength(JSON.stringify(log), "utf8");
     } catch {
         return createFailure("INVALID_LOG_PAYLOAD");

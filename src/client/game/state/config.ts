@@ -1,5 +1,7 @@
 // =============================
-// Game Configuration Constants
+// 게임 규칙과 실행 주기 상수
+// 보드 크기, 스폰 좌표, 입력 tick, SRS wall kick 표를 한곳에서 공유한다.
+// 화면 전용 스타일 값이 아니라 core와 runtime이 같은 규칙을 쓰기 위한 고정 계약이다.
 // =============================
 
 export const BOARD_ROWS = 20;
@@ -22,8 +24,9 @@ export type WallKickTable = {
 };
 
 /**
-  * SRS(Super Rotation System) Wall Kick 데이터
-  * 배열의 각 요소는 [offsetX, offsetY] (화면에서 우측 +X, 하단 +Y)
+  * SRS(Super Rotation System) wall kick 후보표다.
+  * 회전 전후 key에 있는 offset을 앞에서부터 시험하며, 배열의 각 값은 `[offsetX, offsetY]`다.
+  * 이 좌표계에서는 오른쪽이 +X, 아래쪽이 +Y이고 I 조각(`bar`)은 별도 표를 사용한다.
   */
 export const WALL_KICKS: WallKickTable = {
         // J, L, S, T, Z 블록 공통

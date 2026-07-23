@@ -1,3 +1,10 @@
+/**
+ * 브라우저 Socket.IO adapter의 session 상태와 event 구독 경계를 검증하는 테스트다.
+ *
+ * 가짜 `io`와 `sessionStorage`를 준비해 server event를 직접 발생시키고 emit·callback 결과를 검증한다.
+ * 재연결 전 mutation buffer는 비워야 하며, subscriber에는 token 없는 개별 복사본만 전달되고 dispose한
+ * callback은 다시 호출되지 않아야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

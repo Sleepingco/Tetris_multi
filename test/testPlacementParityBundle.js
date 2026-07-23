@@ -1,3 +1,9 @@
+/**
+ * Node와 Python이 같은 입력으로 추론하는지 비교할 parity bundle 생성 테스트다.
+ *
+ * 작은 JSONL dataset과 manifest를 임시 경로에 준비하고 bundle 생성을 실행한 뒤, canonical 순서와 통계를 검증한다.
+ * 출력 경로가 원본·symlink·hardlink와 겹쳐도 source bytes를 덮어쓰지 않는 것이 가장 중요한 안전 불변식이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } = require("node:fs/promises");

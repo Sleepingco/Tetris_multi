@@ -1,3 +1,15 @@
+/**
+ * PVE AI의 "판단"을 서버 권위 gameplay input으로 실행한다.
+ *
+ * production 기본 정책은 설명 가능한 heuristic이다. `placement_v4`는 match에서
+ * 명시적으로 요청한 경우에만 model을 읽는 experimental opt-in이며, import·파일·SHA·
+ * schema·추론 중 하나라도 실패하면 heuristic으로 돌아간다.
+ *
+ * AI도 board를 직접 고치지 않는다. decision의 `plannedActions`를 사람 입력과 같은
+ * authoritative 경로에 한 동작씩 적용하고, 실제 lock 결과가 계획과 일치한 뒤에만
+ * placement log를 만든다.
+ */
+
 import {
     applyAuthoritativeInputToMatchPlayerState as defaultApplyInput,
     ensurePlayerBagQueue as defaultEnsurePlayerBagQueue,
@@ -140,6 +152,13 @@ type PlacementV4ModelResult = {
     modelSha256: string | null;
 };
 
+/**
+ * V4 model 파일의 byte identity와 내부 schema를 모두 검증한다.
+ *
+ * SHA-256은 승인한 동결 파일과 같은지 확인하고, schema 검증은 그 파일의 feature 순서와
+ * vector 형식이 현재 추론 코드와 맞는지 확인한다. 둘 중 하나라도 실패하면 model을
+ * 반환하지 않아 호출자가 heuristic fallback을 선택하게 한다.
+ */
 async function loadPlacementV4Model(
     modelPath: string,
     validateModel: PlacementV4Ai["validatePlacementV4Model"],
@@ -215,6 +234,10 @@ type Dependencies = {
     env?: NodeJS.ProcessEnv;
 };
 
+/**
+ * match state와 authoritative input 경계를 주입받아 PVE AI controller를 만든다.
+ * model은 V4가 처음 요청될 때 한 번만 읽고 같은 Promise를 재사용한다.
+ */
 export function createPveAiPlayerService(
     dependencies: Dependencies = {},
 ): PveAiPlayerService {
@@ -270,6 +293,11 @@ export function createPveAiPlayerService(
         };
     }
 
+    /**
+     * match가 요청한 정책으로 placement를 고르되 항상 실행 가능한 decision을 반환한다.
+     * heuristic은 기본 경로이고, V4는 명시적 요청에서만 로드한다. V4 실패 이유와 실제
+     * 사용 정책을 metadata로 남겨 조용한 fallback도 나중에 관찰할 수 있게 한다.
+     */
     async function getPolicyDecision(
         ai: Awaited<ReturnType<typeof loadHeuristicAi>>,
         decisionState: ReturnType<typeof createDecisionState>,
@@ -335,19 +363,20 @@ export function createPveAiPlayerService(
                 selectedRepresentativeKey: decision.selectedRepresentativeKey ?? null,
             })).catch(() => {});
         } catch {
-            // Dev evidence must never affect authoritative gameplay.
+            // 개발용 관찰 정보 저장 실패는 authoritative gameplay에 영향을 주지 않는다.
         }
     }
 
     /**
-     * AI plan 생성 또는 authoritative action 하나만 처리한다.
-     * - plan이 없으면 현재 state에서 decision을 만들고 실행은 다음 cadence로 미룬다.
-     * - plan이 있으면 planned action 또는 terminal soft drop 하나를 authoritative input 경로에 적용한다.
+     * ticker cadence 한 번에 plan 생성 또는 authoritative action 하나만 처리한다.
      *
-     * @param {string} roomId - match room id
-     * @param {string} playerId - heuristic AI player id
-     * @param {Object} gameCore - server에서 재사용하는 game core
-     * @returns {Promise<Object>} plan 생성, action 적용 또는 실패 결과
+     * 1. plan이 없으면 현재 authoritative snapshot에서 policy decision을 만든다.
+     * 2. plan이 있으면 다음 action 하나를 사람과 같은 input 경로로 적용한다.
+     * 3. hard drop으로 lock되면 실제 locked placement와 계획을 비교한다.
+     * 4. 일치한 heuristic 실행만 학습 가능한 placement log로 저장한다.
+     *
+     * action을 한 번에 모두 실행하지 않는 이유는 난이도별 cadence와 서버 snapshot
+     * lifecycle을 그대로 유지하기 위해서다.
      */
     async function processAiStep(
         roomId: string,
@@ -525,6 +554,7 @@ export function createPveAiPlayerService(
             let log = null;
             let logResult;
             if (plan.decision.policyUsed === "placement_v4") {
+                // imitation model의 출력을 다시 정답으로 학습하는 feedback loop를 막는다.
                 logResult = {
                     ok: true,
                     log: null,
@@ -600,11 +630,9 @@ function isValidAiDecision(decision: AiDecision): decision is SuccessfulAiDecisi
 }
 
 /**
- * 현재 authoritative snapshot과 heuristic decision을 controller metadata로 복사한다.
- *
- * @param {Object} stateBefore - plan 생성 시점 authoritative snapshot
- * @param {Object} decision - heuristic decision
- * @returns {Object} match player에 저장할 AI plan
+ * 현재 authoritative snapshot과 AI decision을 실행 중인 controller plan으로 복사한다.
+ * 원본 decision 배열을 그대로 보관하지 않아 action을 하나씩 제거해도 분석 metadata와
+ * 선택 placement가 바뀌지 않는다.
  */
 function createAiPlan(
     stateBefore: AuthoritativePlayerState,
@@ -672,6 +700,13 @@ function createPieceLog(piece: PlaceablePieceState, blocks: GameCore["BLOCKS"]) 
     };
 }
 
+/**
+ * 계획 시점과 실제 lock 이후 snapshot을 schemaVersion 2 학습 로그로 만든다.
+ *
+ * `inputSequence`에는 authoritative 경로가 실제로 성공시킨 action만 들어간다. 현재
+ * 호출자는 heuristic 실행만 이 함수로 보내며 V4 출력은 위에서 제외하므로, V4가 자기
+ * 선택을 정답으로 다시 학습하는 feedback loop가 생기지 않는다.
+ */
 function createPlacementDecisionLog({
     match,
     playerId,

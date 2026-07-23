@@ -1,3 +1,10 @@
+"""V4 학습기의 feature·pair weight·결정적 artifact와 atomic I/O를 검증한다.
+
+각 테스트는 임시 JSONL dataset을 준비해 occupied-cell class grouping과 decision별 weight를
+확인하고 같은 입력의 model/report byte를 비교한다. 잘못된 JSON, 유한하지 않은 수, 경로 alias나
+두 번째 replace 실패가 발생해도 기존 model/report artifact는 보존되어야 한다.
+"""
+
 import hashlib
 import json
 import os

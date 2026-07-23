@@ -1,6 +1,19 @@
+/**
+ * 키보드 action이 순수 이동 판정과 runtime intent로 바뀌는 경계를 검증한다.
+ *
+ * 준비: board, block 회전 모양, wall kick 설정과 active/pending piece를 준비한다.
+ * 실행: `resolveMoveAttempt`로 충돌·회전을 판정하고 `resolveMoveIntent`로 실행 의미를 해석한다.
+ * 검증: 성공과 spawn 실패가 올바른 intent가 되며 입력 조각은 직접 변경하지 않아야 한다.
+ *
+ * runtime 전용 action을 core가 억지로 처리하지 않고 `null`로 남기는 책임 분리도 함께 확인한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+/**
+ * 여러 테스트가 같은 core 모듈 묶음을 사용하므로 병렬 import해 공통 fixture로 반환한다.
+ * 각 함수는 실제 source 모듈이며, 이 helper 자체는 게임 규칙을 대신 구현하지 않는다.
+ */
 async function loadMoveStep() {
     const [
         { resolveInputMoveIntent, resolveMoveAttempt, resolveMoveIntent },

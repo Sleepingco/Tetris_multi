@@ -1,3 +1,11 @@
+/**
+ * React 멀티플레이 shell이 mount·reconnect·BFCache 복귀 중 listener를 중복 생성하지
+ * 않는지 검증한다.
+ *
+ * PVP에서는 두 격리 context의 join/input/HUD를 관찰하고, PVE에서는 terminal session과
+ * V4 badge 경계를 확인한다. 생성한 socket monitor와 context는 finally에서 역순으로
+ * 정리해 stale 입력이나 listener가 다음 테스트에 남지 않게 한다.
+ */
 const { test, expect } = require("@playwright/test");
 const {
     MULTI_GAME_URL,

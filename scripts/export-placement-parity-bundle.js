@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 
+/**
+ * JavaScript 학습의 한 LOGO fold를 언어 중립 parity bundle로 고정한다.
+ *
+ * JavaScript가 게임 규칙으로 재생성한 candidate, 16개 raw feature, canonical 순서,
+ * selected-unselected pair와 reference weight/metric을 함께 기록한다. Python은 이 bundle을
+ * 읽어 같은 계산을 재현하므로 candidate/feature 차이와 optimizer 차이를 구분할 수 있다.
+ */
+
 const { createHash, randomBytes } = require("node:crypto");
 const { lstat, mkdir, open, readFile, realpath, rename, stat, unlink } = require("node:fs/promises");
 const path = require("node:path");
@@ -244,6 +252,10 @@ function assertManifestCountRecord(manifest, name, expected) {
     }
 }
 
+/**
+ * manifest 집계가 실제 네 dataset 파일과 일치하고 gameId leakage가 없는지 재계산한다.
+ * parity 입력은 human imitation 실험이므로 human source 외 행도 이 경계에서 거부한다.
+ */
 function validateSourceDatasetContract({
     manifest,
     trainRows,
@@ -304,6 +316,9 @@ function validateSourceDatasetContract({
     }
 }
 
+/**
+ * 게임 규칙과 feature schema의 원천인 JavaScript 결과를 Python이 읽을 최소 형태로 만든다.
+ */
 function serializeGroups(groups, modules) {
     return groups.map(group => ({
         decisionKey: group.decisionKey,
@@ -320,6 +335,10 @@ function serializeGroups(groups, modules) {
     }));
 }
 
+/**
+ * 한 game을 validation으로 고정하고 JS reference 학습·예측을 parity bundle에 담는다.
+ * validation game은 scaler, pair, weight 생성에 한 번도 들어가지 않는다.
+ */
 async function buildParityBundle(options) {
     const datasetDir = path.resolve(options.datasetDir);
     const files = await Promise.all(SOURCE_DATASET_FILE_NAMES.map(async name => ({
@@ -450,6 +469,11 @@ async function buildParityBundle(options) {
     };
 }
 
+/**
+ * source dataset과 다른 경로의 전용 staging file에 쓴 뒤 원자적으로 교체한다.
+ * 생성 때 `wx`를 사용하고 rename 직전 inode를 다시 확인해 symlink/hard-link 교체로
+ * dataset 원본을 덮어쓰는 일을 막는다.
+ */
 async function writeBundle(options) {
     if (!options || typeof options !== "object" || !options.datasetDir || !options.output ||
         !options.bundle) {

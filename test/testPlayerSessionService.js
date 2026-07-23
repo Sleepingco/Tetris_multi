@@ -1,3 +1,10 @@
+/**
+ * 플레이어 session 발급, 재연결, token 회전과 만료 규칙을 검증하는 서비스 테스트다.
+ *
+ * fixture는 가짜 시계와 결정적인 ID/token 생성기를 주입해 시간 경계를 재현한다.
+ * 최신 socket만 권한을 가지며 이전 token은 제한된 recovery 기회만 갖고, 잘못된 credential은 새 session으로
+ * 조용히 대체되지 않아야 한다는 보안 불변식을 중심으로 읽으면 된다.
+ */
 const test = require("node:test")
 const assert = require("node:assert/strict")
 

@@ -1,3 +1,9 @@
+// =============================
+// 멀티플레이 소켓 어댑터
+// 외부 event를 인증·속도 제한·schema 검증한 뒤 room/match service 호출과 DTO emit으로 연결한다.
+// player identity는 handshake에서 확정된 socket.data만 사용하고 payload의 identity는 신뢰하지 않는다.
+// authoritative란 client 결과를 승인하는 대신 서버 state와 공용 규칙으로 결과를 다시 계산한다는 뜻이다.
+// =============================
 import {
     createRoom,
     findRoomByPlayerId,
@@ -110,13 +116,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 /**
  * room 퇴장 결과를 Socket.IO room leave와 남은 참가자 broadcast로 연결한다.
  * - 마지막 참가자가 나가 room이 삭제된 경우에는 broadcast할 room이 없으므로 조용히 종료한다.
- *
- * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
- * @param {import("socket.io").Socket} clientSocket - 요청한 클라이언트 socket
- * @param {string|null} roomId - Socket.IO room id
- * @param {{ok: boolean, room: Object|null}} result - roomService 퇴장 결과
- * @param {string} nickname - 시스템 메시지에 표시할 닉네임
- * @returns {void}
  */
 function handlePlayerLeftRoom(
     socketServer: AppSocketServer,
@@ -160,6 +159,10 @@ function handlePlayerJoinedRoom(
     })
 }
 
+/**
+ * 중첩 payload를 순환 참조에 안전하게 훑어 session 관련 private field를 찾는다.
+ * client가 보낸 분석 로그를 그대로 저장하기 전에 server credential 흔적을 차단한다.
+ */
 function containsPrivateField(value: unknown): boolean {
     const pending: unknown[] = [value]
     const visited = new WeakSet()
@@ -197,13 +200,15 @@ function hasValidPlacementResultScalars(result: unknown): boolean {
 
 /**
  * 멀티플레이 Socket.IO 이벤트를 등록한다.
- * - 서버는 room/match 상태, bag chunk, authoritative snapshot 송신을 담당한다.
- * - garbage/game over는 서버 authoritative lock 결과를 기준으로 처리한다.
  *
- * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
- * @param {import("socket.io").Socket} clientSocket - 연결된 클라이언트 socket
- * @param {Object} dependencies - 테스트에서 주입할 저장소/난수 의존성
- * @returns {void}
+ * mutation event의 공통 신뢰 순서는 다음과 같다.
+ * 1. socket이 최신 active session인지 확인한다.
+ * 2. player별 rate limit을 소비한다.
+ * 3. strict Zod schema로 payload를 검증한다.
+ * 4. room membership과 lifecycle 상태를 확인한다.
+ * 5. gameplay는 mutation queue에서 service/core에 적용한다.
+ *
+ * handler는 판정 결과를 직접 만들지 않고 room/match 상태 변화와 Socket.IO 전송을 조율한다.
  */
 export function registerMultiplayerHandlers(
     socketServer: AppSocketServer,
@@ -225,6 +230,7 @@ export function registerMultiplayerHandlers(
     const sessionContext = clientSocket.data?.playerSession
     const playerIdentity = clientSocket.data?.playerIdentity
     const getPlayerId = (): string => playerIdentity?.playerId || ""
+    // 앞의 async input이 끝날 때까지 같은 socket의 다음 input을 기다리게 하는 Promise tail이다.
     let gameInputProcessingChain: Promise<void> | null = null
     let outstandingGameInputCount = 0
     let hasJoinedGame = false
@@ -258,6 +264,9 @@ export function registerMultiplayerHandlers(
         })
     }
 
+    // =============================
+    // 방 생명주기 이벤트
+    // =============================
     clientSocket.on("room:create", (payload: unknown) => {
         if (!isActiveSession()) {
             emitRoomResult(createNotAuthorizedResult())
@@ -351,6 +360,7 @@ export function registerMultiplayerHandlers(
         if (!sessionContext
             || !playerSessionService.markDisconnected(sessionContext, clientSocket.id)) return
 
+        // 잠깐의 네트워크 단절에는 room/match를 유지하고, 같은 session 재연결이 없을 때만 정리한다.
         const disconnectedAt = now()
         const timer = setTimeoutFn(async () => {
             const current = disconnectGraceContexts.get(getPlayerId())
@@ -379,7 +389,8 @@ export function registerMultiplayerHandlers(
         disconnectGraceContexts.set(getPlayerId(), graceContext)
     })
 
-    // room 상태를 playing으로 바꾸고 matchService에 player별 input log/server bag을 만든다.
+    // room:start는 lifecycle을 playing으로 바꾼 뒤 별도 match, server bag, ticker를 만든다.
+    // startGame 자체는 board를 만들지 않으므로 두 상태 저장소의 책임을 구분해 읽어야 한다.
     clientSocket.on("room:start", async (payload: unknown) => {
         if (!isActiveSession()) {
             emitRoomResult(createNotAuthorizedResult())
@@ -450,6 +461,7 @@ export function registerMultiplayerHandlers(
         const { roomId } = validation.data
         const result = isAuthorizedRoom(roomId)
         if (result.ok && !hasJoinedGame) {
+            // 새 game page socket의 첫 join만 이 player의 gravity 기준 시점을 다시 잡는다.
             authoritativeTickerService?.resetPlayerGravity?.(roomId, getPlayerId())
             hasJoinedGame = true
         }
@@ -467,7 +479,13 @@ export function registerMultiplayerHandlers(
         })
     })
 
-    // 같은 socket의 입력은 validation → authoritative apply 순서로 직렬 처리한다.
+    /**
+     * schema를 통과한 input 하나를 authoritative state에 적용한다.
+     *
+     * per-socket Promise chain은 client 입력 순서를 지키고, shared mutation queue는 같은 player의
+     * gravity와 input 순서를 함께 지킨다. queue를 기다리는 동안 session generation이 바뀔 수 있어
+     * state 변경 직전에도 active session을 다시 검사한다.
+     */
     async function processGameInput(payload: GameInputPayload): Promise<void> {
         const {
             roomId,
@@ -547,6 +565,7 @@ export function registerMultiplayerHandlers(
                         gameCore,
                     )
                     if (!authoritativeResult.ok) {
+                        // server와 prediction이 다르면 authoritative snapshot을 같은 응답에 붙여 즉시 보정한다.
                         const snapshot = emitAuthoritativeSnapshot(socketServer, roomId, getPlayerId())
                         emitInputResult(
                             false,
@@ -581,6 +600,7 @@ export function registerMultiplayerHandlers(
                         gameplayResult?.presentationEffect,
                     )
                     if (placementSideEffect?.targetPlayerId) {
+                        // garbage를 받은 상대도 변경됐으므로 같은 input 처리 흐름에서 상대 snapshot도 이어서 알린다.
                         emitAuthoritativeSnapshot(socketServer, roomId, placementSideEffect.targetPlayerId)
                     }
                     emitInputResult(
@@ -604,6 +624,7 @@ export function registerMultiplayerHandlers(
             if (hasEmittedInputResult) return
 
             if (isActiveSession()) {
+                // 실패한 envelope를 다시 적용하지 않도록 sequence를 진행시키고 현재 원본을 재전송한다.
                 acknowledgeClientInputSequence(roomId, getPlayerId(), clientSequence)
                 emitAuthoritativeSnapshot(socketServer, roomId, getPlayerId())
             }
@@ -611,6 +632,7 @@ export function registerMultiplayerHandlers(
         }
     }
 
+    // 신뢰 경계 순서는 session → rate limit → schema → bounded queue → domain 처리다.
     clientSocket.on("game:input", (payload: unknown) => {
         if (!isActiveSession()) {
             clientSocket.emit("game:input:result", {
@@ -650,6 +672,7 @@ export function registerMultiplayerHandlers(
             return null
         }
         outstandingGameInputCount += 1
+        // 120개 상한은 느린 async core load 동안 한 socket이 무제한 Promise를 쌓지 못하게 한다.
         const processingResult = gameInputProcessingChain
             ? gameInputProcessingChain.then(() => processGameInput(validation.data))
             : processGameInput(validation.data)
@@ -665,6 +688,9 @@ export function registerMultiplayerHandlers(
         return trackedResult
     })
 
+    // =============================
+    // 분석 로그 신뢰 경계
+    // =============================
     clientSocket.on("game:log:placement_decision", async (payload: unknown) => {
         if (!isActiveSession()) {
             clientSocket.emit("game:log:result", {
@@ -732,6 +758,7 @@ export function registerMultiplayerHandlers(
             roomId,
             playerId: getPlayerId(),
         }
+        // 인증·인가된 roomId와 playerId로 저장 주체를 덮어쓴 뒤 전체 log schema를 다시 검증한다.
         const logValidation = validatePlacementDecisionLog(authenticatedLog)
         if (!logValidation.ok) {
             clientSocket.emit("game:log:result", {
@@ -754,7 +781,7 @@ export function registerMultiplayerHandlers(
         clientSocket.emit("game:log:result", logResult)
     })
 
-    // server bag chunk를 player별로 추가해 로컬/상대 런타임의 다음 조각 공급을 맞춘다.
+    // server queue가 부족할 때만 7-bag을 추가해 로컬/상대 런타임의 다음 조각 공급을 맞춘다.
     clientSocket.on("game:bag:request", (payload: unknown) => {
         if (!isActiveSession()) {
             clientSocket.emit("game:bag:result", {
@@ -861,7 +888,7 @@ export function registerMultiplayerHandlers(
 
     })
 
-    // 로비 복귀 시 membership과 finished room 복귀 조건을 확인한다.
+    // 로비 복귀 시 membership과 finished room의 waiting 복귀 조건을 확인한다.
     clientSocket.on("room:sync", (payload: unknown) => {
         if (!isActiveSession()) {
             emitRoomResult(createNotAuthorizedResult())
@@ -894,6 +921,10 @@ export function registerMultiplayerHandlers(
 
 }
 
+/**
+ * malformed payload 전체를 되돌려 보내지 않고, 안전한 정수 acknowledgment field만 골라낸다.
+ * client는 어느 요청이 실패했는지 알 수 있고 server는 공격자가 넣은 임의 객체를 반사하지 않는다.
+ */
 function createSafeInputMetadata(
     payload: unknown,
 ): Pick<Partial<InputResultPayload>, "clientSequence" | "pieceIndex"> {
@@ -933,6 +964,10 @@ function handleServerPlacementResult(
     return appendResult
 }
 
+/**
+ * matchService의 public snapshot DTO를 room 전체에 broadcast한다.
+ * state 변경이 끝난 뒤 호출하며, line-clear presentation은 해당 placement의 snapshot에만 붙인다.
+ */
 function emitAuthoritativeSnapshot(
     socketServer: AppSocketServer,
     roomId: string,
@@ -959,6 +994,10 @@ function emitAuthoritativeSnapshot(
     return snapshotResult.snapshot
 }
 
+/**
+ * game page의 초기 동기화 payload를 새 public 객체로 만든다.
+ * bag 배열과 snapshot을 복사해 Socket.IO payload가 match 저장소의 원본 참조를 노출하지 않게 한다.
+ */
 function createGameJoinMatchDto(match: MatchState | null): GameJoinMatchDto | null {
     if (!match) return null
 
@@ -1063,6 +1102,11 @@ function createNotAuthorizedResult(): RoomResult {
     }
 }
 
+/**
+ * 재연결 grace가 끝난 player를 room lifecycle에 맞게 정리한다.
+ * playing이면 먼저 정상 match finish 순서를 실행한 뒤 loser membership을 제거하고,
+ * waiting/finished이면 room에서 바로 나가게 한다.
+ */
 export async function handleDisconnectGraceExpired({
     socketServer,
     playerId,

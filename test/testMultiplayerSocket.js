@@ -1,3 +1,14 @@
+/**
+ * Socket.IO 진입점부터 room/match/log service까지 이어지는 server multiplayer 경계를 검증한다.
+ *
+ * 준비: 실제 transport 대신 fake server/client를 연결하고, 필요할 때 ticker·session·game core 의존성을 주입한다.
+ * 실행: room/chat/game/log/PVE event와 disconnect·재접속·동시 input 순서를 실제 handler에 전달한다.
+ * 검증: socket session의 identity만 신뢰하고, payload를 domain 변경 전에 검증하며, 같은 player의
+ * authoritative mutation은 FIFO로 처리되어야 한다. finish·저장 같은 단일 부수효과는
+ * 중복 없이 한 번만 발생하고, event는 의도한 대상에게 전달되어야 한다.
+ *
+ * 이 파일의 fixture 배열은 화면 결과가 아니라 "어떤 socket이 어떤 event를 받았는가"를 관찰하기 위한 기록장이다.
+ */
 const test = require("node:test")
 const assert = require("node:assert/strict")
 const { mkdtemp, readFile, rm } = require("node:fs/promises")
@@ -33,6 +44,10 @@ const {
 
 test.beforeEach(clearRoomsForTest)
 
+/**
+ * Socket.IO Server의 connection 등록, room emit, 전체 broadcast만 재현한다.
+ * 전송 내용을 배열에 남겨 실제 port 없이 수신 대상과 횟수를 검증한다.
+ */
 class FakeSocketServer {
     constructor() {
         this.handlers = new Map()
@@ -63,6 +78,10 @@ class FakeSocketServer {
     }
 }
 
+/**
+ * 한 browser socket의 인증 data, 가입 room, client 수신 event를 분리해 기록한다.
+ * 여러 instance를 만들면 host/guest와 stale/new socket의 권한 차이를 재현할 수 있다.
+ */
 class FakeClientSocket {
     constructor(id) {
         this.id = id

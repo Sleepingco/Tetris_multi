@@ -1,3 +1,9 @@
+// =============================
+// 방 단위 타이머 조율
+// room별 timer와 gravity/AI 주기, grounded 유예를 위한 실행 상태를 소유한다.
+// board 원본은 matchService가 소유한다.
+// human gravity, AI action, snapshot, garbage, match finish의 실행 순서를 연결한다.
+// =============================
 import type { Server } from "socket.io";
 import {
     appendPendingGarbageToOpponent as defaultAppendPendingGarbageToOpponent,
@@ -128,10 +134,9 @@ function updateAiPolicyRuntime(
 /**
  * room 단위 authoritative ticker를 만든다.
  * - 실제 timer는 roomId별로 하나만 유지한다.
- * - ticker는 100ms마다 실행하며 AI action과 human gravity 누적 주기를 분리한다.
- *
- * @param {Object} dependencies - 테스트/런타임 의존성
- * @returns {Object} ticker 시작/정리 API
+ * - callback 주기는 `tickMs`이고 기본값만 100ms다.
+ * - AI action과 human gravity는 서로 다른 accumulator/interval을 사용한다.
+ * - human gravity는 socket input과 같은 mutation queue를 거쳐 같은 state를 동시에 바꾸지 않는다.
  */
 export function createAuthoritativeTickerService(
     dependencies: TickerDependencies = {},
@@ -199,6 +204,7 @@ export function createAuthoritativeTickerService(
         };
     }
 
+    // 서버 shutdown에서는 room 수와 관계없이 모든 interval을 한 번씩 정리한다.
     function stopAllRoomTickers(): void {
         for (const roomId of [...tickers.keys()]) {
             stopRoomTicker(roomId);
@@ -242,6 +248,7 @@ export function createAuthoritativeTickerService(
         }
 
         const timing = getOrCreatePlayerGravityTiming(ticker, playerId);
+        // 음수 누적값은 line-clear 표시 지연을 먼저 소모한 뒤 새 gravity interval을 세기 시작하게 한다.
         timing.accumulatorMs = options.lineClear === true
             ? -LINE_CLEAR_PRESENTATION_DELAY_MS
             : 0;
@@ -254,6 +261,10 @@ export function createAuthoritativeTickerService(
         };
     }
 
+    /**
+     * 지난 시간을 accumulator에 더하고 이번 callback에서 due인 player를 한 단계씩 처리한다.
+     * elapsed가 크게 밀려도 한 callback에 여러 step을 몰아 실행하지 않아 event loop를 오래 점유하지 않는다.
+     */
     async function tickRoom(
         roomId: string,
         socketServer: AuthoritativeSocketServer,
@@ -262,6 +273,7 @@ export function createAuthoritativeTickerService(
         const ticker = tickers.get(roomId);
         if (!ticker) return;
 
+        // 이전 async callback이 끝나지 않았으면 같은 room의 tick을 겹쳐 실행하지 않는다.
         if (ticker.isProcessing) return;
         ticker.isProcessing = true;
 
@@ -328,6 +340,7 @@ export function createAuthoritativeTickerService(
                     return Promise.resolve().then(processPlayer);
                 }
 
+                // socket input과 gravity가 같은 player state에 도착한 순서대로 적용된다.
                 return authoritativePlayerMutationQueue.enqueueAuthoritativePlayerMutation(
                     roomId,
                     player.playerId,
@@ -335,12 +348,17 @@ export function createAuthoritativeTickerService(
                 );
             });
 
+            // 한 player의 실패가 같은 callback의 다른 player 진행을 취소하지 않는다.
             await Promise.allSettled(playerTasks);
         } finally {
             ticker.isProcessing = false;
         }
     }
 
+    /**
+     * due player 한 명의 state 변화와 그 후속 효과를 순서대로 처리한다.
+     * gravity/AI 적용 → grounded grace 또는 reset → garbage → snapshot → game finish 순서다.
+     */
     async function processDuePlayer({
         roomId,
         player,
@@ -366,6 +384,7 @@ export function createAuthoritativeTickerService(
             !isAiPlayer &&
             (!gravityTiming || gravityTiming.generation !== gravityGeneration)
         ) {
+            // input/hold/lock이 gravity를 reset했다면 이미 queue에 들어온 오래된 step을 폐기한다.
             return;
         }
 
@@ -405,6 +424,7 @@ export function createAuthoritativeTickerService(
             socketServer.to(roomId).emit("pve:ai-policy", policyRuntime);
         }
         if (!isAiPlayer && gravityTiming && stepResult.gravityResult?.kind === "grounded") {
+            // 첫 blocked gravity에서는 같은 pieceIndex만 기록하고 다음 interval까지 lock을 유예한다.
             gravityTiming.groundedPieceIndex = pieceIndex;
             return;
         }
@@ -420,6 +440,7 @@ export function createAuthoritativeTickerService(
         }
 
         const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
+        // 상대 pending garbage까지 반영한 뒤 snapshot을 보내 client가 한 시점의 결과를 받게 한다.
         const snapshot = emitAuthoritativeSnapshot(
             roomId,
             playerId,
@@ -448,6 +469,10 @@ export function createAuthoritativeTickerService(
         }
     }
 
+    /**
+     * matchService가 만든 public snapshot을 room에 전송한다.
+     * ticker는 내부 authoritativeState를 직접 serialize하지 않아 server-only field를 누출하지 않는다.
+     */
     function emitAuthoritativeSnapshot(
         roomId: string,
         playerId: string,

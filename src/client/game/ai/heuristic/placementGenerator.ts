@@ -3,6 +3,14 @@ import BLOCKS from "../../state/blocks.ts";
 import type { Board } from "../../core/board.ts";
 import type { PieceType } from "../../state/blocks.ts";
 
+/**
+ * AI가 다루는 placement를 게임 core가 검사할 수 있는 좌표로 바꾸는 경계다.
+ *
+ * `rotation/row/col`만 신뢰하지 않고 실제 블록 정의에서 네 칸의 절대 좌표를 다시
+ * 계산한다. 이후 heuristic, dataset builder, ML 추론이 모두 같은 placement 의미를
+ * 공유하므로 브라우저 화면이나 로그에 들어 있던 임의의 `cells` 값에는 의존하지 않는다.
+ */
+
 export type PlacementCell = { row: number; col: number };
 export type Placement = {
     pieceType: PieceType;

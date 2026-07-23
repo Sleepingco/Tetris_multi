@@ -1,3 +1,13 @@
+/**
+ * 외부에서 들어온 game log가 저장 경계에 도달하기 전에 안전한 schema인지 검증한다.
+ *
+ * 준비: 정상 placement/game_start/game_over fixture를 만든 뒤 한 필드씩 잘못된 값으로 바꾼다.
+ * 실행: event 전용 validator와 공용 `validateGameEventLog`에 payload를 전달한다.
+ * 검증: 지원하는 legacy/v2 로그는 계약에 맞으면 그대로 허용하고, source/model 조합·
+ * 좌표·metric·크기·순환 객체가 잘못되면 명시적인 실패 결과를 반환해야 한다.
+ *
+ * fixture가 길어도 목적은 "정상 기준 하나에서 어떤 경계가 깨졌는가"를 분리해 보는 데 있다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -8,6 +18,10 @@ const {
     validatePlacementDecisionLog,
 } = require("../dist/server/server/validators/gameLogValidator.js");
 
+/**
+ * schemaVersion 2 placement 로그의 정상 기준값을 만들고 `overrides`로 한 조건만 바꾼다.
+ * 이렇게 하면 실패 원인이 다른 필드의 우연한 오류와 섞이지 않는다.
+ */
 function createPlacementDecisionLog(overrides = {}) {
     const placement = {
         pieceType: "square",

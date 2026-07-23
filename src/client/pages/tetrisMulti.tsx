@@ -40,6 +40,17 @@ import type {
     SessionError,
 } from "../net/roomClient.ts";
 
+/**
+ * multiplayer game의 React page shell이다.
+ *
+ * React는 player 이름, badge, overlay와 HUD mount 위치를 관리한다. 실제 board, 입력,
+ * gravity와 snapshot 보정은 startMultiplayerGame이 만든 Canvas runtime이 소유한다.
+ * 따라서 React state를 gameplay의 두 번째 원천으로 사용하지 않는다.
+ *
+ * 페이지 시작 흐름:
+ * 저장된 공개 room 확인 → session:ready → game:join
+ * → 최신 authoritative match 수신 → 두 Canvas runtime 생성 → HUD 구독
+ */
 type PublicRoom = ServerToClientParsedPayload<"room:updated">;
 type SessionReady = PlayerSession;
 type GameJoinResult = ServerToClientParsedPayload<"game:join:result">;
@@ -90,6 +101,14 @@ function clearRoomSession() {
     sessionStorage.removeItem("room");
 }
 
+/**
+ * 로비가 남긴 공개 room DTO를 game page routing 정보로 읽는다.
+ *
+ * Zod 검증에 실패하면 손상된 값을 제거한다. 성공하더라도 이 값만으로 게임을 시작하지
+ * 않고, 현재 session으로 game:join을 보내 서버의 최신 membership과 match를 다시 받는다.
+ *
+ * @returns 검증된 공개 room 또는 사용할 수 없으면 null
+ */
 function readStoredRoom(): PublicRoom | null {
     const roomJson = sessionStorage.getItem("room");
     if (!roomJson) return null;
@@ -133,6 +152,12 @@ function PiecePreview({ pieceType }: { pieceType: PieceType | null }) {
     );
 }
 
+/**
+ * Canvas runtime의 파생 display snapshot을 React HUD portal로 보여 준다.
+ *
+ * runtime 표시 값의 변경은 publish 알림을 통해 React에 전달된다. score와 next/hold를
+ * React가 별도 gameplay state로 복사하지 않으므로 runtime이 계속 단일 원천으로 남는다.
+ */
 function PlayerHud({
     handle,
     playerNumber,
@@ -312,6 +337,12 @@ function PlayerColumn({
     );
 }
 
+/**
+ * 저장 room 검증, session 재연결, game join과 multiplayer runtime 생명주기를 조율한다.
+ *
+ * 이 컴포넌트의 boolean flag는 같은 effect 안에서 중복 join과 늦은 event를 막기 위한
+ * 생명주기 상태다. board나 승패를 직접 판정하지 않으며 서버 event를 화면 상태로 옮긴다.
+ */
 function MultiplayerGamePage() {
     const player1CanvasRef = useRef<HTMLCanvasElement>(null);
     const player2CanvasRef = useRef<HTMLCanvasElement>(null);
@@ -323,6 +354,11 @@ function MultiplayerGamePage() {
     const [overlays, setOverlays] = useState<[Overlay, Overlay]>(WAITING_OVERLAYS);
     const [homeDisabled, setHomeDisabled] = useState(true);
 
+    // =============================
+    // 멀티플레이 페이지 생명주기
+    // session 인증과 game:join 성공 뒤 runtime을 만들고, disconnect/pagehide에서 모두 해제한다.
+    // =============================
+
     useEffect(() => {
         const player1Canvas = player1CanvasRef.current;
         const player2Canvas = player2CanvasRef.current;
@@ -332,6 +368,7 @@ function MultiplayerGamePage() {
         if (!player1Canvas || !player2Canvas) return;
 
         applySavedTheme(themeToggle);
+        // 저장 room은 이동을 위한 힌트다. 아래 game:join 응답이 실제 match 시작 기준이다.
         const room = readStoredRoom();
         const playerId = getPlayerSession()?.playerId ?? null;
         if (
@@ -403,6 +440,7 @@ function MultiplayerGamePage() {
             activeGameSession = null;
         };
         const disposePageEffects = () => {
+            // listener → DOM event → sound → runtime 순서로 이 page가 만든 부수효과를 정리한다.
             if (disposed) return;
             disposed = true;
             joinPending = false;
@@ -449,6 +487,7 @@ function MultiplayerGamePage() {
             }
         }));
         disposers.push(onGameJoinResult((result: GameJoinResult) => {
+            // 저장값이 아니라 서버가 돌려준 최신 room/match가 두 runtime의 초기 상태다.
             if (disposed || !joinPending) return;
             joinPending = false;
             if (
@@ -532,6 +571,7 @@ function MultiplayerGamePage() {
             isSessionReady = true;
             joinPending = true;
             setHomeDisabled(false);
+            // reconnect 때도 새 socket을 room에 다시 join시키고 최신 match를 받는다.
             requestJoinGameRoom(roomId, playerId);
         }));
         disposers.push(onSessionError(({ terminal: isTerminal }: SessionError) => {
@@ -562,6 +602,7 @@ function MultiplayerGamePage() {
 
         const handlePageHide = () => disposePageEffects();
         const handlePageShow = (event: PageTransitionEvent) => {
+            // BFCache가 닫힌 socket/runtime을 복원하지 않도록 현재 서버 상태에서 다시 시작한다.
             if (event.persisted) window.location.reload();
         };
         window.addEventListener("pagehide", handlePageHide, { once: true });

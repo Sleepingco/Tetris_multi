@@ -46,18 +46,13 @@ export type GameState = {
 
 // =============================
 // 게임 상태 팩토리
-// 싱글 플레이 런타임에서 사용하는 상태 객체를 생성한다.
+// 싱글, 멀티 prediction, 서버 snapshot 복원이 공유하는 변경 가능한 gameplay 상태를 만든다.
+// board는 `init` 또는 snapshot 적용 시 채워지고, timer·tick·network 상태는 이 객체에 두지 않는다.
 // =============================
 
 /**
-  * 기본 런타임 필드를 포함한 새 gameState 객체를 만든다.
-  *
-  * @param {Object} params - 초기 상태 설정값
-  * @param {number} params.spawnRow - activePiece 기본 스폰 행
-  * @param {number} params.spawnCol - activePiece 기본 스폰 열
-  * @param {number} params.fallIntervalMs - 초기 중력 간격
-  * @param {string} params.initialPhase - 시작 phase
-  * @returns {Object} 변경 가능한 게임 상태 객체
+  * 새 게임 또는 snapshot 복원의 출발점이 되는 독립적인 gameState를 만든다.
+  * `activePiece` 객체 참조는 runtime이 유지하므로 이후 값은 `setActivePiece`가 제자리에서 갱신한다.
   */
 export function createGameState({
         spawnRow,

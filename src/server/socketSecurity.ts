@@ -1,3 +1,7 @@
+// =============================
+// Socket.IO 전송 계층 보안
+// handshake가 애플리케이션 인증에 도달하기 전에 허용된 browser origin인지 검사한다.
+// =============================
 type Environment = NodeJS.ProcessEnv;
 import type { ServerOptions } from "socket.io";
 
@@ -12,6 +16,10 @@ export const DEFAULT_DEVELOPMENT_ORIGINS = Object.freeze([
     "http://localhost:5510",
 ]);
 
+/**
+ * 실행 환경에서 정확히 일치해야 하는 origin allowlist를 읽는다.
+ * production은 설정 누락을 허용하지 않고, 개발 환경에서만 로컬 기본값을 사용한다.
+ */
 export function readAllowedOrigins(environment: Environment = process.env): Set<string> {
     const configured = environment.SOCKET_ALLOWED_ORIGINS
         ?.split(",")
@@ -25,6 +33,10 @@ export function readAllowedOrigins(environment: Environment = process.env): Set<
     return new Set(configured.length > 0 ? configured : DEFAULT_DEVELOPMENT_ORIGINS);
 }
 
+/**
+ * CORS 응답과 실제 Engine.IO 요청을 같은 allowlist로 제한한다.
+ * origin이 없는 요청은 개발 환경이거나, allowlist host에서 온 same-origin browser 요청일 때만 허용한다.
+ */
 export function createSocketServerOptions(
     environment: Environment = process.env,
 ): SocketServerOptions {

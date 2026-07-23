@@ -1,3 +1,10 @@
+/**
+ * 현재 조각에서 실제 키 입력으로 도달 가능한 lock 위치만 BFS로 찾는 planner 테스트다.
+ *
+ * board와 active piece를 준비해 후보를 생성한 뒤 `plannedActions`를 서버 authoritative step으로 다시 실행한다.
+ * replay 결과가 후보의 `pieceType·rotation·row·col`과 같고, 동일한 placement key에는
+ * BFS가 먼저 찾은 최단 경로 하나만 남는지가 핵심이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

@@ -1,3 +1,10 @@
+/**
+ * index와 lobby React shell의 event listener 수명과 production artifact 경계를 검증한다.
+ *
+ * Socket.IO 전송 frame과 브라우저 오류를 먼저 수집한 뒤 reload·BFCache·사용자 상호작용을
+ * 실행한다. 두 사용자 시나리오는 독립 context로 session을 격리하고 finally에서 닫아,
+ * listener 중복과 token 노출을 실제 브라우저 수명 주기 안에서 확인한다.
+ */
 const { test, expect } = require("@playwright/test");
 const { parseSocketIoFrame } = require("./helpers/multiplayer.js");
 

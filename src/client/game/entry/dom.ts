@@ -1,13 +1,16 @@
+// =============================
+// 페이지 DOM 조회 경계
+// root가 있으면 해당 page/component 안에서 찾고, 없으면 document 전체를 사용한다.
+// 선택 요소는 null을 허용하고 필수 요소는 시작 시점에 명확한 오류로 실패시킨다.
+// =============================
+
 function getQueryScope(root: ParentNode | null | undefined): ParentNode {
         return root ?? document
 }
 
 /**
-  * root 범위 안에서 첫 번째 일치 요소를 조회한다.
-  *
-  * @param {ParentNode|null|undefined} root - 조회 기준 루트
-  * @param {string} selector - 찾을 CSS selector
-  * @returns {Element|null} 찾은 요소 또는 null
+  * root 범위에서 첫 번째 일치 요소를 찾는다.
+  * 요소가 없어도 정상인 선택 UI에 사용하며, 호출자가 null 처리를 결정한다.
   */
 export function queryElement<ElementType extends Element = Element>(
         root: ParentNode | null | undefined,
@@ -17,12 +20,8 @@ export function queryElement<ElementType extends Element = Element>(
 }
 
 /**
-  * root 범위 안에서 필수 요소를 조회하고, 없으면 문맥 정보를 포함한 오류를 던진다.
-  *
-  * @param {ParentNode|null|undefined} root - 조회 기준 루트
-  * @param {string} selector - 찾을 CSS selector
-  * @param {string} contextLabel - 오류 메시지에 포함할 호출 문맥
-  * @returns {Element} 찾은 DOM 요소
+  * page 실행에 꼭 필요한 요소를 찾고, 없으면 selector와 호출 문맥을 포함해 즉시 실패한다.
+  * 뒤쪽 코드에서 모호한 null 오류가 나기 전에 잘못된 HTML mount 계약을 드러내는 역할이다.
   */
 export function requireElement<ElementType extends Element = Element>(
         root: ParentNode | null | undefined,

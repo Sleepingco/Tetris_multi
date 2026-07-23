@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Validate and summarize a V4 cumulative development-fit checkpoint."""
+"""Validate and summarize a V4 cumulative development-fit checkpoint.
+
+This script audits an existing report against the frozen dataset and feature
+contracts; it does not refit V4 or turn development-fit diagnostics into
+held-out evidence or a production-integration decision.
+"""
 
 from __future__ import annotations
 

@@ -1,3 +1,11 @@
+/**
+ * 멀티플레이 E2E 테스트가 공통으로 사용하는 준비·관찰·정리 도우미다.
+ *
+ * Host와 Guest는 쿠키·sessionStorage가 섞이지 않도록 서로 다른 BrowserContext에서
+ * 실행한다. 테스트는 키 입력 뒤 source와 observer Canvas의 고정 블록 fingerprint가
+ * 같아지는지 확인하고, 필요하면 authoritative tick이 진행되는 동안 상태 유지도 관찰한다.
+ * 생성한 context와 WebSocket listener는 반드시 close/dispose한다.
+ */
 const { expect } = require("@playwright/test");
 
 const GAME_READY_SELECTOR = '.next-preview[data-player="1"] .next-cell';

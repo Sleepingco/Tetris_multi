@@ -1,3 +1,9 @@
+/**
+ * 변경 가능한 game state와 외부 snapshot 사이의 복사 경계를 검증한다.
+ *
+ * board·piece·queue가 있는 state 또는 partial snapshot을 준비해 serialize/deserialize를 실행하고 복원값을 확인한다.
+ * 빠진 필드는 factory 기본값을 사용하며 board와 piece의 참조를 공유하지 않는 것이 상태 오염 방지의 핵심이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

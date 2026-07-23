@@ -1,3 +1,10 @@
+"""신규 game temporal holdout에서 V0와 V4를 비교하는 Notebook 계약을 검증한다.
+
+고정 checksum, 과거·신규 gameId 분리, train-only scaler와 physical-class metric이
+명시되어 있는지 source cell을 읽어 확인한다. 일부 game만 쓰는 smoke 결과가 자동으로
+정책 채택이나 canonical 결과로 승격되지 않는 것도 중요한 검증 대상이다.
+"""
+
 import json
 import unittest
 from pathlib import Path

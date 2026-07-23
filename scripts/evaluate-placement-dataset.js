@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 
+/**
+ * dataset snapshot에서 heuristic과 seeded-random imitation baseline을 LOGO로 평가한다.
+ *
+ * train/validation 파일을 합치는 이유는 full-data model을 fit하기 위해서가 아니다.
+ * 매 fold에서 gameId 하나를 통째로 validation으로 빼고, 나머지만 scorer에 전달해 모든
+ * game이 정확히 한 번 held-out 평가를 받게 하기 위해서다.
+ */
+
 const { mkdir, readFile, writeFile } = require("node:fs/promises");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
@@ -27,6 +35,10 @@ async function readJsonl(filePath) {
     return text.trim() === "" ? [] : text.trimEnd().split("\n").map(JSON.parse);
 }
 
+/**
+ * 정제된 candidate 행을 decision으로 묶어 두 baseline의 held-out ranking 지표를 만든다.
+ * Top-1/Top-3/MRR은 기록된 선택 모방 성능이며 실제 생존·공격 성능을 뜻하지 않는다.
+ */
 async function evaluateDataset(options) {
     const datasetDir = path.resolve(options.datasetDir);
     const manifest = JSON.parse(await readFile(path.join(datasetDir, "manifest.json"), "utf8"));

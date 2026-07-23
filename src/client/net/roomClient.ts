@@ -9,6 +9,22 @@ import type {
     ServerToClientParsedPayload,
 } from "../../shared/socketContractTypes.d.ts"
 
+/**
+ * 브라우저의 Socket.IO 연결과 player session을 한 곳에서 관리하는 네트워크 어댑터다.
+ *
+ * 페이지 컴포넌트는 socket 객체를 직접 만지지 않고 아래의 request/on 함수만 사용한다.
+ * 이 경계를 지키면 화면 코드는 통신 세부 구현을 몰라도 되고, 모든 서버 응답은 같은
+ * schema 검증을 거친다.
+ *
+ * 주요 흐름:
+ * 저장된 credential 읽기 → handshake → session:ready → 인증된 event 송수신
+ * → disconnect 시 전송 대기열 폐기 → reconnect 또는 terminal 종료
+ *
+ * 상태 원천:
+ * - activeSession: 현재 연결에서 서버가 인증한 session
+ * - sessionStorage: 새 연결을 복구하기 위한 credential 캐시
+ * - room/match/gameplay state: 이 모듈이 아니라 서버와 각 페이지/runtime가 소유
+ */
 type Disposer = () => void;
 type RequestType = "create" | "join" | "leave" | "start" | "sync" | null;
 type PlayerIdentity = { playerId: string | null; nickname: string };
@@ -62,6 +78,13 @@ const terminalSessionErrors = new Set([
     "SESSION_NICKNAME_INVALID",
     "SESSION_REPLAYED",
 ])
+
+// =============================
+// 세션 생명주기 상태
+// 현재 연결의 인증 상태와 page subscriber만 보관한다.
+// room이나 gameplay 상태를 별도로 복제하지 않는다.
+// =============================
+
 const sessionReadyHandlers = new Set<(session: PlayerSession) => void>()
 const sessionErrorHandlers = new Set<(error: SessionError) => void>()
 const sessionDisconnectedHandlers = new Set<(disconnect: SessionDisconnect) => void>()
@@ -75,6 +98,14 @@ function readNickname(): string {
     return sessionStorage.getItem("tetris:nickname")?.trim() || "Guest"
 }
 
+/**
+ * 이전 연결에서 저장한 credential을 handshake에 사용할 수 있는 형태로 읽는다.
+ *
+ * 저장값은 신뢰할 수 있는 session 원천이 아니라 복구용 캐시다. 따라서 JSON 구조만
+ * 확인하고, token의 진위와 만료 여부는 다음 연결에서 서버가 다시 검증한다.
+ *
+ * @returns 정상 credential, 손상 표시 또는 저장값이 없으면 null
+ */
 function readStoredSession(): StoredCredential | MalformedSession | null {
     const rawSession = sessionStorage.getItem(SESSION_STORAGE_KEY)
     if (!rawSession) return null
@@ -108,6 +139,15 @@ function readStoredSession(): StoredCredential | MalformedSession | null {
     }
 }
 
+/**
+ * Socket.IO가 연결을 시도할 때마다 최신 sessionStorage로 handshake payload를 만든다.
+ *
+ * credential이 손상됐다고 조용히 새 사용자로 연결하면 기존 room 소유권을 잃을 수 있다.
+ * 그래서 MALFORMED 표시를 서버로 보내 명시적인 terminal 오류로 처리한다.
+ *
+ * @param callback Socket.IO가 handshake auth를 받을 때 호출하는 함수
+ * @returns void
+ */
 function createHandshakeAuth(callback: (payload: AuthPayload) => void): void {
     const session = readStoredSession()
     if (session && "malformed" in session) {
@@ -131,6 +171,8 @@ function clearIdentityAndRoom(): void {
     activeSession = null
 }
 
+// 현재 HTML 문서의 모듈 인스턴스에서는 Socket을 하나만 공유한다.
+// 다른 HTML 문서로 이동하면 새 모듈 인스턴스와 새 연결이 만들어진다.
 const serverConnection = io({
     autoConnect: false,
     auth: createHandshakeAuth,
@@ -148,6 +190,15 @@ function notifySessionDisconnected(reason: string, terminal: boolean): void {
     }))
 }
 
+/**
+ * 서버 payload가 공유 contract를 위반했을 때 자동 재연결을 멈춘다.
+ *
+ * transport 단절과 달리 protocol 오류는 같은 payload를 다시 받아도 회복되지 않는다.
+ * 현재 credential은 임의로 삭제하지 않고 페이지에 terminal 상태를 알려 사용자가
+ * 문제를 인지할 수 있게 한다.
+ *
+ * @returns void
+ */
 function stopForProtocolError(): void {
     activeSession = null
     const wasConnected = serverConnection.connected
@@ -163,6 +214,16 @@ function stopForProtocolError(): void {
     }
 }
 
+/**
+ * 서버 event를 application handler에 전달하기 전에 공유 Zod contract로 검증한다.
+ *
+ * 반환 disposer는 같은 wrapper를 정확히 제거한다. session:ready가 잘못된 경우에는
+ * 인증 상태 자체를 신뢰할 수 없으므로 연결을 terminal protocol 오류로 종료한다.
+ *
+ * @param eventName 구독할 server-to-client event 이름
+ * @param handler 검증이 성공한 payload만 받는 application handler
+ * @returns listener를 제거하는 함수
+ */
 function onValidatedServerEvent<K extends ServerToClientEventName>(
     eventName: K,
     handler: (payload: ServerToClientParsedPayload<K>) => void,
@@ -182,6 +243,12 @@ function onValidatedServerEvent<K extends ServerToClientEventName>(
     serverConnection.on(eventName, validatedHandler)
     return () => serverConnection.off(eventName, validatedHandler)
 }
+
+// =============================
+// 소켓 세션 상태 흐름
+// connect는 transport 연결, session:ready는 인증 완료를 뜻한다.
+// 페이지 mutation은 반드시 session:ready 이후에만 전송한다.
+// =============================
 
 serverConnection.on("connect", () => {
     activeSocketId = serverConnection.id ?? null
@@ -250,6 +317,16 @@ serverConnection.on("disconnect", (reason: string) => {
 
 serverConnection.connect()
 
+/**
+ * 현재 transport와 session이 모두 준비됐을 때만 mutation event를 전송한다.
+ *
+ * 연결이 끊긴 동안 Socket.IO sendBuffer에 mutation이 남으면 reconnect 뒤 오래된 입력이
+ * 실행될 수 있다. 그래서 미인증·미연결 상태에서는 즉시 false를 반환하며 보내지 않는다.
+ *
+ * @param eventName client-to-server event 이름
+ * @param payload 공유 contract가 정의한 wire payload
+ * @returns 실제 socket emit을 수행했으면 true
+ */
 function emitAuthenticated<K extends ClientToServerEventName>(
     eventName: K,
     payload: ClientToServerWirePayload<K>,
@@ -263,10 +340,19 @@ function emitAuthenticated<K extends ClientToServerEventName>(
 }
 
 // =============================
-// Socket.IO Room Adapter
-// 브라우저 전역 socket을 한 번만 만들고, 페이지 코드는 이 얇은 함수들만 사용한다.
+// Socket.IO 방 어댑터
+// 아래 함수들은 화면 의도를 event로 바꾸는 얇은 경계다.
+// `_playerId` 같은 인자는 기존 page API 호환용이며, 서버 identity는 active session에서 얻는다.
 // =============================
 
+/**
+ * 화면 표시와 저장된 room 복구에 사용할 공개 player identity를 반환한다.
+ *
+ * activeSession이 있으면 현재 연결 값을 우선한다. 연결 준비 전에는 저장 credential의
+ * 공개 필드만 임시로 읽으며, mutation 권한으로는 사용하지 않는다.
+ *
+ * @returns 공개 player identity 또는 사용할 수 있는 값이 없으면 null
+ */
 export function getPlayerSession(): PlayerSession | null {
     if (activeSession) return toPlayerSession(activeSession)
 
@@ -276,6 +362,15 @@ export function getPlayerSession(): PlayerSession | null {
         : toPlayerSession(storedSession)
 }
 
+/**
+ * session 인증 완료를 구독한다.
+ *
+ * 이미 session:ready가 끝난 뒤 페이지가 구독할 수도 있으므로 현재 session을 microtask로
+ * 한 번 전달한다. disposer가 먼저 호출되거나 session이 교체되면 늦은 전달은 취소된다.
+ *
+ * @param handler 인증된 공개 player identity를 받을 함수
+ * @returns 구독 해제 함수
+ */
 export function onSessionReady(handler: (session: PlayerSession) => void): Disposer {
     const wrappedHandler = (session: PlayerSession) => handler(session)
     sessionReadyHandlers.add(wrappedHandler)
@@ -307,10 +402,12 @@ export function onSessionDisconnected(handler: (disconnect: SessionDisconnect) =
 }
 
 /**
- * @param {{playerId: string|null, nickname: string}} player
- * @param {"pvp"|"pve"} mode
- * @param {"normal"|"hard"|null} aiDifficulty
- * @param {"heuristic"|"placement_v4"|null} aiPolicy
+ * 새 room 생성 의도를 server event로 보낸다.
+ *
+ * PVE일 때만 난이도와 policy를 payload에 넣는다. 전달받은 player 정보는 호환용이며
+ * 실제 요청 identity는 서버가 active session에서 결정한다.
+ *
+ * @returns void
  */
 export function requestCreateRoom(
     _player: PlayerIdentity,
@@ -384,7 +481,14 @@ export function requestLeaveRoom(roomId: string, _playerId: string | null): void
     emitAuthenticated("room:leave", { roomId })
 }
 
-// 게임 화면에서 이미 시작된 room/match 상태와 server bag 정보를 다시 받는다.
+/**
+ * 게임 페이지가 현재 authoritative match에 참가하거나 재접속하도록 요청한다.
+ *
+ * 성공 응답에는 최신 room, player별 server bag과 snapshot이 포함된다. 저장된 room은
+ * routing 힌트일 뿐이며 이 응답을 받아야 실제 multiplayer runtime을 시작할 수 있다.
+ *
+ * @returns void
+ */
 export function requestJoinGameRoom(roomId: string, _playerId: string): void {
     emitAuthenticated("game:join", { roomId })
 }
@@ -407,10 +511,20 @@ export function requestStartGame(roomId: string, _playerId: string | null): void
 }
 
 // =============================
-// Game Sync Channel
-// 서버 입력/상태 동기화 채널이다.
+// 게임 동기화 채널
+// local prediction의 입력을 서버에 보내고 authoritative 결과를 다시 받는 채널이다.
+// 서버 snapshot이 최종 진실이며 clientSequence가 두 상태의 진행 위치를 연결한다.
 // =============================
 
+/**
+ * local runtime에서 실제 적용된 입력을 authoritative 서버로 전송한다.
+ *
+ * clientSequence는 입력 순서와 acknowledgment를 연결한다. expectedTransform은 서버가
+ * 같은 조각·회전·열을 보고 있는지 확인하는 divergence 증거이며 권한 정보가 아니다.
+ * hold 외 입력은 transform이 없으면 잘못된 prediction을 보낼 수 있으므로 전송하지 않는다.
+ *
+ * @returns event를 실제 전송했으면 true
+ */
 export function sendGameInput(
     roomId: ClientToServerWirePayload<"game:input">["roomId"],
     _playerId: string,

@@ -1,3 +1,9 @@
+/**
+ * 서버가 결정한 game-over 이후 같은 두 플레이어가 방을 재사용할 수 있는지 검증한다.
+ *
+ * 두 BrowserContext로 PVP 경기를 준비하고 Host를 빠르게 top-out시킨 뒤, 양쪽 결과 화면과
+ * 로비 복귀 상태를 확인한다. 중간 assertion이 실패해도 finally에서 두 context를 닫는다.
+ */
 const { test, expect } = require("@playwright/test");
 const {
     MULTI_LOBBY_URL,

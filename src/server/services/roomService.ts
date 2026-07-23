@@ -10,8 +10,10 @@ import {
 import type { AiDifficulty, AiPolicy } from "./aiDifficulty.js";
 
 // =============================
-// In-memory Room Store
-// 현재 MVP에서는 단일 Node 프로세스 메모리에 room lifecycle을 저장한다.
+// 메모리 기반 방 상태 저장소
+// 현재 MVP에서는 단일 Node 프로세스 메모리에 membership과 room lifecycle을 저장한다.
+// board와 조각 같은 실행 중 gameplay state는 matchService가 별도로 소유한다.
+// Map 안의 RoomState는 내부 원본이며 lifecycle 함수가 같은 객체를 제자리에서 변경한다.
 // =============================
 const rooms = new Map<string, RoomState>()
 const MAX_ROOM_ID_GENERATION_ATTEMPTS = 5
@@ -99,6 +101,10 @@ function failure(reason: string, meta: Partial<RoomResult> = {}): RoomResult {
     }
 }
 
+/**
+ * service 내부에서 사용할 RoomState 원본 참조를 조회한다.
+ * client 전송에는 이 값을 직접 쓰지 말고 roomPublicDto의 whitelist 복사본을 사용한다.
+ */
 export function getRoomState(roomId: string): RoomState | null {
     return rooms.get(roomId) || null
 }
@@ -193,6 +199,10 @@ function getRoomPlayerContext(roomId: string, playerId: string): {
     }
 }
 
+/**
+ * 아직 어떤 room에도 속하지 않은 human을 host로 하는 waiting room을 만든다.
+ * PVE에서는 같은 room에 synthetic AI를 함께 넣지만 match와 board는 아직 만들지 않는다.
+ */
 export function createRoom(
     hostPlayer: PlayerIdentity | null | undefined,
     options: RoomOptions = {},
@@ -249,6 +259,10 @@ export function createRoom(
     return success(room)
 }
 
+/**
+ * waiting PVP room에 두 번째 human player를 추가한다.
+ * room 정원과 중복 membership은 여기서 검사하므로 socket handler는 결과를 전달만 한다.
+ */
 export function joinRoom(
     roomId: string,
     guestPlayer: PlayerIdentity | null | undefined,
@@ -296,10 +310,7 @@ export function joinRoom(
 
 /**
  * room에서 player를 제거하고, 빈 방 삭제/host 위임/waiting 복귀까지 처리한다.
- *
- * @param {string} roomId - 대상 room id
- * @param {string} playerId - 제거할 player id
- * @returns {{ok: boolean, room: Object|null, reason: string|null}} 제거 결과
+ * 반환한 room이 null이면 저장소에서도 방이 삭제됐다는 뜻이다.
  */
 export function removePlayer(roomId: string, playerId: string): RoomResult {
     const roomState = getRoomState(roomId)
@@ -381,6 +392,10 @@ export function leaveRoom(roomId: string, playerId: string): RoomResult {
         : failure(result.reason ?? "UNKNOWN_ERROR", meta)
 }
 
+/**
+ * host 권한과 두 player 구성을 확인한 뒤 room lifecycle만 `playing`으로 바꾼다.
+ * authoritative match 생성과 ticker 시작은 이 결과를 받은 Socket.IO handler가 이어서 수행한다.
+ */
 export function startGame(roomId: string, playerId: string): RoomResult {
     const context = getRoomPlayerContext(roomId, playerId)
     if (!context.ok) {
@@ -435,11 +450,7 @@ export function leaveGame(roomId: string, playerId: string): RoomResult {
 /**
  * 현재 room 상태를 반환하면서 로비 복귀 상태를 동기화한다.
  * - finished room에서 양쪽이 로비에 복귀하면 다시 waiting 상태로 되돌린다.
- *
- * @param {string} roomId - 동기화할 room id
- * @param {string} playerId - 요청 player id
- * @param {{location?: string}} options - 요청 위치 정보
- * @returns {{ok: boolean, room: Object|null, reason: string|null}} 동기화 결과
+ * - PVE의 synthetic AI는 화면을 이동하지 않으므로 human 복귀만 기다린다.
  */
 export function syncRoom(
     roomId: string,
@@ -477,11 +488,7 @@ export function syncRoom(
 /**
  * 패배자를 기준으로 승자를 계산하고 room을 finished 상태로 전환한다.
  * - player를 제거하지 않고, 두 플레이어가 결과 화면에서 로비로 돌아올 수 있게 유지한다.
- *
- * @param {string} roomId - 종료할 room id
- * @param {string} loserPlayerId - 패배한 player id
- * @param {string} [finishReason="top_out"] - 종료 사유
- * @returns {{ok: boolean, room: Object|null, reason: string|null, winnerPlayerId?: string|null, loserPlayerId?: string|null, finishReason?: string}} 종료 결과
+ * - 이미 finished인 room은 실패하므로 상위 finish orchestration의 중복 emit/log 방지 gate가 된다.
  */
 export function finishGame(
     roomId: string,

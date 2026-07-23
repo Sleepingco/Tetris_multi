@@ -1,3 +1,13 @@
+/**
+ * append-only game event JSONL을 재현 가능한 train/validation snapshot으로 내보내는 전체 경로를 검증한다.
+ *
+ * 준비: 임시 디렉터리에 complete/incomplete/malformed game event를 JSONL로 기록한다.
+ * 실행: lifecycle·winner/source/piece 정책 필터, builder, gameId split과 manifest 생성을 수행한다.
+ * 검증: 제외 사유와 난이도 provenance가 보존되고, 동일 입력·seed는 동일한 네 output 파일을 만들며,
+ * train/validation 사이 gameId 누출이나 stale row가 없고 원본 JSONL bytes는 바뀌지 않아야 한다.
+ *
+ * `t.after`로 임시 파일을 정리하므로 운영 dataset과 log에는 영향을 주지 않는다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { createHash } = require("node:crypto");
@@ -53,6 +63,10 @@ function createPlacementDecision(overrides = {}) {
     };
 }
 
+/**
+ * game_start → placement들 → game_over 순서의 완결된 lifecycle fixture를 만든다.
+ * exporter가 개별 row가 아니라 game 결과 문맥으로 placement를 선택하는 이유를 보여 준다.
+ */
 function createCompleteGame({
     gameId = "game-001",
     winnerPlayerId = "winner-001",

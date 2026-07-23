@@ -3,10 +3,23 @@ import { createRoot } from "react-dom/client";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { initLobbySound } from "../game/runtime/sound.ts";
 
+// =============================
+// 시작 페이지 React shell
+// nickname 입력과 페이지 이동, theme/sound 수명주기만 소유하며 게임 규칙은 실행하지 않는다.
+// 멀티 lobby가 읽을 nickname은 이동 직전에 sessionStorage에 저장한다.
+// =============================
+
+/** nickname을 비워 둔 사용자가 멀티 lobby에 들어갈 때 사용할 짧은 임시 이름을 만든다. */
 function createGuestNickname(): string {
     return `Guest${Math.floor(1000 + Math.random() * 9000)}`;
 }
 
+/**
+ * 시작 페이지 UI와 브라우저 부수효과의 수명주기를 연결한다.
+ * - mount 시 저장 theme과 lobby BGM을 적용한다.
+ * - unmount/pagehide 시 sound listener를 한 번만 정리한다.
+ * - bfcache에서 돌아오면 오래된 effect 상태를 재사용하지 않도록 페이지를 새로 읽는다.
+ */
 function IndexPage() {
     const [nickname, setNickname] = useState("");
     const themeToggleRef = useRef<HTMLButtonElement>(null);
@@ -33,6 +46,7 @@ function IndexPage() {
         };
     }, []);
 
+    // 아래 navigation handler는 nickname 전달만 담당하고 실제 room/session 생성은 lobby가 소유한다.
     const enterMultiLobby = (event: React.SyntheticEvent) => {
         event.preventDefault();
         sessionStorage.setItem(

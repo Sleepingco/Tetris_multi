@@ -1,3 +1,13 @@
+/**
+ * 정제된 candidate dataset을 feature→decision group→ranking 평가로 연결하는 계약을 검증한다.
+ *
+ * 준비: 한 placement 판단에 속한 후보 세 개와 실제 선택 label 하나를 만든다.
+ * 실행: 16개 feature 추출, group 검증, heuristic/seeded-random ranking, LOGO fold와 CLI report를 평가한다.
+ * 검증: feature 순서와 불변성, 후보 중복/label 오류 거부, Top-1·Top-3·MRR 계산, held-out game 분리와
+ * 입력 파일 불변성이 유지되어야 한다.
+ *
+ * 이 지표는 선택 모방 정확도다. 실제 생존·공격 성능은 gameplay benchmark에서 별도로 검증해야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { mkdtemp, readFile, rm, writeFile } = require("node:fs/promises");

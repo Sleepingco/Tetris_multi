@@ -1,3 +1,8 @@
+// =============================
+// 플레이어 세션 상태 소유권
+// session token 계보와 active socket generation을 소유한다. room membership은 roomService의 책임이다.
+// 서버에는 token 원문이 아니라 digest만 남기고, 원문은 session:ready 응답으로만 전달한다.
+// =============================
 import {
     createHash,
     randomBytes,
@@ -68,6 +73,10 @@ function hashToken(token: string): Buffer {
     return createHash("sha256").update(token).digest()
 }
 
+/**
+ * token을 같은 길이의 digest로 바꾼 뒤 timing-safe 비교한다.
+ * 문자열을 직접 비교해 일치 지점에 따른 시간 차이가 드러나는 일을 피한다.
+ */
 function matchesToken(token: unknown, digest: unknown): boolean {
     if (typeof token !== "string" || !TOKEN_PATTERN.test(token) || !Buffer.isBuffer(digest)) {
         return false;
@@ -78,6 +87,15 @@ function matchesToken(token: unknown, digest: unknown): boolean {
         && timingSafeEqual(candidateDigest, digest)
 }
 
+/**
+ * 신규 발급과 재연결을 관리하는 in-memory session service를 만든다.
+ *
+ * 핵심 규칙:
+ * - `expiresAt`은 최초 발급 시 정한 절대 만료이며 재연결해도 늘어나지 않는다.
+ * - token을 재사용해 인증하면 새 token과 generation으로 회전한다.
+ * - 같은 player에서는 최신 generation/socket만 active다.
+ * - 직전 token은 active socket이 끊긴 경우에만 짧은 recovery window에서 한 번 사용할 수 있다.
+ */
 export function createPlayerSessionService(
     dependencies: Dependencies = {},
 ): PlayerSessionService {
@@ -147,6 +165,7 @@ export function createPlayerSessionService(
         const token = createToken()
         const replacedSocketId = session.activeSocketId
 
+        // 정상 회전의 직전 token만 일시 보관한다. 복구에 사용한 token은 즉시 폐기한다.
         if (!usedRecoveryToken) {
             recoveryTokens.set(session.playerId, {
                 tokenDigest: session.tokenDigest,
@@ -172,6 +191,10 @@ export function createPlayerSessionService(
         }
     }
 
+    /**
+     * handshake credential을 신규 발급 또는 session 재개로 해석한다.
+     * 일부 credential을 신규 사용자로 바꾸지 않아 잘못된 재개 요청이 새 identity를 만들지 못하게 한다.
+     */
     function authenticate(auth: unknown, socketId: string): PlayerSessionAuthentication {
         const credentials = isRecord(auth) ? auth : {};
         if (credentials.credentialError) {
@@ -230,6 +253,10 @@ export function createPlayerSessionService(
         }
     }
 
+    /**
+     * event를 보낸 socket이 현재 session의 최신 generation인지 확인한다.
+     * 연결 때 인증했더라도 token 회전이나 만료 뒤에는 모든 mutation event가 다시 실패한다.
+     */
     function isActiveSocket(
         context: PlayerSessionContext | null | undefined,
         socketId: string,
@@ -247,6 +274,10 @@ export function createPlayerSessionService(
         )
     }
 
+    /**
+     * 최신 socket의 연결만 inactive로 표시한다.
+     * 오래된 socket의 늦은 disconnect가 새 연결을 끊긴 상태로 덮어쓰지 못하게 한다.
+     */
     function markDisconnected(
         context: PlayerSessionContext | null | undefined,
         socketId: string,
@@ -275,6 +306,10 @@ export function createPlayerSessionService(
         )
     }
 
+    /**
+     * 절대 만료된 session과 recovery token을 제거한다.
+     * 반환한 active socket 정보는 bootstrap이 연결 종료와 room 정리를 이어서 처리할 때 사용한다.
+     */
     function cleanupExpired(): ReturnType<PlayerSessionService["cleanupExpired"]> {
         const currentTime = now()
         const expiredSessions = []

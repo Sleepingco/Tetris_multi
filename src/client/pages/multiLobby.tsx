@@ -23,6 +23,17 @@ import {
 } from "../net/roomClient.ts";
 import type { PlayerSession } from "../net/roomClient.ts";
 
+/**
+ * 멀티 로비의 React page shell이다.
+ *
+ * React state는 입력 폼, 현재 화면과 채팅처럼 표시할 값을 소유한다. room lifecycle의
+ * 최종 상태는 서버가 소유하며, 이 페이지는 roomClient의 검증된 event를 React state로
+ * 반영한다. 저장된 roomId는 새 연결에서 room:sync를 요청하기 위한 routing 힌트일 뿐이다.
+ *
+ * 주요 흐름:
+ * session:ready → 이전 room 동기화 또는 새 room 생성/참가
+ * → room:updated(playing) → multiplayer game page 이동
+ */
 type Room = ServerToClientParsedPayload<"room:updated">;
 type RoomResult = ServerToClientParsedPayload<"room:result">;
 type RoomMessage = ServerToClientParsedPayload<"room:message">;
@@ -51,6 +62,14 @@ function getSavedNickname(): string {
     return guestNickname;
 }
 
+/**
+ * 페이지 이동 뒤 game page가 어떤 room에 다시 join할지 알 수 있도록 공개 room DTO를 저장한다.
+ *
+ * 이 값은 권한 근거가 아니다. 다음 페이지와 서버는 credential, membership과
+ * game:join 응답을 다시 검증한다.
+ *
+ * @returns void
+ */
 function saveRoomSession(room: Room): void {
     sessionStorage.setItem("tetris:roomId", room.roomId);
     sessionStorage.setItem("room", JSON.stringify(room));
@@ -63,6 +82,12 @@ function clearRoomSession(): void {
 
 const initialNickname = getSavedNickname();
 
+/**
+ * room 생성·참가·채팅 화면과 Socket.IO 구독 생명주기를 조율한다.
+ *
+ * 서버 event를 받으면 React state를 갱신하고, 컴포넌트가 사라질 때 모든 listener와
+ * sound effect를 해제한다. 게임 판정이나 room 상태 전이는 이 컴포넌트에서 결정하지 않는다.
+ */
 function MultiLobbyPage() {
     const [playerId, setPlayerId] = useState<string | null>(null);
     const [nickname, setNickname] = useState(initialNickname);
@@ -111,11 +136,17 @@ function MultiLobbyPage() {
         messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
     }, [messages]);
 
+    // =============================
+    // 로비 소켓 생명주기
+    // 한 번 구독하고 cleanup에서 모두 해제해 StrictMode 재마운트와 BFCache 복원을 안전하게 처리한다.
+    // =============================
+
     useEffect(() => {
         applySavedTheme(themeToggleRef.current);
         const cleanupSound = initLobbySound(soundToggleRef.current);
         const disposers = [
             onRoomUpdated((nextRoom: Room) => {
+                // 서버가 playing 전이를 확정한 뒤에만 game page로 이동한다.
                 if (nextRoom.status === "playing") {
                     saveRoomSession(nextRoom);
                     window.location.href = `/pages/tetrisMulti.html?roomId=${nextRoom.roomId}`;
@@ -166,6 +197,7 @@ function MultiLobbyPage() {
                 setPlayerId(readyPlayerId);
                 setNickname(readyNickname);
                 setSessionReady(true);
+                // sessionStorage만 믿지 않고 새 active session으로 membership을 다시 확인한다.
                 const savedRoomId = sessionStorage.getItem("tetris:roomId");
                 if (savedRoomId) requestRoomSync(savedRoomId, readyPlayerId);
             }),
@@ -187,6 +219,7 @@ function MultiLobbyPage() {
             cleanupSound?.();
         };
         const onPageShow = (event: PageTransitionEvent) => {
+            // BFCache는 이전 socket listener까지 복원할 수 있으므로 새 연결 상태로 다시 시작한다.
             if (event.persisted) window.location.reload();
         };
         window.addEventListener("pagehide", dispose, { once: true });

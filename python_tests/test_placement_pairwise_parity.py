@@ -1,3 +1,10 @@
+"""JavaScript 기준 pairwise 학습과 Python 구현이 같은 계약을 따르는지 검증한다.
+
+작은 synthetic decision bundle을 준비해 scaler, pair weight, symmetric sample, score와
+결정성을 비교한다. 파일 출력 테스트는 임시 디렉터리에서 alias·symlink·hardlink 충돌과
+직렬화 실패를 만들고, atomic I/O가 원본 bundle과 기존 report를 보존하는지도 확인한다.
+"""
+
 import copy
 import json
 import math

@@ -1,5 +1,7 @@
 // =============================
-// Renderer Helpers (DOM only)
+// Canvas와 preview 렌더러
+// core/runtime이 확정한 board, activePiece, animation 진행값을 화면에 그리기만 한다.
+// 충돌, lock, line clear 같은 게임 규칙은 결정하지 않으며 렌더용 계산도 원본 상태를 바꾸지 않는다.
 // =============================
 
 import type { Board } from "../core/board.ts";
@@ -35,14 +37,8 @@ type FlashRow = number | { row: number; progress: number };
 type RenderedPiece = PieceState & { ghostRow?: number };
 
 /**
-  * 라인 클리어 후반부에 블록이 깨지는 파편 좌표를 계산한다.
-  *
-  * @param {Object} params
-  * @param {number} params.row - 보드 행 인덱스
-  * @param {number} params.col - 보드 열 인덱스
-  * @param {number} params.progress - 라인 클리어 애니메이션 진행률(0~1)
-  * @param {number} params.cellSize - 셀 한 칸 크기
-  * @returns {Array<{x: number, y: number, width: number, height: number, alpha: number}>} 파편 렌더 정보
+  * line clear 후반부에 한 cell이 네 방향으로 흩어지는 파편 좌표를 계산한다.
+  * 진행률을 0~1로 제한하며 Canvas를 직접 그리지 않아 애니메이션 계산을 독립적으로 검사할 수 있다.
   */
 export function createLineClearFragments({
         row,
@@ -84,25 +80,15 @@ export function createLineClearFragments({
 }
 
 /**
-  * 대상 Canvas 요소를 가져오고 컨텍스트를 반환합니다.
-  *
-  * @param {HTMLCanvasElement} canvasEl - 대상 캔버스
-  * @returns {CanvasRenderingContext2D|null} 2D 컨텍스트
+  * runtime이 전달한 Canvas에서 2D 그리기 문맥을 얻는다.
+  * Canvas가 없는 테스트나 React mount 전에는 null을 반환해 렌더 단계를 건너뛰게 한다.
   */
 export function getBoardContext(canvasEl: HTMLCanvasElement | null): CanvasRenderingContext2D | null {
         if (!canvasEl) return null;
         return canvasEl.getContext("2d");
 }
 
-/**
-  * Canvas 좌표계에 블록 한 칸을 현재 테마 색상으로 그린다.
-  *
-  * @param {CanvasRenderingContext2D} ctx - 대상 2D 컨텍스트
-  * @param {number} col - 블록 열 인덱스
-  * @param {number} row - 블록 행 인덱스
-  * @param {string} color - 채울 색상
-  * @returns {void}
-  */
+// 아래 draw helper들은 cell 좌표를 pixel 좌표로 바꾸고 한 프레임 안의 시각 효과만 그린다.
 function drawBlock(ctx: CanvasRenderingContext2D, col: number, row: number, color: string): void {
         const x = col * CELL_SIZE;
         const y = row * CELL_SIZE;
@@ -172,13 +158,8 @@ function drawBreakingBlock(
         });
 }
 /**
-  * 다음 블록 미리보기 DOM(4x4)을 2개 생성하고 셀 참조를 반환한다.
-  *
-  * @param {Object} params
-  * @param {HTMLElement} params.nextPreviewEl - 미리보기 컨테이너
-  * @param {number} params.nextQueueSize - 표시할 다음 블록 개수
-  * @param {number} params.previewSize - 미리보기 그리드 크기(보통 4)
-  * @returns {Array<Array<Array<HTMLLIElement>>>} 미리보기 셀 참조
+  * next slot별 preview grid를 한 번 만들고, 이후 갱신에 재사용할 cell 참조를 반환한다.
+  * gameState의 queue를 읽지 않으며 DOM 구조 생성만 담당한다.
   */
 export function buildNextPreview({ nextPreviewEl, nextQueueSize, previewSize }: {
         nextPreviewEl: HTMLElement | null;
@@ -204,12 +185,7 @@ export function buildNextPreview({ nextPreviewEl, nextQueueSize, previewSize }: 
 }
 
 /**
-  * 홀드 블록 미리보기 DOM(4x4)을 생성하고 셀 참조를 반환한다.
-  *
-  * @param {Object} params
-  * @param {HTMLElement} params.holdPreviewEl - 홀드 컨테이너
-  * @param {number} params.previewSize - 미리보기 그리드 크기(보통 4)
-  * @returns {Array<Array<HTMLLIElement>>|null} 홀드 셀 참조
+  * hold preview grid를 한 번 만들고 이후 갱신에 재사용할 cell 참조를 반환한다.
   */
 export function buildHoldPreview({ holdPreviewEl, previewSize }: {
         holdPreviewEl: HTMLElement | null;
@@ -221,17 +197,9 @@ export function buildHoldPreview({ holdPreviewEl, previewSize }: {
 }
 
 /**
-  * 엔진 보드와 activePiece 상태를 Canvas에 렌더링합니다.
-  *
-  * @param {Object} params
-  * @param {CanvasRenderingContext2D} params.ctx - 2D 컨텍스트
-  * @param {Array<Array<string|null>>} params.board - 엔진 보드 상태
-  * @param {{pieceType: string, rotation: number, row: number, col: number, ghostRow?: number}} params.activePiece - 활성 조각(및 고스트 피스 정보)
-  * @param {number} params.rows - 보드 높이
-  * @param {number} params.cols - 보드 너비
-  * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 블록 정의
-  * @param {Array<number>} params.flashRows - 라인 클리어 시 번쩍임 효과를 줄 행 인덱스 배열
-  * @returns {void}
+  * 한 프레임을 `배경 grid → 고정 board → ghost piece → active piece` 순서로 Canvas에 그린다.
+  * `flashRows`에는 row와 진행률이 들어올 수 있으며, 해당 줄만 변형·파편 효과로 표시한다.
+  * board와 activePiece는 읽기만 하고 gameplay 상태를 변경하지 않는다.
   */
 export function renderBoardCanvas({
         ctx,
@@ -367,13 +335,8 @@ export function renderBoardCanvas({
 }
 
 /**
-  * 다음에 등장할 블록 2개를 미리보기 영역에 렌더링한다.
-  *
-  * @param {Object} params
-  * @param {Array<Array<Array<HTMLLIElement>>>} params.nextPreviewCells - 미리보기 셀 캐시
-  * @param {Array<string>} params.pieceQueue - 블록 큐
-  * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 블록 정의
-  * @returns {void}
+  * cached preview cell을 초기화한 뒤 queue 앞쪽 조각들을 차례로 표시한다.
+  * queue를 소비하지 않으므로 다음 스폰 순서에는 영향을 주지 않는다.
   */
 export function renderNextPieces({ nextPreviewCells, pieceQueue, blocks }: {
         nextPreviewCells: NextPreviewCells;
@@ -389,13 +352,7 @@ export function renderNextPieces({ nextPreviewCells, pieceQueue, blocks }: {
 }
 
 /**
-  * 홀드 영역에 홀드된 블록을 렌더링한다.
-  *
-  * @param {Object} params
-  * @param {Array<Array<HTMLLIElement>>|null} params.holdPreviewCells - 홀드 셀 캐시
-  * @param {string|null} params.holdPieceType - 홀드된 블록 타입
-  * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 블록 정의
-  * @returns {void}
+  * cached hold cell을 초기화하고 현재 hold 조각이 있으면 기본 회전 모양을 표시한다.
   */
 export function renderHoldPiece({ holdPreviewCells, holdPieceType, blocks }: {
         holdPreviewCells: PreviewCells | null;
@@ -406,13 +363,7 @@ export function renderHoldPiece({ holdPreviewCells, holdPieceType, blocks }: {
         renderPieceOnCells(holdPreviewCells, holdPieceType, blocks)
 }
 
-/**
-  * 4x4 미리보기 그리드를 생성하고 셀 참조를 반환한다.
-  *
-  * @param {HTMLElement} container - 그리드를 넣을 컨테이너
-  * @param {number} size - 그리드 크기
-  * @returns {Array<Array<HTMLLIElement>>} 생성된 셀 참조
-  */
+// preview helper는 DOM 생성, class 초기화, 기본 회전 모양 표시를 한 책임씩 나눠 수행한다.
 function buildPreviewGrid(container: HTMLElement, size: number): PreviewCells {
         const cells: PreviewCells = Array.from({ length: size }, () => [])
         const grid = document.createElement("ul")
@@ -431,12 +382,6 @@ function buildPreviewGrid(container: HTMLElement, size: number): PreviewCells {
         return cells
 }
 
-/**
-  * 미리보기 셀의 클래스를 초기 상태로 돌린다.
-  *
-  * @param {Array<Array<HTMLLIElement>>|null} cells - 초기화할 셀 배열
-  * @returns {void}
-  */
 function resetPreviewCells(cells: PreviewCells | null): void {
         if (!cells) return
         cells.flat().forEach(cell => {
@@ -444,14 +389,6 @@ function resetPreviewCells(cells: PreviewCells | null): void {
         })
 }
 
-/**
-  * 지정된 셀 그리드에 블록 모양을 렌더링한다.
-  *
-  * @param {Array<Array<HTMLLIElement>>|null} cells - 렌더할 셀 그리드
-  * @param {string|null} pieceType - 표시할 블록 타입
-  * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 정의
-  * @returns {void}
-  */
 function renderPieceOnCells(
         cells: PreviewCells | null,
         pieceType: PieceType | null | undefined,

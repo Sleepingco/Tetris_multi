@@ -1,3 +1,11 @@
+/**
+ * 싱글 React shell이 StrictMode·restart·BFCache 복귀 뒤에도 runtime을 한 벌만 유지하는지
+ * 검증한다.
+ *
+ * 난수와 clock을 고정한 뒤 입력, preview, sound listener와 HUD를 관찰한다.
+ * 반복 game-over나 pagehide cleanup 후에도 키 한 번이 정확히 한 번만 처리되고
+ * 브라우저 오류가 없어야 통과한다.
+ */
 const { test, expect } = require("@playwright/test");
 
 const INPUT_TICK_MS = 16;

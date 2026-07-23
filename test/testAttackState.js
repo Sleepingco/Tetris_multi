@@ -1,3 +1,12 @@
+/**
+ * 한 조각이 고정된 뒤 combo와 back-to-back 상태가 어떻게 전이되는지 검증한다.
+ *
+ * 준비: 직전 combo/B2B와 이번 line clear·T-Spin 결과를 조합한다.
+ * 실행: 부작용 없는 `resolveAttackState`에 각 경계값을 전달한다.
+ * 검증: 이번 공격량 계산에 쓸 값과 다음 조각에 저장할 `next*` 값이 함께 맞아야 한다.
+ *
+ * 첫 clear의 combo는 0, clear가 끊기면 다음 combo는 -1이라는 기준을 구분해서 읽으면 된다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

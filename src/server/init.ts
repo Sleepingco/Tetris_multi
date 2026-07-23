@@ -1,3 +1,7 @@
+// =============================
+// 서버 조립 진입점
+// HTTP 보안, 정적 파일, Socket.IO를 조립한다. room이나 게임 상태는 이 파일이 소유하지 않는다.
+// =============================
 import express from "express";
 import type { Request, Response } from "express";
 import { createServer } from "node:http";
@@ -12,6 +16,7 @@ app.disable("x-powered-by")
 const server = createServer(app)
 const socketServer = new Server(server, createSocketServerOptions())
 const securityHeaders = createHttpSecurityHeaders()
+// Express보다 먼저 실행해 정상 응답과 오류 응답 모두 같은 보안 헤더에서 시작하게 한다.
 server.prependListener("request", (_request, response) => {
     Object.entries(securityHeaders).forEach(([name, value]) => response.setHeader(name, value))
 })
@@ -44,6 +49,11 @@ app.use((error: unknown, _request: Request, response: Response, _next: unknown) 
 const disposeSocketHandlers = registerSocketHandlers(socketServer)
 let isShuttingDown = false
 
+/**
+ * 프로세스 종료 신호를 Socket.IO 자원 정리와 서버 종료로 연결한다.
+ * - 여러 번 호출되어도 disposer와 close는 한 번만 실행한다.
+ * - 정상 close가 멈추면 강제 종료 timer가 마지막 안전장치가 된다.
+ */
 function shutdown(): void {
     if (isShuttingDown) return
     isShuttingDown = true

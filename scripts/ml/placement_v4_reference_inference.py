@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Deterministic Python reference inference for the frozen placement V4 artifact."""
+"""Reference the frozen V4 inference contract independently in Python.
+
+This script does not train, evaluate held-out gameplay, or enable production
+integration.  It verifies the model SHA/schema, recreates occupied-cell
+physical classes, applies the game-over safety filter, and checks deterministic
+fixture outcomes against the TypeScript scorer contract.
+"""
 
 from __future__ import annotations
 
@@ -52,6 +58,7 @@ def finite_vector(value: Any, name: str) -> tuple[float, ...]:
 
 
 def validate_model(model: dict[str, Any]) -> dict[str, Any]:
+    """Validate the exact frozen feature, scaler, and experimental-artifact contract."""
     require(isinstance(model, dict), "MODEL_OBJECT_REQUIRED")
     require(type(model.get("modelSchemaVersion")) is int, "MODEL_SCHEMA_VERSION_REQUIRED")
     require(model["modelSchemaVersion"] == 1, "UNSUPPORTED_MODEL_SCHEMA_VERSION")
@@ -144,6 +151,13 @@ def linear_score(features: tuple[float, ...], parameters: dict[str, Any]) -> flo
 
 
 def rank_candidates(candidates: Any, parameters: dict[str, Any]) -> dict[str, Any]:
+    """Rank physical placement classes with the frozen 16-feature linear model.
+
+    Rotation/pivot aliases of the same piece type that occupy identical cells
+    share one class.  Game-over classes are excluded whenever a safe class
+    exists, and score ties use the canonical class key so input order cannot
+    change the selection.
+    """
     require(isinstance(candidates, list) and candidates, "NON_EMPTY_CANDIDATE_LIST_REQUIRED")
     validated = [validate_candidate(candidate) for candidate in candidates]
     placement_keys = [candidate["placementKey"] for candidate in validated]
@@ -217,6 +231,7 @@ def build_report(
     fixture_path: Path,
     expected_model_sha256: str = EXPECTED_MODEL_SHA256,
 ) -> dict[str, Any]:
+    """Validate all fixture scenarios while proving model and fixture bytes stay unchanged."""
     model_before = trainer.sha256_file(model_path)
     fixture_before = trainer.sha256_file(fixture_path)
     fixture = load_json_object(fixture_path)
@@ -258,6 +273,7 @@ def build_report(
 
 
 def write_report_atomic(output_path: Path, report: dict[str, Any], protected_sources: list[Path]) -> None:
+    """Publish complete JSON through a protected same-directory staging file."""
     content = trainer.json_bytes(report)
     trainer.assert_safe_output_path(output_path, protected_sources)
     output_path.parent.mkdir(parents=True, exist_ok=True)

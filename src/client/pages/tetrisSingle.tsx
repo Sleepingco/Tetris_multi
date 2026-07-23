@@ -10,6 +10,16 @@ import { createTetrisRuntime } from "../game/runtime/tetris.ts";
 import type { TetrisRuntime } from "../game/runtime/tetris.ts";
 import type { RuntimeDisplayHandle, RuntimeDisplaySnapshot } from "../game/runtime/displayBridge.ts";
 
+// =============================
+// 싱글 플레이 React shell
+// React는 페이지 수명주기와 HUD만 소유하고, board 규칙·입력 queue·Canvas drawing은 Tetris runtime이 소유한다.
+// runtime 표시 snapshot → useSyncExternalStore → 기존 HTML 위치의 portal 순서로 HUD가 갱신된다.
+// =============================
+
+/**
+ * 조각의 기본 회전 offset을 4x4 preview 안의 왼쪽 위로 맞춰 표시한다.
+ * gameplay queue나 piece 상태를 바꾸지 않는 작은 표시 전용 component다.
+ */
 function PiecePreview({ pieceType }: { pieceType: PieceType | null }) {
     const offsets = pieceType
         ? BLOCKS[pieceType][0]
@@ -34,6 +44,11 @@ function PiecePreview({ pieceType }: { pieceType: PieceType | null }) {
     );
 }
 
+/**
+ * runtime 외부 store를 구독해 점수, next, hold, game-over UI를 갱신한다.
+ * portal은 React 상태 관리를 유지하면서 기존 HTML layout의 각 자리에 결과를 그리기 위해 사용한다.
+ * board 이동처럼 HUD 값이 그대로인 변경은 display bridge가 알리지 않으므로 불필요하게 다시 렌더하지 않는다.
+ */
 function SingleHud({
     handle,
     scoreRoot,
@@ -87,6 +102,12 @@ function SingleHud({
     );
 }
 
+/**
+ * 한 페이지에 Tetris runtime 하나를 만들고 React mount/unmount와 수명을 맞춘다.
+ * - Canvas ref가 준비된 effect 안에서 runtime, sound, keyboard를 차례로 연결한다.
+ * - runtime이 gameplay와 Canvas를 소유하고 React state에는 HUD 구독 handle만 둔다.
+ * - cleanup은 StrictMode 재실행, 일반 unmount, pagehide 어느 경로에서도 한 번만 실제 자원을 해제한다.
+ */
 function SingleGamePage() {
     const boardCanvasRef = useRef<HTMLCanvasElement>(null);
     const scoreRootRef = useRef<HTMLSpanElement>(null);
@@ -134,6 +155,7 @@ function SingleGamePage() {
         };
     }, []);
 
+    // 아래 handler는 외부 runtime API만 호출하며 React가 gameState를 따로 복제하지 않는다.
     const restart = () => runtimeRef.current?.init();
     const toggleGameTheme = () => {
         toggleTheme(themeToggleRef.current);

@@ -11,6 +11,13 @@ import type { PieceType } from "../../state/blocks.ts";
 import type { HeuristicReason } from "./heuristicEvaluator.ts";
 import type { Placement } from "./placementGenerator.ts";
 
+/**
+ * 사람의 실제 선택을 같은 시점의 heuristic 선택과 비교해 placement 로그를 보강한다.
+ *
+ * 이 값은 코칭·분석용 metadata이며 게임 판정이나 ML feature가 아니다. 분석 실패를
+ * `null`로 처리하는 이유도 로그 보강 실패가 gameplay를 중단시키지 않게 하기 위해서다.
+ */
+
 export type HumanPlacementLogAnalysis = {
     metricsBefore: BoardMetrics;
     metricsAfter: BoardMetrics;

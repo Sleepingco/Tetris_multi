@@ -1,3 +1,11 @@
+/**
+ * HTTP 보안 header 설정이 production에서 fail-closed로 동작하는지 검증한다.
+ *
+ * 준비: CSP mode와 허용할 websocket/HTTPS origin을 환경 설정 형태로 전달한다.
+ * 실행: `createHttpSecurityHeaders`가 만든 header map을 읽는다.
+ * 검증: enforce/report-only 중 하나만 활성화되고, 고정된 source/hash와 기본 보안 header가
+ * 포함되며, credential·path·wildcard가 섞인 잘못된 origin은 서버 시작 전에 거부되어야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

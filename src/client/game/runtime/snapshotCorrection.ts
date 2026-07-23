@@ -1,3 +1,9 @@
+// =============================
+// 내 보드 prediction 보정 판단
+// 서버 snapshot과 로컬 prediction의 차이가 자연스러운 전송 지연인지 실제 불일치인지 구분한다.
+// 상태를 직접 덮어쓰지 않고 결정만 반환하며, multiplayer session이 실제 applySnapshot 시점을 소유한다.
+// =============================
+
 const ONE_PIECE_GAP_GRACE_MS = 750
 const SERVER_AHEAD_ONE_PIECE = "SERVER_AHEAD_ONE_PIECE"
 const LOCAL_AHEAD_ONE_PIECE = "LOCAL_AHEAD_ONE_PIECE"
@@ -20,6 +26,7 @@ type CorrectionSnapshot = {
     pieceIndex?: number;
 };
 
+// 결과 객체 생성과 board 비교는 아래 판정 순서를 읽기 쉽게 만드는 작은 순수 helper다.
 function createDecision(
     shouldCorrect: boolean,
     reason: SnapshotCorrectionReason | null = null,
@@ -50,6 +57,10 @@ function areBoardsEqual(leftBoard: unknown, rightBoard: unknown): boolean {
     return true
 }
 
+/**
+ * 정확히 한 조각 차이가 잠깐 생긴 경우 같은 방향으로 750ms 지속되는지 확인한다.
+ * 첫 관찰 시각과 방향을 `nextPendingDriftState`로 돌려주며, 방향이 바뀌면 대기 시간을 다시 시작한다.
+ */
 function evaluateOnePieceGap(
     pieceIndexDelta: number,
     previousDriftState: SnapshotDriftState | null,
@@ -78,16 +89,13 @@ function evaluateOnePieceGap(
 }
 
 /**
- * own authoritative snapshot을 local prediction에 full apply할지 판단한다.
- * - settled board와 큰 pieceIndex 차이는 즉시 보정한다.
- * - 한 조각 차이는 같은 방향으로 일정 시간 유지될 때만 보정한다.
- * - activePiece와 tick 차이는 local prediction 차이로 보고 판단에 사용하지 않는다.
+ * 내 authoritative snapshot을 local prediction에 통째로 적용할지 우선순위대로 판단한다.
+ * - game over, 실제 garbage 적용, 두 조각 이상 차이, 같은 pieceIndex의 고정 board 차이는 즉시 보정한다.
+ * - 한 조각 차이는 네트워크 왕복 중 흔히 생기므로 같은 방향으로 750ms 지속될 때만 보정한다.
+ * - line clear 애니메이션 중에는 완료 전 board와 완료 후 board가 달라 잠시 판단을 보류한다.
+ * - activePiece 위치와 tick 차이는 정상적인 local prediction으로 보고 비교 대상에서 제외한다.
  *
- * @param {Object|null} serverSnapshot - 서버 authoritative snapshot
- * @param {Object|null} localSnapshot - 현재 local prediction snapshot
- * @param {{key: string, startedAtMs: number}|null} previousDriftState - 보류 중인 1-piece gap 상태
- * @param {number} nowMs - monotonic clock 기준 현재 시각
- * @returns {{shouldCorrect: boolean, reason: string|null, nextPendingDriftState: Object|null}}
+ * 반환값은 판단과 다음 drift timer 상태뿐이며 server/local snapshot을 변경하지 않는다.
  */
 export function evaluateOwnSnapshotCorrection(
     serverSnapshot: CorrectionSnapshot | null,

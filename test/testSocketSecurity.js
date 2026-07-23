@@ -1,3 +1,9 @@
+/**
+ * Socket 연결 trust boundary의 origin, 공개 DTO, rate-limit 정책을 검증한다.
+ *
+ * production 설정과 private field가 섞인 room을 준비해 허용/거부 결과를 실행하고 정확한 whitelist만 통과하는지
+ * 확인한다. 보안 경계이므로 origin 설정이 없을 때 fail closed하고, 내부 식별자는 중첩 객체에서도 노출하지 않는다.
+ */
 const test = require("node:test")
 const assert = require("node:assert/strict")
 

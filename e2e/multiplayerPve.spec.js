@@ -1,3 +1,10 @@
+/**
+ * production PVE 경기를 실행해 AI 행동 단계, 공격 반영과 재시작 흐름을 검증한다.
+ *
+ * WebSocket snapshot의 pieceIndex·좌표 변화를 move/rotate/drop으로 요약하므로
+ * 화면 결과와 서버 authoritative 상태를 함께 확인할 수 있다. 각 테스트는 monitor를
+ * 만들고 finally에서 dispose해 다음 경기의 frame이 이전 관찰 배열에 섞이지 않게 한다.
+ */
 const { test, expect } = require("@playwright/test");
 const {
     readBottomBoardFingerprint,

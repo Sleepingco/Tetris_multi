@@ -1,3 +1,9 @@
+/**
+ * 사람이 놓은 조각과 같은 판단 시점의 heuristic 최적 후보를 비교하는 분석 테스트다.
+ *
+ * `boardBefore`와 spawn 상태를 준비해 분석을 실행하고 점수·후보 수·보드 지표를 검증한다.
+ * 분석용 부가 정보 생성에 실패해도 gameplay를 막지 않도록 `null`을 반환하고 입력은 바꾸지 않아야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

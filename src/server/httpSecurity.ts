@@ -1,3 +1,7 @@
+// =============================
+// HTTP 응답 보안
+// 브라우저가 불러오거나 연결할 수 있는 출처를 CSP로 제한한다.
+// =============================
 const INLINE_SCRIPT_HASHES = Object.freeze([
     "'sha256-dD0UYyHj6Sta8gSAF02VM8IfeQR0k7L4ZYIYWQgUBm0='",
 ]);
@@ -42,6 +46,11 @@ function readConnectOrigins(environment: NodeJS.ProcessEnv): string[] {
     }))];
 }
 
+/**
+ * 모든 HTTP 응답에 적용할 보안 헤더를 만든다.
+ * `CSP_CONNECT_ORIGINS`는 origin 형태의 HTTP/WebSocket URL만 허용하며,
+ * 잘못된 설정은 조용히 완화하지 않고 서버 시작을 실패시킨다.
+ */
 export function createHttpSecurityHeaders(
     environment: NodeJS.ProcessEnv = process.env,
 ): Readonly<Record<string, string>> {

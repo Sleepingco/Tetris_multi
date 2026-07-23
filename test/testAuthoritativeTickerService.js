@@ -1,3 +1,12 @@
+/**
+ * room별 authoritative ticker가 gravity, AI, snapshot, garbage, 경기 종료를 올바른 순서로 조율하는지 검증한다.
+ *
+ * 준비: 실제 clock과 Socket.IO 대신 호출을 기록하는 scheduler/socket fake를 주입한다.
+ * 실행: 저장된 interval callback을 필요한 횟수만큼 직접 호출해 100ms tick과 500ms gravity를 진행한다.
+ * 검증: player별 시간 누적, grounded 유예, AI cadence, snapshot 전송, 중복 방지와 정리 동작을 확인한다.
+ *
+ * 실제 시간을 기다리지 않기 때문에 테스트가 빠르고, 같은 입력에서 항상 같은 사건 순서를 재현한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -8,6 +17,10 @@ const {
     finishAuthoritativeMatch,
 } = require("../dist/server/server/services/authoritativeMatchFinish.js");
 
+/**
+ * `setInterval`을 실행하지 않고 callback과 delay만 보관하는 가짜 clock이다.
+ * 테스트는 `runTickerCallbacks`로 시간을 명시적으로 전진시킨다.
+ */
 function createFakeScheduler() {
     let nextId = 1;
     const intervals = new Map();
@@ -29,6 +42,10 @@ function createFakeScheduler() {
     };
 }
 
+/**
+ * 네트워크 전송 대신 roomId·eventName·payload를 배열에 기록한다.
+ * 따라서 "무엇을 누구에게 몇 번 보냈는가"를 socket 연결 없이 검증할 수 있다.
+ */
 function createFakeSocketServer() {
     return {
         roomEvents: [],

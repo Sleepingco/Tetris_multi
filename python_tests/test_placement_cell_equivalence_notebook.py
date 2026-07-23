@@ -1,3 +1,10 @@
+"""Occupied-cell equivalence 실험 Notebook과 설명 문서의 정적 계약을 검증한다.
+
+Notebook JSON을 실행하지 않고 Markdown과 코드 cell을 이어 붙여 실험 순서, 누수 방지,
+공유 scaler, 2×2 평가와 결정적 report 규칙을 확인한다. 또한 source Notebook의 실행
+결과가 비어 있어 누구나 같은 입력에서 처음부터 재현할 수 있는지도 함께 검증한다.
+"""
+
 import json
 import unittest
 from pathlib import Path

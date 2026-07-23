@@ -9,6 +9,17 @@ import type { PlacementDatasetSample } from "../dataset/placementDatasetBuilder.
 import type { PlacementDecisionGroup } from "../dataset/placementDecisionGroups.ts";
 import type { PlacementScorer } from "../dataset/placementRankingEvaluator.ts";
 
+/**
+ * 한 decision에서 선택 후보가 비선택 후보보다 높은 점수를 갖도록 선형 ranker를 학습한다.
+ *
+ * 학습 단위:
+ * `standardized(selected) - standardized(unselected)` → logistic loss → feature weights
+ *
+ * scaler는 train 후보로만 계산하고, 한 decision의 모든 pair weight 합은 1이다. 후보가
+ * 많은 decision이 학습을 지배하지 않게 하기 위해서다. 같은 decision에서는 모든
+ * candidate에 공통인 intercept가 순위를 바꾸지 않으므로 별도 절편을 학습하지 않는다.
+ */
+
 export type FeatureScaler = { mean: number[]; scale: number[] };
 export type PairwiseTrainingConfig = {
     epochs: number;
@@ -154,7 +165,11 @@ function normalizeTrainingConfig(
     };
 }
 
-/** Train candidate만 사용해 feature별 population mean/scale을 계산한다. */
+/**
+ * Train candidate만 사용해 feature별 population mean/scale을 계산한다.
+ * 값이 모두 같은 feature는 0으로 나눌 수 없으므로 scale을 1로 둔다. validation
+ * candidate를 포함하면 validation 분포를 미리 본 leakage가 된다.
+ */
 export function fitPlacementFeatureScaler(groups: unknown):
     { ok: true; reason: null; scaler: FeatureScaler; candidateCount: number } | FailureResult {
     const canonicalGroups = canonicalizeGroups(groups);
@@ -192,7 +207,11 @@ export function fitPlacementFeatureScaler(groups: unknown):
     return { ok: true, reason: null, scaler: { mean, scale }, candidateCount: vectors.length };
 }
 
-/** 각 decision에서 selected-unselected pair를 만들고 decision별 pair weight 합을 1로 맞춘다. */
+/**
+ * 각 decision에서 selected-unselected pair를 만들고 decision별 pair weight 합을 1로 맞춘다.
+ * 한 decision에 비선택 후보가 N개면 각 pair weight는 `1/N`이다. 따라서 decision별
+ * 총 weight는 후보 수와 관계없이 항상 1이다.
+ */
 export function createPairwiseTrainingPairs(
     groups: unknown,
     scaler: unknown,
@@ -298,7 +317,12 @@ function calculateTrainingState(
     return { loss, gradient };
 }
 
-/** 결정론적 full-batch gradient descent로 pairwise logistic linear ranker를 학습한다. */
+/**
+ * 결정론적 full-batch gradient descent로 pairwise logistic linear ranker를 학습한다.
+ * canonical group 순서, 고정 초기 weight, 고정 epoch 수를 사용하므로 같은 입력과 설정은
+ * 같은 scaler와 weight를 만든다. 반환 summary의 loss는 학습 상태 확인용이지 held-out
+ * imitation 성능이 아니며, 성능은 별도 LOGO 평가로 판단한다.
+ */
 export function trainPairwiseLinearRanker(
     groups: unknown,
     config: Partial<PairwiseTrainingConfig> = {},
@@ -361,6 +385,10 @@ export function trainPairwiseLinearRanker(
     };
 }
 
+/**
+ * 저장된 model이 현재 dataset/feature 계약과 정확히 맞는지 추론 전에 확인한다.
+ * 길이만 맞추는 것이 아니라 feature 이름과 순서, finite weight, 양수 scale까지 검사한다.
+ */
 export function validatePairwiseLinearModel(model: unknown): ValidationResult {
     if (!isRecord(model)) return createFailure(PAIRWISE_RANKER_REASONS.INVALID_MODEL);
     if (model.modelSchemaVersion !== PAIRWISE_LINEAR_MODEL_SCHEMA_VERSION) return createFailure(PAIRWISE_RANKER_REASONS.MODEL_SCHEMA_VERSION_MISMATCH);

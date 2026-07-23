@@ -1,3 +1,9 @@
+/**
+ * 조각을 고정하기 직전 상태로 T-Spin 여부를 판정하는 core 테스트다.
+ *
+ * board의 T 중심 네 모서리를 준비해 판정을 실행하고, T 조각·마지막 회전·막힌 코너 3개 조건을 각각 검증한다.
+ * 점수 계산 테스트가 아니라 세 조건이 모두 참일 때만 `true`를 내는 순수 규칙 테스트다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

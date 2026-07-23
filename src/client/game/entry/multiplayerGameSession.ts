@@ -21,6 +21,22 @@ import type {
 import type { PieceType } from "../state/blocks.ts"
 import type { ServerToClientParsedPayload } from "../../../shared/socketContractTypes.d.ts"
 
+/**
+ * multiplayer page와 공용 Tetris runtime 사이를 연결하는 session 조율자다.
+ *
+ * 이 모듈은 게임 규칙을 새로 결정하지 않는다. 내 runtime에는 입력 반응성을 위한
+ * local prediction을 허용하고, 서버의 acknowledgment와 snapshot으로 최종 상태에
+ * 수렴시킨다. 상대 runtime은 입력이나 gravity를 실행하지 않고 authoritative snapshot을
+ * 화면에 보여 주는 replica로만 사용한다.
+ *
+ * 입력 흐름:
+ * keyboard → myGame prediction → game:input → server result/snapshot → 필요 시 correction
+ *
+ * 상태 원천:
+ * - 내 조작 중 임시 화면: myGame local state
+ * - 승패·garbage·최종 board: server authoritative snapshot
+ * - 상대 화면: opponentGame에 복사한 server snapshot
+ */
 type GameJoinResult = ServerToClientParsedPayload<"game:join:result">;
 type Match = NonNullable<GameJoinResult["match"]>;
 type MatchSnapshot = ServerToClientParsedPayload<"game:authoritative:snapshot">["snapshot"];
@@ -91,11 +107,18 @@ function getPlayerInitialSnapshot(match: Match, targetPlayerId: string): MatchSn
 
 /**
  * 멀티 게임 세션을 시작한다.
- * - 내 runtime, 상대 runtime, socket listener, heartbeat timer, cleanup handle을 함께 구성한다.
- * - 내 보드는 로컬 입력으로 예측 실행하고, 상대 보드는 server authoritative snapshot만 적용한다.
  *
- * @param {Object} params - 멀티 게임 세션 구성 요소
- * @returns {Object} runtime과 정리 함수를 포함한 게임 세션
+ * 내 runtime, 상대 runtime, socket listener, server bag heartbeat와 cleanup을 한 생명주기로
+ * 묶는다. 페이지는 반환된 destroy만 호출하면 이 세션이 만든 timer와 listener를 모두
+ * 정리할 수 있다.
+ *
+ * 실행 순서:
+ * 1. game:join 응답의 bag/snapshot으로 두 runtime을 초기화한다.
+ * 2. 내 keyboard 결과에 clientSequence를 붙여 서버로 전송한다.
+ * 3. acknowledgment가 오기 전에는 오래된 own snapshot을 보류한다.
+ * 4. pending 입력이 사라지면 snapshot drift를 평가하고 필요한 경우에만 보정한다.
+ *
+ * @returns 두 runtime과 전체 정리 함수를 포함한 multiplayer session
  */
 export function startMultiplayerGame({
     roomId,
@@ -122,6 +145,12 @@ export function startMultiplayerGame({
     const gameId = match?.createdAt
         ? `${roomId}-${match.createdAt}`
         : roomId
+
+    // =============================
+    // 서버 확정 배치 로그 게이트
+    // local runtime이 만든 log와 서버의 placement commit이 모두 확인된 경우에만 저장한다.
+    // =============================
+
     const pendingPlacementAttempts = new Map<string, PlacementAttempt>()
     const placementAttemptKeyByClientSequence = new Map<number, string>()
     const settledPlacementAttemptKeys = new Set<string>()
@@ -197,6 +226,15 @@ export function startMultiplayerGame({
         settledPlacementAttemptKeys.add(key)
     }
 
+    /**
+     * local placement log와 authoritative commit을 하나의 저장 event로 합친다.
+     *
+     * 두 비동기 결과는 도착 순서가 일정하지 않다. `pieceIndex:tick`으로 같은 시도를
+     * 찾고, server가 처리한 clientSequence까지 확인된 뒤에만 lineage를 붙여 전송한다.
+     * 완료 key를 별도로 기억해 늦게 도착한 중복 결과가 같은 log를 다시 만들지 못하게 한다.
+     *
+     * @returns log를 실제 전송했으면 true
+     */
     function flushPlacementAttempt(key: string | null | undefined): boolean {
         if (!key) return false
         const attempt = pendingPlacementAttempts.get(key)
@@ -247,6 +285,14 @@ export function startMultiplayerGame({
         if (close) placementLogBufferClosed = true
     }
 
+    /**
+     * game:input:result를 placement log의 authoritative 확인으로 반영한다.
+     *
+     * 요청이 성공했더라도 해당 입력이 실제 placement를 commit했고 pieceIndex가 같아야 한다.
+     * 거부되거나 다른 조각 결과라면 local log를 학습 데이터로 보내지 않고 폐기한다.
+     *
+     * @returns void
+     */
     function handlePlacementInputResult(result: GameInputResult): void {
         const clientSequence = result?.clientSequence
         if (typeof clientSequence !== "number" || !Number.isInteger(clientSequence)) return
@@ -279,6 +325,15 @@ export function startMultiplayerGame({
         discardPlacementLogBuffer({ close: true })
     }
 
+    /**
+     * local action 결과에서 서버 divergence 검사에 사용할 조각 모양을 고른다.
+     *
+     * 좌우 이동과 회전은 action 이후 transform을 비교한다. soft/hard drop처럼 조각을
+     * 고정할 수 있는 action은 runtime 결과가 다음 조각으로 넘어갈 수 있으므로 action
+     * 이전 transform을 사용한다.
+     *
+     * @returns 비교 가능한 piece transform 또는 만들 수 없으면 null
+     */
     function createExpectedTransform(outcome: InputOutcomeRecord): ExpectedTransform | null {
         const piece = AFTER_ACTION_TRANSFORM_INPUTS.has(outcome.input.action)
             ? outcome.activePieceAfter
@@ -294,6 +349,14 @@ export function startMultiplayerGame({
         }
     }
 
+    /**
+     * local runtime에 실제 적용된 입력을 순서가 있는 authoritative input으로 전송한다.
+     *
+     * 화면 prediction에 적용되지 않은 입력은 보내지 않는다. 전송에 성공한 입력만
+     * pendingServerInputs에 기록하며, 이 Map이 비어야 보류한 own snapshot을 적용할 수 있다.
+     *
+     * @returns void
+     */
     function handleLocalInputOutcome(outcome: InputOutcomeRecord): void {
         if (destroyed) return
         if (!outcome?.applied || !outcome.input) return
@@ -337,6 +400,8 @@ export function startMultiplayerGame({
         })
     }
 
+    // keyboard는 내 runtime에만 연결한다. 상대 runtime에는 입력 loop와 gravity가 없으며
+    // 아래 snapshot listener가 전달한 authoritative 상태만 표시한다.
     myGame.runtime.detachKeyboard = attachKeyboardInput({
         enqueueAction: (action) => {
             if (destroyed) return
@@ -371,6 +436,19 @@ export function startMultiplayerGame({
     let lastOpponentPresentationEffectId: string | null = null
     const bagLowWatermark = 7
 
+    // =============================
+    // 내 예측 상태 보정
+    // acknowledgment로 처리된 입력을 제거하고, 안전한 시점에 own snapshot을 비교·적용한다.
+    // =============================
+
+    /**
+     * 서버가 처리했다고 확인한 sequence까지 pending prediction을 제거한다.
+     *
+     * acknowledgment는 단조 증가해야 한다. 아직 보내지 않은 sequence나 이미 처리한
+     * 과거 값은 무시해 오래된 응답이 현재 prediction 상태를 되돌리지 못하게 한다.
+     *
+     * @returns void
+     */
     function acknowledgeServerInputs(clientSequence: number | undefined): void {
         if (typeof clientSequence !== "number" || !Number.isInteger(clientSequence) || clientSequence < 0) return
         if (clientSequence >= nextClientSequence) return
@@ -390,6 +468,14 @@ export function startMultiplayerGame({
         }
     }
 
+    /**
+     * 입력 처리 중 도착한 own snapshot 중 가장 최신 acknowledgment를 가진 하나만 보관한다.
+     *
+     * pending input이 남아 있을 때 snapshot을 즉시 적용하면 사용자가 방금 움직인 조각이
+     * 과거 위치로 되감긴다. 입력이 정리될 때까지 최신 snapshot 하나만 기다리게 한다.
+     *
+     * @returns void
+     */
     function deferOwnSnapshot(snapshot: MatchSnapshot): void {
         const incomingSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
             ? snapshot.lastProcessedClientSequence
@@ -406,6 +492,14 @@ export function startMultiplayerGame({
         pendingOwnDriftState = null
     }
 
+    /**
+     * authoritative snapshot과 local prediction의 차이가 보정할 만큼 중요한지 판정한다.
+     *
+     * 일시적인 좌우 이동·회전 차이는 입력 반응성을 위해 유지할 수 있다. game over,
+     * settled board 불일치 또는 지속되는 drift처럼 의미 있는 차이만 runtime에 적용한다.
+     *
+     * @returns snapshot을 실제 적용했으면 true
+     */
     function evaluateOwnSnapshot(
         snapshot: MatchSnapshot,
         localSnapshot = myGame.getSnapshot(),
@@ -426,6 +520,14 @@ export function startMultiplayerGame({
         return false
     }
 
+    /**
+     * local/server 입력 대기열이 모두 비었을 때 보류 중인 최신 snapshot을 다시 평가한다.
+     *
+     * 이미 더 높은 acknowledgment를 처리했다면 보류 snapshot은 낡은 상태이므로 버리고
+     * 다음 server snapshot을 기다린다.
+     *
+     * @returns void
+     */
     function applyDeferredOwnSnapshotIfReady(): void {
         if (!deferredOwnSnapshot) return
         if (pendingServerInputs.size > 0 || myGame.getPendingInputCount() > 0) return
@@ -441,6 +543,14 @@ export function startMultiplayerGame({
         evaluateOwnSnapshot(snapshot)
     }
 
+    /**
+     * 서버가 PREDICTION_DIVERGED를 반환했을 때 local prediction을 즉시 authoritative 상태로 교체한다.
+     *
+     * 일반 drift 보정과 달리 서버가 입력 전제 자체의 불일치를 확인한 경로다. 그래서
+     * pending input, 보류 snapshot, presentation과 미확정 placement log를 함께 폐기한다.
+     *
+     * @returns 유효한 최신 snapshot을 강제로 적용했으면 true
+     */
     function applyForcedOwnSnapshot(result: GameInputResult): boolean {
         const snapshot = result?.snapshot
         const clientSequence = result?.clientSequence
@@ -470,6 +580,15 @@ export function startMultiplayerGame({
         return true
     }
 
+    /**
+     * own authoritative snapshot을 prediction 상태에 맞는 방식으로 처리한다.
+     *
+     * game over는 항상 즉시 적용한다. 그 외에는 오래된 snapshot을 거르고, pending input이
+     * 있으면 보류하며, 입력이 없을 때만 drift 판정기로 보정 여부를 결정한다. 보정하지
+     * 않더라도 server가 소유하는 pending garbage 표시는 갱신한다.
+     *
+     * @returns void
+     */
     function handleOwnAuthoritativeSnapshot(snapshot: MatchSnapshot): void {
         const localSnapshot = myGame.getSnapshot()
         const snapshotClientSequence = Number.isInteger(snapshot.lastProcessedClientSequence)
@@ -516,11 +635,17 @@ export function startMultiplayerGame({
         }
     }
 
-    // 주기적으로 server bag 보충을 처리한다. game over 확정은 server authoritative 결과가 맡는다.
+    // 이 heartbeat는 server bag 보충만 담당한다. gravity와 game over를 판정하는 game loop가 아니다.
     const heartbeatTimer = setInterval(() => {
         if (destroyed) return
         requestBagIfNeeded()
     }, 500)
+
+    // =============================
+    // 서버 확정 스냅샷 스트림
+    // 상대 snapshot은 그대로 적용하고, own snapshot은 prediction 보정 규칙을 통과시킨다.
+    // presentationEffect는 화면 연출이며 gameplay state를 다시 계산하지 않는다.
+    // =============================
 
     const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({
         playerId: remotePlayerId,
@@ -550,6 +675,15 @@ export function startMultiplayerGame({
         }
     })
 
+    /**
+     * 상대 line-clear 연출이 유효하고 아직 재생하지 않은 최신 effect인지 확인한다.
+     *
+     * effect id의 형식·중복과 pieceIndex의 증가 여부를 각각 검사해 reconnect나
+     * 중복 snapshot이 같은 연출을 반복하지 못하게 한다.
+     * 이 검사는 presentation 전용이며 상대 board의 authoritative 적용 여부와는 무관하다.
+     *
+     * @returns 한 번 재생해도 되는 새 line-clear effect이면 true
+     */
     function shouldPlayOpponentPresentation(effect: PresentationEffect): boolean {
         if (!effect || effect.type !== "line_clear") return false
         if (typeof effect.id !== "string" || effect.id.length === 0) return false
@@ -613,6 +747,15 @@ export function startMultiplayerGame({
         hasPendingBagRequest = false
     })
 
+    /**
+     * 이 multiplayer session이 만든 timer, socket listener와 두 runtime을 모두 정리한다.
+     *
+     * React StrictMode, pagehide와 명시적 화면 이동에서 여러 번 호출될 수 있으므로
+     * idempotent하게 동작한다. 종료 뒤 늦게 도착한 input/log 결과는 destroyed 상태와
+     * 닫힌 buffer에 의해 무시된다.
+     *
+     * @returns void
+     */
     function destroy(): void {
         if (destroyed) return
         destroyed = true

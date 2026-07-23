@@ -1,3 +1,10 @@
+"""누적 75게임으로 V4 development checkpoint를 만드는 Notebook 계약을 검증한다.
+
+고정 dataset과 checksum, 16개 feature, V4 pair weight와 estimator 설정을 확인한다.
+이 Notebook은 held-out 평가가 아닌 개발용 fit이므로 production·정책 판단에 사용할 수
+없다는 flag와, smoke/full이 같은 코드 경로를 쓰는지도 함께 검사한다.
+"""
+
 import json
 import unittest
 from pathlib import Path

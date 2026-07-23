@@ -1,3 +1,13 @@
+/**
+ * logService의 검증→저장 경계와 JSONL repository의 append 동작을 각각 검증한다.
+ *
+ * 준비: 디스크 경로 테스트는 임시 디렉터리를 만들고, service 테스트는 repository stub을 사용한다.
+ * 실행: repository를 직접 호출하거나 정상 v1/v2 fixture를 `logService`에 전달한다.
+ * 검증: 한 event가 정확히 한 JSON line으로 append되고 환경 경로를 따르며,
+ * 저장 실패는 gameplay를 중단시키는 예외 대신 warning으로 격리되어야 한다.
+ *
+ * 임시 파일은 실제 디스크 직렬화를 확인하면서도 프로젝트의 운영 log를 오염시키지 않는다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");

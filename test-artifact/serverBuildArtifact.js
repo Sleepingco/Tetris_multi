@@ -1,3 +1,11 @@
+/**
+ * clean build의 dist가 허용된 production 파일과 실행 가능한 shared core만 포함하는지 검증한다.
+ *
+ * artifact allowlist, source map·test 파일 부재와 CSP inline hash를 먼저 확인한 뒤,
+ * 빌드된 core와 PVE V4 service를 직접 실행한다. model checksum을 확인하고, 의도적으로
+ * 발생시킨 mutation 오류의 stack trace에 source 경로와 sentinel token/session 값이
+ * 포함되지 않는지도 검사한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawnSync } = require("node:child_process");

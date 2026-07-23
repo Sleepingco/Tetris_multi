@@ -1,3 +1,9 @@
+/**
+ * 조각의 실제 BLOCKS 좌표 중 하나라도 board 위(row < 0)에 있는지 확인하는 top-out 보조 규칙 테스트다.
+ *
+ * 정상, 상단 초과, 잘못된 입력을 각각 준비해 boolean 결과를 검증한다.
+ * 잘못된 piece/blocks는 예외 대신 `false`를 반환해 호출자가 별도 입력 검증 책임을 유지한다.
+ */
 const test = require("node:test")
 const assert = require("node:assert/strict")
 

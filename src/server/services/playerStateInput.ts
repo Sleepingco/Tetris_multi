@@ -1,3 +1,7 @@
+// =============================
+// 서버 이동 입력 어댑터
+// wire action을 공용 순수 game core의 move attempt로 바꾸고, 확정 결과만 authoritative state에 반영한다.
+// =============================
 import type { PieceState, PlaceablePieceState } from "../../client/game/core/piece.js";
 import type { GameCore } from "./gameCoreLoader.js";
 import type { AuthoritativeInput, AuthoritativePlayerState } from "./matchService.js";
@@ -9,6 +13,11 @@ export type PlayerStateInputResult = {
     moveIntent: MoveIntent | null;
 };
 
+/**
+ * 좌우 이동·회전을 서버 state에 적용한다.
+ * `activePiece`는 현재 확정 위치이고 `pendingPiece`는 시도할 후보이므로,
+ * 후보를 복사해 계산한 뒤 core가 돌려준 intent에 따라 원본 state를 갱신한다.
+ */
 export function applyServerInputToPlayerState(
     authoritativeState: AuthoritativePlayerState,
     input: AuthoritativeInput,

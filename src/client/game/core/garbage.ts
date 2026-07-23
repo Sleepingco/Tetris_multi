@@ -1,5 +1,11 @@
 import type { Board, BoardCell } from "./board.ts";
 
+// =============================
+// 멀티플레이 garbage 규칙
+// line clear 결과를 공격 줄 수로 바꾸고, 대기 공격과 상쇄한 뒤, 필요하면 board에 garbage를 적용한다.
+// 공격량과 상쇄 계산은 순수하지만 `applyGarbageLines`만 전달받은 board를 직접 변경한다.
+// =============================
+
 const BASIC_GARBAGE_ATTACK_BY_LINES: Record<number, number> = {
     2: 1,
     3: 2,
@@ -49,6 +55,10 @@ const T_SPIN_GARBAGE_ATTACK_BY_LINES: Record<number, number> = {
     3: 6,
 };
 
+/**
+ * 이번 lock의 line clear, T-Spin, combo, back-to-back을 최종 공격 줄 수로 바꾼다.
+ * board나 연속 상태를 변경하지 않으며, 먼저 `resolveAttackState`로 만든 현재 공격 상태를 받는다.
+ */
 export function calculateGarbageAttack({
     linesCleared,
     isTSpin = false,
@@ -69,6 +79,12 @@ export function calculateGarbageAttack({
     return baseAttack + getComboBonus(combo) + b2bBonus;
 }
 
+/**
+ * 내가 보낼 공격을 먼저 들어와 있던 garbage와 FIFO 순서로 상쇄한다.
+ * - 원본 queue entry를 복제하므로 호출자가 가진 대기열은 변경하지 않는다.
+ * - `pendingGarbageQueue`는 상쇄 후 남은 방어 부담, `attackLines`는 상대에게 보낼 나머지다.
+ * - `incomingGarbageLines`는 처리 전 총량이라 로그와 UI에서 원래 위협을 설명할 수 있다.
+ */
 export function resolveGarbageCancel({
     pendingGarbageQueue = [],
     rawAttackLines = 0,
@@ -103,6 +119,12 @@ export function resolveGarbageCancel({
     };
 }
 
+/**
+ * garbage 줄을 board 아래에 추가하고 기존 줄을 위로 밀어낸다.
+ * - 전달받은 board를 직접 변경한다.
+ * - 밀려나간 맨 윗줄에 블록이 있었다면 `overflow`로 top-out 가능성을 알린다.
+ * - hole 위치가 유효하지 않으면 가운데 column을 안전한 기본값으로 사용한다.
+ */
 export function applyGarbageLines(
     board: Board,
     { lines, holeCol, cellType = "garbage" }: ApplyGarbageOptions = {},
@@ -147,6 +169,10 @@ function createGarbageLine(cols: number, holeCol: number, cellType: string): Boa
     });
 }
 
+/**
+ * Tetris(4줄) 또는 line clear가 있는 T-Spin인지 확인한다.
+ * 공격 보너스 판정과 다음 back-to-back 상태 갱신이 이 한 기준을 공유한다.
+ */
 export function isBackToBackEligible({
     linesCleared,
     isTSpin = false,

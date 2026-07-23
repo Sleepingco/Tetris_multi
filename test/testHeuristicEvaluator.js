@@ -1,3 +1,13 @@
+/**
+ * 규칙 기반 AI가 reachable placement를 같은 기준으로 평가하고 결정적으로 선택하는지 검증한다.
+ *
+ * 준비: line clear, hole, 높이, bumpiness 차이가 눈에 보이는 작은 board를 만든다.
+ * 실행: 후보별 점수를 계산하거나 현재 gameState에서 최종 decision을 생성한다.
+ * 검증: 공개 weight가 각 metric에 적용되고, 도달 불가능한 고득점 후보는 제외되며,
+ * 동점 정렬·planned action·실패 schema와 입력 불변성이 유지되어야 한다.
+ *
+ * 이 점수는 학습 모델의 정답이 아니라 비교 가능한 heuristic baseline이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -5,6 +15,10 @@ function createBoard(rows = 20, cols = 10) {
     return Array.from({ length: rows }, () => Array(cols).fill(null));
 }
 
+/**
+ * AI가 판단에 필요한 최소 gameState를 만든다.
+ * 테스트별로 board와 조각만 바꾸고 queue·tick 같은 주변 조건은 고정해 점수 원인을 분리한다.
+ */
 function createGameState(board, pieceType = "bar") {
     return {
         board,

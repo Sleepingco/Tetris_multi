@@ -30,14 +30,13 @@ export type SerializedGameState = {
 
 // =============================
 // 상태 스냅샷 보조 함수
-// 저장, 복원, 멀티플레이 동기화를 위해 런타임 상태를 복제한다.
+// 변경 가능한 gameState와 외부로 전달할 snapshot 사이에 복사 경계를 만든다.
+// board·piece와 queue 배열 자체는 복사한다. inputQueue 항목 객체는 공유하므로 읽기 전용으로 다룬다.
 // =============================
 
 /**
-  * 스냅샷에 사용할 보드 배열의 충분한 깊이 복사본을 만든다.
-  *
-  * @param {Array<Array<string|null>>|null} board - 복제할 보드 배열
-  * @returns {Array<Array<string|null>>|null} 복제된 보드 또는 null
+  * board의 바깥 배열과 각 row를 복사한다.
+  * cell은 문자열 또는 null이라 이 깊이까지만 복사하면 원본과 안전하게 분리된다.
   */
 function cloneBoard(board: Board | null | undefined): Board | null {
         if (!Array.isArray(board)) return null
@@ -45,10 +44,7 @@ function cloneBoard(board: Board | null | undefined): Board | null {
 }
 
 /**
-  * 조각 객체를 스냅샷에 안전한 평범한 객체로 복사한다.
-  *
-  * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - 복제할 조각 상태
-  * @returns {{pieceType: string, rotation: number, row: number, col: number}|null} 복제된 조각 또는 null
+  * 조각의 gameplay 필드만 새 객체로 복사해 참조 공유를 끊는다.
   */
 function clonePiece(piece: PieceState | null | undefined): PieceState | null {
         if (!piece) return null
@@ -61,11 +57,10 @@ function clonePiece(piece: PieceState | null | undefined): PieceState | null {
 }
 
 /**
-  * 변경 가능한 런타임 상태를 분리된 스냅샷 객체로 직렬화한다.
-  * - tick, pieceIndex, serverBagQueue 같은 실행 전용 runtime 값은 포함하지 않는다.
-  *
-  * @param {Object} gameState - 변경 가능한 게임 상태 객체
-  * @returns {Object} 직렬화 가능한 스냅샷
+  * 변경 가능한 gameState를 plain-object snapshot으로 복사한다.
+  * 이름은 serialize지만 문자열로 바꾸지는 않는다. tick, pieceIndex, serverBagQueue 같은 실행 정보는
+  * runtime 소유이므로 여기 포함하지 않고 `createTetrisRuntime.getSnapshot`이 필요한 값만 덧붙인다.
+  * board·piece와 queue 배열은 새로 만들지만 inputQueue 안의 항목 객체는 공유한다.
   */
 export function serializeGameState(gameState: GameState): SerializedGameState {
         return {
@@ -89,11 +84,9 @@ export function serializeGameState(gameState: GameState): SerializedGameState {
 }
 
 /**
-  * 분리된 스냅샷으로부터 다시 변경 가능한 런타임 상태를 복원한다.
-  *
-  * @param {Object} snapshot - 직렬화된 상태 스냅샷
-  * @param {Object} defaults - 상태 팩토리 기본 입력값
-  * @returns {Object} 복원된 게임 상태 객체
+  * partial snapshot을 새 gameState에 복사하고, 빠진 값은 factory 기본값으로 채운다.
+  * board·piece와 queue 배열은 공유하지 않는다. inputQueue 항목 객체는 공유하므로
+  * snapshot 소비자는 해당 항목을 읽기 전용으로 다뤄야 한다.
   */
 export function deserializeGameState(
         snapshot: Partial<SerializedGameState>,

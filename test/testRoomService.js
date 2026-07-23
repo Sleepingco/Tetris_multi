@@ -1,3 +1,9 @@
+/**
+ * 메모리 기반 room의 생성부터 참가, 시작, 종료, 퇴장까지 lifecycle 전체를 검증한다.
+ *
+ * 각 테스트는 player와 필요한 room 상태를 준비해 service 함수를 실행하고 room 원본의 status·host·membership을
+ * 검증한다. 성공 결과뿐 아니라 잘못된 ID, 권한, 정원 같은 경계에서 정해진 reason을 반환하는지도 계약의 일부다.
+ */
 const test = require("node:test")
 const assert = require("node:assert/strict")
 

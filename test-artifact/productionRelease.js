@@ -1,3 +1,10 @@
+/**
+ * source와 개발 의존성이 없는 production release가 실제로 실행되는지 검증한다.
+ *
+ * 임시 디렉터리에 dist와 package 파일만 복사하고 production dependency를 설치한 뒤,
+ * PVP/PVE service probe와 HTTP 서버를 실행해 보안 header·정적 artifact·V4 model을 확인한다.
+ * 성공과 실패 모두 finally에서 child process를 종료하고 임시 release 디렉터리를 삭제한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { execFileSync, spawn, spawnSync } = require("node:child_process");

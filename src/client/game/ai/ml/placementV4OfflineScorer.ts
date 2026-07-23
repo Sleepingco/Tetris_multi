@@ -5,6 +5,15 @@ import type { PlacementMetricDelta } from "../dataset/placementDatasetBuilder.ts
 import type { Placement, PlacementCell } from "../heuristic/placementGenerator.ts";
 import type { PairwiseLinearModel } from "./placementPairwiseRanker.ts";
 
+/**
+ * 동결된 experimental V4 artifact로 후보를 점수화하는 순수 추론 모듈이다.
+ *
+ * V4는 human placement imitation 모델이며 production 기본 정책이 아니다. artifact도
+ * `canonicalArtifact=false`, `productionIntegration=false`여야만 읽는다. 같은 pieceType에서
+ * 동일한 네 칸을 차지하는 rotation/pivot alias는 하나의 physical class로 묶고, 안전한
+ * class가 하나라도 있으면 game-over class는 선택 대상에서 제외한다.
+ */
+
 export type PlacementV4Model = PairwiseLinearModel & {
     canonicalArtifact: false;
     productionIntegration: false;
@@ -69,6 +78,10 @@ function isFiniteNumber(value: unknown): value is number {
     return typeof value === "number" && Number.isFinite(value);
 }
 
+/**
+ * V4 전용 표식과 base pairwise model 계약을 함께 검증한다.
+ * artifact가 실험용이라는 표식까지 확인해 동결 모델을 production 모델로 오해하지 않게 한다.
+ */
 export function validatePlacementV4Model(model: unknown): { ok: true; reason: null } |
     { ok: false; reason: string } {
     const base = validatePairwiseLinearModel(model);
@@ -174,7 +187,13 @@ function scoreFeatures(features: number[], model: PlacementV4Model): number {
     return score;
 }
 
-/** Parse된 V4 model과 candidate만 읽어 physical-class ranking을 반환한다. */
+/**
+ * Parse된 V4 model과 candidate만 읽어 physical-class ranking을 반환한다.
+ * - feature는 학습 때와 같은 16개 순서로 표준화한 뒤 선형 점수를 계산한다.
+ * - 같은 physical class의 alias는 feature와 결과가 완전히 같은지 검증한다.
+ * - 안전 후보 우선 규칙을 적용한 뒤 점수 동률은 canonical class key로 결정한다.
+ * 입력 후보와 model은 변경하지 않는다.
+ */
 export function rankPlacementV4Candidates(
     model: PlacementV4Model,
     candidates: PlacementV4Candidate[],

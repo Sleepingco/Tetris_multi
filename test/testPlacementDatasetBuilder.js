@@ -1,3 +1,13 @@
+/**
+ * placement decision log를 ranking 학습용 candidate 행으로 정제하는 과정을 검증한다.
+ *
+ * 준비: 실제 reachable planner가 선택할 수 있는 정상 log를 만들고 필요한 필드만 변형한다.
+ * 실행: 후보 재생성, 선택 label 지정, rejection 분류와 gameId 단위 split을 수행한다.
+ * 검증: 한 decision에서 실제 선택 후보 하나만 label이 true이고, 즉시 시뮬레이션 결과만 feature 재료로
+ * 쓰며, 미래 evaluation/승패 누출과 입력 mutation 없이 같은 seed에서 같은 결과를 만들어야 한다.
+ *
+ * 잘못된 행을 조용히 버리지 않고 reason과 함께 `rejected`로 보내는 것도 데이터 정제 계약의 일부다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -16,6 +26,10 @@ function createMetrics(columnCount = 10) {
     };
 }
 
+/**
+ * 실제 reachable 후보와 일치하는 정상 schemaVersion 2 log를 만든다.
+ * 손으로 임의 좌표를 쓰지 않아 planner 규칙이 바뀌어도 fixture가 불가능한 placement가 되지 않는다.
+ */
 async function createValidLog(overrides = {}) {
     const { generateReachablePlacements } = await import(
         "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"

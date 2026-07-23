@@ -1,3 +1,13 @@
+/**
+ * 실제 compiled production 서버의 모든 응답 경로에 보안 header가 붙는지 확인하는 통합 테스트다.
+ *
+ * 준비: 비어 있는 local port를 구하고 별도 Node process로 `dist/server/app.js`를 실행한다.
+ * 실행: HTML, asset, 404/416/304, Socket.IO client와 polling GET/POST를 실제 HTTP로 요청한다.
+ * 검증: 응답 종류와 성공 여부에 관계없이 CSP와 공통 header가 유지되고,
+ * 허용 origin만 CORS 응답을 받으며 종료 시 child process가 정상 정리되어야 한다.
+ *
+ * 단위 테스트가 header 객체만 본다면, 이 테스트는 Express·static·Socket.IO를 통과한 최종 응답을 본다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { spawn } = require("node:child_process");
@@ -8,6 +18,10 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 const ALLOWED_ORIGIN = "https://allowed.example.com";
 
+/**
+ * 운영체제에 port 0을 요청해 현재 비어 있는 임시 port를 얻는다.
+ * 고정 port를 사용하지 않아 개발 서버나 병렬 테스트와의 충돌 가능성을 줄인다.
+ */
 async function getFreePort() {
     return new Promise((resolve, reject) => {
         const server = createServer();
@@ -19,6 +33,10 @@ async function getFreePort() {
     });
 }
 
+/**
+ * child process의 listen 완료 시점이 비동기이므로 짧게 재시도한다.
+ * 단순 sleep 하나보다 빠르게 준비 완료를 감지하고, 마지막 연결 오류도 보존한다.
+ */
 async function waitForHttp(url) {
     let lastError;
     for (let attempt = 0; attempt < 60; attempt += 1) {

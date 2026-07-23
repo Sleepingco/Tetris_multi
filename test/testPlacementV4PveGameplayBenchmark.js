@@ -1,3 +1,9 @@
+/**
+ * heuristic 정책과 V4 정책을 동일한 7-bag stream에서 짝지어 비교하는 benchmark 테스트다.
+ *
+ * seed·모델·rollout 조건을 준비해 두 정책을 실행하고 생존, game-over 안전성, horizon 결과를 검증한다.
+ * 같은 seed가 같은 조각 순서를 만드는 결정성과 report 경로가 source artifact를 침범하지 않는 안전성이 핵심이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { link, mkdir, mkdtemp, symlink, writeFile } = require("node:fs/promises");

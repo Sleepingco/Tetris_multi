@@ -1,3 +1,13 @@
+/**
+ * 한 경기의 server-authoritative 상태를 소유하는 `matchService`의 공개 경계를 검증한다.
+ *
+ * 준비: room fixture로 match를 만들고 각 테스트 전에 메모리 Map을 초기화한다.
+ * 실행: match 생성/조회/삭제, bag·garbage 추가, input/gravity 적용과 snapshot DTO 조회를 수행한다.
+ * 검증: player별 상태가 분리되고 client sequence는 단조 증가하며, 잘못된 match/player/piece는
+ * 원본 상태를 건드리지 않고 명시적인 실패 이유를 반환해야 한다.
+ *
+ * roomService가 참가자 lifecycle을 맡는 반면, 이 테스트의 중심은 "한 판 안의 게임 상태"다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -15,6 +25,10 @@ const {
 } = matchService;
 const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 
+/**
+ * match 생성에 필요한 최소 playing room을 제공한다.
+ * host/guest를 고정해 player별 bag, garbage, snapshot 격리를 쉽게 비교한다.
+ */
 function createPlayingRoom(roomId = "ROOM001") {
     return {
         roomId,

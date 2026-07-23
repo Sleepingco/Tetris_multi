@@ -6,6 +6,18 @@ import type { HeuristicEvaluation, HeuristicReason } from "../heuristic/heuristi
 import type { Placement, PlacementCell } from "../heuristic/placementGenerator.ts";
 import type { ReachablePlacement } from "../heuristic/reachablePlacementPlanner.ts";
 
+/**
+ * 검증된 placement 로그 한 건을 같은 판단 시점의 후보 여러 행으로 확장한다.
+ *
+ * 흐름:
+ * `placement_decision` → 도달 가능한 후보 생성 → 후보별 게임 결과 시뮬레이션
+ * → 사람/AI가 실제 고른 후보에 `selectedBySource=true` 표시
+ *
+ * 이 dataset의 목표는 과거 선택을 모방하는 ranking 학습이다. 승률이나 미래 점수처럼
+ * 판단 뒤에 알게 되는 값은 feature를 만들 때 사용하지 않으므로, 이 데이터로 높은
+ * gameplay 성능까지 증명할 수는 없다.
+ */
+
 export type PlacementSource = "human" | "heuristic_ai";
 export type PlacementInputRecord = {
     action: "move_left" | "move_right" | "soft_drop" | "rotate" | "hard_drop" | "hold";
@@ -389,11 +401,10 @@ function createSummary(
 
 /**
  * schemaVersion 2 placement_decision 로그를 후보 placement 비교용 sample로 변환한다.
- * 원본의 미래 결과 대신 현재 board에서 재생성한 후보와 휴리스틱 baseline만 사용한다.
- *
- * @param {Object[]} logs - placement_decision 로그 목록
- * @param {Object} options - 향후 builder 옵션을 위한 예약 인자
- * @returns {{samples: Object[], rejected: Object[], summary: Object}} dataset 생성 결과
+ * - 로그에 적힌 결과를 그대로 학습하지 않고 현재 board에서 모든 후보를 다시 만든다.
+ * - 실제 선택이 후보 목록에 없으면 label을 신뢰할 수 없으므로 그 결정 전체를 제외한다.
+ * - 한 후보라도 평가할 수 없으면 후보 수가 달라지는 부분 dataset을 만들지 않는다.
+ * - `rejected`에는 제외 이유를 남겨 같은 입력에서 정제 결과를 재현할 수 있게 한다.
  */
 export function buildPlacementDataset(logs: unknown, options: unknown = {}) {
     void options;
@@ -444,6 +455,7 @@ export function buildPlacementDataset(logs: unknown, options: unknown = {}) {
         if (!candidates.some(candidate => {
             return isSamePlacement(candidate.placement, validatedLog.selectedPlacement);
         })) {
+            // 선택 label이 후보 집합에 없으면 selected/unselected 비교 자체를 만들 수 없다.
             rejected.push(createRejectedLog(
                 log,
                 index,
@@ -512,10 +524,9 @@ function compareSamples(left: PlacementDatasetSample, right: PlacementDatasetSam
 
 /**
  * sample을 gameId 단위로 결정적으로 나눠 같은 게임의 leakage를 막는다.
- *
- * @param {Object[]} samples - placement dataset sample 목록
- * @param {{validationRatio?: number, seed?: string|number}} options - split 옵션
- * @returns {{train: Object[], validation: Object[], summary: Object}} split 결과
+ * 같은 게임의 연속 board는 서로 매우 비슷하므로 행 단위 split을 하면 validation이
+ * 사실상 train 장면을 다시 보게 된다. 따라서 seed로 validation `gameId`를 고른 뒤
+ * 그 게임의 모든 후보 행을 한쪽에만 넣고, 출력 순서도 고정한다.
  */
 export function splitDatasetByGameId(samples: PlacementDatasetSample[], {
     validationRatio = 0.2,

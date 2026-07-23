@@ -1,3 +1,10 @@
+"""Temporal full report를 정책 검토용 요약으로 바꾸는 도구를 검증한다.
+
+요약 script를 동적으로 불러오고 작은 report fixture를 준비해 per-game 합계와 aggregate가
+일치하는지 확인한다. 누수나 false-green count는 blocked로 처리되어야 하며, CLI는 임시
+경로에 같은 JSON·Markdown을 반복 생성하면서 입력 report를 그대로 보존해야 한다.
+"""
+
 import importlib.util
 import json
 import tempfile

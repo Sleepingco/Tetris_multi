@@ -1,3 +1,10 @@
+/**
+ * 싱글플레이 키 입력이 Canvas의 실제 조각 위치와 고정 결과에 반영되는지 검증한다.
+ *
+ * Math.random과 Playwright clock을 고정해 같은 조각·같은 tick을 재현하고, Canvas cell
+ * 중앙 픽셀에서 불투명한 tree 조각만 읽는다. 이동→회전→soft drop→hard drop 순서로
+ * 실행한 뒤 예상 좌표와 점수 변화를 비교한다.
+ */
 const { test, expect } = require("@playwright/test");
 
 const INPUT_TICK_MS = 16;

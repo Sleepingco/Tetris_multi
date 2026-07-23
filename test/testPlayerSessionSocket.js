@@ -1,3 +1,9 @@
+/**
+ * Socket.IO 연결 입구에서 session 인증과 handler 정리가 올바르게 조립되는지 검증한다.
+ *
+ * 실제 네트워크 대신 FakeSocketServer/FakeSocket에 등록된 handler와 emit을 기록해 연결을 준비하고,
+ * bootstrap·재연결·dispose를 실행한 뒤 newest-socket-wins와 S2C schema 통과 여부를 검증한다.
+ */
 const test = require("node:test")
 const assert = require("node:assert/strict")
 

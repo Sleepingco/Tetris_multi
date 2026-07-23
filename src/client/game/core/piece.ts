@@ -1,5 +1,11 @@
 import type { PieceType } from "../state/blocks.ts";
 
+// =============================
+// 움직이는 조각 보조 계산
+// board에 고정되기 전 조각의 스폰 상태와 하드 드롭 도착 row를 계산한다.
+// 두 함수 모두 전달받은 상태를 변경하지 않는다.
+// =============================
+
 export type EmptyPieceState = {
     pieceType: "";
     rotation: number;
@@ -17,12 +23,8 @@ export type PlaceablePieceState = {
 export type PieceState = EmptyPieceState | PlaceablePieceState;
 
 /**
-  * 스폰 위치 기준으로 회전이 초기화된 새 조각 상태를 만든다.
-  *
-  * @param {string} pieceType - 생성할 조각 타입
-  * @param {number} spawnRow - 기본 스폰 행
-  * @param {number} spawnCol - 기본 스폰 열
-  * @returns {{pieceType: string, rotation: number, row: number, col: number}} 스폰용 조각 상태
+  * 새 턴에 사용할 독립적인 조각 객체를 만든다.
+  * 모든 조각은 설정된 스폰 좌표와 기본 회전 0에서 시작한다.
   */
 export function createSpawnedPiece(
     pieceType: PieceType,
@@ -38,11 +40,9 @@ export function createSpawnedPiece(
 }
 
 /**
-  * 현재 조각이 아래로 내려갈 수 있는 마지막 row를 계산한다.
-  *
-  * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 기준 조각 상태
-  * @param {(row: number) => boolean} canPlaceAt - 특정 row 배치 가능 여부를 반환하는 함수
-  * @returns {number} 마지막으로 배치 가능한 row
+  * 조각을 한 줄씩 가상으로 내려 보며 마지막으로 배치 가능한 row를 찾는다.
+  * 실제 piece나 board를 바꾸지 않고, 호출자가 주입한 `canPlaceAt`으로 충돌 규칙을 재사용한다.
+  * 런타임의 hard drop, ghost piece, AI 도달 가능 배치 계산이 같은 결과를 공유한다.
   */
 export function getHardDropRow(
     piece: Pick<PieceState, "row"> | null | undefined,

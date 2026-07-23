@@ -1,3 +1,11 @@
+/**
+ * 서버가 client의 순수 game core를 compiled 경로에서 안전하게 재사용하는지 검증한다.
+ *
+ * 준비: 배포 산출물의 `loadGameCore`를 불러온다.
+ * 실행: core를 한 번 또는 동시에 여러 번 요청한다.
+ * 검증: authoritative 계산에 필요한 함수·상수·블록 정의가 모두 노출되고,
+ * 중복 dynamic import를 피하도록 같은 Promise와 같은 module 객체를 재사용해야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

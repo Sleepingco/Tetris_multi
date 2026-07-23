@@ -1,3 +1,9 @@
+/**
+ * Canvas를 직접 그리기 전에 line-clear 파편 좌표를 계산하는 순수 렌더 helper 테스트다.
+ *
+ * row·col·animation progress를 준비해 계산을 실행하고, 분해 시작 전에는 빈 배열이며 이후에는 중심에서
+ * 네 방향으로 작아지고 투명해지는 네 조각을 반환하는지 검증한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

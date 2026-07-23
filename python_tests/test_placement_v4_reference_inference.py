@@ -1,3 +1,10 @@
+"""동결 V4 model의 Python reference inference와 안전한 report 출력을 검증한다.
+
+fixture candidate를 복사해 schema·수치 계약, physical-class grouping, 결정적 tie-break와
+game-over filter를 검사한다. 임시 파일 출력 테스트는 같은 입력의 byte 결정성과 보호된
+출력 경로 거부를 확인하며 model·fixture 원본이 변경되지 않아야 한다.
+"""
+
 import copy
 import hashlib
 import json

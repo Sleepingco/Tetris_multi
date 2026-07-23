@@ -9,6 +9,14 @@ import { normalizePlacement } from "./placementGenerator.ts";
 import type { Board } from "../../core/board.ts";
 import type { Placement } from "./placementGenerator.ts";
 
+/**
+ * 후보 placement를 실제 보드에 놓았을 때의 결과를 원본 변경 없이 계산한다.
+ *
+ * AI는 선택만 해야 하므로 입력 `board`를 복제하고, lock·line clear·game over는 게임
+ * core 함수를 재사용한다. 이 순수 시뮬레이션 덕분에 후보를 여러 개 평가해도 실제
+ * gameplay state는 바뀌지 않는다.
+ */
+
 function cloneBoard(board: Board): Board | null {
     if (!Array.isArray(board) || board.length === 0) return null;
 

@@ -6,6 +6,14 @@ import type { BoardMetrics } from "../../core/boardMetrics.ts";
 import type { Placement } from "./placementGenerator.ts";
 import type { ReachableAction } from "./reachablePlacementPlanner.ts";
 
+/**
+ * 도달 가능한 placement를 설명 가능한 규칙으로 평가하는 production 기본 정책이다.
+ *
+ * 후보 생성과 게임 규칙은 planner/core가 담당하고, 이 모듈은 시뮬레이션 결과의
+ * line clear·hole·height·bumpiness에 가중치를 적용해 순위를 정한다. ML V4가 명시적으로
+ * 선택되지 않았거나 추론에 실패하면 이 정책이 안전한 fallback으로 사용된다.
+ */
+
 export type HeuristicReason = {
     linesCleared: number;
     holesDelta: number;
@@ -87,6 +95,7 @@ export function compareHeuristicEvaluations(
     left: HeuristicComparable,
     right: HeuristicComparable,
 ): number {
+    // 점수가 같아도 항상 같은 후보가 먼저 오도록 게임 지표와 좌표 순서까지 비교한다.
     if (left.score !== right.score) return right.score - left.score;
     if (left.linesCleared !== right.linesCleared) {
         return right.linesCleared - left.linesCleared;

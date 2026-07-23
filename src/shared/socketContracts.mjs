@@ -1,3 +1,8 @@
+// =============================
+// 소켓 전송 계약
+// TypeScript 타입은 런타임 입력을 막지 못하므로 양방향 payload를 Zod로 실제 검증한다.
+// strictObject를 사용해 위조된 playerId 같은 선언되지 않은 필드도 신뢰 경계에서 거부한다.
+// =============================
 import * as z from "zod";
 
 z.config({ jitless: true });

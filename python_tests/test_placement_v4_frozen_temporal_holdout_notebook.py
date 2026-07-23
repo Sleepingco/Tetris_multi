@@ -1,3 +1,10 @@
+"""동결된 V4 checkpoint를 신규 50게임에 평가하는 Notebook 계약을 검증한다.
+
+75게임 학습 cohort와 125게임 누적 cohort의 차집합만 평가하고, scaler·coefficient를
+다시 fit하지 않는지 확인한다. smoke/full gate, game-over 안전성의 관측 한계,
+checksum 재검증과 결정적 atomic report도 함께 검사한다.
+"""
+
 import json
 import unittest
 from pathlib import Path

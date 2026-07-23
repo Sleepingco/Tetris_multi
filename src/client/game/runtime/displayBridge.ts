@@ -1,8 +1,16 @@
+// =============================
+// runtime → React 표시 상태 연결
+// gameplay의 원천은 runtime에 두고, React HUD가 필요한 작은 값만 안정된 snapshot으로 노출한다.
+// 값이 실제로 바뀔 때만 새 객체와 알림을 만들어 불필요한 React 렌더를 막는다.
+// =============================
+
 /**
- * runtime의 표시 상태만 cached snapshot으로 노출한다.
+ * runtime 표시 값을 React의 `useSyncExternalStore` 계약으로 감싼다.
+ * - `getDisplaySnapshot`은 마지막으로 발행한 같은 객체를 반환해야 React가 변경 여부를 판단할 수 있다.
+ * - runtime은 상태 변경이 끝난 뒤 `publishDisplay`를 호출하고, 표시 값이 달라진 경우에만 구독자를 알린다.
+ * - `destroyDisplay` 이후에는 알림과 새 구독을 막아 제거된 페이지가 다시 렌더되지 않게 한다.
  *
- * @param {Function} readDisplayValues - 현재 runtime 표시 값을 읽는 함수
- * @returns {Object} React 외부 store 계약과 runtime publish/destroy 경계
+ * gameplay 상태를 복제하거나 변경하지 않으며 score, queue, phase 같은 표시용 값만 읽는다.
  */
 export function createRuntimeDisplayBridge(
     readDisplayValues: () => RuntimeDisplayValues,
@@ -11,6 +19,7 @@ export function createRuntimeDisplayBridge(
     let destroyed = false;
     let snapshot = createSnapshot(readDisplayValues());
 
+    // 아래 작은 함수들은 하나의 외부 store 계약을 구성하므로 개별 API가 아니라 묶음으로 읽는다.
     function createSnapshot(values: RuntimeDisplayValues): RuntimeDisplaySnapshot {
         return {
             score: values.score,

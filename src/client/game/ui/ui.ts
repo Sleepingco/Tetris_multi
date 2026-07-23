@@ -1,4 +1,8 @@
 // =============================
+// runtime → DOM UI 어댑터
+// runtime이 selector나 class 구조를 몰라도 점수, garbage, game over, preview를 갱신하도록 DOM 작업을 묶는다.
+// gameState를 저장하거나 게임 규칙을 판단하지 않고 전달받은 값을 화면에 반영한다.
+// =============================
 
 import type { BlockDefinitions, PieceType } from "../state/blocks.ts";
 import type { NextPreviewCells, PreviewCells } from "../render/tetrisRender.ts";
@@ -53,27 +57,10 @@ export type GameUi = {
         renderNextPieces: (pieceQueue: PieceType[], blocks: BlockDefinitions) => void;
         renderHoldPiece: (pieceType: PieceType | null, blocks: BlockDefinitions) => void;
 };
-// UI Adapter
-// 런타임이 DOM 세부 구현을 몰라도 되도록 화면 조작을 묶어 둔다.
-// =============================
-
 /**
-  * 점수, 게임오버, 미리보기 렌더링을 담당하는 UI 어댑터를 만든다.
-  *
-  * @param {Object} params - UI 연결에 필요한 DOM 요소와 렌더러 함수들
-  * @param {HTMLElement|null} params.scoreEl - 점수 표시 요소
-  * @param {HTMLElement|null} params.linesEl - 삭제한 줄 수 표시 요소
-  * @param {HTMLElement|null} params.pendingGarbageEl - 대기 garbage 표시 요소
-  * @param {HTMLElement|null} params.gameOverEl - 게임오버 레이어 요소
-  * @param {HTMLElement|null} params.nextPreviewEl - 다음 조각 미리보기 컨테이너
-  * @param {HTMLElement|null} params.holdPreviewEl - 홀드 미리보기 컨테이너
-  * @param {number} params.nextQueueSize - 표시할 다음 조각 개수
-  * @param {number} params.previewSize - 미리보기 격자 크기
-  * @param {Function} params.buildNextPreview - next preview DOM 빌더
-  * @param {Function} params.buildHoldPreview - hold preview DOM 빌더
-  * @param {Function} params.renderNextPieces - next preview 렌더러
-  * @param {Function} params.renderHoldPiece - hold preview 렌더러
-  * @returns {Object} 런타임에서 사용할 UI 메서드 모음
+  * 페이지 DOM 요소와 preview renderer를 runtime이 호출할 작은 UI API로 감싼다.
+  * preview cell 참조는 이 closure 안에서만 보관해 매 frame DOM을 다시 찾거나 만들지 않는다.
+  * 요소가 없는 구성도 허용하므로 Canvas+React HUD 페이지와 기존 DOM 페이지가 같은 runtime을 쓸 수 있다.
   */
 export function createGameUi({
         scoreEl,
@@ -92,6 +79,7 @@ export function createGameUi({
         let nextPreviewCells: NextPreviewCells = []
         let holdPreviewCells: PreviewCells | null = null
 
+        // 아래 helper와 반환 메서드는 DOM 표시만 바꾸며 gameplay 상태를 소유하지 않는다.
         function getIncomingStatusEl(): ClassElement | null {
                 return pendingGarbageEl?.closest?.(".stat--incoming")
                         ?? pendingGarbageEl?.parentElement
@@ -112,31 +100,18 @@ export function createGameUi({
         }
 
         return {
-                /**
-                  * 점수 표시 영역에 최신 점수를 반영한다.
-                  *
-                  * @param {number} score - 표시할 점수
-                  * @returns {void}
-                  */
+                // 단순 표시 setter는 같은 UI 경계에 있으므로 개별 규칙 함수로 해석하지 않는다.
                 renderScore(score) {
                         if (!scoreEl) return
                         scoreEl.innerText = score
                 },
-                /**
-                  * 삭제한 줄 수 표시 영역에 최신 값을 반영한다.
-                  *
-                  * @param {number} lines - 표시할 누적 line 수
-                  * @returns {void}
-                  */
                 renderLines(lines) {
                         if (!linesEl) return
                         linesEl.innerText = lines
                 },
                 /**
-                  * lock 전까지 대기 중인 incoming garbage 수를 표시한다.
-                  *
-                  * @param {number} lines - 표시할 pending garbage 수
-                  * @returns {void}
+                  * lock 전까지 대기 중인 incoming garbage 수와 위험 강조 class를 함께 갱신한다.
+                  * 잘못된 값은 0으로 표시하지만 authoritative 원천 상태 자체는 변경하지 않는다.
                   */
                 renderPendingGarbage(lines) {
                         if (!pendingGarbageEl) return
@@ -146,28 +121,16 @@ export function createGameUi({
                         pendingGarbageEl.innerText = safeLines
                         setElementClass(incomingStatusEl, "is-danger", safeLines > 0)
                 },
-                /**
-                  * 게임오버 레이어를 화면에 표시한다.
-                  *
-                  * @returns {void}
-                  */
                 showGameOver() {
                         if (!gameOverEl) return
                         gameOverEl.style.display = "flex"
                 },
-                /**
-                  * 게임오버 레이어를 숨긴다.
-                  *
-                  * @returns {void}
-                  */
                 hideGameOver() {
                         if (!gameOverEl) return
                         gameOverEl.style.display = "none"
                 },
                 /**
-                  * 다음 조각 미리보기 DOM을 만들고 셀 캐시를 저장한다.
-                  *
-                  * @returns {void}
+                  * next preview DOM을 한 번 만들고 이후 조각 표시에서 재사용할 cell을 저장한다.
                   */
                 buildNextPreview() {
                         nextPreviewCells = buildNextPreview({
@@ -177,9 +140,7 @@ export function createGameUi({
                         })
                 },
                 /**
-                  * 홀드 미리보기 DOM을 만들고 셀 캐시를 저장한다.
-                  *
-                  * @returns {void}
+                  * hold preview DOM을 한 번 만들고 이후 조각 표시에서 재사용할 cell을 저장한다.
                   */
                 buildHoldPreview() {
                         holdPreviewCells = buildHoldPreview({
@@ -187,13 +148,6 @@ export function createGameUi({
                                 previewSize,
                         })
                 },
-                /**
-                  * 저장된 next preview 셀 캐시에 큐 상태를 렌더링한다.
-                  *
-                  * @param {string[]} pieceQueue - 다음 조각 큐
-                  * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 정의
-                  * @returns {void}
-                  */
                 renderNextPieces(pieceQueue, blocks) {
                         renderNextPieces({
                                 nextPreviewCells,
@@ -201,13 +155,6 @@ export function createGameUi({
                                 blocks,
                         })
                 },
-                /**
-                  * 저장된 hold preview 셀 캐시에 홀드 조각을 렌더링한다.
-                  *
-                  * @param {string|null} holdPieceType - 홀드된 블록 타입
-                  * @param {Record<string, Array<Array<[number, number]>>>} blocks - 블록 정의
-                  * @returns {void}
-                  */
                 renderHoldPiece(holdPieceType, blocks) {
                         renderHoldPiece({
                                 holdPreviewCells,

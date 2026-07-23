@@ -1,3 +1,10 @@
+"""Pair weight 분해 실험 Notebook과 학습용 문서의 정적 계약을 검증한다.
+
+고정 dataset checksum에서 V0~V4 pair와 weight가 만들어지고 같은 train-only scaler와
+estimator로 비교되는 흐름을 확인한다. source 입력 불변성, 결정적 atomic report와
+production 미적용 경계까지 검사해 실험 결과가 과장되지 않게 한다.
+"""
+
 import json
 import unittest
 from pathlib import Path

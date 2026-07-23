@@ -1,3 +1,7 @@
+// =============================
+// 채팅 이벤트 어댑터
+// 인증·속도·schema·room membership을 확인한 뒤 메시지만 broadcast한다.
+// =============================
 import { syncRoom } from "../services/roomService.js";
 import { clientToServerSchemas } from "../../shared/socketContracts.mjs";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes.js";
@@ -22,6 +26,11 @@ function failure(
     }
 }
 
+/**
+ * 한 socket에 global/room chat listener를 등록한다.
+ * 인증 정보는 payload가 아니라 연결 시 확정된 `socket.data`에서 읽고,
+ * room chat은 roomService membership을 확인한 뒤 같은 Socket.IO room에만 보낸다.
+ */
 export function registerChatHandlers(
     socketServer: AppSocketServer,
     clientSocket: AppSocket,
@@ -32,6 +41,7 @@ export function registerChatHandlers(
     const sessionContext = clientSocket.data?.playerSession
     const playerIdentity = clientSocket.data?.playerIdentity
 
+    // payload를 읽기 전에 active generation과 player별 rate limit부터 확인한다.
     function authorizeChat(): ChatResult | null {
         if (!playerSessionService.isActiveSocket(sessionContext, clientSocket.id)
             || !playerIdentity) {

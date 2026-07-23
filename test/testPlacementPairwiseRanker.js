@@ -1,3 +1,10 @@
+/**
+ * placement 선택 로그를 pairwise 선형 ranker로 학습하는 전체 파이프라인 테스트다.
+ *
+ * decision group 준비 → train 전용 scaler 계산 → selected/unselected pair 생성 → 학습·평가 순으로 읽으면 된다.
+ * helper는 항상 16개 feature를 만들어 실제 schema를 재현하며, 임시 디렉터리 테스트는 CLI가 원본 dataset을
+ * 보존하면서 결정적인 model/evaluation artifact만 만드는지도 함께 검증한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { execFile } = require("node:child_process");

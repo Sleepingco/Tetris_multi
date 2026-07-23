@@ -1,6 +1,14 @@
 import { extractPlacementFeatures } from "./placementFeatureSchema.ts";
 import type { PlacementDatasetSample } from "./placementDatasetBuilder.ts";
 
+/**
+ * candidate 행을 한 번의 placement 판단 단위로 다시 묶는다.
+ *
+ * `(gameId, playerId, pieceIndex)`가 같은 후보들은 같은 board 문맥을 공유하고 정확히
+ * 하나만 `selectedBySource=true`여야 한다. 중복 후보나 문맥이 섞인 그룹은 pairwise
+ * label을 왜곡하므로 그룹 전체를 reason과 함께 제외한다.
+ */
+
 export type PlacementDecisionGroup = {
     decisionKey: string;
     candidates: PlacementDatasetSample[];
@@ -100,7 +108,11 @@ function validateGroup(
     return null;
 }
 
-/** Candidate rows를 결정 단위로 검증·정렬해 묶는다. */
+/**
+ * Candidate rows를 결정 단위로 검증·정렬해 묶는다.
+ * 입력 행 순서와 locale이 달라도 같은 결과를 만들도록 decision key와 placement key를
+ * Unicode code-point 순서로 정렬한다. 이 canonical 순서는 학습·평가·parity가 공유한다.
+ */
 export function groupPlacementDecisions(samples: PlacementDatasetSample[]): {
     groups: PlacementDecisionGroup[];
     rejected: RejectedDecisionGroup[];

@@ -1,3 +1,9 @@
+/**
+ * roomService가 PVP 방과 synthetic AI가 포함된 PVE 방의 lifecycle을 구분하는 테스트다.
+ *
+ * human fixture로 방을 만들고 join·게임 종료·로비 복귀·퇴장을 실행한 뒤 mode별 player와 상태를 검증한다.
+ * PVE의 AI는 서버가 소유하므로 외부 guest로 참가할 수 없고 마지막 human이 나가면 방과 함께 정리되어야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

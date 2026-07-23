@@ -1,3 +1,7 @@
+// =============================
+// 소켓 연결 초기화
+// transport를 통과한 연결을 인증하고, 인증된 identity를 기능별 event handler에 전달한다.
+// =============================
 import type { Server, Socket } from "socket.io";
 import { registerChatHandlers } from "./chatHandlers.js";
 import {
@@ -87,12 +91,15 @@ function getRemoteAddress(clientSocket: AppSocket): string {
 }
 
 /**
- * Socket.IO connection 진입점을 한 곳에 둔다.
- * - 같은 clientSocket에 채팅과 멀티플레이 핸들러를 기능별로 조합한다.
+ * Socket.IO 연결의 인증, 기능 handler 등록, 장기 실행 자원 정리를 조립한다.
  *
- * @param {import("socket.io").Server} socketServer - Socket.IO 서버 인스턴스
- * @param {Object} dependencies - 테스트에서 주입할 서비스 의존성
- * @returns {void}
+ * 연결 전 순서:
+ * 1. 신규/재개 시도에 맞는 IP rate limit을 확인한다.
+ * 2. strict handshake schema로 형식과 unknown field를 검사한다.
+ * 3. session service가 token을 검증·회전하고 newest socket을 active로 만든다.
+ *
+ * 성공한 identity만 `socket.data`에 저장하며 event payload의 playerId는 신뢰하지 않는다.
+ * 반환한 disposer는 cleanup timer, disconnect grace timer, room ticker를 한 번만 정리한다.
  */
 export function registerSocketHandlers(
     socketServer: AppSocketServer,
@@ -122,6 +129,7 @@ export function registerSocketHandlers(
     } satisfies MultiplayerHandlerDependencies
     const pendingSessionReady = new WeakMap<AppSocket, PlayerSessionReady>()
 
+    // 이 middleware가 성공해야 아래 connection handler와 app event가 등록된다.
     socketServer.use?.((clientSocket, next) => {
         const auth: unknown = clientSocket.handshake?.auth || {}
         const authRecord = isRecord(auth) ? auth : {}
@@ -176,6 +184,7 @@ export function registerSocketHandlers(
         }
         pendingSessionReady.set(clientSocket, result.ready)
 
+        // 같은 token 계보로 재연결되면 새 generation만 유효하고 이전 socket은 즉시 끊는다.
         const replacedSocket = result.replacedSocketId
             ? socketServer.sockets?.sockets?.get?.(result.replacedSocketId)
             : null
@@ -205,6 +214,7 @@ export function registerSocketHandlers(
 
     let disposed = false
 
+    // shutdown과 테스트 teardown이 겹쳐도 timer를 중복 정리하지 않는다.
     function dispose(): void {
         if (disposed) return
         disposed = true
@@ -230,6 +240,7 @@ export function registerSocketHandlers(
 
         registerChatHandlers(socketServer, clientSocket, multiplayerDependencies)
         registerMultiplayerHandlers(socketServer, clientSocket, multiplayerDependencies)
+        // app event listener를 먼저 준비한 뒤 credential을 전달해 초기 응답 유실을 피한다.
         const sessionReady = pendingSessionReady.get(clientSocket)
         pendingSessionReady.delete(clientSocket)
         if (sessionReady) clientSocket.emit("session:ready", sessionReady)

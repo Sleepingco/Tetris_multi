@@ -1,3 +1,9 @@
+/**
+ * 서버 player state에 이동·회전·soft drop처럼 조각을 고정하지 않는 입력을 적용하는 테스트다.
+ *
+ * board와 active/pending piece를 준비해 입력을 실행하고 실제로 허용된 이동만 state에 반영되는지 검증한다.
+ * lock 흐름이 필요한 hard drop과 hold는 상위 gameplay step의 책임이므로 이 계층에서는 처리하지 않는다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

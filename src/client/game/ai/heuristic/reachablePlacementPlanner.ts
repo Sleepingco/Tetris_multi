@@ -15,6 +15,14 @@ import type { PlaceablePieceState } from "../../core/piece.ts";
 import type { PieceType } from "../../state/blocks.ts";
 import type { Placement } from "./placementGenerator.ts";
 
+/**
+ * 현재 조각에서 실제 키 입력으로 도달할 수 있는 placement만 만든다.
+ *
+ * 빈 칸에 수학적으로 들어가는 위치를 모두 만드는 것이 아니라, 게임 core의 이동·회전
+ * 판정을 그대로 사용해 BFS로 탐색한다. 따라서 여기서 만든 후보와 `plannedActions`는
+ * heuristic 평가, dataset 생성, PVE 실행이 공유하는 하나의 후보 계약이다.
+ */
+
 export type ReachableAction = "move_left" | "move_right" | "rotate" | "soft_drop" | "hard_drop";
 export type ReachablePlacement = {
     placement: Placement;
@@ -145,7 +153,9 @@ function createHardDropPlacement(board: Board, piece: PlaceablePieceState): Plac
 
 /**
  * 현재 activePiece에서 실제 입력으로 도달 가능한 최종 placement와 최단 action 계획을 만든다.
- * 같은 길이의 경로는 REACHABLE_ACTION_ORDER 순서로 결정한다.
+ * - 같은 조각 상태를 다시 탐색하지 않아 순환을 막는다.
+ * - 각 상태에서 hard drop한 결과를 최종 후보로 기록한다.
+ * - 같은 길이의 경로는 REACHABLE_ACTION_ORDER 순서로 결정한다.
  *
  * @param {Array<Array<string|null>>} board - 현재 보드
  * @param {{pieceType: string, rotation: number, row: number, col: number}} activePiece - 현재 조각

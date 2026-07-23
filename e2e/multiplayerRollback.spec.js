@@ -1,3 +1,10 @@
+/**
+ * 빠른 로컬 예측 입력 뒤 authoritative snapshot이 보드를 되돌리지 않는지 검증한다.
+ *
+ * 준비한 Host·Guest 중 한쪽을 source, 다른 쪽을 observer로 두고 조각을 연속 배치한다.
+ * 두 보드가 수렴한 뒤에도 여러 server tick 동안 같은 fingerprint가 유지되어야 통과한다.
+ * 실패 시 입력·snapshot·Canvas를 첨부하고, finally에서 monitor와 context를 모두 정리한다.
+ */
 const { test, expect } = require("@playwright/test");
 const {
     attachRollbackDiagnostics,

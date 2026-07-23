@@ -1,3 +1,10 @@
+"""Pairwise LOGO 실험 Notebook의 학습 순서와 재현 환경을 검증한다.
+
+Notebook 파일을 실제 학습시키지 않고 Markdown·코드 cell을 읽어 데이터 로딩부터
+gameId 분할, train-only scaler, metric 해석까지의 순서를 확인한다. 실행 결과가 제거된
+깨끗한 source와 고정된 Python 의존성도 계약의 일부로 검사한다.
+"""
+
 import json
 import unittest
 from pathlib import Path

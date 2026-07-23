@@ -3,17 +3,13 @@ import type { GameState } from "./stateFactory.ts";
 
 // =============================
 // 조각 큐 상태 유틸리티
-// 7-bag 랜덤화와 next queue 유지를 담당한다.
+// `gameState.bag`은 아직 뽑지 않은 7-bag, `gameState.pieceQueue`는 스폰과 preview 대기열이다.
+// 두 배열을 직접 변경하며, 주입받은 rng 덕분에 테스트와 결정론적 실행에서 같은 순서를 재현할 수 있다.
 // =============================
 
 /**
-  * 셔플된 bag 시스템을 사용해 다음 조각 타입을 반환한다.
-  * - bag이 비면 다시 채우고 섞는다.
-  *
-  * @param {Object} gameState - 변경 가능한 게임 상태 객체
-  * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
-  * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
-  * @returns {string} 다음 조각 타입
+  * bag이 비면 모든 조각을 한 번씩 넣어 Fisher-Yates 방식으로 섞고 하나를 꺼낸다.
+  * 한 bag 안에서는 각 조각이 정확히 한 번 나오며 `gameState.bag`을 직접 변경한다.
   */
 export function pickRandomPiece(
     gameState: GameState,
@@ -38,13 +34,8 @@ export function pickRandomPiece(
 }
 
 /**
-  * 현재 스폰과 미리보기에 필요한 만큼 큐 길이를 유지한다.
-  *
-  * @param {Object} gameState - 변경 가능한 게임 상태 객체
-  * @param {number} nextQueueSize - 화면에 보여줄 다음 조각 개수
-  * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
-  * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
-  * @returns {void}
+  * 지금 스폰할 한 조각과 화면에 보여 줄 preview 수만큼 queue를 채운다.
+  * 부족한 조각만 bag에서 가져오므로 이미 정해진 queue 순서는 유지된다.
   */
 export function ensureQueueFilled(
     gameState: GameState,
@@ -59,13 +50,8 @@ export function ensureQueueFilled(
 }
 
 /**
-  * 큐에서 다음 스폰 조각을 꺼내고, 미리보기 버퍼가 유지되도록 다시 채운다.
-  *
-  * @param {Object} gameState - 변경 가능한 게임 상태 객체
-  * @param {number} nextQueueSize - 화면에 보여줄 다음 조각 개수
-  * @param {string[]} pieceTypes - 사용 가능한 조각 타입 목록
-  * @param {Function} rng - 테스트와 멀티플레이 결정론을 위해 주입할 난수 함수
-  * @returns {string} 지금 스폰할 조각 타입
+  * queue 맨 앞 조각을 현재 턴에 넘기고, 빠진 자리를 다시 채운다.
+  * 호출 뒤에도 `pieceQueue`에는 다음 스폰 한 개와 preview 조각들이 준비되어 있다.
   */
 export function takeNextFromQueue(
     gameState: GameState,

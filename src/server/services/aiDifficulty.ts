@@ -1,3 +1,4 @@
+// PVE room과 match가 공유하는 실행 설정이다. AI 판단 자체는 pveAiPlayerService가 담당한다.
 export const AI_DIFFICULTY = Object.freeze({
     NORMAL: "normal",
     HARD: "hard",

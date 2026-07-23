@@ -1,3 +1,9 @@
+// =============================
+// 페이지 공용 사운드 수명주기
+// 모듈에 BGM/SFX 객체와 사용자 설정을 한 번만 보관하고, 현재 페이지에 맞는 음악과 버튼을 연결한다.
+// 브라우저 autoplay 제한 때문에 첫 사용자 상호작용에서 재생을 다시 시도하며 cleanup으로 listener를 해제한다.
+// =============================
+
 const SOUND_KEY = "tetrisSoundEnabled"
 
 const lobbyMusic = createAudio(new URL("../../assets/sound/tetris_lobby_music.mp3", import.meta.url).href, { loop: true, volume: 0.1 })
@@ -10,10 +16,8 @@ const toggleButtons = new Set<HTMLButtonElement>()
 const toggleButtonHandlers = new WeakMap<HTMLButtonElement, () => void>()
 
 /**
-  * 로비 페이지에서 BGM과 토글 버튼을 초기화한다.
-  *
-  * @param {HTMLButtonElement|null} toggleBtn - 온/오프 토글 버튼
-  * @returns {Function} 등록한 토글 버튼 리스너를 제거하는 정리 함수
+  * 현재 음악을 로비 BGM으로 바꾸고 저장된 설정, 토글 버튼, autoplay 재시도를 연결한다.
+  * 반환한 cleanup은 React effect 정리나 pagehide에서 호출한다.
   */
 export function initLobbySound(toggleBtn: HTMLButtonElement | null): () => void {
     pause(gameMusic)
@@ -28,10 +32,8 @@ export function initLobbySound(toggleBtn: HTMLButtonElement | null): () => void 
 }
 
 /**
-  * 게임 페이지에서 BGM과 토글 버튼, 효과음을 초기화한다.
-  *
-  * @param {HTMLButtonElement|null} toggleBtn - 온/오프 토글 버튼
-  * @returns {Function} 등록한 토글 버튼 리스너를 제거하는 정리 함수
+  * 현재 음악을 게임 BGM으로 바꾸고 저장된 설정과 토글 버튼을 연결한다.
+  * 게임 키 입력은 별도 input listener가 처리하므로 autoplay 재시도는 click만 등록한다.
   */
 export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
     pause(lobbyMusic)
@@ -46,9 +48,8 @@ export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
 }
 
 /**
-  * 현재 BGM 재생을 시도한다(자동재생 차단 시 무시).
-  *
-  * @returns {void}
+  * 현재 BGM 재생을 비동기로 요청한다.
+  * 브라우저가 사용자 상호작용 전 재생을 막아도 게임 실행을 실패시키지 않는다.
   */
 export function tryPlayMusic() {
     void attemptMusicPlayback()
@@ -57,9 +58,6 @@ export function tryPlayMusic() {
 /**
   * 자동재생이 차단된 경우 사용자 상호작용에서 BGM을 다시 시도한다.
   * 실제 재생에 성공한 뒤에만 리스너를 제거한다.
-  *
-  * @param {{includeKeyboard?: boolean}} [options={}] - keydown 재시도 포함 여부
-  * @returns {Function} 등록한 사용자 상호작용 리스너를 제거하는 정리 함수
   */
 function registerAutoplayRetry(
     { includeKeyboard = true }: { includeKeyboard?: boolean } = {},
@@ -98,9 +96,8 @@ async function attemptMusicPlayback(): Promise<boolean> {
 }
 
 /**
-  * 라인 삭제 효과음을 재생한다.
-  *
-  * @returns {void}
+  * 라인 삭제 효과음을 처음부터 재생한다.
+  * 재생 실패는 gameplay와 무관한 presentation 실패이므로 호출자에게 전파하지 않는다.
   */
 export function playLineClearSfx() {
     if (!soundEnabled) return
@@ -109,11 +106,7 @@ export function playLineClearSfx() {
 }
 
 /**
-  * 공통 오디오 옵션이 적용된 HTMLAudioElement를 만든다.
-  *
-  * @param {string} src - 로드할 오디오 파일 경로
-  * @param {{loop?: boolean, volume?: number}} options - 반복 재생 여부와 기본 볼륨
-  * @returns {HTMLAudioElement} 설정이 적용된 오디오 객체
+  * 모듈이 공유할 HTMLAudioElement에 반복과 볼륨 기본값을 적용한다.
   */
 function createAudio(
     src: string,
@@ -128,8 +121,6 @@ function createAudio(
 /**
   * localStorage에서 사운드 활성화 여부를 읽는다.
   * - 저장값이 없으면 기본값으로 `true`를 사용한다.
-  *
-  * @returns {boolean} 사운드 활성화 여부
   */
 function loadSoundPref(): boolean {
     const saved = localStorage.getItem(SOUND_KEY)
@@ -137,10 +128,8 @@ function loadSoundPref(): boolean {
 }
 
 /**
-  * 사운드 토글 버튼을 등록하고 클릭 시 전역 사운드 상태를 반전시킨다.
-  *
-  * @param {HTMLButtonElement|null} toggleBtn - 등록할 토글 버튼
-  * @returns {Function} 등록한 토글 버튼 리스너를 제거하는 정리 함수
+  * 한 페이지의 토글 버튼을 전역 사운드 설정에 연결한다.
+  * 같은 버튼을 다시 등록해도 listener를 중복 추가하지 않으며 cleanup은 여러 번 호출해도 안전하다.
   */
 function registerToggle(toggleBtn: HTMLButtonElement | null): () => void {
     if (!toggleBtn) return () => {}
@@ -174,11 +163,8 @@ function cleanupDetachedToggleButtons(): void {
 }
 
 /**
-  * 사운드 설정을 메모리, localStorage, 버튼 UI, 현재 BGM에 동시에 반영한다.
-  *
-  * @param {boolean} enabled - 적용할 사운드 활성화 여부
-  * @param {{initial?: boolean}} [options={}] - 초기 로드 여부
-  * @returns {void}
+  * 하나의 `soundEnabled` 값을 메모리, localStorage, 연결된 버튼, 현재 BGM에 함께 반영한다.
+  * 초기 로드에서는 이미 저장된 값을 다시 쓰지 않고 화면과 음악만 동기화한다.
   */
 function applySoundSetting(
     enabled: boolean,
@@ -204,12 +190,7 @@ function applySoundSetting(
     }
 }
 
-/**
-  * 전달된 오디오를 현재 위치에서 일시정지한다.
-  *
-  * @param {HTMLAudioElement} audio - 일시정지할 오디오 객체
-  * @returns {void}
-  */
+// 오디오 정지와 button 해제 함수는 위 수명주기에서 재사용하는 작은 부수효과 helper다.
 function pause(audio: HTMLAudioElement): void {
     audio.pause()
 }

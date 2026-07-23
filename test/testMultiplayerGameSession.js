@@ -1,6 +1,20 @@
+/**
+ * client multiplayer session이 local prediction을 서버 authoritative 결과에 안전하게 수렴시키는지 검증한다.
+ *
+ * 준비: 실제 DOM·Socket.IO·Canvas 대신 event와 호출을 기록하는 fake socket/runtime/element를 만든다.
+ * 실행: join snapshot, keyboard input, input result, 반복 snapshot, disconnect와 destroy 순서를 재현한다.
+ * 검증: 내 입력은 빠르게 예측하되 sequence acknowledgment 전에는 되감지 않고, divergence 때만
+ * 강제 보정하며, 상대 runtime은 snapshot-only replica로 동작해야 한다.
+ *
+ * placement log는 local 판단과 서버 lock commit이 모두 확인된 뒤 정확히 한 번만 보내는 것이 핵심 불변식이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
+/**
+ * 브라우저 socket의 최소 event API를 흉내 내며 client emit과 server emit을 분리해 기록한다.
+ * 실제 네트워크 없이도 event 순서, payload, handler 정리 여부를 결정적으로 확인할 수 있다.
+ */
 class FakeSocket {
     constructor() {
         this.handlers = new Map();

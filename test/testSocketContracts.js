@@ -1,3 +1,10 @@
+/**
+ * 모든 C2S/S2C Socket.IO payload가 공유 Zod 계약을 통과하는지 검증한다.
+ *
+ * 정상 event fixture를 준비해 전체 schema map을 순회하고, unknown key·크기 제한·잘못된 board 같은 입력은
+ * 거부되는지 확인한다. 실제 authoritative ticker의 emit도 같은 schema로 검사해 타입 선언과 런타임 payload가
+ * 따로 변하는 일을 막는다.
+ */
 const test = require("node:test")
 const assert = require("node:assert/strict")
 

@@ -1,5 +1,16 @@
 #!/usr/bin/env node
 
+/**
+ * append-only game event JSONL을 재현 가능한 placement dataset snapshot으로 내보낸다.
+ *
+ * 정제 순서:
+ * JSON line 파싱 → game lifecycle 완결성 검사 → 선택/source/player/초반 piece 필터
+ * → reachable candidate 재생성 → gameId 단위 train/validation split
+ *
+ * 제외된 행은 버리지 않고 `rejected.jsonl`에 reason을 남긴다. 원본 로그는 읽기 전용이며,
+ * 같은 bytes와 옵션은 같은 행 순서·split·manifest를 만든다.
+ */
+
 const { createHash } = require("node:crypto");
 const { mkdir, open, readFile, writeFile } = require("node:fs/promises");
 const path = require("node:path");
@@ -225,6 +236,10 @@ function groupEventsByGameId(entries) {
     return games;
 }
 
+/**
+ * 학습 가능한 한 game에는 시작과 정상 종료가 정확히 하나씩 있어야 한다.
+ * disconnect/leave 또는 잘린 로그는 선택 결과를 끝까지 관찰한 cohort가 아니므로 제외한다.
+ */
 function getGameExclusionReason(game) {
     if (game.gameStart.length > 1 || game.gameOver.length > 1) {
         return "AMBIGUOUS_GAME_LIFECYCLE";
@@ -300,6 +315,14 @@ function hasHumanDifficultyConflict(log, gameDifficulty) {
         log.aiDifficulty !== gameDifficulty.aiDifficulty;
 }
 
+/**
+ * 완료된 game에서 학습 정책에 맞는 placement log만 고른다.
+ *
+ * 기본 `winner-only`는 패자의 placement를 제외하고, `all-completed`는 승패만으로
+ * placement를 제외하지 않는다. 이후 처음 다섯 piece, 테스트 player, source 불일치,
+ * 난이도가 모호한 human 행은 두 정책에서 공통으로 reason을 남기고 제외한다.
+ * 필터 순서는 reason 집계와 출력 재현성을 위해 고정돼 있다.
+ */
 function selectPlacementLogs(games, {
     excludePlayerPrefixes,
     selectionPolicy,
@@ -387,6 +410,7 @@ function addGameResultMetadata(samples, games) {
         return {
             ...sample,
             metadata: {
+                // 승패는 분석 segment용 metadata이며 16개 학습 feature에는 들어가지 않는다.
                 ...sample.metadata,
                 isWinner: sample.playerId === gameOver?.winnerPlayerId,
                 winnerPlayerId: gameOver?.winnerPlayerId ?? null,
@@ -452,6 +476,11 @@ function assertInputIsNotAnOutput(inputPath, outputDir) {
 /**
  * JSONL game event 로그를 placement train/validation dataset으로 내보낸다.
  * 입력 파일은 읽기만 하며, 같은 입력과 옵션에는 같은 결과 순서를 만든다.
+ *
+ * 1. 원본 bytes의 SHA-256을 기록한다.
+ * 2. 완료 game과 placement log를 정제한다.
+ * 3. 각 log를 candidate 행으로 확장하고 `gameId` 단위로 split한다.
+ * 4. train/validation/rejected/manifest 네 파일을 현재 snapshot으로 다시 쓴다.
  *
  * @param {Object} options - exporter 입력과 결정성 옵션
  * @returns {Promise<{manifest: Object, outputPaths: Object}>} 생성 결과

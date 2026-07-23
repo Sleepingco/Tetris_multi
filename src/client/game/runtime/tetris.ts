@@ -218,8 +218,9 @@ export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "s
 };
 
 // =============================
-// 싱글 플레이 런타임
-// 보드 상태, 입력, 중력, 고정 판정, UI 렌더링을 조율한다.
+// 싱글·멀티 공용 Tetris 런타임
+// 입력 queue → pendingPiece 생성 → core 판정 → gameState 반영 → Canvas/HUD 발행 순서를 조율한다.
+// 규칙 계산은 core에 맡기고, 이 파일은 timer·상태 전이·렌더·placement log 같은 부수효과의 순서를 소유한다.
 // =============================
 
 function isPieceType(value: string): value is PieceType {
@@ -241,13 +242,13 @@ const GAME_PHASE = {
 } satisfies Record<string, GamePhase>
 
 /**
-  * 테트리스 게임 런타임을 생성한다.
-  * - 싱글/멀티 화면에서 같은 보드 실행 흐름을 재사용한다.
-  * - 게임 규칙 상태는 gameState에, 루프/입력/동기화/로그 상태는 runtime에 둔다.
-  * - 반환된 API는 페이지 진입점과 네트워크 동기화 코드가 호출하는 외부 경계다.
+  * 독립적인 Tetris 실행 인스턴스 하나를 만든다.
+  * - `gameState`는 board, 점수, 조각처럼 게임 결과를 설명하는 원천 상태다.
+  * - `runtime`은 timer, tick, 서버 bag, 입력·배치 로그처럼 실행 과정에만 필요한 상태다.
+  * - core 함수가 반환한 순수 판정을 실제 상태 변경, Canvas 렌더, HUD 알림 순서로 실행한다.
+  * - 반환 API는 React 페이지와 멀티플레이 session이 사용하는 외부 경계다.
   *
-  * @param {Object} options - 런타임 생성 옵션
-  * @returns {Object} init, enqueueInput, snapshot, garbage 처리 API를 가진 런타임 컨트롤러
+  * 생성만으로 loop가 시작되지는 않으며 호출자는 `init`으로 새 게임을 시작하고 `destroy`로 자원을 정리한다.
   */
 export function createTetrisRuntime({
     boardCanvasEl = null,
@@ -272,8 +273,9 @@ export function createTetrisRuntime({
         initialPhase: GAME_PHASE.PLAYING,
     })
 
-    // gameState는 보드/점수/현재 조각 같은 게임 규칙의 원천 상태다.
-    // runtime은 타이머, 입력 로그, 서버 bag, 멀티 동기화처럼 실행 중에만 필요한 상태다.
+    // gameState.activePiece는 마지막으로 충돌 검사를 통과한 위치다.
+    // gameState.pendingPiece는 이번 입력으로 시험할 후보이며 core 판정 뒤에만 activePiece로 확정된다.
+    // runtime은 gameplay 결과가 아니라 timer, 입력 로그, 서버 bag, 동기화 같은 실행 문맥을 보관한다.
     const runtime: RuntimeState = {
         boardCtx: null,
         inputTimer: undefined,
@@ -326,16 +328,15 @@ export function createTetrisRuntime({
 
     // =============================
     // 게임 초기화
-    // 런타임 상태, 미리보기, 첫 스폰까지 새 세션 기준으로 다시 구성한다.
+    // 공용 런타임 상태, 미리보기, 첫 스폰까지 새 세션 기준으로 다시 구성한다.
     // =============================
     /**
-      * 새 게임 시작 기준으로 싱글 플레이 전체 상태를 초기화한다.
+      * 새 게임 시작 기준으로 gameplay와 실행 상태를 초기화한다.
       * - 실행 중인 타이머를 멈추고 기본 하강 속도로 되돌린다.
-      * - 점수, 홀드, 큐, 입력 대기열, 보드를 모두 비운다.
+      * - 점수, 홀드, 조각 queue, 입력 대기열, board를 새 세션 값으로 되돌린다.
+      * - server bag이 전달되면 authoritative 조각 순서를, 아니면 local 7-bag을 사용한다.
       * - 렌더러 컨텍스트와 미리보기 DOM을 다시 준비한다.
-      * - 큐를 채우고 빈 보드를 렌더한 뒤 첫 조각을 스폰한다.
-      *
-      * @returns {void}
+      * - `autoStart`가 true일 때만 input loop와 첫 턴을 시작한다.
       */
     function init({ autoStart = true, serverBagChunks = null }: {
         autoStart?: boolean;
@@ -365,9 +366,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 새 세션 시작 전에 점수, 보드, 입력 큐, 루프 상태를 기본값으로 되돌린다.
-      *
-      * @returns {void}
+      * 이전 세션의 loop를 먼저 끊고 gameState와 runtime의 세션별 값을 기본값으로 되돌린다.
+      * board는 여기서 처음 실제 20x10 배열이 되며 UI 표시도 같은 값으로 맞춘다.
       */
     function resetSessionState(): void {
         stopGameLoops()
@@ -393,9 +393,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 보드 컨텍스트와 preview DOM을 준비하고, 현재 큐 상태를 화면에 반영한다.
-      *
-      * @returns {void}
+      * Canvas context와 preview cell을 준비하고 최초 조각 queue를 화면에 반영한다.
+      * gameplay를 진행하지 않고 표시 구조와 스폰 준비만 끝낸다.
       */
     function preparePreviewUi(): void {
         initBoardContext()
@@ -407,10 +406,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 생성된 스폰 조각을 active/pending 상태에 동시에 반영한다.
-      *
-      * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 반영할 조각 상태
-      * @returns {void}
+      * 새 스폰 조각을 확정 위치와 이동 후보의 같은 출발점으로 설정한다.
+      * placement log가 "판단을 시작한 조각"과 최종 배치를 비교할 수 있도록 시작 상태도 함께 복사한다.
       */
     function activateSpawnedPiece(piece: PlaceablePieceState): void {
         runtime.automaticGroundedPieceIndex = null
@@ -420,9 +417,9 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 큐에서 다음 조각을 꺼내 새 턴을 시작한다.
-      *
-      * @returns {void}
+      * queue에서 다음 조각을 꺼내 pieceIndex를 증가시키고 스폰 판정을 실행한다.
+      * 조각 공급이 없으면 중력을 멈추며, 정상 스폰이면 hold 사용 제한을 새 턴 기준으로 해제한다.
+      * 마지막 `renderBlocks("spawn")`에서 core가 스폰 충돌과 game over를 결정한다.
       */
     function startNextTurn(): void {
         gameState.phase = GAME_PHASE.PLAYING
@@ -445,9 +442,9 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 홀드가 가능한 상황이면 현재 조각과 홀드 슬롯을 교체한다.
-      *
-      * @returns {{applied: boolean, reason: string|null}} 홀드 적용 결과
+      * 현재 조각을 hold slot과 교체하고 들어온 조각을 새 스폰 상태로 시작한다.
+      * 한 조각이 고정되기 전에는 한 번만 사용할 수 있으며, 빈 hold라면 queue에서 다음 조각을 소비한다.
+      * 중력과 preview를 함께 갱신하고 스폰 충돌 여부는 core 판정으로 넘긴다.
       */
     function holdPiece(): ActionResult {
         const { activePiece, holdPieceType, holdUsedThisDrop } = gameState
@@ -486,15 +483,13 @@ export function createTetrisRuntime({
 
     // =============================
     // 입력 큐
-    // 키보드/네트워크 입력을 고정 tick 순서로 소비하기 위해 쌓아 둔다.
+    // 키보드와 네트워크 입력을 바로 실행하지 않고 고정 tick 순서로 소비하기 위해 쌓아 둔다.
+    // 같은 tick과 pieceIndex 조합의 개수를 제한해 한 순간에 지나친 입력이 몰리는 것도 막는다.
     // =============================
     /**
-      * 현재 게임이 입력을 받을 수 있을 때만 플레이어 액션을 큐에 넣는다.
-      *
-      * @param {string|null} action - 정규화된 입력 액션
-      * @param {number|null} scheduledTick - 외부에서 지정한 입력 처리 tick
-      * @param {number|null} inputPieceIndex - 입력이 발생한 조각 순번
-      * @returns {{tick: number, action: string, pieceIndex: number|null}|null} 큐에 들어간 입력 또는 거부 시 null
+      * 정규화된 action을 실행할 tick과 조각 번호에 묶어 `gameState.inputQueue`에 넣는다.
+      * 외부 tick이 없으면 다음 local tick, pieceIndex가 없으면 현재 조각을 기본값으로 사용한다.
+      * playing phase가 아니거나 같은 처리 슬롯이 가득 찼으면 상태를 바꾸지 않고 null을 반환한다.
       */
     function enqueueInput(
         action: InputAction | null,
@@ -524,13 +519,7 @@ export function createTetrisRuntime({
         return queuedInput
     }
 
-    /**
-      * 같은 tick/pieceIndex에 이미 쌓인 입력 수를 센다.
-      *
-      * @param {number} tick - 입력이 처리될 tick
-      * @param {number|null} pieceIndex - 입력 대상 조각 순번
-      * @returns {number} 같은 처리 슬롯에 쌓인 입력 수
-      */
+    // queue 길이 조회와 같은 처리 슬롯의 개수 계산은 위 입력 제한을 위한 작은 읽기 helper다.
     function countQueuedInputs(tick: number, pieceIndex: number | null): number {
         return gameState.inputQueue.filter((input) => {
             return input.tick === tick && input.pieceIndex === pieceIndex
@@ -542,11 +531,10 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 한 번의 입력 틱에서 제한된 개수만큼 입력 큐를 소비한다.
-      *
-      * @param {number} currentTick - 현재 처리 중인 고정 입력 tick
-      * @param {number} [maxPerTick=8] - 이번 틱에서 처리할 최대 액션 수
-      * @returns {void}
+      * 현재 tick까지 도착한 입력을 queue 앞에서부터 제한된 개수만 실행한다.
+      * 조각 번호가 오래된 입력은 버리되 recorder에는 실패 이유를 남기고, 유효한 입력은
+      * 적용 전 조각 → action 결과 → 적용 후 조각 순서로 기록한다.
+      * action 도중 line clear나 game over로 phase가 바뀌면 즉시 소비를 멈춘다.
       */
     function drainInputQueue(currentTick: number, maxPerTick = 8): void {
         if (!canProcessPlayerInput()) return
@@ -575,11 +563,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 멀티플레이에서 늦게 도착한 이전 조각 입력을 현재 조각에 적용하지 않도록 거른다.
-      * - pieceIndex가 없는 로컬 입력은 기존 싱글/내 보드 입력 흐름을 유지하기 위해 허용한다.
-      *
-      * @param {{pieceIndex?: number|null}} input - 큐에서 꺼낸 입력
-      * @returns {boolean} 현재 active piece에 적용 가능한 입력이면 true
+      * 늦게 도착한 이전 조각의 입력이 새 조각을 움직이지 않도록 pieceIndex를 비교한다.
+      * 번호가 없는 입력은 local/기존 호출 호환을 위해 현재 조각 입력으로 허용한다.
       */
     function isInputForCurrentPiece(input: Pick<QueuedInput, "pieceIndex">): boolean {
         if (!Number.isFinite(input.pieceIndex)) return true
@@ -588,15 +573,11 @@ export function createTetrisRuntime({
 
     // =============================
     // 액션 실행
-    // 큐에서 꺼낸 액션을 pendingPiece 변경과 런타임 처리로 연결한다.
+    // 큐에서 꺼낸 action으로 pendingPiece만 먼저 바꾸고 core 판정 뒤 activePiece에 확정한다.
     // =============================
     /**
-      * pendingPiece에 행/열 이동량을 더한다.
-      * - pendingPiece가 없으면 필요한 시점에만 activePiece를 복사해 만든다.
-      *
-      * @param {number} rowDelta - 적용할 행 이동량
-      * @param {number} colDelta - 적용할 열 이동량
-      * @returns {void}
+      * activePiece를 직접 움직이지 않고 pendingPiece에 행/열 이동 후보를 만든다.
+      * pendingPiece가 없으면 마지막 확정 상태를 복사해 시작하므로 실패 시 안전하게 되돌릴 수 있다.
       */
     function shiftActivePiece(rowDelta: number, colDelta: number): void {
         if (!gameState.pendingPiece) {
@@ -607,9 +588,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * pendingPiece를 시계 방향으로 회전시키고 이동 판정을 다시 요청한다.
-      *
-      * @returns {void}
+      * pendingPiece의 회전 후보를 시계 방향으로 한 단계 바꾼다.
+      * 실제 배치 가능 여부와 wall kick은 다음 core 판정에서 처리한다.
       */
     function rotatePendingPiece(): void {
         const { pendingPiece } = gameState
@@ -619,9 +599,9 @@ export function createTetrisRuntime({
     }
 
     /**
-      * activePiece를 도달 가능한 최하단까지 내리고 하드 드롭 점수를 부여한다.
-      *
-      * @returns {boolean} 현재 조각이 실제로 고정됐으면 true
+      * activePiece를 가상으로 내려 마지막 가능한 row를 찾고 즉시 lock 흐름을 실행한다.
+      * 이동 거리 점수를 먼저 반영하므로 placement log는 `pendingLockScoreBefore`에 드롭 전 점수를 보관한다.
+      * 반환값은 조각이 실제 lock까지 완료됐는지를 입력 결과 recorder에 알려 준다.
       */
     function hardDrop(): boolean {
         const { activePiece } = gameState
@@ -647,10 +627,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 입력 액션을 pendingPiece 변경으로 변환하고, 필요한 판정 원인을 반환한다.
-      *
-      * @param {string} action - 입력 계층에서 넘어온 액션 식별자
-      * @returns {string|null} 이동 판정에 사용할 moveType
+      * 이동·회전 action을 pendingPiece 변화로 바꾸고 core에 전달할 원인 이름을 반환한다.
+      * hard drop과 hold는 여러 상태를 함께 바꾸므로 여기서 처리하지 않고 null로 남긴다.
       */
     function applyInputAction(action: string): string | null {
         const intent = resolveInputMoveIntent(action)
@@ -670,10 +648,9 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 정규화된 입력 액션을 맞는 게임플레이 처리기로 직접 분기한다.
-      *
-      * @param {string} action - 입력 계층에서 넘어온 액션 식별자
-      * @returns {{applied: boolean, placementCommitted: boolean, reason: string|null}} 실제 action 적용 결과
+      * action 종류를 일반 이동, hard drop, hold 처리기로 분기하고 공통 결과 모양으로 정리한다.
+      * `applied`는 입력이 유효했는지, `placementCommitted`는 이 입력으로 조각 lock이 끝났는지를 뜻한다.
+      * 이 결과는 gameplay 상태가 아니라 네트워크 acknowledgement와 입력 로그에 사용된다.
       */
     function handleAction(action: string): ActionResult {
         const moveType = applyInputAction(action)
@@ -714,15 +691,12 @@ export function createTetrisRuntime({
 
     // =============================
     // 고정 tick 처리
-    // 입력 소비와 자동 하강을 같은 tick 루프에서 순서대로 처리한다.
+    // 입력 소비와 시간 기반 자동 하강을 하나의 반복 가능한 순서로 처리한다.
     // =============================
     /**
-      * 고정 tick 안에서 입력 소비와 중력 진행을 함께 처리한다.
-      * - 입력 큐를 먼저 제한 개수만큼 비운다.
-      * - 그 뒤 누적된 시간만큼 자동 하강을 적용한다.
-      *
-      * @param {number} deltaMs - 직전 tick 이후 경과 시간
-      * @returns {void}
+      * 한 runtime tick에서 먼저 입력을 처리하고, 남은 playing 상태에만 중력을 진행한다.
+      * 실제 timer 오차는 `deltaMs`를 누적해 보정하며, fall interval을 여러 번 넘겼다면 필요한 만큼 반복 하강한다.
+      * 자동 하강이 바닥에 처음 닿은 경우 한 번의 lock grace를 주고, 다음 실패에서 실제 lock한다.
       */
     function processTick(deltaMs: number): void {
         if (!canProcessPlayerInput()) return
@@ -747,13 +721,11 @@ export function createTetrisRuntime({
 
     // =============================
     // 이동 판정 연결부
-    // pendingPiece 변경을 엔진 판정 결과와 런타임 부수효과로 이어 준다.
+    // pendingPiece 후보를 core의 순수 판정에 넣고, 반환 intent를 runtime 부수효과로 이어 준다.
     // =============================
     /**
-      * pendingPiece 기준으로 이동 또는 회전 1회를 판정하고 intent를 만든다.
-      *
-      * @param {string} [moveType=""] - 이동 시도 원인 (`fall`, `horizontal`, `rotate`, `spawn` 등)
-      * @returns {{intent: Object, pendingPiece: Object}|null} 런타임에서 실행할 이동 결과
+      * pendingPiece 한 번의 시도를 `resolveMoveAttempt → resolveMoveIntent` 순서로 계산한다.
+      * 이 단계에서는 gameState를 확정하거나 화면을 그리지 않고 core 결과를 새 객체로 돌려준다.
       */
     function resolvePendingMove(moveType = ""): PendingMove | null {
         const { pendingPiece } = gameState
@@ -782,11 +754,11 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 이동 판정 결과를 실제 런타임 상태 변경, 렌더링, UI 부수효과로 반영한다.
-      *
-      * @param {{intent: Object, pendingPiece: Object}|null} moveResult - `resolvePendingMove`가 반환한 이동 결과
-      * @param {{automaticGravity?: boolean}} options - automatic gravity lock grace 적용 여부
-      * @returns {void}
+      * core intent를 실제 gameState와 화면에 반영한다.
+      * - `gameOver`: 입력과 loop를 정리하고 종료 UI를 표시한다.
+      * - `lock`: activePiece를 마지막 유효 위치로 맞춘 뒤 자동 중력이면 1회 grace, 아니면 즉시 고정한다.
+      * - `retry`: 실패 후보를 버리고 core가 돌려준 이전 active 위치를 다시 그린다.
+      * - `ok`: 후보를 activePiece로 확정하고 회전 여부, 중력, Canvas를 갱신한다.
       */
     function applyMoveIntent(moveResult: PendingMove | null, options: MoveOptions = {}): void {
         if (!moveResult) return
@@ -843,12 +815,9 @@ export function createTetrisRuntime({
     }
 
     /**
-      * pendingPiece 기준으로 이동 또는 회전 1회를 처리한다.
-      * - 엔진 판정 결과를 intent로 만들고, 런타임 부수효과로 실행한다.
-      *
-      * @param {string} [moveType=""] - 이동 시도 원인 (`fall`, `horizontal`, `rotate`, `spawn` 등)
-      * @param {{automaticGravity?: boolean}} options - automatic gravity 실행 문맥
-      * @returns {{intent: Object, pendingPiece: Object}|null} 적용한 이동 판정 결과
+      * 이름은 `renderBlocks`지만 이동 판정과 상태 반영까지 묶는 기존 orchestration 진입점이다.
+      * `resolvePendingMove → applyMoveIntent → publishDisplay` 순서로 실행하고 입력 recorder가 볼 결과를 반환한다.
+      * 실제 규칙 판정은 core, Canvas drawing은 `renderBoard`에 남아 있다.
       */
     function renderBlocks(moveType = "", options: MoveOptions = {}): PendingMove | null {
         const moveResult = resolvePendingMove(moveType)
@@ -859,15 +828,15 @@ export function createTetrisRuntime({
 
     // =============================
     // 고정 및 후처리
-    // 조각 고정 이후 게임오버, 라인 클리어, 다음 턴으로 이어진다.
+    // 조각 고정 이후 T-Spin/top-out, line clear, placement log, 다음 턴으로 이어진다.
     // =============================
     /**
-      * activePiece를 보드에 고정하고, 이후 후처리 단계로 넘긴다.
-      * - 다음 조각을 만들기 전에 top-out 여부를 먼저 확인한다.
-      * - T 조각이 회전 직후 고정되면서 4개 코너 중 3개 이상이 막혀 있으면 T-Spin으로 기록한다.
-      * - 보드 반영이 끝나면 라인 클리어 판정 단계로 제어를 넘긴다.
+      * 마지막 유효 activePiece를 고정하는 전체 순서를 시작한다.
+      * 1. board가 바뀌기 전에 배치 전 로그, top-out, T-Spin을 판정한다.
+      * 2. 조각 cell을 board에 기록하고 움직이는 activePiece를 비운다.
+      * 3. top-out이면 종료하고, 아니면 line clear와 다음 턴 처리로 넘긴다.
       *
-      * @returns {void}
+      * 이 순서를 바꾸면 boardBefore 로그나 T-Spin 코너 판정이 이미 고정된 조각을 포함하게 된다.
       */
     function seizeBlock(): void {
         runtime.automaticGroundedPieceIndex = null
@@ -890,15 +859,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 현재 activePiece를 보드에 반영하고, 다음 단계 준비를 위해 activePiece를 비운다.
-      *
-      * @param {Object} params - 고정 반영에 필요한 값
-      * @param {Array<Array<string|null>>} params.board - 현재 보드 배열
-      * @param {{pieceType: string, rotation: number, row: number, col: number}} params.piece - 고정할 조각 상태
-      * @param {number} params.rotation - 현재 조각 회전값
-      * @param {number} params.row - 현재 조각 행 위치
-      * @param {number} params.col - 현재 조각 열 위치
-      * @returns {void}
+      * activePiece cell을 고정 board에 기록하고 움직이는 조각의 type만 비운다.
+      * activePiece 객체 자체는 교체하지 않아 같은 참조를 보는 runtime 코드가 끊기지 않게 한다.
       */
     function commitLockedPiece({ board, piece, rotation, row, col }: {
         board: Board;
@@ -919,10 +881,7 @@ export function createTetrisRuntime({
 
     /**
       * 고정 후 top-out 여부에 따라 게임오버 또는 라인 클리어 흐름으로 분기한다.
-      *
-      * @param {boolean} touchesAboveTop - 고정된 조각이 보드 상단 밖 칸을 포함하는지 여부
-      * @param {Object|null} placementContext - lock 직전 생성한 placement_decision 로그 문맥
-      * @returns {void}
+      * top-out에서도 placement 결과를 gameOver로 확정해 마지막 판단이 분석 로그에서 사라지지 않게 한다.
       */
     function handlePostLockFlow(
         touchesAboveTop: boolean,
@@ -945,15 +904,14 @@ export function createTetrisRuntime({
 
     // =============================
     // 고정 후 후처리
-    // 완성 줄 삭제, 점수 갱신, 다음 스폰 흐름으로 이어진다.
+    // 완성 줄 애니메이션, 실제 삭제, 점수·로그 갱신, 다음 스폰을 정해진 순서로 실행한다.
     // =============================
     /**
-      * 고정된 뒤 완성된 줄을 처리한다.
+      * 고정 board에서 완성된 줄을 찾고 line clear 유무에 맞는 후처리를 실행한다.
       * - 가득 찬 줄이 없으면 바로 다음 조각을 스폰한다.
-      * - 가득 찬 줄이 있으면 애니메이션이 끝날 때까지 입력을 멈춘다.
-      * - T-Spin 보너스 점수는 보드가 실제로 변경된 뒤에 반영한다.
-      *
-      * @returns {void}
+      * - 줄이 있으면 phase를 `lineClearing`으로 바꿔 입력을 막고, 애니메이션 완료 뒤 실제 board를 삭제한다.
+      * - 점수와 누적 line을 반영한 뒤 placement log의 boardAfter를 만들고 다음 조각을 스폰한다.
+      * - T-Spin 상태는 이번 lock의 점수·공격 계산이 끝난 뒤 반드시 초기화한다.
       */
     function checkMatch(placementContext: PlacementContext | null): void {
         const board = gameState.board
@@ -1014,40 +972,27 @@ export function createTetrisRuntime({
     // 하드 드롭이나 고스트 계산에서 가상의 위치를 검사할 때 사용한다.
     // =============================
     /**
-      * 전달된 조각 상태를 현재 보드에 놓을 수 있는지 검사한다.
-      *
-      * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 검사할 조각 상태
-      * @returns {boolean} 모든 블록 칸이 유효하면 true
+      * runtime의 현재 board와 고정 BLOCKS를 core `canPlacePiece`에 연결하는 읽기 전용 helper다.
       */
     function canPlace({ pieceType, rotation, row, col }: PlaceablePieceState): boolean {
         if (!gameState.board) return false
         return canPlacePiece(gameState.board, { pieceType, rotation, row, col }, BLOCKS);
     }
 
-    /**
-      * activePiece를 아래로 밀어내는 중력 타이머를 시작하거나 다시 시작한다.
-      *
-      * @returns {void}
-      */
+    // 중력 시작/중지는 timer를 새로 만들지 않고 processTick이 볼 flag와 누적 시간만 갱신한다.
     function startGravity(): void {
         runtime.gravityRunning = true
         runtime.gravityAccumulatorMs = 0
     }
 
-    /**
-      * 자동 하강을 멈추고 누적 시간을 비운다.
-      *
-      * @returns {void}
-      */
     function stopGravity(): void {
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
     }
 
     /**
-      * 키보드 입력 큐를 주기적으로 소비하는 입력 루프를 시작한다.
-      *
-      * @returns {void}
+      * 고정 간격 timer에서 실제 경과 시간을 측정해 `processTick`을 반복 호출한다.
+      * 키보드 listener 자체는 페이지가 연결하며, 이 loop는 keyboard와 network가 함께 쓰는 input queue를 소비한다.
       */
     function startInputLoop(): void {
         clearInterval(runtime.inputTimer)
@@ -1062,9 +1007,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 중력, 입력 폴링, 라인 클리어 애니메이션을 모두 중지한다.
-      *
-      * @returns {void}
+      * input timer, 중력, line clear animation을 중지하고 tick·pieceIndex 실행 카운터를 초기화한다.
+      * 새 `init`, game over, destroy가 이전 세션의 비동기 callback을 남기지 않도록 공유한다.
       */
     function stopGameLoops(): void {
         clearInterval(runtime.inputTimer)
@@ -1079,9 +1023,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 라우트 이탈이나 화면 제거 전에 런타임 루프와 입력 연결을 정리한다.
-      *
-      * @returns {void}
+      * 페이지 이탈이나 React unmount에서 runtime이 소유한 구독, loop, keyboard, DOM 참조를 해제한다.
+      * 여러 cleanup 경로에서 중복 호출돼도 안전하며 destroy 이후 display 알림은 발행되지 않는다.
       */
     function destroy(): void {
         displayBridge.destroyDisplay()
@@ -1094,32 +1037,23 @@ export function createTetrisRuntime({
         runtime.boardCtx = null
     }
 
-    /**
-      * 현재 phase가 플레이어 입력을 허용하는 상태인지 반환한다.
-      *
-      * @returns {boolean} 실제 플레이 중인 상태일 때만 true
-      */
+    // 입력 가능 여부는 `phase === playing` 한곳에서 파생해 queue 소비와 enqueue가 같은 기준을 사용한다.
     function canProcessPlayerInput(): boolean {
         return gameState.phase === GAME_PHASE.PLAYING
     }
 
     // =============================
     // 렌더링 보조
-    // 화면에 그릴 데이터와 애니메이션 처리를 담당한다.
+    // gameState를 렌더 전용 값으로 바꿔 Canvas renderer에 전달하고 animation 수명을 관리한다.
     // =============================
-    /**
-      * 렌더링에 사용할 캔버스 컨텍스트를 runtime에 저장한다.
-      *
-      * @returns {void}
-      */
+    // Canvas context 조회는 init 시 한 번 수행하고 이후 frame에서 같은 참조를 재사용한다.
     function initBoardContext(): void {
         runtime.boardCtx = getBoardContext(boardCanvasEl);
     }
 
     /**
-      * 현재 보드와 activePiece를 기준으로 한 프레임을 그린다.
-      *
-      * @returns {void}
+      * 현재 고정 board와 렌더용 active/ghost piece를 renderer에 전달해 한 frame을 그린다.
+      * 게임 판정이나 gameState 변경은 하지 않는다.
       */
     function renderBoard(): void {
         if (!gameState.board) return
@@ -1136,12 +1070,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 렌더링용 activePiece를 만든다.
-      * - 고스트 피스 표시를 위해 착지 예정 행(`ghostRow`)을 계산해 포함한다.
-      * - 실제 gameState는 여기서 변경하지 않는다.
-      * - 반환값은 렌더러에서만 사용한다.
-      *
-      * @returns {{pieceType: string, rotation: number, row: number, col: number, ghostRow?: number}|null}
+      * activePiece를 복사하고 가상 하강으로 계산한 `ghostRow`만 덧붙인다.
+      * 반환 객체는 renderer 전용 파생값이며 원천 gameState는 변경하지 않는다.
       */
     function getRenderableActivePiece(): (PieceState & { ghostRow?: number }) | null {
         const { activePiece } = gameState
@@ -1161,11 +1091,9 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 실제 줄 삭제 전에 라인 클리어 플래시 애니메이션을 재생한다.
-      *
-      * @param {number[]} rows - 강조해서 보여줄 줄 인덱스 목록
-      * @param {Function} onComplete - 애니메이션 종료 후 실행할 콜백
-      * @returns {void}
+      * 실제 줄 삭제 전에 requestAnimationFrame으로 line clear 진행률을 0~1까지 그린다.
+      * Canvas가 없으면 animation을 생략하고 완료 callback을 즉시 실행해 gameplay가 멈추지 않게 한다.
+      * animationVersion이 바뀐 오래된 callback은 상태를 건드리지 않고 종료한다.
       */
     function addLineClearEffect(
         rows: number[],
@@ -1217,6 +1145,7 @@ export function createTetrisRuntime({
         runtime.animationFrameId = requestAnimationFrame(animate)
     }
 
+    // version 증가와 frame 취소를 함께 수행해 이미 queue된 오래된 callback까지 무효화한다.
     function cancelLineClearEffect(): void {
         runtime.animationVersion += 1
         if (runtime.animationFrameId !== null) cancelAnimationFrame(runtime.animationFrameId)
@@ -1224,12 +1153,10 @@ export function createTetrisRuntime({
     }
 
     /**
-      * authoritative gameplay state와 분리된 상대 라인 클리어 표시만 재생한다.
+      * authoritative gameplay state와 분리된 line clear 표시만 재생한다.
       * - 전달받은 clear 전 보드 복사본만 애니메이션에 사용한다.
       * - 완료 후 현재 runtime의 최신 authoritative 보드를 다시 렌더링한다.
-      *
-      * @param {{rows: number[], board: Array<Array<string|null>>}} effect - 표시할 줄과 clear 전 보드
-      * @returns {boolean} 유효한 presentation을 시작했으면 true
+      * - rows와 20x10 board 계약을 검사하지만 점수, phase, 중력은 변경하지 않는다.
       */
     function playLineClearPresentation({ rows, board }: {
         rows?: number[];
@@ -1251,13 +1178,11 @@ export function createTetrisRuntime({
 
     // =============================
     // 상태 보조 함수
-    // 작은 계산과 상태 갱신 helper를 모아 둔다.
+    // gameplay 실행 과정에서 필요한 입력 증거, placement log, snapshot, 조각 공급 상태를 관리한다.
     // =============================
     /**
-      * 현재 조각에 적용된 입력을 placement_decision에서 재사용할 수 있게 기록한다.
-      *
-      * @param {{action: string, tick: number, pieceIndex: number|null}} input - 실제 적용된 입력
-      * @returns {void}
+      * 현재 pieceIndex 검사를 통과해 실행을 시도한 입력을 placement log용 순서로 기록한다.
+      * 충돌로 실패한 입력도 판단 과정의 일부이므로 포함되며, 실제 성공 여부는 `recordInputOutcome`이 별도로 남긴다.
       */
     function recordAppliedInput(input: QueuedInput): void {
         runtime.inputLog.push({
@@ -1271,13 +1196,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * runtime tick에서 판정이 끝난 입력의 최소 결과를 외부 recorder에 전달한다.
-      * - 네트워크와 snapshot 상태에는 저장하지 않는다.
-      *
-      * @param {{action: string, tick: number, pieceIndex: number|null}} input - 판정한 입력
-      * @param {{applied: boolean, placementCommitted?: boolean, reason: string|null}} result - action 적용 결과
-      * @param {Object|null} activePieceBefore - action 적용 전 조각
-      * @returns {void}
+      * 입력 판정 전후 조각과 성공·lock 여부를 외부 recorder에 전달한다.
+      * gameplay나 snapshot의 원천 상태에는 저장하지 않으며, 멀티 session이 acknowledgement와 로그에 활용한다.
       */
     function recordInputOutcome(
         input: QueuedInput,
@@ -1301,10 +1221,12 @@ export function createTetrisRuntime({
     }
 
     /**
-      * lock 직전 상태를 기준으로 placement_decision 초안을 만든다.
+      * 조각을 board에 쓰기 직전, 한 placement 판단의 입력과 선택 결과를 복사한다.
+      * - `boardBefore`는 아직 선택 조각이 고정되지 않은 board다.
+      * - `activePiece`는 spawn/snapshot에서 판단을 시작한 위치, `selectedPlacement`는 최종 lock 위치다.
+      * - 같은 player와 pieceIndex의 입력 순서, next queue, hold도 당시 값으로 고정한다.
       *
-      * @param {{pieceType: string, rotation: number, row: number, col: number}} lockedPiece - 고정될 조각
-      * @returns {Object} boardAfter와 placementResult를 제외한 로그 문맥
+      * line clear 후에만 알 수 있는 boardAfter와 결과 지표는 `finalizePlacementDecision`이 채운다.
       */
     function createPlacementDecisionContext(
         lockedPiece: PlaceablePieceState,
@@ -1340,13 +1262,11 @@ export function createTetrisRuntime({
     }
 
     /**
-      * lock 후 보드와 결과값을 채워 placement_decision 로그를 확정한다.
-      * - 클라이언트는 공격량만 계산하고 garbage 상쇄·적용은 authoritative server가 결정한다.
-      * - 멀티플레이에서는 placementDecisionRecorder를 통해 서버 로그와 공격 이벤트로 이어진다.
-      *
-      * @param {Object|null} placementContext - lock 직전 생성한 로그 문맥
-      * @param {{linesCleared: number, isTSpin: boolean, gameOver: boolean}} result - lock 처리 결과
-      * @returns {{gameOver: boolean}} lock 결과의 game over 여부
+      * lock과 line clear가 끝난 상태를 더해 placement_decision 한 행을 완성한다.
+      * - boardBefore/선택 배치와 boardAfter/점수·공격 결과를 한 decision으로 묶는다.
+      * - 유효한 게임 lineage와 분석 결과가 모두 있으면 ML feature-ready schema v2, 아니면 원시 v1로 남긴다.
+      * - 클라이언트 공격량은 기록용이며 garbage 상쇄·적용의 최종 결정은 authoritative 서버가 한다.
+      * - 완성 로그는 메모리에 보관하고 선택적인 recorder로 전달한다.
       */
     function finalizePlacementDecision(
         placementContext: PlacementContext | null,
@@ -1415,6 +1335,7 @@ export function createTetrisRuntime({
         }
     }
 
+    // pending garbage는 authoritative 값을 원천으로 삼고 UI/HUD에는 검증된 0 이상의 정수만 노출한다.
     function normalizePendingGarbageLines(lines: number | undefined): number {
         return typeof lines === "number" && Number.isInteger(lines) && lines > 0 ? lines : 0
     }
@@ -1430,10 +1351,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 라인 클리어 결과를 combo/back-to-back 원천 상태에 반영한다.
-      *
-      * @param {{linesCleared: number, isTSpin: boolean}} params - 방금 고정된 조각의 공격 판정 입력
-      * @returns {{linesCleared: number, isTSpin: boolean, combo: number, backToBack: boolean}} 공격 계산에 사용할 현재 상태
+      * 이전 combo/back-to-back과 이번 line clear 결과를 core 규칙으로 계산한다.
+      * 반환값은 이번 공격량에 사용하고 `nextCombo`/`nextBackToBack`만 다음 턴의 gameState에 저장한다.
       */
     function updateAttackState({ linesCleared, isTSpin }: {
         linesCleared: number;
@@ -1458,10 +1377,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 현재 player/pieceIndex에 실제 적용된 입력만 placement_decision에 묶는다.
-      *
-      * @param {number} pieceIndex - 현재 고정된 조각 순번
-      * @returns {Array<Object>} 입력 시퀀스
+      * 현재 player와 pieceIndex에 속한 입력 시도만 복사해 한 placement decision에 묶는다.
+      * 다른 조각이나 다른 player의 입력이 학습 예시에 섞이지 않게 하는 lineage 경계다.
       */
     function getInputSequenceForPiece(pieceIndex: number): AppliedInputLog[] {
         return runtime.inputLog
@@ -1472,10 +1389,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 조각 상태를 분석 로그에서 쓰기 쉬운 좌표와 cell 목록으로 변환한다.
-      *
-      * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 조각 상태
-      * @returns {Object} 로그용 조각 정보
+      * 조각 기준 좌표와 BLOCKS offset을 절대 board cell 좌표로 펼쳐 로그 형태로 만든다.
+      * `row/col`과 호환용 `x/y`를 함께 기록하지만 gameplay piece를 변경하지 않는다.
       */
     function createPieceLog(piece: PlaceablePieceState): PieceLog {
         const cells = BLOCKS[piece.pieceType][piece.rotation].map(([offsetX, offsetY]) => {
@@ -1500,10 +1415,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 보드를 검사해 가득 찬 줄 번호를 찾아 반환한다.
-      *
-      * @param {Array<Array<string|null>>} board - 검사할 보드 배열
-      * @returns {{fullRows: number[], cols: number}} 가득 찬 줄 목록과 보드 너비
+      * board를 변경하지 않고 모든 cell이 채워진 row 번호를 찾는다.
+      * animation이 이 row를 먼저 표시하고 완료 callback에서 core가 실제 줄을 삭제한다.
       */
     function findFullRows(board: Board): { fullRows: number[]; cols: number } {
         const cols = board[0]?.length ?? 0
@@ -1519,9 +1432,6 @@ export function createTetrisRuntime({
       * 기존 객체 참조를 유지한 채 activePiece 내부 필드를 덮어쓴다.
       * - null 또는 undefined 입력은 무시한다.
       * - 필드를 하나씩 갱신해서 같은 객체를 바라보는 참조가 깨지지 않게 한다.
-      *
-      * @param {{pieceType: string, rotation: number, row: number, col: number}} piece - 적용할 조각 상태
-      * @returns {void}
       */
     function setActivePiece(piece: PieceState | null): void {
         if (!piece) return
@@ -1532,11 +1442,10 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 현재 bag 모드에 맞춰 다음 스폰/미리보기 큐를 채운다.
+      * 현재 bag mode에 맞춰 스폰 한 개와 preview 두 개가 준비되도록 queue를 채운다.
       * - server 모드에서는 서버가 내려준 조각만 소비한다.
-      * - local 모드에서는 기존 7-bag RNG 경로를 유지한다.
-      *
-      * @returns {void}
+      * - local 모드에서는 gameState의 7-bag RNG 경로를 사용한다.
+      * 서버 공급이 부족하면 임의 조각을 만들지 않고 현재 확보한 수에서 멈춘다.
       */
     function refillSpawnQueue(): void {
         if (runtime.bagMode === "server") {
@@ -1552,9 +1461,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 현재 모드에 맞게 다음 스폰 조각을 가져오고 큐를 다시 채운다.
-      *
-      * @returns {string|undefined} 스폰할 조각 타입
+      * queue 맨 앞을 현재 스폰 조각으로 꺼내고 preview가 유지되도록 다시 채운다.
+      * server mode에서는 공급 고갈을 undefined로 드러내 authoritative 순서를 local RNG로 숨기지 않는다.
       */
     function takeNextPieceType(): PieceType | undefined {
         if (runtime.bagMode === "server") {
@@ -1568,10 +1476,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 현재 런타임 상태를 직렬화 가능한 스냅샷으로 꺼낸다.
-      * - 멀티플레이 동기화나 디버깅 저장 지점에서 사용할 수 있다.
-      *
-      * @returns {Object} 현재 gameState와 tick 정보를 담은 스냅샷
+      * 현재 gameState 복사본에 runtime 소유의 tick, pieceIndex, pending garbage를 더해 snapshot을 만든다.
+      * 반환 board와 queue는 원천 상태와 참조를 공유하지 않아 네트워크 전송이나 디버깅 코드가 안전하게 읽을 수 있다.
       */
     function getSnapshot(): TetrisSnapshot {
         const serializedState = serializeGameState(gameState)
@@ -1594,13 +1500,11 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 외부에서 받은 스냅샷으로 gameState와 UI를 현재 시점에 맞게 복원한다.
-      * - 보드, 큐, 홀드, 점수, activePiece를 모두 덮어쓴 뒤 다시 렌더링한다.
-      * - 복원 직후 중력 누적값은 초기화해 이전 루프 상태가 이어지지 않게 한다.
-      *
-      * @param {Object|null} snapshot - 복원할 스냅샷
-      * @param {{resumeGravity?: boolean, clearInputQueue?: boolean, cancelPresentation?: boolean}} options - 복원 옵션
-      * @returns {void}
+      * 외부 snapshot을 새 gameState로 복제한 뒤 현재 runtime과 UI에 한 번에 적용한다.
+      * - board, queue, hold, 점수, activePiece와 공격 연속 상태를 authoritative 값으로 맞춘다.
+      * - local tick은 되감지 않고 더 큰 값만 채택해 이전 입력이 새 조각에 다시 적용되지 않게 한다.
+      * - 중력 누적값과 grounded grace를 초기화하고, 요청된 경우 stale input과 animation도 버린다.
+      * - 모든 상태 적용이 끝난 뒤 Canvas와 HUD를 한 번 발행하고 playing phase에서만 loop를 재개한다.
       */
     function applySnapshot(snapshot: TetrisSnapshotInput | null, {
         resumeGravity = false,
@@ -1680,10 +1584,7 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 서버가 내려준 bag chunks를 런타임의 조각 공급원으로 설정한다.
-      *
-      * @param {string[][]} chunks - 서버가 보낸 7-bag chunk 목록
-      * @returns {void}
+      * 서버의 여러 bag chunk를 한 소비 queue로 펼치고 조각 공급 원천을 server mode로 전환한다.
       */
     function setServerBagQueue(chunks: PieceType[][]): void {
         runtime.bagMode = "server"
@@ -1693,10 +1594,7 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 서버가 추가로 보낸 bag chunk를 런타임 대기열 뒤에 붙인다.
-      *
-      * @param {string[]} chunk - 추가 공급된 7-bag 한 묶음
-      * @returns {void}
+      * 추가 authoritative bag chunk를 기존 대기열 뒤에 붙이고 preview와 HUD를 갱신한다.
       */
     function appendServerBag(chunk: PieceType[]): void {
         if (!Array.isArray(chunk) || chunk.length === 0) return
@@ -1707,22 +1605,13 @@ export function createTetrisRuntime({
         displayBridge.publishDisplay()
     }
 
-    /**
-      * 현재 런타임이 소비 가능한 서버 조각 수를 반환한다.
-      *
-      * @returns {number} server bag 모드가 아니면 Infinity
-      */
+    // server mode의 숨은 queue와 화면 queue를 합친 잔량이며 local mode는 공급 제한이 없어 Infinity다.
     function getServerBagRemainingCount(): number {
         if (runtime.bagMode !== "server") return Infinity
         return runtime.serverBagQueue.length + gameState.pieceQueue.length
     }
 
-    /**
-      * activePiece 복원 실패 시 pendingPiece를 최소 상태로 맞춘다.
-      *
-      * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - 기준 조각 상태
-      * @returns {{pieceType: string, rotation: number, row: number, col: number}|null} 복사된 pendingPiece
-      */
+    // piece 복사는 snapshot, 입력 전후 기록, pending 후보가 원본 객체를 공유하지 않게 하는 공통 helper다.
     function clonePendingPiece(piece: PieceState | null): PieceState | null {
         if (!piece) return null
         return {
@@ -1734,11 +1623,8 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 현재 조각의 판단 시작 상태를 placement log 분석용 메타데이터로 복사한다.
-      * - gameplay 상태와 분리하며 유효하지 않은 조각은 이전 값을 남기지 않는다.
-      *
-      * @param {{pieceType: string, rotation: number, row: number, col: number}|null} piece - spawn 또는 snapshot으로 적용된 조각
-      * @returns {void}
+      * spawn 또는 snapshot 직후 조각을 placement 분석의 판단 시작 상태로 복사한다.
+      * gameplay와 별도 메타데이터이며 type, 회전, 좌표 계약이 유효하지 않으면 이전 값을 재사용하지 않고 비운다.
       */
     function captureDecisionStartPiece(piece: PieceState | null): void {
         if (!piece?.pieceType) {
@@ -1754,6 +1640,7 @@ export function createTetrisRuntime({
 
         runtime.decisionStartPiece = isValid ? { ...piece } : null
     }
+    // 외부에는 페이지/session이 필요한 수명주기, 입력, snapshot, 표시 API만 노출한다.
     return {
         init,
         enqueueInput,

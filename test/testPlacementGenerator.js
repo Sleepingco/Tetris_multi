@@ -1,3 +1,9 @@
+/**
+ * placement 좌표를 게임 보드 규칙에 맞게 정규화하고 검사하는 테스트다.
+ *
+ * 빈 20×10 board를 준비한 뒤 충돌 또는 경계 밖 입력을 실행하고, 거부되는지 검증한다.
+ * 특히 호출자가 넘긴 `cells`를 믿지 않고 BLOCKS 정의로 절대 좌표를 다시 만드는 것이 핵심 불변식이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

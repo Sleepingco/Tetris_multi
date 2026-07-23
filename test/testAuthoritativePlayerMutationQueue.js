@@ -1,3 +1,11 @@
+/**
+ * 같은 player의 비동기 authoritative 변경은 직렬화하고, 다른 player는 독립 실행하는지 검증한다.
+ *
+ * 준비: 수동으로 완료 시점을 제어할 Promise와 실행 순서를 기록할 배열을 만든다.
+ * 실행: mutation 여러 개를 queue에 넣고 원하는 지점에서 첫 작업을 해제한다.
+ * 검증: 같은 `(roomId, playerId)`는 FIFO이고, 앞 작업 실패가 다음 작업을 막지 않으며,
+ * 서로 다른 player는 서로의 완료를 기다리지 않아야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -5,6 +13,10 @@ const {
     createAuthoritativePlayerMutationQueue,
 } = require("../dist/server/server/services/authoritativePlayerMutationQueue.js");
 
+/**
+ * 실제 시간 지연 없이 비동기 작업을 특정 지점에서 멈추고 다시 진행시키는 test helper다.
+ * `resolve`를 테스트가 직접 호출하므로 경쟁 조건의 실행 순서를 결정적으로 재현할 수 있다.
+ */
 function createDeferred() {
     let resolve;
     let reject;

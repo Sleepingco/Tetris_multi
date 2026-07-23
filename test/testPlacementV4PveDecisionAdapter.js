@@ -1,3 +1,9 @@
+/**
+ * 기존 heuristic 후보 목록을 V4 scorer에 연결하는 PVE adapter 테스트다.
+ *
+ * 동일한 ranking을 한 번 준비해 V4 candidate 변환·선택 결과 재연결을 실행하고 placement와 metric을 검증한다.
+ * 모델 또는 scorer가 실패하면 새 후보를 만들지 않고 같은 목록의 첫 heuristic 후보로 복구해야 gameplay가 계속된다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

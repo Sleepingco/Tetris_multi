@@ -1,3 +1,13 @@
+/**
+ * 배포 시 사용하는 compiled `matchService`가 공용 game core로 서버 권위 상태를 갱신하는지 검증한다.
+ *
+ * 준비: playing room으로 match를 만들고 player의 초기 authoritative state를 확보한다.
+ * 실행: 이동·hard drop·gravity를 서버 API에 순서대로 적용하거나 snapshot을 조회한다.
+ * 검증: 허용된 입력만 원본 상태를 바꾸고, stale `pieceIndex`는 거부하며, client DTO에는
+ * 표시와 동기화에 필요한 필드만 들어가야 한다.
+ *
+ * 이 테스트에서 client prediction은 정답이 아니다. 최종 board와 조각 순서는 항상 서버 state가 기준이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 
@@ -12,6 +22,10 @@ const {
 } = require("../dist/server/server/services/matchService.js");
 const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
 
+/**
+ * matchService가 필요로 하는 최소 room 경계를 반복해서 준비한다.
+ * 각 테스트는 `resetMatches` 뒤 이 새 fixture를 사용해 다른 경기의 메모리 상태와 섞이지 않는다.
+ */
 function createPlayingRoom(roomId = "AUTH_GAMEPLAY_001") {
     return {
         roomId,

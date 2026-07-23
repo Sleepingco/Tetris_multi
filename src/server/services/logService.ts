@@ -1,3 +1,11 @@
+/**
+ * 검증된 game event만 JSONL 저장소로 보내는 application service다.
+ *
+ * 호출자는 client나 AI가 만든 object를 넘길 수 있지만, repository에는 validator가
+ * 성공으로 반환한 log만 전달한다. 로그 I/O 실패는 관찰 가능하게 warning/result로
+ * 돌려주되 이미 진행 중인 gameplay를 예외로 중단시키지 않는다.
+ */
+
 import { appendJsonLine } from "../repositories/jsonlLogRepository.js";
 import {
     validateGameEventLog,
@@ -70,6 +78,11 @@ export async function saveGameEventLog(
     });
 }
 
+/**
+ * 신뢰 경계 검증을 먼저 실행하고 성공한 payload 한 건만 append한다.
+ * validation 실패와 disk write 실패를 모두 `{ok:false, reason}`으로 바꿔 호출자가
+ * gameplay 성공 여부와 로그 저장 성공 여부를 별도로 다룰 수 있게 한다.
+ */
 async function saveLog(log: unknown, options: SaveOptions): Promise<LogSaveResult> {
     const validate = options.validate;
     const repository = options.repository || defaultRepository;

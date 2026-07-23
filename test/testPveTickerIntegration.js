@@ -1,3 +1,10 @@
+/**
+ * authoritative ticker가 human gravity와 PVE AI action을 서로 다른 cadence로 조율하는 통합 테스트다.
+ *
+ * 실제 room/match와 가짜 socket emitter를 준비해 tick을 실행하고 snapshot 순서와 종료 결과를 검증한다.
+ * AI action 하나마다 확정 state를 emit하되 human gravity 진행과 섞이지 않고, AI game over는 match 승패로
+ * 한 번만 연결되어야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

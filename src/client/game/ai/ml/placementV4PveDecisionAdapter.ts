@@ -14,6 +14,15 @@ import type {
     PlacementV4Ranking,
 } from "./placementV4OfflineScorer.ts";
 
+/**
+ * 기존 reachable-placement 후보를 V4 scorer 형식으로 연결하는 opt-in adapter다.
+ *
+ * 후보 생성은 production heuristic과 같은 `rankPlacements`를 한 번만 사용한다. model,
+ * candidate 변환, scorer, representative 연결 중 하나라도 실패하면 그 동일한 목록의
+ * 첫 heuristic 후보로 돌아간다. 반환 placement는 이후 서버 authoritative input 경로가
+ * 실행하며, 이 모듈은 board를 직접 변경하지 않는다.
+ */
+
 export type PlacementV4PveDecision = HeuristicDecision | {
     ok: true;
     source: "heuristic_ai" | "ml_ai";
@@ -114,7 +123,11 @@ function toV4Candidate(evaluation: RankedHeuristicEvaluation): PlacementV4Candid
     };
 }
 
-/** 기존 reachable-placement ranking을 한 번만 생성해 V4 또는 같은 ranking의 fallback을 반환한다. */
+/**
+ * 기존 reachable-placement ranking을 한 번만 생성해 V4 또는 같은 ranking의 fallback을 반환한다.
+ * `policyRequested`와 실제 `policyUsed`, `fallbackReason`을 함께 반환해 화면·benchmark가
+ * 요청과 실제 실행을 구분할 수 있게 한다.
+ */
 export function getPlacementV4PveDecision(
     model: PlacementV4Model,
     gameState: { board: Board; activePiece: unknown },

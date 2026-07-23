@@ -1,3 +1,10 @@
+/**
+ * 브라우저 Tetris runtime의 입력 queue, gravity, snapshot 보정, UI preview와 placement log를 검증한다.
+ *
+ * `installBrowserStubs`와 fake element는 Node에서 필요한 Audio/DOM 경계만 재현한다. 각 테스트는 runtime을
+ * 준비해 입력 또는 snapshot을 실행하고 state와 outcome을 검증한다. 로컬 prediction 입력이 다른 piece에
+ * 재사용되지 않고, authoritative correction 뒤에도 stale queue·animation callback이 남지 않는 것이 핵심이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { validatePlacementDecisionLog } = require(

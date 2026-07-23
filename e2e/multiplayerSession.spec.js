@@ -1,3 +1,10 @@
+/**
+ * 멀티플레이 session의 격리, token 회전, reconnect와 보안 경계를 종단 간 검증한다.
+ *
+ * 서로 다른 BrowserContext는 실제 두 사용자를 나타내며, 서버 room/snapshot이 진실 원천이다.
+ * reload·offline·중복 연결·grace timeout 같은 경로에서도 identity가 섞이거나 stale 입력이
+ * 전송되지 않아야 한다. 각 테스트는 try/finally로 추가 page와 context를 정리한다.
+ */
 const { test, expect } = require("@playwright/test");
 const {
     MULTI_LOBBY_URL,

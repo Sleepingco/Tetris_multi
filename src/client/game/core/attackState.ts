@@ -1,5 +1,11 @@
 import { isBackToBackEligible } from "./garbage.ts";
 
+// =============================
+// 공격 연속 상태 계산
+// 한 조각을 고정한 결과로 현재 공격 계산에 쓸 값과 다음 턴에 저장할 값을 함께 만든다.
+// 보드나 gameState를 직접 바꾸지 않으므로 싱글 런타임과 authoritative 서버가 같은 규칙을 재사용한다.
+// =============================
+
 export type AttackStateOptions = {
     combo?: number;
     backToBack?: boolean;
@@ -17,21 +23,13 @@ export type AttackStateResult = {
 };
 
 /**
- * combo/back-to-back의 공격 계산용 상태와 다음 저장 상태를 계산한다.
+ * 직전 연속 상태와 이번 lock 결과를 받아 공격 계산용 상태를 만든다.
+ * - `combo`와 `backToBack`은 호출자가 보관하던 이전 상태다.
+ * - 반환값의 `combo`/`backToBack`은 이번 공격량 계산에 사용한다.
+ * - `nextCombo`/`nextBackToBack`은 다음 조각을 위해 gameState에 다시 저장할 값이다.
+ * - 첫 line clear의 combo는 0이고, line clear가 없으면 다음 combo를 -1로 초기화한다.
  *
- * @param {Object} params - 공격 상태 갱신 입력값
- * @param {number} params.combo - 현재 combo 상태
- * @param {boolean} params.backToBack - 현재 back-to-back 상태
- * @param {number} params.linesCleared - 이번 lock에서 지운 line 수
- * @param {boolean} params.isTSpin - 이번 lock이 T-Spin인지 여부
- * @returns {{
- *   linesCleared: number,
- *   isTSpin: boolean,
- *   combo: number,
- *   backToBack: boolean,
- *   nextCombo: number,
- *   nextBackToBack: boolean
- * }}
+ * 입력 객체를 변경하지 않으며, 호출자는 다음으로 `calculateGarbageAttack`에 결과를 전달한다.
  */
 export function resolveAttackState({
     combo = -1,

@@ -1,3 +1,10 @@
+/**
+ * 서버 snapshot과 로컬 prediction 차이를 즉시 보정할지 기다릴지 결정하는 순수 함수 테스트다.
+ *
+ * 두 snapshot과 이전 drift 시간을 준비해 판정을 실행하고 `shouldCorrect`, reason, 다음 대기 상태를 검증한다.
+ * game over·garbage·settled board 차이는 즉시 보정하지만 `pieceIndex`가 1만큼 앞서거나
+ * 뒤처진 상태는 같은 방향으로 750ms 지속될 때만 보정한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

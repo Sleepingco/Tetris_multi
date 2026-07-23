@@ -40,15 +40,15 @@ export type ResolveMoveAttemptOptions = {
 };
 
 // =============================
-// 이동 판정 (엔진 계층)
-// 부수효과 없이 pending move의 결과만 계산한다.
+// 한 번의 이동 판정
+// action → 이동 후보(pendingPiece) → 충돌/SRS 판정 → runtime intent 순서로 변환한다.
+// 이 파일은 board와 piece를 직접 변경하지 않으므로 브라우저 런타임, 서버, AI 탐색이 함께 사용한다.
+// `activePiece`는 마지막 확정 위치이고 `pendingPiece`는 이번에 시험할 후보 위치다.
 // =============================
 
 /**
-  * 입력 action 문자열을 런타임이 실행할 이동 intent로 변환한다.
-  *
-  * @param {string} action - 입력 계층에서 넘어온 action 문자열
-  * @returns {{kind: string, rowDelta?: number, colDelta?: number, moveType: string}|null} 이동 intent
+  * 입력 계층의 action을 core가 이해하는 최소 이동 의도로 바꾼다.
+  * hold와 hard drop은 별도 실행 순서가 필요하므로 여기서 처리하지 않고 null을 반환한다.
   */
 export function resolveInputMoveIntent(action: string): InputMoveIntent | null {
         if (action === "move_left") {
@@ -89,20 +89,13 @@ export function resolveInputMoveIntent(action: string): InputMoveIntent | null {
 }
 
 /**
-  * `pendingPiece`를 적용하려는 시도의 결과를 계산한다.
+  * `pendingPiece`를 board에 적용할 수 있는지 검사해 다음 확정 상태를 계산한다.
   * - 유효한 하드 드롭이면 즉시 고정한다.
-  * - 하강 실패면 이전 active 위치에서 고정한다.
+  * - 자동/소프트 하강 실패면 마지막으로 유효했던 active 위치에서 고정한다.
   * - 스폰 실패면 게임오버로 처리한다.
-  * - 그 외 실패는 이전 확정 상태로 되돌린다.
+  * - 회전만 실패했다면 SRS kick offset을 순서대로 시험한 뒤, 모두 실패하면 active로 되돌린다.
   *
-  * @param {Object} params - 이동 판정 입력값
-  * @param {Array<Array<string|null>>} params.board - 현재 보드 배열
-  * @param {{pieceType: string, rotation: number, row: number, col: number}} params.activePiece - 마지막으로 확정된 조각 상태
-  * @param {{pieceType: string, rotation: number, row: number, col: number}} params.pendingPiece - 이번에 시도할 후보 조각 상태
-  * @param {string} params.moveCause - 시도 원인 (`fall`, `hardDrop`, `horizontal`, `rotate`, `spawn` 등)
-  * @param {Record<string, Array<Array<[number, number]>>>} params.blocks - 블록 타입과 회전별 오프셋 정의
-  * @param {Object} params.wallKicks - 회전 충돌 시 사용할 wall kick 테이블
-  * @returns {{status: string, moveCause: string, active: Object, pending: Object}} 런타임 계층으로 넘길 엔진 판정 결과
+  * 입력 객체를 직접 바꾸지 않고 새 객체를 반환한다. 다음 호출은 `resolveMoveIntent`다.
   */
 export function resolveMoveAttempt({
         board,
@@ -200,13 +193,9 @@ export function resolveMoveAttempt({
 }
 
 /**
-  * 순수 엔진 판정 결과를 런타임 intent로 바꾼다.
-  * - 이 함수도 여전히 부수효과 없이 다음 행동의 종류만 정한다.
-  *
-  * @param {Object} params - intent 계산 입력값
-  * @param {{status: string, active: Object, pending: Object}} params.outcome - `resolveMoveAttempt` 결과
-  * @param {boolean} params.hasFallTimer - 현재 중력 타이머가 이미 동작 중인지 여부
-  * @returns {{kind: string, moveCause: string, active: Object, shouldStartGravity?: boolean}} 런타임 실행 의도
+  * core 판정 결과를 runtime이 실행할 명령 모양으로 정리한다.
+  * 여전히 상태를 바꾸지 않으며, runtime은 반환된 `kind`에 따라 lock, game over, 복구, 렌더를 수행한다.
+  * 성공한 이동에서만 중력이 꺼져 있었는지 확인해 `shouldStartGravity`를 함께 전달한다.
   */
 export function resolveMoveIntent({
         outcome,

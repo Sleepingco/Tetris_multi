@@ -1,3 +1,9 @@
+/**
+ * AI 후보 placement를 실제 gameplay state와 분리해 미리 시뮬레이션하는 테스트다.
+ *
+ * board와 placement를 준비해 lock·line clear를 실행하고 `boardAfter`와 game-over 결과를 검증한다.
+ * 여러 후보 평가가 서로 영향을 주지 않도록 입력 board와 placement를 절대 변경하지 않는 것이 핵심 불변식이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

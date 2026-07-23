@@ -1,3 +1,10 @@
+/**
+ * 멀티플레이 로비의 오류 처리, Host 권한, 퇴장과 채팅 범위를 브라우저 관점에서 검증한다.
+ *
+ * 두 사용자가 필요한 경우 독립 BrowserContext를 준비해 sessionStorage를 격리한다.
+ * 버튼 하나만 확인하지 않고 양쪽 화면의 서버 room 상태가 함께 바뀌는지 검증하고,
+ * finally에서 공통 player context를 정리한다.
+ */
 const { test, expect } = require("@playwright/test");
 const {
     createPlayerPages,

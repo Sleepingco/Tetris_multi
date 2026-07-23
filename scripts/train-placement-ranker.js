@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 
+/**
+ * human placement dataset으로 pairwise linear ranker를 학습하고 평가 artifact를 만든다.
+ *
+ * LOGO fold에서는 fold별 train game으로 scaler와 model을 새로 만들고 validation game만
+ * 평가한다. 모든 game으로 다시 fit한 final model은 배포 가능한 성능 증거가 아니라
+ * 별도 artifact이며, report의 성능 수치는 held-out LOGO 예측만 사용한다.
+ */
+
 const { createHash } = require("node:crypto");
 const { mkdir, readFile, rename, rm, writeFile } = require("node:fs/promises");
 const path = require("node:path");
@@ -99,6 +107,10 @@ function countSelectedFeatureDuplicateDecisions(groups, features) {
     }).length;
 }
 
+/**
+ * 각 game을 한 번씩 제외하고 fold별 train-only scaler/model로 pairwise 성능을 평가한다.
+ * 이 경계가 validation game의 분포가 scaler나 weight에 들어가는 leakage를 막는다.
+ */
 function evaluatePairwiseLogo(groups, ranking, ranker, features, compareCanonicalStrings, config) {
     const gameIds = [...new Set(groups.map(group => group.candidates[0].gameId))]
         .sort(compareCanonicalStrings);
@@ -163,6 +175,10 @@ async function loadModules() {
     return { builder, groups, ranking, ranker, features };
 }
 
+/**
+ * dataset 계약을 확인한 뒤 baseline, held-out LOGO, full-data model artifact를 분리해 만든다.
+ * source dataset과 pipeline source checksum은 나중에 같은 학습 조건을 식별하는 근거다.
+ */
 async function buildArtifacts(options) {
     const datasetDir = path.resolve(options.datasetDir);
     const fileNames = ["manifest.json", "train.jsonl", "validation.jsonl"];
@@ -266,6 +282,10 @@ async function buildArtifacts(options) {
     return { model, evaluation };
 }
 
+/**
+ * model과 evaluation을 임시 파일에 완성한 뒤 rename한다.
+ * evaluation을 먼저, model을 마지막에 공개해 evaluation 없는 새 model이 보이는 창을 막는다.
+ */
 async function writeArtifacts(outputDir, artifacts) {
     const resolvedOutputDir = path.resolve(outputDir);
     await mkdir(resolvedOutputDir, { recursive: true });

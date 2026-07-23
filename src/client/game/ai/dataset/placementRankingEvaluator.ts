@@ -3,6 +3,13 @@ import { compareHeuristicEvaluations } from "../heuristic/heuristicEvaluator.ts"
 import type { PlacementDatasetSample } from "./placementDatasetBuilder.ts";
 import type { PlacementDecisionGroup } from "./placementDecisionGroups.ts";
 
+/**
+ * 모델이 실제 선택 후보를 몇 번째로 두는지 측정한다.
+ *
+ * Top-1/Top-3/MRR은 "사람의 선택을 얼마나 잘 재현했는가"를 뜻한다. 생존 길이, 공격량,
+ * 승률 같은 gameplay 성능은 별도 benchmark로 검증해야 하며 이 지표로 대신할 수 없다.
+ */
+
 type RankingEntry = {
     rank: number;
     candidateCount: number;
@@ -150,6 +157,7 @@ function rankCandidates(
     },
 ): PlacementDatasetSample[] {
     return group.candidates.slice().sort((left, right) => {
+        // score → scorer 전용 동률 규칙 → canonical placement key 순서로 결정성을 보장한다.
         const scoreDelta = getCandidateScore(scorerResult.scores, right) -
             getCandidateScore(scorerResult.scores, left);
         if (scoreDelta) return scoreDelta;
@@ -268,6 +276,12 @@ export function createLeaveOneGameOutFolds(groups: PlacementDecisionGroup[]) {
     }));
 }
 
+/**
+ * 각 gameId를 한 번씩 통째로 제외하고 나머지 게임으로 scorer를 만든다.
+ *
+ * fold의 validation 게임은 scaler나 model 학습에 들어가지 않는다. 마지막 aggregate도
+ * full-data model의 in-sample 점수가 아니라 각 fold의 held-out 예측만 합친 결과다.
+ */
 export function evaluateLeaveOneGameOut(
     groups: PlacementDecisionGroup[],
     scorerFactory: (groups: PlacementDecisionGroup[]) => PlacementScorer,

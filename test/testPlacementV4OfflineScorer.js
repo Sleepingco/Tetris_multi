@@ -1,3 +1,11 @@
+/**
+ * 동결된 V4 모델을 gameplay와 분리해 순수하게 점수화하는 offline scorer 테스트다.
+ *
+ * Python reference fixture와 같은 후보를 준비해 선형 점수, 물리적으로 같은 placement의 class 묶음,
+ * 안전한 class가 있을 때의 game-over class 제외, 모두 위험할 때의 unavoidable 판정과 결정적
+ * tie-break를 검증한다. sigmoid 확률이 아니라 표준화 feature의 선형 합으로 순위를 정한다는
+ * 점과 실험용 artifact 표식을 강제한다는 점이 핵심이다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { existsSync, readFileSync } = require("node:fs");

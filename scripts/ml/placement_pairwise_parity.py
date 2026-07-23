@@ -1,4 +1,10 @@
-"""Single-fold JavaScript/Python pairwise ranker parity utilities."""
+"""Reproduce one JavaScript pairwise-ranking fold in Python.
+
+The bundle fixes candidate order, 16 raw features, train-only scaling, pair
+weights, JavaScript weights, and validation predictions.  Matching those
+values first separates data-contract bugs from the later sklearn optimizer
+comparison; sklearn is skipped when JavaScript-equivalent parity fails.
+"""
 
 from __future__ import annotations
 
@@ -28,7 +34,7 @@ SUPPORTED_MODEL_SCHEMA_VERSION = 1
 SUPPORTED_MODEL_TYPE = "pairwise_linear_ranker"
 FEATURE_COUNT = 16
 
-# 같은 canonical 순회와 float64 연산에서 libm 차이만 허용한다.
+# Canonical traversal and float64 arithmetic should differ only by libm rounding.
 PARITY_ABSOLUTE_TOLERANCE = 1e-12
 SKLEARN_SOLVER = "lbfgs"
 SKLEARN_TOLERANCE = 1e-12
@@ -69,6 +75,12 @@ def _validate_finite_tree(value: Any, path: str = "bundle") -> None:
 
 
 def validate_bundle(bundle: dict[str, Any]) -> None:
+    """Validate versions, finite values, counts, pair weights, and game isolation.
+
+    This is the language boundary: Python must reject a bundle whose training
+    and validation game IDs overlap or whose serialized pairs no longer match
+    the decision candidates exported by JavaScript.
+    """
     _require(isinstance(bundle, dict), "INVALID_BUNDLE")
     _validate_finite_tree(bundle)
     _require(bundle.get("parityBundleSchemaVersion") == PARITY_BUNDLE_SCHEMA_VERSION,
@@ -192,6 +204,11 @@ def count_zero_difference_pairs(pairs: list[dict[str, Any]]) -> int:
 
 
 def fit_population_scaler(train_decisions: list[dict[str, Any]]) -> dict[str, list[float]]:
+    """Fit population mean/scale from training candidates only.
+
+    A constant feature receives scale 1, matching the JavaScript implementation
+    and avoiding division by zero without using validation information.
+    """
     vectors = [
         candidate["rawFeatures"]
         for decision in train_decisions
@@ -226,6 +243,11 @@ def _standardize(values: list[float], scaler: dict[str, list[float]]) -> list[fl
 def create_training_pairs(
     train_decisions: list[dict[str, Any]], scaler: dict[str, list[float]]
 ) -> list[dict[str, Any]]:
+    """Create standardized selected-minus-unselected pairs.
+
+    Each decision contributes total weight 1 regardless of its candidate count,
+    so decisions with many legal placements do not dominate the objective.
+    """
     pairs = []
     for decision in train_decisions:
         selected = next(candidate for candidate in decision["candidates"] if candidate["selected"])
@@ -639,6 +661,12 @@ def compare_sklearn(bundle: dict[str, Any], sklearn_reference: dict[str, Any]) -
 
 
 def build_report(bundle: dict[str, Any]) -> dict[str, Any]:
+    """Run JS-equivalent parity before comparing the sklearn optimizer.
+
+    The input bundle is deep-copied and checked again after both phases.  Once
+    canonical order, features, scaler, pairs, weights, and scoring match, any
+    remaining difference can be attributed to optimizer stopping behavior.
+    """
     original = copy.deepcopy(bundle)
     python_reference = train_js_equivalent(bundle)
     parity = compare_js_reference(bundle, python_reference)
@@ -805,6 +833,11 @@ def write_report_atomic(
     report: dict[str, Any],
     staging_path_factory: Callable[[Path, int], Path] | None = None,
 ) -> None:
+    """Publish a report without overwriting the bundle or exposing partial JSON.
+
+    An exclusive same-directory staging file is fsynced, checked by inode, and
+    atomically replaced only after source/output path checks pass again.
+    """
     assert_safe_output_path(bundle_path, output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     factory = staging_path_factory or _random_staging_path

@@ -1,3 +1,10 @@
+/**
+ * 움직이는 조각의 생성과 hard drop 도착 row 계산을 검증한다.
+ *
+ * 준비: spawn 좌표 또는 `row`별 배치 가능 여부를 알려 주는 작은 predicate를 만든다.
+ * 실행: 새 조각을 여러 번 만들고, 빈 공간·즉시 충돌·실제 board에서 `getHardDropRow`를 호출한다.
+ * 검증: 새 조각은 rotation 0의 독립 객체이며, hard drop은 충돌 직전 마지막 유효 row에서 멈춰야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

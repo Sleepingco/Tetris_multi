@@ -1,6 +1,9 @@
 // =============================
-// In-memory Match Store
-// match는 player별 server bag chunk와 authoritativeState를 저장한다.
+// 메모리 기반 경기 상태 저장소
+// match는 player별 server bag, input acknowledgment, authoritative gameplay state를 저장한다.
+// roomService는 membership/lifecycle을 소유하고, 이 저장소는 한 판이 시작될 때 room 설정을 복사한다.
+// mutation 함수는 내부 원본을 제자리에서 바꾼다. 조회 경계에서는 복제본을,
+// client 전송 경계에서는 server-only 필드를 뺀 축소 DTO를 반환한다.
 // =============================
 import {
     applyAuthoritativeInput,
@@ -158,9 +161,7 @@ function createFailure(reason: string): MatchResult {
 
 /**
  * room 상태를 기준으로 match를 시작하고 player별 초기 server bag과 authoritative state를 만든다.
- *
- * @param {{roomId: string, status?: string, players: Array<{playerId: string}>}} room - 시작할 room 상태
- * @returns {{ok: boolean, match: Object|null, reason: string|null}} match 생성 결과
+ * 각 player는 독립된 board, queue, hold, score, garbage, sequence를 가지며 같은 match에 묶인다.
  */
 export function createMatch(room: RoomState | null | undefined): MatchResult {
     if (!room) {
@@ -221,6 +222,11 @@ export function createMatch(room: RoomState | null | undefined): MatchResult {
     return createSuccess(match);
 }
 
+/**
+ * service/ticker가 사용할 MatchState 원본 참조를 조회한다.
+ * 같은 human authoritative state에 접근하는 socket input과 gravity는 공용 mutation queue를
+ * 거쳐야 한다. client에는 이 원본이 아니라 별도로 만든 snapshot DTO만 전송한다.
+ */
 export function getMatchState(roomId: string): MatchResult {
     const match = matches.get(roomId);
 
@@ -246,10 +252,7 @@ export function deleteMatch(roomId: string): MatchResult {
 /**
  * 특정 player에게 추가 server bag chunk를 생성해 붙인다.
  * - 멀티플레이에서는 클라이언트 로컬 RNG 대신 이 chunk를 조각 공급원으로 사용한다.
- *
- * @param {string} roomId - match room id
- * @param {string} playerId - bag chunk를 받을 player id
- * @returns {{ok: boolean, match: Object|null, reason: string|null, bagChunk?: string[]}} 추가 결과
+ * - 기록용 `bagChunks`와 실제 소비용 `pieceQueue`를 같은 chunk로 함께 연장한다.
  */
 export function appendPlayerBagChunk(roomId: string, playerId: string): MatchResult {
     const match = matches.get(roomId);
@@ -275,6 +278,10 @@ export function appendPlayerBagChunk(roomId: string, playerId: string): MatchRes
     return createSuccess(match, { bagChunk });
 }
 
+/**
+ * 공격자가 확정한 garbage를 상대의 대기 queue에 추가한다.
+ * board에는 즉시 넣지 않고 상대 조각이 lock될 때 playerGameplayStep이 적용한다.
+ */
 export function appendPendingGarbageToOpponent(
     roomId: string,
     fromPlayerId: string,
@@ -332,6 +339,18 @@ export function appendPendingGarbageToOpponent(
     });
 }
 
+/**
+ * 검증된 input 하나를 player의 authoritative 원본 state에 적용한다.
+ *
+ * 순서:
+ * 1. `clientSequence` 재전송/역전을 막는다.
+ * 2. `pieceIndex`와 lock 계열의 predicted transform을 mutation 전에 비교한다.
+ * 3. 공용 game core를 통해 state를 제자리에서 변경한다.
+ * 4. sequence 검증을 통과해 시도한 입력은 결과와 무관하게 기록해 다시 적용되지 않게 한다.
+ *
+ * move/rotate가 서버에서 유효하면 서버 결과는 유지한다. 예상 위치와 다르면
+ * `PREDICTION_DIVERGED`를 반환하고 socket 계층이 현재 snapshot으로 client를 보정한다.
+ */
 export function applyAuthoritativeInputToMatchPlayerState(
     roomId: string,
     playerId: string,
@@ -367,6 +386,7 @@ export function applyAuthoritativeInputToMatchPlayerState(
         ? clientSequenceValue
         : null;
     if (clientSequence !== null) {
+        // handler 밖의 AI/테스트 호출도 같은 단조 증가 규칙을 지키도록 service에서 다시 확인한다.
         const sequenceValidation = validateClientInputSequence(roomId, playerId, clientSequence);
         if (!sequenceValidation.ok) return sequenceValidation;
     }
@@ -444,6 +464,10 @@ function markClientInputProcessed(
     player.lastProcessedClientSequence = clientSequence;
 }
 
+/**
+ * client sequence가 player별 마지막 처리 값보다 큰지 확인한다.
+ * 이 값은 client prediction의 pending input을 안전하게 제거하기 위한 단조 증가 acknowledgment다.
+ */
 export function validateClientInputSequence(
     roomId: string,
     playerId: string,
@@ -468,6 +492,10 @@ export function validateClientInputSequence(
     return createSuccess(match);
 }
 
+/**
+ * core 실행 전에 예외가 난 input도 처리 완료로 표시한다.
+ * 다음 sequence가 진행될 수 있게 하되 이미 더 큰 acknowledgment를 뒤로 되돌리지는 않는다.
+ */
 export function acknowledgeClientInputSequence(
     roomId: string,
     playerId: string,
@@ -495,6 +523,10 @@ export function acknowledgeClientInputSequence(
     return createSuccess(match);
 }
 
+/**
+ * 실제 조각 queue가 임계값 이하일 때만 새 7-bag을 추가한다.
+ * client의 중복 요청이 무한히 queue를 늘리지 않게 service에서 다시 확인한다.
+ */
 export function ensurePlayerBagQueue(
     roomId: string,
     playerId: string,
@@ -533,6 +565,10 @@ export function markAuthoritativePlayerGameOver(
     return createSuccess(match);
 }
 
+/**
+ * timer가 요청한 gravity 한 단계를 authoritative 원본 state에 적용한다.
+ * 실제 이동/grounded/lock 판정은 playerGameplayStep에 두고 match 탐색과 결과 포장만 담당한다.
+ */
 export function applyGravityStepToMatchPlayerState(
     roomId: string,
     playerId: string,
@@ -598,6 +634,10 @@ function attachPresentationEffectId(
     };
 }
 
+/**
+ * 내부 authoritative state의 독립 복사본을 반환한다.
+ * service 밖에서 조회 결과를 바꿔도 실제 match board와 queue가 변경되지 않는다.
+ */
 export function getAuthoritativePlayerSnapshot(
     roomId: string,
     playerId: string,
@@ -640,6 +680,10 @@ export function getAuthoritativePlayerSnapshot(
     };
 }
 
+/**
+ * 내부 state 복사본을 wire contract에 허용된 client snapshot으로 변환한다.
+ * pending garbage 상세 queue는 숨기고 총 line 수만 노출하며, 마지막 처리 sequence를 붙인다.
+ */
 export function getAuthoritativePlayerSnapshotDto(
     roomId: string,
     playerId: string,
@@ -740,6 +784,7 @@ function createEmptyBoard(): AuthoritativeBoard {
 function cloneAuthoritativeState(
     authoritativeState: AuthoritativePlayerState,
 ): AuthoritativePlayerState {
+    // caller가 board/queue/piece를 수정해도 Map 안의 authoritative 원본이 바뀌지 않게 깊이만큼 복사한다.
     return {
         board: authoritativeState.board.map((row) => [...row]),
         activePiece: { ...authoritativeState.activePiece },
@@ -771,6 +816,7 @@ function createClientSnapshotDto(
         return total + garbage.lines;
     }, 0);
 
+    // 명시적 whitelist를 만들어 server-only pendingPiece, garbage hole, gameOverReason을 전송하지 않는다.
     return {
         board: authoritativeSnapshot.board.map((row) => [...row]),
         activePiece: authoritativeSnapshot.activePiece

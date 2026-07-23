@@ -1,3 +1,10 @@
+"""V4와 heuristic PVE gameplay benchmark의 Notebook·runner 계약을 검증한다.
+
+동결 model checksum을 입력으로 사용하고 기존 authoritative PVE 실행 경로와 결정적 bag을
+재사용하는지 확인한다. 안전성·fallback metric은 canonical report에 남기되 실행 시간은
+별도 진단으로 분리하며, smoke 실행은 사용자 승인 없는 full 평가로 승격하지 않는다.
+"""
+
 import json
 import unittest
 from pathlib import Path

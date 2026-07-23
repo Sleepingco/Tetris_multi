@@ -1,3 +1,9 @@
+/**
+ * 서버가 input 또는 gravity 한 단계를 authoritative player state에 적용하는 테스트다.
+ *
+ * `createPlayerState`로 필요한 상태를 준비하고 action을 실행한 뒤 board·score·attack·다음 조각을 함께 검증한다.
+ * 이 함수는 원본 state를 제자리에서 바꾸므로 반환값뿐 아니라 변경된 state가 기존 core 규칙과 일치해야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

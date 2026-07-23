@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Fit the frozen V4 placement ranker without evaluating or integrating it."""
+"""Fit the frozen experimental V4 human-placement ranker.
+
+The trainer accepts only the pinned human dataset cohort, extracts the fixed
+16-feature contract, and learns pairwise preferences between occupied-cell
+physical classes.  It deliberately produces no held-out performance claim and
+does not enable production integration; heuristic remains the runtime default.
+"""
 
 from __future__ import annotations
 
@@ -192,6 +198,12 @@ def inspect_dataset(
     expected_checksums: dict[str, str] | None = EXPECTED_CHECKSUMS,
     expected_counts: dict[str, int] | None = EXPECTED_COUNTS,
 ) -> dict[str, Any]:
+    """Freeze the training cohort by checksums, manifest policy, and row counts.
+
+    Every decision must contain exactly one selected candidate.  Verifying the
+    immutable snapshot before fitting prevents a silent dataset refresh from
+    producing a model that looks like the approved experiment.
+    """
     checksums = current_checksums(dataset_dir)
     if expected_checksums is not None:
         require(checksums == expected_checksums, "DATASET_CHECKSUM_MISMATCH")
@@ -316,6 +328,12 @@ def create_v4_pairs(
     decisions: dict[str, list[dict[str, Any]]],
     scaled_features: dict[tuple[str, str], np.ndarray],
 ) -> tuple[list[dict[str, Any]], list[str]]:
+    """Compare the selected physical class with each unique alternative class.
+
+    Aliases of the selected occupied-cell class are not negative examples.
+    Alternative aliases use one canonical representative, and each decision's
+    pair weights sum to 1 regardless of how many alternatives it has.
+    """
     pairs: list[dict[str, Any]] = []
     pairless: list[str] = []
     for decision in sorted(decisions):
@@ -370,6 +388,12 @@ def symmetric_samples(
 
 
 def fit_model(candidates: list[dict[str, Any]]) -> dict[str, Any]:
+    """Fit train-cohort scaling and a no-intercept pairwise logistic model.
+
+    The scaler sees only raw candidates in the selected training cohort.
+    Symmetric positive/negative samples express ranking direction, while a
+    shared intercept would cancel within each decision and is therefore omitted.
+    """
     decisions = group_candidates(candidates)
     assert_equivalence_contract(decisions)
     raw_features = np.asarray([row["features"] for row in candidates], dtype=np.float64)
@@ -443,6 +467,12 @@ def build_artifacts(
     fit: dict[str, Any],
     selected_game_ids: list[str],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build an experimental model and provenance report without evaluation metrics.
+
+    Training loss is an optimizer diagnostic on fitted data, not held-out
+    imitation or gameplay strength.  The source checksums are re-read before
+    artifact creation to prove the dataset was not modified during training.
+    """
     full_cohort = len(selected_game_ids) == inspection["counts"]["gameCount"]
     run_mode = "full" if full_cohort else "smoke"
     checksums_after = current_checksums(dataset_dir)
@@ -665,6 +695,12 @@ def write_artifacts_atomic(
     report: dict[str, Any],
     protected_sources: list[Path],
 ) -> None:
+    """Publish model/report together and restore prior files if either replace fails.
+
+    Both payloads are staged and fsynced before replacement.  Output paths are
+    checked against every protected dataset source so training cannot overwrite
+    the immutable snapshot.
+    """
     same_artifact = False
     try:
         same_artifact = model_path.samefile(report_path)

@@ -1,3 +1,17 @@
+/**
+ * placement ranker가 읽는 16개 숫자의 이름과 순서를 고정한다.
+ *
+ * 1~2: line clear와 game over 결과
+ * 3~6: 전체 높이·최대 높이·hole·bumpiness 변화량
+ * 7~16: 각 열 높이 변화량
+ *
+ * `candidateResult`는 후보를 지금 놓았을 때의 즉시 시뮬레이션 결과다.
+ * `selectedBySource`는 label이고 승패는 미래 분석 metadata이므로 feature에서 제외한다.
+ * 난이도·ID·입력 횟수·heuristic 점수도 보드 상태 기반의 고정 feature 계약과
+ * 정책 독립성을 유지하기 위해 포함하지 않는다. 학습과 runtime 추론은 반드시
+ * 이 함수와 같은 이름·순서를 사용해야 한다.
+ */
+
 export const PLACEMENT_FEATURE_SCHEMA_VERSION = 1;
 
 export const PLACEMENT_FEATURE_NAMES = Object.freeze([
@@ -52,7 +66,8 @@ function createFailure(reason: string): PlacementFeatureResult {
 
 /**
  * v2 candidate sample에서 학습용 고정 feature vector를 순수하게 추출한다.
- * 게임 결과 metadata, heuristic score, AI 난이도는 포함하지 않는다.
+ * 숫자가 아니거나 `NaN`/`Infinity`인 값은 조용히 학습시키지 않고 reason과 함께
+ * 거부한다. 게임 결과 metadata, heuristic score, AI 난이도는 포함하지 않는다.
  */
 export function extractPlacementFeatures(sample: unknown): PlacementFeatureResult {
     if (!isRecord(sample)) {

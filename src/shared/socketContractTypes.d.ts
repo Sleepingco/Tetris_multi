@@ -1,3 +1,5 @@
+// socketContracts.mjs의 런타임 schema에서 wire 입력과 검증 후 출력 타입을 함께 유도한다.
+// 이 파일은 컴파일용이며, 실제 외부 입력 검증은 반드시 Zod schema가 담당한다.
 import type * as z from "zod";
 import {
     clientToServerSchemas,

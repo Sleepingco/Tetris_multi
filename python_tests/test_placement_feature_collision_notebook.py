@@ -1,3 +1,10 @@
+"""기존 16개 feature의 collision 분석 Notebook이 분석 범위를 지키는지 검증한다.
+
+Notebook 코드를 AST로 읽어 고정 상수와 함수 본문을 직접 확인하고, label·승패 정보가
+geometry feature에 들어가지 않는지 검사한다. 이 단계는 원인 분석 전용이므로 모델을
+학습하거나 production runtime을 변경하는 코드가 없어야 한다.
+"""
+
 import ast
 import json
 import unittest

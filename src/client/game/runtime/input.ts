@@ -1,6 +1,7 @@
 // =============================
 // 키보드 입력 매핑
-// DOM 키보드 이벤트를 게임 액션으로 정규화한다.
+// 브라우저마다 표현이 다른 key 값을 게임이 이해하는 InputAction으로 정규화한다.
+// 여기서는 board를 움직이지 않고 action을 runtime queue에 전달하는 입력 경계만 담당한다.
 // =============================
 
 import type { InputAction } from "../state/stateFactory.ts";
@@ -31,10 +32,8 @@ const PREVENT_DEFAULT_KEYS = new Set([
 ])
 
 /**
-  * 브라우저 키보드 이벤트를 게임 액션으로 변환한다.
-  *
-  * @param {KeyboardEvent} event - 브라우저 키보드 이벤트
-  * @returns {string|null} 정규화된 액션, 무시할 키면 null
+  * `key`와 `code`를 함께 확인해 브라우저 키보드 이벤트를 게임 action으로 바꾼다.
+  * 게임과 무관한 키는 null로 돌려보내 호출자가 그대로 무시하게 한다.
   */
 function mapKeyboardEventToAction(event: KeyboardEvent): InputAction | null {
         if (event.code === "KeyC" || event.key?.toLowerCase() === "c") return INPUT_ACTION.HOLD
@@ -47,14 +46,12 @@ function mapKeyboardEventToAction(event: KeyboardEvent): InputAction | null {
 }
 
 /**
-  * 전역 키보드 핸들러를 등록하고, 해제 함수를 반환한다.
+  * document에 키보드 listener를 연결하고 같은 listener를 제거하는 cleanup 함수를 반환한다.
   * - 홀드, 하드 드롭, 회전은 키 반복 입력을 무시한다.
   * - 방향키와 스페이스는 브라우저 기본 스크롤 동작을 막는다.
+  * - 실제 적용 가능 여부와 처리 순서는 `enqueueAction` 이후 runtime이 결정한다.
   *
-  * @param {Object} params - 입력 연결에 필요한 콜백들
-  * @param {Function} params.enqueueAction - 정규화된 액션을 큐에 넣는 함수
-  * @param {Function} params.onUserInteract - 첫 사용자 상호작용 부수효과용 선택 콜백
-  * @returns {Function} 등록한 리스너를 제거하는 정리 함수
+  * 페이지 unmount 시 반환한 함수를 호출해야 중복 listener와 메모리 누수를 막을 수 있다.
   */
 export function attachKeyboardInput({
         enqueueAction,

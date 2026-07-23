@@ -1,3 +1,12 @@
+/**
+ * multiplayer garbage 계산의 세 단계를 순수 함수 수준에서 검증한다.
+ *
+ * 1. line clear·T-Spin·combo·B2B로 raw attack을 계산한다.
+ * 2. 받은 garbage queue와 raw attack을 FIFO로 상쇄한다.
+ * 3. 남은 garbage를 board 아래에 올리고 위쪽 overflow를 판정한다.
+ *
+ * 각 테스트는 하나의 경계값만 바꿔 어느 단계의 규칙이 실패했는지 바로 알 수 있게 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

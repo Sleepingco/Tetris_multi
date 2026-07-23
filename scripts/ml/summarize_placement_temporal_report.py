@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Validate and compact a placement temporal holdout full report."""
+"""Validate and compact a placement temporal holdout full report.
+
+This post-processing step never trains a model.  It checks held-out aggregates,
+per-game arithmetic, dataset checksums, and portable output fields before
+writing a smaller summary for review.
+"""
 
 from __future__ import annotations
 

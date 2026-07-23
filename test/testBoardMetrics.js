@@ -1,3 +1,12 @@
+/**
+ * board를 ML/휴리스틱용 숫자 특징으로 바꾸는 `getBoardMetrics`의 기준을 검증한다.
+ *
+ * 준비: 작은 모양을 직접 만든 board를 사용해 기대 높이와 hole 수를 눈으로 계산할 수 있게 한다.
+ * 실행: 같은 board에서 column height, 합계/최대 높이, hole, bumpiness, 완성 줄을 계산한다.
+ * 검증: 각 특징의 경계값이 맞고, 분석 함수가 입력 board를 변경하지 않아야 한다.
+ *
+ * hole은 "한 번 블록을 만난 뒤 그 아래에 있는 빈 칸"이며, 단순 빈 칸 전체 개수가 아니다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 

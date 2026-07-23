@@ -1,3 +1,10 @@
+"""V4 development checkpoint 요약기가 dataset과 비생산 경계를 검증하는지 확인한다.
+
+임시 JSONL dataset과 manifest를 만들고 checksum·count를 계산한 뒤 요약을 실행한다.
+입력 변조와 과장된 checkpoint flag는 blocked로 처리하고, 입력과 충돌하는 출력 경로는
+예외로 거부한다. 정상 CLI는 원본 dataset/report를 바꾸지 않고 결정적인 JSON·Markdown을 기록한다.
+"""
+
 import hashlib
 import importlib.util
 import json

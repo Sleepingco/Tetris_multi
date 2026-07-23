@@ -1,3 +1,10 @@
+/**
+ * PVE E2E 테스트의 방 생성·경기 시작·서버 snapshot 관찰 흐름을 모은 도우미다.
+ *
+ * 화면만 보고 AI 행동을 추측하지 않고 production Socket.IO frame을 기록한 뒤,
+ * 조각의 좌표와 pieceIndex 변화를 행동으로 해석한다. monitor를 만든 테스트는
+ * finally에서 dispose해 다음 테스트에 WebSocket listener가 남지 않게 해야 한다.
+ */
 const { expect } = require("@playwright/test");
 const {
     MULTI_GAME_URL,

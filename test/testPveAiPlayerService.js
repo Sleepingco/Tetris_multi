@@ -1,3 +1,10 @@
+/**
+ * PVE AI가 placement 계획을 만들고 authoritative action을 한 번씩 실행하는 서비스 테스트다.
+ *
+ * match와 stub AI를 준비해 tick별 step을 실행하고 plan 생성 → action 적용 → lock/log 순서를 검증한다.
+ * stale·불가능한 action은 state에 섞이지 않아야 한다. V4 adapter 실패는 같은 turn의
+ * heuristic 경로로 복구하며, 로그 저장 실패는 이미 성공한 gameplay state를 되돌리지 않아야 한다.
+ */
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const { mkdtemp, writeFile } = require("node:fs/promises");

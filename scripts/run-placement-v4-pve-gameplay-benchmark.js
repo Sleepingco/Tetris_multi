@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 
+/**
+ * heuristic과 experimental V4를 같은 deterministic bag으로 실행해 gameplay를 비교한다.
+ *
+ * imitation ranking 지표만으로는 생존·공격 성능을 알 수 없으므로 authoritative core에서
+ * 실제 action plan을 실행한다. production 기본값은 계속 heuristic이며, 이 benchmark는
+ * V4 승격이 아니라 opt-in 정책의 안전성과 회귀를 확인하는 별도 evidence다.
+ */
+
 const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const path = require("node:path");
@@ -114,6 +122,11 @@ function round(value) {
     return Math.round(value * 1_000_000) / 1_000_000;
 }
 
+/**
+ * 한 bag stream과 한 policy를 server authoritative PVE 경로로 끝까지 실행한다.
+ * placement cap, game over, 안전 오류를 구분하고 decision latency는 비결정적 측정값으로
+ * gameplay 결과와 분리해 반환한다.
+ */
 async function runRollout({
     bagStream,
     maxPlacements,
@@ -298,6 +311,11 @@ function getScreeningStatus(heuristicHorizonCount, v4HorizonCount) {
         : "gameplay_screening_passed";
 }
 
+/**
+ * 각 seed마다 동일한 bag을 heuristic/V4에 한 번씩 주어 paired comparison을 만든다.
+ * 정확히 30 streams × 500 placements × 고정 full seed일 때만 policy decision evidence로
+ * 인정하고, 더 작은 실행은 smoke/pilot으로만 표시한다.
+ */
 async function runBenchmark(options, dependencies = {}) {
     const modelPath = path.resolve(options.model);
     await assertDistinctOutputPaths({
@@ -366,6 +384,7 @@ async function runBenchmark(options, dependencies = {}) {
             : options.streams === 3 && options.maxPlacements === 50
                 ? "gameplay_benchmark_smoke_valid"
                 : "gameplay_benchmark_pilot_completed";
+    // wall-clock timing을 제외해야 같은 입력에서 canonical report bytes가 재현된다.
     const report = {
         benchmarkSchemaVersion: 2,
         canonicalArtifact: false,
