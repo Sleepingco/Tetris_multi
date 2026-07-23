@@ -1,0 +1,60 @@
+name: tetris
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "3"
+
+services:
+  app:
+    build:
+      context: .
+    image: tetris-app:${APP_IMAGE_TAG:-latest}
+    init: true
+    read_only: true
+    restart: unless-stopped
+    stop_grace_period: 10s
+    mem_limit: 320m
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=192
+      GAME_EVENT_STORAGE: jsonl
+      GAME_EVENTS_LOG_PATH: /app/data/logs/game-events.jsonl
+      SOCKET_ALLOWED_ORIGINS: https://tetra-arena.duckdns.org
+      CSP_CONNECT_ORIGINS: wss://tetra-arena.duckdns.org
+    volumes:
+      - game_events:/app/data/logs
+    networks:
+      - edge
+    logging: *default-logging
+
+  caddy:
+    image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+    read_only: true
+    restart: unless-stopped
+    stop_grace_period: 10s
+    mem_limit: 96m
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    tmpfs:
+      - /tmp
+    networks:
+      - edge
+    logging: *default-logging
+
+volumes:
+  game_events:
+  caddy_data:
+  caddy_config:
+
+networks:
+  edge:
