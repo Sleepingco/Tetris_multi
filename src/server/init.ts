@@ -8,6 +8,11 @@ import { createServer } from "node:http";
 import * as path from "node:path";
 import { Server } from "socket.io";
 import { createHttpSecurityHeaders } from "./httpSecurity.js";
+import { createServerShutdown } from "./serverShutdown.js";
+import {
+    createRuntimeEventStorage,
+    POSTGRES_RUNTIME_DRAIN_TIMEOUT_MS,
+} from "./services/runtimeEventStorage.js";
 import { registerSocketHandlers } from "./sockets/index.js";
 import { createSocketServerOptions } from "./socketSecurity.js";
 
@@ -46,30 +51,45 @@ app.use((error: unknown, _request: Request, response: Response, _next: unknown) 
     response.end("Request Failed")
 })
 
-const disposeSocketHandlers = registerSocketHandlers(socketServer)
-let isShuttingDown = false
-
-/**
- * 프로세스 종료 신호를 Socket.IO 자원 정리와 서버 종료로 연결한다.
- * - 여러 번 호출되어도 disposer와 close는 한 번만 실행한다.
- * - 정상 close가 멈추면 강제 종료 timer가 마지막 안전장치가 된다.
- */
-function shutdown(): void {
-    if (isShuttingDown) return
-    isShuttingDown = true
-
-    const forceExitTimer = setTimeout(() => process.exit(1), 8_000)
-    forceExitTimer.unref?.()
-    disposeSocketHandlers()
-    socketServer.close((error) => {
-        clearTimeout(forceExitTimer)
-        process.exitCode = error ? 1 : 0
-    }).catch(() => {
-        clearTimeout(forceExitTimer)
-        process.exitCode = 1
+async function closeSocketAndHttp(): Promise<void> {
+    await socketServer.close()
+    if (!server.listening) return
+    await new Promise<void>((resolve, reject) => {
+        server.close(error => error ? reject(error) : resolve())
     })
 }
 
-process.once("SIGTERM", shutdown)
+async function startServer(): Promise<void> {
+    const eventStorage = await createRuntimeEventStorage()
+    const disposeSocketHandlers = registerSocketHandlers(socketServer, {
+        saveGameEventLog: eventStorage.saveGameEventLog,
+        savePlacementDecisionLog: eventStorage.savePlacementDecisionLog,
+    })
+    const shutdown = createServerShutdown({
+        rejectNewWrites: eventStorage.rejectNewWrites,
+        stopEventProducers: disposeSocketHandlers,
+        drainWrites: () => eventStorage.drain(POSTGRES_RUNTIME_DRAIN_TIMEOUT_MS),
+        closePool: eventStorage.close,
+        closeSocketAndHttp,
+    })
 
-server.listen(PORT, () => console.log(`server is running ${PORT}`))
+    process.once("SIGTERM", () => {
+        void shutdown()
+            .then(() => {
+                process.exitCode = 0
+            })
+            .catch(() => {
+                process.exitCode = 1
+            })
+    })
+
+    server.listen(PORT, () => console.log(`server is running ${PORT}`))
+}
+
+void startServer().catch(error => {
+    const code = error instanceof Error && /^[A-Z0-9_]+$/.test(error.message)
+        ? error.message
+        : "SERVER_STARTUP_FAILED"
+    console.error(code)
+    process.exitCode = 1
+})
