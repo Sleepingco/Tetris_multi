@@ -2522,3 +2522,15 @@ client input
 - private-CA TLS hostname 검증, migration/runtime/maintenance role 분리, JSONL 없는 PostgreSQL single-sink, PVP/PVE, backup/restore, restart, DB-down과 shutdown을 검증했다.
 - PR #4와 최종 main `6775bfb`의 [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)에서 네 job이 모두 green이다.
 - production PostgreSQL, 실제 JSONL import와 OCI 배포는 활성화하지 않았다. 다음 단계는 OCI read-only preflight와 JSONL 기반 app + HTTPS 기준선 배포다.
+
+---
+
+# 2026년 7월 24일
+
+## OCI 단일 VM 배포 및 공개 운영 성공
+
+- 기존 OCI `VM.Standard.E2.1.Micro`에 Docker Compose 기반 운영 구성을 배포하고 [Tetra Arena](https://tetra-arena.duckdns.org)를 공개 운영 상태로 전환했다.
+- 실제 공개 주소는 유효한 TLS를 통해 HTTP/2 `200`을 반환하며, Caddy reverse proxy와 CSP·frame deny·no-referrer·nosniff 보안 헤더가 함께 적용됐다.
+- 브라우저와 같은 same-origin 조건의 Socket.IO polling handshake는 `200`으로 성공하고, 필요한 출처 정보가 없는 직접 요청은 `403`으로 거부돼 기존 Socket 보안 경계도 유지됐다.
+- 실제 배포에서 발견한 PostgreSQL container 시작 command의 Compose 해석 문제를 수정하고, command가 하나의 shell script 인자로 유지되는지 자동 검증을 추가했다.
+- 이로써 로컬·CI 검증을 넘어 실제 OCI 공개 배포와 기본 운영 확인까지 성공했다. JSONL과 PostgreSQL은 계속 단일 sink 원칙을 따르며 실제 저장 방식은 배포 환경의 `GAME_EVENT_STORAGE` 설정으로 선택한다.

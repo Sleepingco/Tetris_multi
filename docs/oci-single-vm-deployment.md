@@ -1,5 +1,12 @@
 # OCI 단일 VM 배포 Runbook
 
+2026-07-23~24 실제 실행 과정과 실패 원인은
+[OCI 단일 VM 운영 배포 실행 기록](oci-production-deployment-session-2026-07-24.md)에
+정리되어 있다.
+명령과 option의 의미는
+[OCI 운영 배포 명령어 해설](oci-production-deployment-command-guide-2026-07-24.md)에
+정리되어 있다.
+
 ## 고정 경계
 
 - VM: 기존 OCI `VM.Standard.E2.1.Micro` 한 대
@@ -19,9 +26,9 @@ cutover를 중단한다.
 
 아래 변경 전에는 OCI Security List에서 TCP 80/443이 열려 있어야 한다.
 현재 `22` source가 `0.0.0.0/0`이므로 두 번째 SSH 연결을 확인한 뒤 운영자
-공인 IPv4 `/32`로 제한한다. 화면에 노출됐던 DuckDNS token도 먼저 재발급하고
-새 token은 repository에 저장하지 않는다. DNS A record가 VM public IP와
-같은지 확인한다.
+공인 IPv4 `/32`로 제한한다. DuckDNS token이 terminal, log 또는 repository에
+노출됐다면 먼저 재발급하고 새 token은 repository에 저장하지 않는다.
+DNS A record가 VM public IP와 같은지 확인한다.
 
 ```bash
 getent ahostsv4 tetra-arena.duckdns.org
@@ -112,6 +119,7 @@ openssl x509 -req -sha256 -days 825 \
     -extfile /srv/tetris/certs/postgres.ext \
     -out /srv/tetris/certs/postgres.crt
 chmod 600 /srv/tetris/certs/ca.key /srv/tetris/certs/postgres.key
+chmod 644 /srv/tetris/certs/ca.crt /srv/tetris/certs/postgres.crt
 openssl x509 -in /srv/tetris/certs/postgres.crt \
     -noout -checkhost postgres
 ```
@@ -226,22 +234,26 @@ UPDATE/DELETE, maintenance의 INSERT/UPDATE가 거부되어야 한다.
 
 ## 5. Backup/restore와 JSONL import
 
-JSONL 원본은 volume에서 read-only copy로 꺼낸다.
+JSONL 원본은 app을 잠시 pause한 뒤 immutable snapshot으로 복사한다.
 
 ```bash
-sudo docker run --rm \
-    --volume tetris_game_events:/source:ro \
-    --volume /srv/tetris/import/source:/target \
-    tetris-app:<approved-main-sha> \
-    sh -c 'cp /source/game-events.jsonl /target/game-events.jsonl'
-chmod 400 /srv/tetris/import/source/game-events.jsonl
+app_id=$(sudo docker compose -f compose.jsonl.yml ps -q app)
+sudo docker compose -f compose.jsonl.yml pause app
+sudo docker cp \
+    "$app_id:/app/data/logs/game-events.jsonl" \
+    /srv/tetris/import/source/game-events.jsonl
+sudo docker compose -f compose.jsonl.yml unpause app
+sudo chown ubuntu:ubuntu /srv/tetris/import/source/game-events.jsonl
+sudo chmod 400 /srv/tetris/import/source/game-events.jsonl
 sha256sum /srv/tetris/import/source/game-events.jsonl
 ```
 
-import image에는 source와 report directory만 mount한다.
+import image에는 source와 report directory만 mount한다. OCI의 `ubuntu`와
+image의 `node`는 numeric UID가 다르므로 host 사용자의 UID/GID로 실행한다.
 
 ```bash
 sudo docker run --rm \
+    --user "$(id -u):$(id -g)" \
     --mount type=bind,src=/srv/tetris/import/source,dst=/import/source,readonly \
     --mount type=bind,src=/srv/tetris/import/reports,dst=/import/reports \
     tetris-app:<approved-main-sha> \
@@ -265,11 +277,12 @@ sha256sum "$backup_file"
 sudo docker compose \
     --env-file /srv/tetris/secrets/production.env \
     -f compose.production.yml exec -T postgres \
-    createdb --username postgres tetris_restore_check
+    createdb --username postgres --owner tetris_migration tetris_restore_check
 sudo docker compose \
     --env-file /srv/tetris/secrets/production.env \
     -f compose.production.yml exec -T postgres \
     pg_restore --username postgres --dbname tetris_restore_check \
+    --exit-on-error \
     < "$backup_file"
 sudo docker compose \
     --env-file /srv/tetris/secrets/production.env \
@@ -279,13 +292,14 @@ sudo docker compose \
 sudo docker compose \
     --env-file /srv/tetris/secrets/production.env \
     -f compose.production.yml exec -T postgres \
-    dropdb --username postgres tetris_restore_check
+    dropdb --username postgres --force tetris_restore_check
 ```
 
 restore가 성공한 뒤 import를 실행한다.
 
 ```bash
 sudo docker run --rm \
+    --user "$(id -u):$(id -g)" \
     --network tetris_database \
     --mount type=bind,src=/srv/tetris/certs/ca.crt,dst=/run/secrets/postgres-ca.crt,readonly \
     --mount type=bind,src=/srv/tetris/import/source,dst=/import/source,readonly \

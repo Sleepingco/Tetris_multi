@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-24 기준. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐다. 최종 `6775bfb`의 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)에서 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. JSONL은 계속 기본 runtime sink이고 production PostgreSQL은 활성화하지 않았다.
+- Last update: 2026-07-24 기준. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
 
@@ -125,7 +125,7 @@
 - [~] `src/client/game/runtime/tetris.ts`는 여전히 크고 orchestration 외 책임이 남아 있음
 - [~] RNG 주입 구조는 있음
 - [~] 기본 RNG는 아직 `Math.random`
-- [~] 로비와 멀티 게임 흐름은 자동 브라우저 회귀로 고정돼 있다. 공개 release 전 실제 배포 환경의 수동 smoke는 별도 확인 대상이다.
+- [~] 로비와 멀티 게임 흐름은 자동 브라우저 회귀로 고정돼 있다. 공개 OCI 환경의 HTTPS와 same-origin Socket.IO smoke는 통과했으며 실제 두 브라우저 gameplay와 장시간 운영 smoke는 별도 확인 대상이다.
 - [x] 내 보드 prediction/correction 정책은 sequence/ack·gravity timing 보강 후 rollback 전용 2탭 E2E 반복 검증을 통과함
 - [x] `startMultiplayerGame()`이 bag request, authoritative snapshot과 match finish를 session 경계에서 처리한다.
 - [x] `src/client/game/runtime/tetris.ts`에서 T-Spin 판정과 공격 상태 전이 일부를 core pure function 호출로 분리했다.
@@ -501,7 +501,7 @@
 
 ### 현재 상태
 
-- 이름: Goal 9D main 통합과 hosted PostgreSQL release gate 완료, OCI read-only preflight 대기
+- 이름: Goal 9D main 통합, OCI 단일 VM 공개 배포와 PostgreSQL single-sink 운영 완료. 안전 배포 자동화와 무중단 배포는 후속 계획
 
 ### 진행 현황
 
@@ -517,40 +517,203 @@
 - [x] Goal 11E는 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 코드 Browser 연속 2회가 통과했다.
 - [x] Goal 9A는 raw SQL migration, canonical identity와 parameterized PostgreSQL repository를 실제 PostgreSQL 17.10으로 검증한 뒤 main과 origin/main에 반영됐다. hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser도 모두 green이다.
 - [x] Goal 9A review에서 injective canonical serialization, PostgreSQL-safe text·64-byte identity와 whitespace-only SQL 거부, finite timestamp, strict loopback·ambient `PG*` 차단, explicit URL password와 migration bootstrap owner 검증을 고정했다. 최종 gate는 실제 PostgreSQL 6/6, Node 616 pass·기존 1 skip, artifact/release 각 1/1이며 production E2E는 같은 gameplay/client의 선행 36/36을 유지한다.
-- [x] Goal 9B는 `GAME_EVENT_STORAGE=jsonl|postgres` single-sink, lifecycle schema v2, server UUID game identity와 1회용 authoritative human receipt, privacy allowlist projector, pool 4/in-flight 16, 3회·2.7초 retry와 3초 drain/8초 shutdown을 main에 통합했다. receipt replay와 retry 최악 경로 budget review 수정도 반영했으며, PR와 main의 Fast gate, Chromium PVP and PVE, Production container smoke가 모두 green이었다. JSONL은 계속 기본 sink이고 PostgreSQL runtime mode는 구현됐지만 production에서 활성화하지 않았다.
-- [x] Goal 9C는 Node stream/readline importer, dry-run, canonical projection·privacy·identity 재사용, 멱등 재실행, partial failure 복구와 completeness reason report를 구현해 main/origin에 반영했다. synthetic fixture와 승인된 local JSONL copy를 PostgreSQL 17.10 test DB에서 검증했으며 원본 JSONL과 production DB는 변경하지 않았다.
+- [x] Goal 9B는 `GAME_EVENT_STORAGE=jsonl|postgres` single-sink, lifecycle schema v2, server UUID game identity와 1회용 authoritative human receipt, privacy allowlist projector, pool 4/in-flight 16, 3회·2.7초 retry와 3초 drain/8초 shutdown을 main에 통합했다. receipt replay와 retry 최악 경로 budget review 수정도 반영했으며, PR와 main의 Fast gate, Chromium PVP and PVE, Production container smoke가 모두 green이었다. 통합 시점에는 JSONL이 기본 sink였고 이후 OCI 운영 전환에서 PostgreSQL mode를 활성화했다.
+- [x] Goal 9C는 Node stream/readline importer, dry-run, canonical projection·privacy·identity 재사용, 멱등 재실행, partial failure 복구와 completeness reason report를 구현해 main/origin에 반영했다. 통합 시점에는 synthetic fixture와 승인된 local JSONL copy만 PostgreSQL 17.10 test DB에서 검증했고, 이후 OCI 운영 전환에서 실제 JSONL import와 재실행 멱등성을 확인했다.
 - [x] Goal 9D는 기존 세 hosted job을 보존한 채 실제 PostgreSQL 17.10 storage job, 외부 PostgreSQL과 source-less image의 production-like gate, synthetic backup/restore·retention rehearsal과 provider-neutral 운영 runbook을 구현했다. shutdown 결과를 안전 코드로 구분한 최종 `6775bfb`가 main/origin에 반영됐고 hosted 네 job이 모두 green이다.
+- [x] OCI `VM.Standard.E2.1.Micro`에 Docker Compose와 Caddy 기반 구성을 배포했다. 공개 주소의 HTTP/2 `200`, 유효한 TLS, CSP/security headers와 same-origin Socket.IO handshake를 확인했다.
+- [x] PostgreSQL 17.10을 internal Docker network와 TLS `verify-full`로 운영하고 JSONL 131건을 최초 inserted·재실행 duplicate로 검증했다. 실제 gameplay로 195행까지 증가했고 app 재시작 후에도 행 수가 보존됐으며 storage error는 없었다.
+- [~] 현재 배포는 단일 VM·단일 app instance의 수동 운영이다. immutable image 배포 자동화, readiness 기반 traffic 전환, active room drain과 host 장애 대응은 아직 구현하지 않았다.
 
 ### 알려진 위험과 보류 범위
 
 - `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
 - room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
-- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. Goal 9B runtime, Goal 9C importer와 Goal 9D release gate는 main에 통합됐지만 production import와 PostgreSQL 활성화는 하지 않았다.
+- JSONL은 local 분석과 rollback 원본으로 보존한다. production은 PostgreSQL 단일 sink로 전환했고 기존 JSONL import, 실제 gameplay write와 app restart 보존까지 확인했다. 자동 backup, 90일 retention과 용량 경고는 아직 운영 자동화하지 않았다.
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
 - pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
 - T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
 - Goal 11E의 hosted Fast/Docker와 Browser 연속 2회가 성공했다. 자연 중력과 browser scheduling에 의존하던 PVE 7-bag T-Spin E2E는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트로 보장한다. 후속 main에서도 hosted Fast/Docker/Browser가 모두 성공했다.
-- WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
+- WebKit/Firefox, TLS 인증서 자동 갱신·VM reboot 복구, 장시간 soak와 amd64 Docker run은 아직 별도 검증 대상이다. 외부 HTTPS/Caddy reverse proxy와 same-origin Socket.IO 기본 경로는 실제 공개 주소에서 확인했다.
 
 ### 현재 단계에서 하지 않을 것
 
 - SPA 전환
 - 문서 branch에서 PostgreSQL code/dependency/CI를 선행 구현
-- 별도 production 활성화 승인 이전 PostgreSQL enable과 실제 사용자 data import
+- PostgreSQL과 JSONL dual-write 또는 silent fallback
 - Redis/Socket.IO adapter와 multi-instance 운영
 - rollback netcode
 - V4를 기본 PVE 또는 production gameplay AI로 승격
-- CI 통과 전 CD, registry publish, 실제 배포 자동화
+- 충분한 메모리·공유 상태·drain 계약 없이 blue-green/rolling 배포를 무중단이라고 주장하는 것
+
+## Performance, Reliability, and Deployment Improvement Plan
+
+### 조사 결론
+
+현재 소수 room 환경에서 병목으로 입증된 항목은 없다. 성능 코드를 먼저
+변경하지 않고 계측과 재현 가능한 부하 결과를 우선한다.
+
+| 항목 | 현재 판정 | 다음 결정 |
+| --- | --- | --- |
+| 입력별 full snapshot | 실재하는 전송 증폭이며 첫 성능 최적화 후보 | 동시 room 부하에서 bytes·ack 지연이 증가할 때 coalescing |
+| authoritative ticker | 실제 경과 시간 유실 가능성이 있는 정확성 문제 | 성능 최적화와 분리해 우선 수정 후보 |
+| runtime placement 로그 | 장시간 세션에서 메모리·재탐색 증가 위험 | 출력 parity를 고정한 뒤 piece 단위로 bounded 처리 |
+| PVE AI | 단일 decision은 현재 충분히 빠름 | 많은 PVE room에서 event-loop 지연이 확인될 때만 재검토 |
+| PostgreSQL·React | 현재 병목 근거 없음 | 운영 측정 전 최적화하지 않음 |
+| Canvas·로비 메시지 | 잠재 비용 | 실제 frame·메모리 문제를 재현한 경우에만 변경 |
+
+현재 측정에서 일반 snapshot은 약 `1,533~1,992B`, line-clear effect 포함
+snapshot은 약 `2,726~3,644B`다. PVP 지속 입력 가정의 전송량은 방당 약
+`0.37~0.48MB/s`이며 Zod snapshot 검증 p50은 약 `10µs`다. 전송량 증폭은
+사실이지만 board 복사와 Zod 자체는 아직 병목으로 측정되지 않았다.
+
+PVE heuristic decision은 후보 `34~38개`에서 p50 `0.67~0.79ms`,
+p95 `0.90~1.32ms`, p99 `1.37~1.97ms`였다. 동일한 `metricsBefore` 계산을
+후보 밖으로 옮겨 얻을 예상 절감은 decision당 약 `0.03ms`이므로 현재는
+worker pool이나 추가 abstraction을 만들지 않는다.
+
+### 1. 부하 측정 gate
+
+1. production 사용자 traffic이 아닌 격리 환경에서 동일한 fixture·시간·입력률로
+   `1`, `10`, `50`개 room을 각각 3회 이상 실행한다. `50` room은 수용량
+   약속이 아니라 stress 관찰값이다.
+2. room별 `snapshot count/bytes`, input acknowledgment p50/p95/p99,
+   event-loop delay, wall-clock 대비 tick drift, CPU, RSS, network와
+   runtime log 길이를 함께 기록한다.
+3. 먼저 1-room 기준선과 증가 기울기를 문서화하고 목표치를 정한다. 목표치를
+   넘는 항목만 별도 branch에서 수정하며 최적화 전후 같은 fixture를 비교한다.
+
+### 2. Ticker 시간 정확성
+
+- production ticker는 고정 `tickMs`가 아니라 monotonic clock의 실제 경과
+  시간을 누적해야 한다.
+- async callback이 겹친 동안의 시간도 버리지 않고 다음 처리에 넘긴다.
+- 이미 구현된 accumulator 잔여 시간 보존은 유지하고, 한 callback의 catch-up
+  step 수에는 상한을 둬 event loop 독점을 막는다.
+- injected clock으로 지연, overlap, 잔여 delta, catch-up 상한과 mutation
+  중복 없음을 결정론적으로 검증한다.
+
+이 항목은 현재 사용자 장애로 확인된 것은 아니지만 부하 시 gameplay 시간이
+느려질 수 있는 정확성 문제이므로 snapshot 최적화보다 먼저 별도 버그 수정
+후보로 다룬다.
+
+### 3. Runtime placement 로그 상한
+
+- 현재 누적 `inputLog` 재필터링은 장시간 세션에서
+  `O(placements × accumulated inputs)` 비용으로 커질 수 있다.
+- 외부 placement log의 schema·순서·canonical hash는 유지하면서 per-piece
+  input buffer 또는 처리 cursor로 완료된 입력을 다시 탐색하지 않게 한다.
+- recorder로 전달을 마친 board/input은 필요한 분석 계약만 남기고 runtime
+  메모리 보관 범위를 제한한다.
+- 기존 placement fixture의 byte/hash parity와 장시간 placement soak의
+  heap/RSS가 bounded인지 검증한 뒤 적용한다.
+
+### 4. Snapshot coalescing 조건
+
+- 기존 `P2: 입력별 full snapshot 전송 최적화`의 계약을 재사용한다.
+- 매 input acknowledgment는 유지하고 일반 movement snapshot만 약 `100ms`
+  trailing coalescing한다.
+- lock, line clear presentation, garbage 적용, gameOver, reconnect와 correction
+  snapshot은 즉시 전송한다.
+- 마지막 authoritative state와 일회성 `presentationEffect`가 유실되지 않는
+  회귀 테스트가 선행돼야 한다.
+- 구현 gate는 부하 측정에서 snapshot bytes, acknowledgment latency 또는
+  event-loop delay가 실제 목표치를 넘은 경우로 제한한다.
+
+### 5. 현재 하지 않을 최적화
+
+- AI worker pool 또는 AI service 분리
+- React memoization 확대와 Context/state manager 추가
+- Canvas 부분 redraw
+- PostgreSQL canonical hash·retention query micro-optimization
+- 로비 메시지 pagination/상한
+
+위 항목은 profiler나 재현 가능한 장애가 생길 때 다시 판단한다.
+
+### 6. 배포 안정화와 무중단 배포 경계
+
+현재 OCI VM은 RAM 약 `954MiB`이고 app `320MiB`, PostgreSQL `256MiB`,
+Caddy `96MiB` 제한을 사용한다. app 두 개를 동시에 두면 limit 합계만
+`992MiB`가 되어 OS 메모리도 남지 않는다. room, match와 session도 단일
+Node process memory에 있으므로 현재 구조의 container 교체는 진행 중인
+Socket.IO 경기를 보존하지 못한다. 따라서 지금 상태를 진정한 무중단 배포라고
+부르지 않는다.
+
+첫 운영 관찰값은 app 약 `30.94MiB`, PostgreSQL 약 `55.64MiB`, Caddy 약
+`15.77MiB`, VM available memory 약 `434MiB`, swap 사용 약 `83MiB`였다.
+이는 한 시점의 값일 뿐 peak headroom이나 두 app 동시 실행 안전성을 증명하지
+않으므로 blue-green 승인 전 별도 부하 측정이 필요하다.
+
+#### 단계 A — planned drain + 안전한 짧은 중단 배포
+
+1. hosted CI가 green인 immutable image digest와 이전 rollback digest를 고정한다.
+2. DB migration은 기존 app과 호환되는 forward/expand 변경만 먼저 적용하고,
+   DB와 현재 event sink를 backup한다.
+3. 최소 maintenance/readiness 경계를 추가해 신규 room create/join/start를
+   차단하고, active room/match가 `0`이 될 때까지 bounded drain한다.
+4. event producer를 정지하고 기존 PostgreSQL in-flight write를 drain한 뒤
+   app을 정상 종료한다.
+5. app만 새 digest로 교체하고 liveness와 storage readiness를 모두 확인한다.
+   PostgreSQL과 Caddy는 불필요하게 재시작하지 않는다.
+6. HTTPS, same-origin Socket.IO, Single/PVP/PVE와 event 저장을 smoke한 뒤
+   실패하면 이전 digest로 즉시 복귀한다.
+
+이 단계의 목표는 장애 시간을 예측·제한하고 rollback을 확실히 하는 것이며
+무중단을 주장하지 않는다.
+
+#### 단계 B — 조건부 near-zero HTTP 전환
+
+- image는 VM 밖의 CI에서 build하고 immutable digest로 pull해 VM build 부하를
+  없앤다.
+- 메모리 실측에서 OS·PostgreSQL·Caddy·blue·green을 동시에 실행할 안전한
+  headroom이 확인되거나 VM 용량을 늘린 경우에만 두 app을 띄운다.
+- green readiness 성공 뒤 Caddy가 신규 연결만 green으로 보내고, blue의 기존
+  HTTP/WebSocket 연결은 room 종료 또는 명시적 drain timeout까지 유지한다.
+- Caddy config reload는 기본적으로 기존 WebSocket을 닫을 수 있으므로
+  `stream_close_delay`, release-aware affinity와 reconnect가 원래 instance로
+  돌아가는지까지 검증한다.
+- 이 단계는 새 HTTP 요청의 중단을 줄일 뿐, process memory에 있는 active match
+  보존까지 검증하기 전에는 전체 서비스 무중단이라고 부르지 않는다.
+
+현재 `VM.Standard.E2.1.Micro` 자원에서는 단계 B를 기본안으로 사용하지 않는다.
+
+#### 단계 C — 실제 무중단 배포
+
+- 최소 두 app instance와 이를 감당할 별도 VM 또는 충분한 메모리를 준비한다.
+- 신규 연결의 green 전환과 blue의 active room drain을 지원한다.
+- 배포 중 reconnect와 active match까지 보존하려면 shared session/room/match
+  state, sticky routing 또는 Socket.IO adapter와 version-compatible protocol이
+  선행돼야 한다.
+- DB migration은 `expand → 양 버전 호환 → traffic cutover → contract` 순서로
+  수행한다.
+- 단일 OCI VM 장애까지 견디려면 app과 DB의 장애 영역·backup/restore도 분리해야
+  한다.
+
+#### 배포 완료 기준
+
+- 단계 A는 외부 probe로 실제 중단 시간을 기록하고 새 app readiness 이후
+  network error와 `5xx`가 없는지 확인한다. 측정 전에는 중단 시간을 보장하지 않는다.
+- 단계 B의 endpoint near-zero를 주장하려면 전환 중 연속 HTTPS probe에
+  network error와 `5xx`가 없어야 한다.
+- 단계 C의 gameplay 무중단을 주장하려면 기존 Socket.IO 연결과 진행 중
+  PVP/PVE의 board·sequence가 끝까지 유지돼야 한다.
+- event 누락·중복·idempotency conflict가 없고 shutdown 뒤 DB pool connection이
+  `0`이다.
+- old/new image digest, Caddy 전환 시점, health/readiness, exit code와
+  `OOMKilled=false`를 기록한다.
+- 새 version smoke 실패 시 DB row를 삭제하지 않고 이전 image와 호환 설정으로
+  rollback할 수 있다.
 
 ## Data Storage Plan and Next Work
 
 ### 바로 해야 할 일
 
-1. OCI 단일 VM read-only preflight
-   - OS/architecture, RAM/swap/disk, Docker/Compose, container/port, reverse proxy/TLS, DNS, firewall와 기존 JSONL/backup 경로를 변경 없이 확인한다.
-2. JSONL 기반 app + HTTPS 기준선 배포
-   - preflight 결과와 rollback 계획을 보고하고 별도 승인 뒤 진행한다. PostgreSQL provisioning, 실제 JSONL import와 single-sink cutover는 각각 후속 승인으로 분리한다.
-3. `PLAN.md` 단일 기준성 유지
+1. 운영 backup과 retention 자동화
+   - 보존한 import 전 backup과 restore rehearsal을 기준으로 정기 `pg_dump`, backup checksum·복구 점검, 90일 retention dry-run과 disk 70%/85% 경고를 설계한다.
+2. 운영 recovery 기준선 확장
+   - 현재 image와 JSONL rollback 원본을 보존하고 Caddy/TLS 자동 갱신, VM reboot 후 app/PostgreSQL 자동 복구와 backup restore를 다시 확인한다.
+3. 성능·배포 후속 gate
+   - 위 부하 측정과 ticker 정확성 수정부터 진행하고, 무중단 배포는 단계 B/C 선행조건이 충족된 경우에만 별도 Goal로 연다.
+4. `PLAN.md` 단일 기준성 유지
    - 실행 결과는 각 `runs/goal-*`에 남기고 현재 우선순위만 이 섹션에서 갱신한다.
 
 ### 이후 단계
@@ -562,8 +725,11 @@
 - [x] Goal 9C JSONL backfill 구현·검증과 main/origin 통합
 - [x] Goal 9D local PostgreSQL CI/release/Docker gate 구현·검증
 - [x] Goal 9D main/origin 통합과 hosted 네 job의 cache-independent clean run 검증
-- [ ] OCI read-only preflight와 JSONL 기반 app + HTTPS 기준선 배포
-- [ ] PostgreSQL provisioning, 실제 JSONL import와 single-sink cutover를 각각 별도 승인으로 진행
+- [x] OCI 단일 VM Docker Compose/Caddy 구성과 공개 app + HTTPS 기준선 배포
+- [x] PostgreSQL provisioning, JSONL 멱등 import, single-sink cutover와 실제 gameplay/restart row 보존
+- [~] maintenance window 기반 app 교체와 rollback 근거 보존. 이전 image로 실제 rollback하는 rehearsal은 미실행
+- [ ] 정기 PostgreSQL backup/restore, 90일 retention과 용량 경고 자동화
+- [ ] 자원·상태 공유 선행조건이 충족될 때만 near-zero/무중단 배포 Goal 승인
 - [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
 - [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
 - [ ] 실제 gameplay 성능 목표가 생기면 heuristic/V4/hybrid를 새 실험 문서와 benchmark로 분리 검토
@@ -581,7 +747,11 @@
 - [x] Goal 9C JSONL import/completeness 검증과 main 통합
 - [x] Goal 9D local PostgreSQL CI/release/Docker 검증
 - [x] Goal 9D hosted PostgreSQL 포함 네 job과 cache-independent clean run 검증 및 main 통합
-- [ ] OCI read-only preflight 뒤 JSONL app 기준선을 배포하고 PostgreSQL 전환은 별도 gate로 진행
+- [x] OCI 단일 VM의 공개 HTTPS/Caddy와 same-origin Socket.IO 기준선 운영 확인
+- [x] production PostgreSQL single-sink, JSONL import·실제 write·app restart 보존과 최초 backup/restore rehearsal
+- [ ] 정기 backup/retention·disk alert와 VM reboot recovery 검증
+- [ ] ticker wall-clock 정확성 수정과 1·10·50 room 부하 계측
+- [ ] 현재 VM에서는 안전한 짧은 중단 배포를 우선하고, true zero-downtime은 다중 instance·상태 공유 뒤 재검토
 - [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
 - [ ] Goal 9D 이후 DB export/read-source 전환이 필요하면 Goal 10 재검토
 - [ ] deterministic seed/replay 고도화
@@ -598,7 +768,10 @@
 - [x] disconnect 기반 room cleanup
 - [x] production Docker health check
 - [ ] TTL 또는 오래된 room cleanup
-- [ ] external TLS/reverse proxy 환경 검증
+- [x] 공개 OCI 주소의 external TLS/Caddy reverse proxy와 same-origin Socket.IO smoke
+- [ ] TLS 자동 갱신·VM reboot·장시간 운영 recovery 검증
+- [x] PostgreSQL production event sink, JSONL import와 최초 backup/restore 증거
+- [ ] 정기 PostgreSQL backup/retention과 용량 경고 자동화
 - [x] GitHub-hosted CI에서 Fast, Docker, Browser가 모두 성공
 
 ### AI 원칙
