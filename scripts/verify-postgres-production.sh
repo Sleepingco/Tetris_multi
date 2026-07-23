@@ -61,6 +61,19 @@ if docker volume inspect "$volume_name" >/dev/null 2>&1 \
     exit 1
 fi
 
+APP_IMAGE_TAG=test \
+DATABASE_URL=postgresql://test:test@postgres:5432/test?sslmode=verify-full \
+docker compose -f "${ROOT}/compose.production.yml" config --format json \
+    | node -e '
+const fs = require("node:fs");
+const command = JSON.parse(fs.readFileSync(0, "utf8")).services.postgres.command;
+if (!Array.isArray(command) ||
+    command.length !== 1 ||
+    !command[0].includes("exec docker-entrypoint.sh postgres")) {
+    process.exit(1);
+}
+'
+
 openssl req -x509 -newkey rsa:2048 -sha256 -nodes -days 2 \
     -subj "/CN=Tetris Goal 9D Test CA" \
     -keyout "${temporary_directory}/ca.key" \

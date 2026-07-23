@@ -44,21 +44,22 @@ services:
     entrypoint:
       - /bin/sh
       - -c
-    command: |
-      set -eu
-      mkdir -p /var/lib/postgresql/tls
-      cp /run/host-certs/postgres.crt /var/lib/postgresql/tls/postgres.crt
-      cp /run/host-certs/postgres.key /var/lib/postgresql/tls/postgres.key
-      chown postgres:postgres /var/lib/postgresql/tls/postgres.crt /var/lib/postgresql/tls/postgres.key
-      chmod 600 /var/lib/postgresql/tls/postgres.key
-      exec docker-entrypoint.sh postgres \
-        -c ssl=on \
-        -c ssl_cert_file=/var/lib/postgresql/tls/postgres.crt \
-        -c ssl_key_file=/var/lib/postgresql/tls/postgres.key \
-        -c shared_buffers=32MB \
-        -c max_connections=20 \
-        -c work_mem=2MB \
-        -c maintenance_work_mem=32MB
+    command:
+      - |
+        set -eu
+        mkdir -p /var/lib/postgresql/tls
+        cp /run/host-certs/postgres.crt /var/lib/postgresql/tls/postgres.crt
+        cp /run/host-certs/postgres.key /var/lib/postgresql/tls/postgres.key
+        chown postgres:postgres /var/lib/postgresql/tls/postgres.crt /var/lib/postgresql/tls/postgres.key
+        chmod 600 /var/lib/postgresql/tls/postgres.key
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/var/lib/postgresql/tls/postgres.crt \
+          -c ssl_key_file=/var/lib/postgresql/tls/postgres.key \
+          -c shared_buffers=32MB \
+          -c max_connections=20 \
+          -c work_mem=2MB \
+          -c maintenance_work_mem=32MB
     healthcheck:
       test:
         - CMD-SHELL
