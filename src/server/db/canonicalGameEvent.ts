@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 export const MAX_CANONICAL_EVENT_BYTES = 256 * 1024;
+export const MAX_GAME_ID_BYTES = 64;
+export const MAX_PLAYER_ID_BYTES = 64;
 const POSTGRES_INTEGER_MAX = 2_147_483_647;
 const OCCURRED_AT_PATTERN =
     /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,3}))?(?:Z|([+-])(\d{2}):(\d{2}))$/;
@@ -67,19 +69,39 @@ function fail(code: string): never {
     throw new CanonicalGameEventError(code);
 }
 
+function isPostgresText(value: string): boolean {
+    for (let index = 0; index < value.length; index += 1) {
+        const codeUnit = value.charCodeAt(index);
+        if (codeUnit === 0) return false;
+        if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
+            if (index + 1 >= value.length) return false;
+            const next = value.charCodeAt(index + 1);
+            if (next < 0xdc00 || next > 0xdfff) return false;
+            index += 1;
+        } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
+            return false;
+        }
+    }
+    return true;
+}
+
 function cloneCanonicalValue(
     value: unknown,
     ancestors: Set<object>,
 ): CanonicalJsonValue {
     if (
         value === null
-        || typeof value === "string"
         || typeof value === "boolean"
     ) {
         return value;
     }
+    if (typeof value === "string") {
+        return isPostgresText(value) ? value : fail("CANONICAL_JSON_INVALID");
+    }
     if (typeof value === "number") {
-        return Number.isFinite(value) ? value : fail("CANONICAL_JSON_INVALID");
+        return Number.isFinite(value) && !Object.is(value, -0)
+            ? value
+            : fail("CANONICAL_JSON_INVALID");
     }
     if (typeof value !== "object") {
         return fail("CANONICAL_JSON_INVALID");
@@ -95,11 +117,18 @@ function cloneCanonicalValue(
                 return fail("CANONICAL_JSON_INVALID");
             }
             const ownKeys = Reflect.ownKeys(value);
-            if (ownKeys.some(key => {
-                return typeof key !== "string"
-                    || (key !== "length" && !/^(0|[1-9]\d*)$/.test(key));
-            })) {
+            if (ownKeys.length !== value.length + 1) {
                 return fail("CANONICAL_JSON_INVALID");
+            }
+            for (const key of ownKeys) {
+                if (key === "length") continue;
+                if (
+                    typeof key !== "string"
+                    || !/^(0|[1-9]\d*)$/.test(key)
+                    || Number(key) >= value.length
+                ) {
+                    return fail("CANONICAL_JSON_INVALID");
+                }
             }
 
             const clone: CanonicalJsonValue[] = [];
@@ -132,11 +161,19 @@ function cloneCanonicalValue(
 
         const clone: Record<string, CanonicalJsonValue> = {};
         for (const key of keys.sort()) {
+            if (!isPostgresText(key)) {
+                return fail("CANONICAL_JSON_INVALID");
+            }
             const descriptor = Object.getOwnPropertyDescriptor(value, key);
             if (!descriptor || !("value" in descriptor) || !descriptor.enumerable) {
                 return fail("CANONICAL_JSON_INVALID");
             }
-            clone[key] = cloneCanonicalValue(descriptor.value, ancestors);
+            Object.defineProperty(clone, key, {
+                configurable: false,
+                enumerable: true,
+                value: cloneCanonicalValue(descriptor.value, ancestors),
+                writable: false,
+            });
         }
         return Object.freeze(clone);
     } finally {
@@ -144,8 +181,24 @@ function cloneCanonicalValue(
     }
 }
 
+function serializeCanonicalValue(value: CanonicalJsonValue): string {
+    if (value === null) return "null";
+    if (typeof value === "string") return JSON.stringify(value);
+    if (typeof value === "number" || typeof value === "boolean") {
+        return String(value);
+    }
+    if (Array.isArray(value)) {
+        return `[${value.map(serializeCanonicalValue).join(",")}]`;
+    }
+    const objectValue = value as Readonly<Record<string, CanonicalJsonValue>>;
+    const entries = Object.keys(objectValue)
+        .sort()
+        .map(key => `${JSON.stringify(key)}:${serializeCanonicalValue(objectValue[key])}`);
+    return `{${entries.join(",")}}`;
+}
+
 export function canonicalJson(value: unknown): string {
-    return JSON.stringify(cloneCanonicalValue(value, new Set()));
+    return serializeCanonicalValue(cloneCanonicalValue(value, new Set()));
 }
 
 function isRecord(value: CanonicalJsonValue): value is Record<string, CanonicalJsonValue> {
@@ -154,6 +207,14 @@ function isRecord(value: CanonicalJsonValue): value is Record<string, CanonicalJ
 
 function isNonBlankString(value: CanonicalJsonValue): value is string {
     return typeof value === "string" && value.trim().length > 0;
+}
+
+function isBoundedIdentity(
+    value: CanonicalJsonValue,
+    maximumBytes: number,
+): value is string {
+    return isNonBlankString(value)
+        && Buffer.byteLength(value, "utf8") <= maximumBytes;
 }
 
 function isPostgresInteger(value: CanonicalJsonValue): value is number {
@@ -253,7 +314,7 @@ function createSnapshot(input: unknown): CanonicalGameEvent {
     if (!isPostgresInteger(value.schemaVersion) || value.schemaVersion === 0) {
         return fail("CANONICAL_EVENT_INVALID");
     }
-    if (!isNonBlankString(value.gameId)) {
+    if (!isBoundedIdentity(value.gameId, MAX_GAME_ID_BYTES)) {
         return fail("CANONICAL_EVENT_INVALID");
     }
     if (
@@ -270,7 +331,7 @@ function createSnapshot(input: unknown): CanonicalGameEvent {
     if (value.eventType === "placement_decision") {
         if (
             (value.schemaVersion !== 1 && value.schemaVersion !== 2)
-            || !isNonBlankString(value.playerId)
+            || !isBoundedIdentity(value.playerId, MAX_PLAYER_ID_BYTES)
             || !isPostgresInteger(value.pieceIndex)
             || (value.schemaVersion === 2 && occurredAt === null)
         ) {

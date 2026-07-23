@@ -9,6 +9,8 @@ const assert = require("node:assert/strict");
 
 const {
     MAX_CANONICAL_EVENT_BYTES,
+    MAX_GAME_ID_BYTES,
+    MAX_PLAYER_ID_BYTES,
     canonicalJson,
     createCanonicalGameEvent,
     prepareCanonicalGameEvent,
@@ -140,6 +142,55 @@ test("array 순서는 보존하고 Unicode normalization은 적용하지 않는�
     assert.equal(canonicalJson({ z: 1, a: 2 }), '{"a":2,"z":1}');
 });
 
+test("canonical JSON은 own __proto__와 code-unit key 순서를 손실 없이 직렬화한다", () => {
+    const nested = {};
+    Object.defineProperty(nested, "__proto__", {
+        configurable: true,
+        enumerable: true,
+        value: { safe: true },
+        writable: true,
+    });
+    const value = {
+        nested,
+        2: "two",
+        10: "ten",
+    };
+
+    assert.equal(canonicalJson(null), "null");
+    assert.equal(canonicalJson(false), "false");
+    assert.equal(canonicalJson(7), "7");
+    assert.equal(canonicalJson("seven"), '"seven"');
+    assert.equal(
+        canonicalJson(value),
+        '{"10":"ten","2":"two","nested":{"__proto__":{"safe":true}}}',
+    );
+    assert.notEqual(canonicalJson(nested), canonicalJson({}));
+});
+
+test("array의 length와 실제 index 밖 own key는 canonical 값으로 허용하지 않는다", () => {
+    const maximumProperty = ["line"];
+    Object.defineProperty(maximumProperty, "4294967295", {
+        configurable: true,
+        enumerable: true,
+        value: "outside",
+        writable: true,
+    });
+    const nonIndexProperty = ["line"];
+    Object.defineProperty(nonIndexProperty, "01", {
+        configurable: true,
+        enumerable: true,
+        value: "outside",
+        writable: true,
+    });
+
+    for (const value of [maximumProperty, nonIndexProperty]) {
+        assert.throws(
+            () => canonicalJson(value),
+            { message: "CANONICAL_JSON_INVALID" },
+        );
+    }
+});
+
 test("JSON primitive, array와 plain object 밖의 값은 table-driven으로 거부한다", () => {
     const circular = {};
     circular.self = circular;
@@ -167,6 +218,7 @@ test("JSON primitive, array와 plain object 밖의 값은 table-driven으로 거
         { value: circular },
         { value: customPrototype },
         { value: { toJSON() { return {}; } } },
+        { value: -0 },
         getterPayload,
     ];
 
@@ -177,6 +229,59 @@ test("JSON primitive, array와 plain object 밖의 값은 table-driven으로 거
         );
     }
     assert.equal(getterCalled, false);
+});
+
+test("PostgreSQL text에 저장할 수 없는 문자열과 identity byte 초과를 거부한다", () => {
+    const invalidPayloads = [
+        { value: "\u0000" },
+        { value: "\ud800" },
+        { value: "\udc00" },
+    ];
+    for (const payload of invalidPayloads) {
+        assert.throws(
+            () => prepareCanonicalGameEvent(createPlacementEvent({ payload })),
+            { message: "CANONICAL_EVENT_INVALID" },
+        );
+    }
+
+    for (const key of ["bad\u0000key", "bad\ud800key", "bad\udc00key"]) {
+        const payload = {};
+        Object.defineProperty(payload, key, {
+            configurable: true,
+            enumerable: true,
+            value: true,
+            writable: true,
+        });
+        assert.throws(
+            () => prepareCanonicalGameEvent(createPlacementEvent({ payload })),
+            { message: "CANONICAL_EVENT_INVALID" },
+        );
+    }
+
+    assert.equal(MAX_GAME_ID_BYTES, 64);
+    assert.equal(MAX_PLAYER_ID_BYTES, 64);
+    const exactBytes = "\u00e9".repeat(32);
+    const accepted = createCanonicalGameEvent(createPlacementEvent({
+        gameId: exactBytes,
+        playerId: exactBytes,
+        payload: { emoji: "\ud83d\ude80" },
+    }));
+    assert.equal(Buffer.byteLength(accepted.gameId, "utf8"), MAX_GAME_ID_BYTES);
+    assert.equal(Buffer.byteLength(accepted.playerId, "utf8"), MAX_PLAYER_ID_BYTES);
+
+    const invalidIdentities = [
+        { gameId: "\u0000" },
+        { gameId: "\ud800" },
+        { playerId: "\udc00" },
+        { gameId: `${exactBytes}x` },
+        { playerId: `${exactBytes}x` },
+    ];
+    for (const overrides of invalidIdentities) {
+        assert.throws(
+            () => createCanonicalGameEvent(createPlacementEvent(overrides)),
+            { message: "CANONICAL_EVENT_INVALID" },
+        );
+    }
 });
 
 test("event/schema/trust/nullability shape를 table-driven으로 강제한다", () => {

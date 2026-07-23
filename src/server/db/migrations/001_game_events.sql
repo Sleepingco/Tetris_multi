@@ -20,9 +20,18 @@ CREATE TABLE tetris_analytics.game_events (
     CONSTRAINT game_events_schema_version_check
         CHECK (schema_version > 0),
     CONSTRAINT game_events_game_id_check
-        CHECK (pg_catalog.btrim(game_id) <> ''),
+        CHECK (
+            pg_catalog.btrim(game_id) <> ''
+            AND pg_catalog.octet_length(game_id) <= 64
+        ),
     CONSTRAINT game_events_player_id_check
-        CHECK (player_id IS NULL OR pg_catalog.btrim(player_id) <> ''),
+        CHECK (
+            player_id IS NULL
+            OR (
+                pg_catalog.btrim(player_id) <> ''
+                AND pg_catalog.octet_length(player_id) <= 64
+            )
+        ),
     CONSTRAINT game_events_piece_index_check
         CHECK (piece_index IS NULL OR piece_index >= 0),
     CONSTRAINT game_events_trust_level_check
@@ -31,6 +40,11 @@ CREATE TABLE tetris_analytics.game_events (
         CHECK (pg_catalog.jsonb_typeof(payload) = 'object'),
     CONSTRAINT game_events_event_sha256_check
         CHECK (event_sha256 ~ '^[0-9a-f]{64}$'),
+    CONSTRAINT game_events_occurred_at_finite_check
+        CHECK (
+            occurred_at IS NULL
+            OR pg_catalog.isfinite(occurred_at)
+        ),
     CONSTRAINT game_events_shape_check
         CHECK (
             (
