@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11E의 hosted 반복에서 자연 중력과 runner scheduling에 의존하는 PVE T-Spin E2E가 결정론적 gate에 적합하지 않음이 확인돼 해당 시나리오와 전용 helper를 제거했다. T-Spin은 기존 core·authoritative·runtime 결정론적 테스트가 보장하고 pending-garbage E2E 보강은 유지한다. production·workflow·dependency는 변경하지 않았으며 새 SHA의 hosted CI gate와 main 반영은 아직 수행하지 않았다.
+- Last update: 2026-07-23 기준. Goal 11E는 timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage E2E 보강을 유지한 최종 SHA `8cc16d9`가 GitHub-hosted PR run에서 Fast/Browser/Docker 모두 통과한 뒤 main에 반영됐다. 현재 main의 CI 실패는 `docs/portfolio-project-document.md` 두 줄의 trailing whitespace이며, 이를 고친 다음 main hosted gate를 다시 확인한다.
 
 ## Document Role
 
@@ -880,7 +880,7 @@
 - [x] CSP/security headers와 dependency hardening 반영
 - [x] production Docker image와 graceful shutdown 반영
 - [~] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됨. 이후 main runs의 Fast/Docker는 통과했고 Browser는 각각 PVE T-Spin과 pending garbage timing 경계에서 36/37로 실패함
-- [~] Goal 11E는 PR #2의 SHA `88dec1f` 첫 Browser는 통과했지만 같은 SHA의 두 번째 Browser에서 T-Spin 조각이 row-16 회전 precondition 전에 자동 lock됐다. timing-dependent T-Spin E2E를 제거한 최종 local gate를 완료했고 새 SHA의 hosted 검증을 대기 중
+- [x] Goal 11E는 timing-dependent T-Spin E2E를 제거한 최종 SHA `8cc16d9`가 GitHub-hosted PR run에서 Fast/Browser/Docker 모두 통과했고 main에 반영됨
 
 ### 현재 단계의 핵심 문제
 
@@ -890,7 +890,7 @@
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
 - pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
 - T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
-- PR #2의 SHA `88dec1f` hosted run은 Fast/Docker와 첫 Browser가 성공했지만 두 번째 Browser가 row-16 회전 precondition 전 자동 lock으로 실패했다. 최종 범위 commit의 hosted Browser 연속 2회 성공과 Fast/Docker green은 아직 확인하지 않았다.
+- 최신 main의 hosted run은 `docs/portfolio-project-document.md` 두 줄의 trailing whitespace로 Fast gate에서 중단됐다. 이 문서 수정이 main에 반영된 뒤 Fast/Browser/Docker 세 job을 다시 확인해야 9A preflight를 재개할 수 있다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
 
 ### 현재 단계에서 하지 않을 것
@@ -907,9 +907,9 @@
 
 ### 바로 해야 할 일
 
-1. Goal 11E hosted CI와 main green 확인
-   - 후속 local gate가 통과한 새 SHA로 hosted Fast/Docker 성공과 Browser 연속 2회 성공을 확인한다.
-   - 별도 승인 후 main에 반영하고 main push의 Fast/Browser/Docker 세 job green을 확인한다.
+1. main hosted CI recovery
+   - Goal 11E 최종 SHA의 hosted PR gate와 main 반영은 완료됐다.
+   - portfolio 문서 whitespace 수정이 main에 반영된 뒤 Fast/Browser/Docker 세 job green을 확인한다.
 2. PostgreSQL Goal 순차 실행
    - 9A 실제 schema/migration/repository
    - 9B runtime canonical storage와 shutdown
@@ -920,8 +920,8 @@
 
 ### 이후 단계
 
-- [~] Goal 11E 후속 local gate 완료. 새 SHA의 hosted Fast/Docker와 Browser 연속 2회 성공 확인 대기
-- [ ] Goal 11E main/hosted CI green 확인 후 9A 시작
+- [x] Goal 11E 최종 SHA의 hosted PR gate 통과와 main 반영 완료
+- [ ] portfolio 문서 수정의 main hosted Fast/Browser/Docker green 확인 후 9A 시작
 - [ ] Goal 9A → 9B → 9C → 9D를 각 main merge gate로 실행
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
 - [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
@@ -1267,7 +1267,8 @@
 ### production hardening 이후
 
 - [x] Goal 11D PR 원격 실행 증거와 main 반영
-- [ ] main push에서 확인된 PVE timing failure 두 형태를 해결한 뒤 main CI green 복구
+- [x] Goal 11E의 PVE timing failure 두 형태를 제거하고 hosted PR gate 통과 및 main 반영 완료
+- [ ] portfolio 문서 수정 후 main hosted Fast/Browser/Docker green 복구
 - [ ] Goal 9A~9D PostgreSQL event storage 구현과 실제 DB CI 검증
 - [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
 - [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
