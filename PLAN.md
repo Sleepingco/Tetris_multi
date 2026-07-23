@@ -517,7 +517,7 @@
 - [x] Goal 11E는 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 코드 Browser 연속 2회가 통과했다.
 - [x] Goal 9A는 raw SQL migration, canonical identity와 parameterized PostgreSQL repository를 실제 PostgreSQL 17.10으로 검증한 뒤 main과 origin/main에 반영됐다. hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser도 모두 green이다.
 - [x] Goal 9A review에서 injective canonical serialization, PostgreSQL-safe text·64-byte identity와 whitespace-only SQL 거부, finite timestamp, strict loopback·ambient `PG*` 차단, explicit URL password와 migration bootstrap owner 검증을 고정했다. 최종 gate는 실제 PostgreSQL 6/6, Node 616 pass·기존 1 skip, artifact/release 각 1/1이며 production E2E는 같은 gameplay/client의 선행 36/36을 유지한다.
-- [x] Goal 9B는 `GAME_EVENT_STORAGE=jsonl|postgres` single-sink, lifecycle schema v2, server UUID game identity와 authoritative human receipt, privacy allowlist projector, pool 4/in-flight 16, 3회·2.7초 retry와 3초 drain/8초 shutdown을 local branch에 구현했다. 실제 PostgreSQL 17.10 7/7, Node 635 pass·기존 1 skip, artifact/release 각 1/1, Vite-dev 10 pass·2 skip과 production E2E 36/36이 통과했다.
+- [x] Goal 9B는 `GAME_EVENT_STORAGE=jsonl|postgres` single-sink, lifecycle schema v2, server UUID game identity와 1회용 authoritative human receipt, privacy allowlist projector, pool 4/in-flight 16, 3회·2.7초 retry와 3초 drain/8초 shutdown을 local branch에 구현했다. 독립 최종 리뷰에서 receipt replay와 retry 최악 경로 budget을 수정했으며, 실제 PostgreSQL 17.10 7/7, Node 636 pass·기존 1 skip, artifact/release 각 1/1, Vite-dev 10 pass·2 skip과 production E2E 36/36이 통과했다.
 
 ### 알려진 위험과 보류 범위
 

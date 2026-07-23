@@ -40,7 +40,7 @@ client raw placement log
   → 현재 JSONL sink에 저장
 ```
 
-즉, client가 보낸 `gameId`, `roomId`와 `playerId`는 저장 주체가 아니다. Socket handler가 30초 TTL·player당 최대 128개의 authoritative receipt에서 client sequence와 piece index를 확인하고 server/session identity로 바꾼 뒤 `validatePlacementDecisionLog`를 다시 통과한 값만 선택된 sink에 전달한다.
+즉, client가 보낸 `gameId`, `roomId`와 `playerId`는 저장 주체가 아니다. Socket handler가 30초 TTL·player당 최대 128개의 authoritative receipt에서 client sequence와 piece index를 확인해 receipt를 한 번 소비하고, server/session identity로 바꾼 뒤 `validatePlacementDecisionLog`를 다시 통과한 값만 선택된 sink에 전달한다.
 
 Socket handler는 client human placement log를 인증·재검증하고 game start log를 만든다. authoritative match finish는 game over log를 만들고, PVE AI service는 실제로 확정된 heuristic placement를 schema v2 log로 만든다. 이 흐름의 현재 구현 위치는 다음과 같다.
 
@@ -264,7 +264,7 @@ pseudonymous `playerId`도 telemetry다. 승인된 운영값은 raw telemetry 90
 
 Goal 9A repository의 `append()`은 inserted, duplicate, conflict를 구분한다. invalid canonical event와 닫힌 repository는 성공으로 가장하지 않으며, `close()`는 여러 번 호출해도 안전해야 한다. 같은 identity와 다른 hash는 `IDEMPOTENCY_CONFLICT`이고 기존 row는 유지한다.
 
-Goal 9B runtime은 pool 최대 4, direct in-flight 최대 16에서 별도 queue 없이 write를 추적한다. network timeout/reset, SQLSTATE `08*`, `40001`, `40P01`만 3회·총 2.7초 안에서 재시도하고 validation, constraint와 idempotency conflict는 재시도하지 않는다. 실패는 safe code·event type·attempt count와 counter로 관찰하며 gameplay는 계속한다.
+Goal 9B runtime은 pool 최대 4, direct in-flight 최대 16, connection/query timeout 각 200ms에서 별도 queue 없이 write를 추적한다. network timeout/reset, SQLSTATE `08*`, `40001`, `40P01`만 3회·총 2.7초 안에서 재시도하고 validation, constraint와 idempotency conflict는 재시도하지 않는다. 실패는 safe code·event type·attempt count와 counter로 관찰하며 gameplay는 계속한다.
 
 종료는 신규 DB write 차단, Socket/ticker producer 정지, 최대 3초 in-flight drain, PostgreSQL pool close, Socket.IO/HTTP close 순서이고 전체 hard deadline은 8초다. 최종 DB 실패나 process crash에서는 개별 event가 유실될 수 있으며 durable outbox는 구현하지 않는다.
 
