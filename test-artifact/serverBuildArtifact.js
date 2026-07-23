@@ -26,6 +26,7 @@ const CLIENT_RUNTIME_SOURCE_ROOTS = [
 ];
 const PLACEMENT_V4_MODEL_PATH = "server/assets/placement-v4-125g-experimental-model.json";
 const PLACEMENT_V4_MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d";
+const GAME_EVENTS_MIGRATION_PATH = "server/db/migrations/001_game_events.sql";
 
 async function listFiles(directory, prefix = "") {
     const files = [];
@@ -60,6 +61,8 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
             || file === "client/package.json"
             || file === "shared/socketContracts.mjs"
             || file === "server/assets/placement-v4-125g-experimental-model.json"
+            || /^server\/db\/.+\.js$/.test(file)
+            || file === GAME_EVENTS_MIGRATION_PATH
             || /^server\/(?:repositories|services|sockets|validators)\/.+\.js$/.test(file)
             || file === "server/httpSecurity.js"
             || file === "server/init.js"
@@ -145,6 +148,12 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
     assert.equal(outputModel.equals(sourceModel), true);
     assert.equal(createHash("sha256").update(sourceModel).digest("hex"), PLACEMENT_V4_MODEL_SHA256);
     assert.equal(createHash("sha256").update(outputModel).digest("hex"), PLACEMENT_V4_MODEL_SHA256);
+
+    const sourceMigration = await readFile(
+        path.join(ROOT, "src", "server", "db", "migrations", "001_game_events.sql"),
+    );
+    const outputMigration = await readFile(path.join(SERVER_ROOT, GAME_EVENTS_MIGRATION_PATH));
+    assert.equal(outputMigration.equals(sourceMigration), true);
 
     const { loadGameCore } = require(
         path.join(SERVER_ROOT, "server", "services", "gameCoreLoader.js")

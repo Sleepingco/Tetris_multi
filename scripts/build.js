@@ -2,7 +2,7 @@
  * source tree를 실행 가능한 `dist/` 구조로 만드는 최소 빌드 조율 스크립트다.
  *
  * 전체 빌드:
- * Vite로 네 client page 생성 → TypeScript server compile → runtime asset 복사
+ * Vite로 네 client page 생성 → TypeScript server compile → runtime asset와 SQL migration 복사
  *
  * `--server` 빌드:
  * 기존 `dist/client`는 유지 → `dist/server`만 다시 compile
@@ -55,6 +55,11 @@ async function build() {
     await cp(
         path.join(ROOT, "src", "server", "assets"),
         path.join(SERVER_ROOT, "server", "assets"),
+        { recursive: true },
+    );
+    await cp(
+        path.join(ROOT, "src", "server", "db", "migrations"),
+        path.join(SERVER_ROOT, "server", "db", "migrations"),
         { recursive: true },
     );
     await cp(
