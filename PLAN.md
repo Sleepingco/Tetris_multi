@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-24 기준. Goal 11E, Goal 9A와 Goal 9B는 main/origin에 반영됐고 hosted gate가 green이다. Goal 9C는 기존 canonical projection·privacy·identity를 재사용하는 streaming JSONL importer, dry-run, 멱등 재실행, partial failure 복구와 completeness report를 local 구현·검증했으며 main merge gate에서 대기한다. JSONL은 계속 기본 runtime sink이고 production PostgreSQL은 활성화하지 않았다.
+- Last update: 2026-07-24 기준. Goal 11E와 Goal 9A~9C는 main/origin에 반영됐다. Goal 9D의 실제 PostgreSQL CI job, production-like Docker gate와 provider-neutral 운영 runbook은 local 구현·검증을 마쳤으며 hosted CI 실행 승인 gate에서 대기한다. JSONL은 계속 기본 runtime sink이고 production PostgreSQL은 활성화하지 않았다.
 
 ## Current Project Status
 
@@ -501,7 +501,7 @@
 
 ### 현재 상태
 
-- 이름: Goal 9C local JSONL backfill 구현·검증 완료, main merge gate 대기
+- 이름: Goal 9D local PostgreSQL CI/release gate 구현·검증 완료, hosted CI 실행 승인 대기
 
 ### 진행 현황
 
@@ -518,13 +518,14 @@
 - [x] Goal 9A는 raw SQL migration, canonical identity와 parameterized PostgreSQL repository를 실제 PostgreSQL 17.10으로 검증한 뒤 main과 origin/main에 반영됐다. hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser도 모두 green이다.
 - [x] Goal 9A review에서 injective canonical serialization, PostgreSQL-safe text·64-byte identity와 whitespace-only SQL 거부, finite timestamp, strict loopback·ambient `PG*` 차단, explicit URL password와 migration bootstrap owner 검증을 고정했다. 최종 gate는 실제 PostgreSQL 6/6, Node 616 pass·기존 1 skip, artifact/release 각 1/1이며 production E2E는 같은 gameplay/client의 선행 36/36을 유지한다.
 - [x] Goal 9B는 `GAME_EVENT_STORAGE=jsonl|postgres` single-sink, lifecycle schema v2, server UUID game identity와 1회용 authoritative human receipt, privacy allowlist projector, pool 4/in-flight 16, 3회·2.7초 retry와 3초 drain/8초 shutdown을 main에 통합했다. receipt replay와 retry 최악 경로 budget review 수정도 반영했으며, PR와 main의 Fast gate, Chromium PVP and PVE, Production container smoke가 모두 green이었다. JSONL은 계속 기본 sink이고 PostgreSQL runtime mode는 구현됐지만 production에서 활성화하지 않았다.
-- [x] Goal 9C는 Node stream/readline importer, dry-run, canonical projection·privacy·identity 재사용, 멱등 재실행, partial failure 복구와 completeness reason report를 local 구현했다. synthetic fixture와 승인된 local JSONL copy를 PostgreSQL 17.10 test DB에서 검증했으며 원본 JSONL과 production DB는 변경하지 않았다.
+- [x] Goal 9C는 Node stream/readline importer, dry-run, canonical projection·privacy·identity 재사용, 멱등 재실행, partial failure 복구와 completeness reason report를 구현해 main/origin에 반영했다. synthetic fixture와 승인된 local JSONL copy를 PostgreSQL 17.10 test DB에서 검증했으며 원본 JSONL과 production DB는 변경하지 않았다.
+- [x] Goal 9D는 기존 세 hosted job을 보존한 채 실제 PostgreSQL 17.10 storage job, 외부 PostgreSQL과 source-less image의 production-like gate, synthetic backup/restore·retention rehearsal과 provider-neutral 운영 runbook을 local 구현·검증했다. branch push와 hosted 네 job은 별도 승인 전 실행하지 않는다.
 
 ### 알려진 위험과 보류 범위
 
 - `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
 - room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
-- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. Goal 9B PostgreSQL runtime wiring은 main에 통합됐지만 production 활성화는 하지 않았다. Goal 9C importer는 local 검증만 완료했으며 production import, hosted PostgreSQL CI와 production 활성화는 수행하지 않았다.
+- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. Goal 9B runtime과 Goal 9C importer는 main에 통합됐지만 production import와 PostgreSQL 활성화는 하지 않았다. Goal 9D hosted PostgreSQL CI도 push 승인 전이라 실행하지 않았다.
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
 - pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
 - T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
@@ -535,7 +536,7 @@
 
 - SPA 전환
 - 문서 branch에서 PostgreSQL code/dependency/CI를 선행 구현
-- Goal 9D 이전 production PostgreSQL enable과 실제 사용자 data import
+- Goal 9D hosted gate 이전 production PostgreSQL enable과 실제 사용자 data import
 - Redis/Socket.IO adapter와 multi-instance 운영
 - rollback netcode
 - V4를 기본 PVE 또는 production gameplay AI로 승격
@@ -545,10 +546,10 @@
 
 ### 바로 해야 할 일
 
-1. Goal 9C main merge gate
-   - local 구현·검증은 완료됐다. 별도 승인 전에는 push, main merge, production JSONL import나 production PostgreSQL 활성화를 수행하지 않는다.
-2. PostgreSQL Goal 순차 실행
-   - Goal 9C가 main/origin에 반영된 뒤에만 Goal 9D 실제 PostgreSQL CI/release/Docker gate를 별도로 승인한다.
+1. Goal 9D hosted CI 실행 승인 gate
+   - local 구현·검증과 목적별 commit은 완료됐다. 별도 승인 뒤에만 Goal branch를 push하고 Draft PR에서 Fast/Browser/Docker/PostgreSQL 네 job과 cache-miss clean run을 확인한다.
+2. Goal 9D merge와 production 활성화 분리
+   - hosted 네 job이 green이어도 main merge, production JSONL import와 PostgreSQL 활성화는 각각 별도 승인을 받는다.
 3. `PLAN.md` 단일 기준성 유지
    - 실행 결과는 각 `runs/goal-*`에 남기고 현재 우선순위만 이 섹션에서 갱신한다.
 
@@ -558,8 +559,9 @@
 - [x] portfolio trailing whitespace와 PLAN 상태 정정 뒤 후속 main의 Fast/Docker/Browser green을 확인함
 - [x] Goal 9A 설계와 local schema/migration/repository 구현·검증, main/origin/main 통합과 hosted Fast/Docker/Browser green
 - [x] Goal 9B 설계·구현·검증과 main/origin 통합
-- [x] Goal 9C 설계 승인과 local JSONL backfill 구현·검증
-- [ ] Goal 9C main 통합과 Goal 9D를 각각 별도 승인·merge gate로 실행
+- [x] Goal 9C JSONL backfill 구현·검증과 main/origin 통합
+- [x] Goal 9D local PostgreSQL CI/release/Docker gate 구현·검증
+- [ ] Goal 9D branch push 승인 후 hosted 네 job과 cache-miss clean run 검증
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
 - [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
 - [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
@@ -575,8 +577,9 @@
 - [x] portfolio trailing whitespace와 PLAN 상태 정정 뒤 hosted Fast/Docker/Browser green을 확인함
 - [x] Goal 9A main 통합과 hosted Fast/Docker/Browser green
 - [x] Goal 9B runtime PostgreSQL 검증과 main 통합
-- [x] Goal 9C local JSONL import/completeness 검증
-- [ ] Goal 9C main 통합과 Goal 9D hosted PostgreSQL 검증
+- [x] Goal 9C JSONL import/completeness 검증과 main 통합
+- [x] Goal 9D local PostgreSQL CI/release/Docker 검증
+- [ ] Goal 9D hosted PostgreSQL 포함 네 job과 cache-miss clean run 검증
 - [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
 - [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
 - [ ] Goal 9D 이후 DB export/read-source 전환이 필요하면 Goal 10 재검토
