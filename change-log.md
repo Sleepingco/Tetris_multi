@@ -2509,3 +2509,16 @@ client input
 - server-owned `gameId`, authoritative receipt와 receipt replay 차단, lifecycle v1/v2 migration 호환, privacy allowlist, 3회·총 2.7초 retry, pool 4/in-flight 16과 안전한 shutdown 순서를 반영했다.
 - Draft PR #3과 main push의 Fast gate, Chromium PVP and PVE, Production container smoke가 모두 green이었다. main에서는 Node 24.18.0 `npm ci`, `bash scripts/verify.sh`, `git diff --check`를 통과했고, 같은 Goal HEAD의 hosted Browser/Docker green 결과가 있어 전체 E2E와 Docker는 반복하지 않았다.
 - managed provider, production TLS/credential, retention·deletion ownership과 용량 threshold는 남은 운영 위험이다. 다음 단계는 Goal 9C 설계 gate이며 Goal 9C/9D와 production PostgreSQL 활성화는 아직 미수행이다.
+
+## Migration Goal 9C JSONL backfill main 통합
+
+- Node stream/readline 기반 importer가 기존 JSONL을 전체 메모리에 올리지 않고 canonical projection과 privacy allowlist를 거쳐 PostgreSQL로 import한다.
+- dry-run, 멱등 재실행, duplicate/conflict, partial failure 복구, lifecycle/placement completeness와 원본 checksum 불변을 실제 PostgreSQL 17.10에서 검증했다.
+- Goal 9C는 main/origin에 반영했지만 production database와 실제 운영 JSONL은 변경하지 않았다.
+
+## Migration Goal 9D PostgreSQL CI/release main 통합
+
+- 기존 Fast/Browser/Docker job을 유지하고 실제 PostgreSQL 17.10의 migration/repository/runtime/import와 production-like Docker boundary를 검증하는 hosted job을 추가했다.
+- private-CA TLS hostname 검증, migration/runtime/maintenance role 분리, JSONL 없는 PostgreSQL single-sink, PVP/PVE, backup/restore, restart, DB-down과 shutdown을 검증했다.
+- PR #4와 최종 main `6775bfb`의 [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)에서 네 job이 모두 green이다.
+- production PostgreSQL, 실제 JSONL import와 OCI 배포는 활성화하지 않았다. 다음 단계는 OCI read-only preflight와 JSONL 기반 app + HTTPS 기준선 배포다.
