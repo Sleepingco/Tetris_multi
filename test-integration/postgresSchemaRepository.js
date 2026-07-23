@@ -608,6 +608,10 @@ async function verifySchemaAndRoles(plainUrl) {
                 gameId: "\u00e9".repeat(32),
                 playerId: "\u00e9".repeat(32),
             }),
+            rawEvent("valid-normal-identities", {
+                gameId: "normal-game-01",
+                playerId: "player-\ud5c8\uc6a9-01",
+            }),
         ];
         for (const row of validRows) {
             await insertRawEvent(client, row);
@@ -619,7 +623,11 @@ async function verifySchemaAndRoles(plainUrl) {
             rawEvent("bad-event-type", { eventType: "chat_message" }),
             rawEvent("bad-schema", { schemaVersion: 0 }),
             rawEvent("blank-game", { gameId: "  " }),
+            rawEvent("tab-only-game", { gameId: "\t\t" }),
+            rawEvent("newline-only-game", { gameId: "\n\n" }),
+            rawEvent("unicode-whitespace-only-game", { gameId: "\u00a0\u2003" }),
             rawEvent("blank-player", { playerId: "  " }),
+            rawEvent("whitespace-only-player", { playerId: "\t\r\n" }),
             rawEvent("negative-piece", { pieceIndex: -1 }),
             rawEvent("bad-trust", { trustLevel: "untrusted" }),
             rawEvent("bad-payload", { payload: [] }),
