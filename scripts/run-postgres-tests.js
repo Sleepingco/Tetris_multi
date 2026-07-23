@@ -13,6 +13,43 @@ const path = require("node:path");
 const ROOT = path.resolve(__dirname, "..");
 const POSTGRES_IMAGE =
     "postgres:17.10-alpine3.24@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193";
+const AMBIENT_POSTGRES_ENV_NAMES = [
+    "DATABASE_URL",
+    "MIGRATION_DATABASE_URL",
+    "TEST_DATABASE_URL",
+    "PGAPPNAME",
+    "PGBINARY",
+    "PGCHANNELBINDING",
+    "PGCLIENTENCODING",
+    "PGCLIENT_ENCODING",
+    "PGCONNECT_TIMEOUT",
+    "PGDATABASE",
+    "PGGSSLIB",
+    "PGHOST",
+    "PGHOSTADDR",
+    "PGKRBSRVNAME",
+    "PGOPTIONS",
+    "PGPASSWORD",
+    "PGPASSFILE",
+    "PGPASS_NO_DEESCAPE",
+    "PGPORT",
+    "PGREPLICATION",
+    "PGREQUIREPEER",
+    "PGSERVICE",
+    "PGSERVICEFILE",
+    "PGSSLCERT",
+    "PGSSLCRL",
+    "PGSSLCRLDIR",
+    "PGSSLKEY",
+    "PGSSLMAXPROTOCOLVERSION",
+    "PGSSLMINPROTOCOLVERSION",
+    "PGSSLMODE",
+    "PGSSLNEGOTIATION",
+    "PGSSLROOTCERT",
+    "PGTARGETSESSIONATTRS",
+    "PGUSER",
+    "NODE_TLS_REJECT_UNAUTHORIZED",
+];
 
 function docker(args, options = {}) {
     return execFileSync("docker", args, {
@@ -74,47 +111,14 @@ function waitForPostgres(containerName) {
     throw new Error("GOAL9B_POSTGRES_START_TIMEOUT");
 }
 
-function createTestEnvironment(port, certificateDirectory, password, containerName) {
+function sanitizedEnvironment() {
     const environment = { ...process.env };
-    for (const name of [
-        "DATABASE_URL",
-        "MIGRATION_DATABASE_URL",
-        "TEST_DATABASE_URL",
-        "PGAPPNAME",
-        "PGBINARY",
-        "PGCHANNELBINDING",
-        "PGCLIENTENCODING",
-        "PGCLIENT_ENCODING",
-        "PGCONNECT_TIMEOUT",
-        "PGDATABASE",
-        "PGGSSLIB",
-        "PGHOST",
-        "PGHOSTADDR",
-        "PGKRBSRVNAME",
-        "PGOPTIONS",
-        "PGPASSWORD",
-        "PGPASSFILE",
-        "PGPASS_NO_DEESCAPE",
-        "PGPORT",
-        "PGREPLICATION",
-        "PGREQUIREPEER",
-        "PGSERVICE",
-        "PGSERVICEFILE",
-        "PGSSLCERT",
-        "PGSSLCRL",
-        "PGSSLCRLDIR",
-        "PGSSLKEY",
-        "PGSSLMAXPROTOCOLVERSION",
-        "PGSSLMINPROTOCOLVERSION",
-        "PGSSLMODE",
-        "PGSSLNEGOTIATION",
-        "PGSSLROOTCERT",
-        "PGTARGETSESSIONATTRS",
-        "PGUSER",
-        "NODE_TLS_REJECT_UNAUTHORIZED",
-    ]) {
-        delete environment[name];
-    }
+    for (const name of AMBIENT_POSTGRES_ENV_NAMES) delete environment[name];
+    return environment;
+}
+
+function createTestEnvironment(port, certificateDirectory, password, containerName) {
+    const environment = sanitizedEnvironment();
     const plainUrl = new URL(
         `postgresql://127.0.0.1:${port}/postgres?sslmode=disable`,
     );
@@ -132,7 +136,63 @@ function createTestEnvironment(port, certificateDirectory, password, containerNa
     return environment;
 }
 
+function createHostedServiceEnvironment() {
+    if (process.env.CI !== "true" || process.env.GITHUB_ACTIONS !== "true") {
+        throw new Error("GOAL9D_POSTGRES_SERVICE_CI_ONLY");
+    }
+    const containerName = process.env.GOAL9D_POSTGRES_SERVICE_CONTAINER?.trim();
+    if (!containerName || !/^[0-9a-f]{12,64}$/.test(containerName)) {
+        throw new Error("GOAL9D_POSTGRES_SERVICE_CONTAINER_INVALID");
+    }
+
+    let url;
+    try {
+        url = new URL(process.env.GOAL9D_POSTGRES_SERVICE_URL?.trim() || "");
+    } catch {
+        throw new Error("GOAL9D_POSTGRES_SERVICE_URL_INVALID");
+    }
+    if (
+        !["postgres:", "postgresql:"].includes(url.protocol)
+        || !["127.0.0.1", "localhost"].includes(url.hostname)
+        || url.port !== "5432"
+        || url.pathname !== "/postgres"
+        || url.username !== "postgres"
+        || !url.password
+        || url.search !== "?sslmode=disable"
+        || url.hash
+    ) {
+        throw new Error("GOAL9D_POSTGRES_SERVICE_URL_INVALID");
+    }
+
+    const environment = sanitizedEnvironment();
+    environment.GOAL9B_TEST_PLAIN_URL = url.toString();
+    environment.GOAL9B_TEST_CONTAINER = containerName;
+    environment.GOAL9D_POSTGRES_SERVICE = "1";
+    return environment;
+}
+
+function runIntegrationTests(environment) {
+    const result = spawnSync(
+        process.execPath,
+        ["--test", path.join(ROOT, "test-integration", "postgresSchemaRepository.js")],
+        {
+            cwd: ROOT,
+            env: environment,
+            stdio: "inherit",
+        },
+    );
+    if (result.status !== 0) {
+        throw new Error(`GOAL9B_POSTGRES_TEST_FAILED_${result.status ?? "SIGNAL"}`);
+    }
+}
+
 async function main() {
+    if (process.env.GOAL9D_POSTGRES_SERVICE_URL?.trim()) {
+        console.log("[test:db] PostgreSQL=17.10 service=github-actions");
+        runIntegrationTests(createHostedServiceEnvironment());
+        return;
+    }
+
     const suffix = randomBytes(6).toString("hex");
     const containerName = `tetris-goal9b-postgres-${suffix}`;
     const volumeName = `tetris-goal9b-postgres-data-${suffix}`;
@@ -203,23 +263,14 @@ async function main() {
             throw new Error("GOAL9B_POSTGRES_PORT_INVALID");
         }
 
-        const result = spawnSync(
-            process.execPath,
-            ["--test", path.join(ROOT, "test-integration", "postgresSchemaRepository.js")],
-            {
-                cwd: ROOT,
-                env: createTestEnvironment(
-                    port,
-                    certificateDirectory,
-                    password,
-                    containerName,
-                ),
-                stdio: "inherit",
-            },
+        runIntegrationTests(
+            createTestEnvironment(
+                port,
+                certificateDirectory,
+                password,
+                containerName,
+            ),
         );
-        if (result.status !== 0) {
-            throw new Error(`GOAL9B_POSTGRES_TEST_FAILED_${result.status ?? "SIGNAL"}`);
-        }
     } catch (error) {
         if (containerCreated) {
             try {

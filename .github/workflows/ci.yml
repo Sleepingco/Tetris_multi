@@ -197,3 +197,57 @@ jobs:
 
           docker stop --time 20 "$container_name" >/dev/null
           test "$(docker inspect --format '{{.State.ExitCode}}' "$container_name")" = "0"
+
+  postgres:
+    name: PostgreSQL event storage
+    needs: fast
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      GOAL9D_POSTGRES_TEST_PASSWORD: goal9d-ci-only-do-not-reuse
+    services:
+      postgres:
+        image: postgres:17.10-alpine3.24@sha256:742f40ea20b9ff2ff31db5458d127452988a2164df9e17441e191f3b72252193
+        env:
+          POSTGRES_PASSWORD: goal9d-ci-only-do-not-reuse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready --username postgres --dbname postgres"
+          --health-interval 1s
+          --health-timeout 5s
+          --health-retries 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Set up Node from .nvmrc
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify runtime and bounded PostgreSQL readiness
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          test "$(node --version)" = "v$(tr -d '\n' < .nvmrc)"
+          npm --version
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$POSTGRES_CONTAINER")" = "healthy"
+
+      - name: Install dependencies without cache assumptions
+        run: npm ci --ignore-scripts
+
+      - name: Configure job-local test connection
+        env:
+          POSTGRES_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          echo "::add-mask::$GOAL9D_POSTGRES_TEST_PASSWORD"
+          echo "GOAL9D_POSTGRES_SERVICE_CONTAINER=$POSTGRES_CONTAINER" >> "$GITHUB_ENV"
+          printf 'GOAL9D_POSTGRES_SERVICE_URL=postgresql://postgres:%s@127.0.0.1:5432/postgres?sslmode=disable\n' \
+              "$GOAL9D_POSTGRES_TEST_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Verify migration, repository, runtime, import and release
+        run: npm run test:db

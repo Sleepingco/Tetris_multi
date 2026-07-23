@@ -84,6 +84,14 @@ function quoteIdentifier(value) {
     return `"${value}"`;
 }
 
+function quoteTestPassword(databaseUrl) {
+    const password = decodeURIComponent(new URL(databaseUrl).password);
+    if (!/^[A-Za-z0-9_-]{16,128}$/.test(password)) {
+        throw new Error("GOAL9B_TEST_PASSWORD_INVALID");
+    }
+    return `'${password}'`;
+}
+
 function databaseUrl(baseUrl, user, database) {
     const url = new URL(baseUrl);
     url.username = user;
@@ -115,18 +123,22 @@ async function withClient(config, callback) {
 }
 
 async function createRolesAndDatabases(adminUrl) {
+    const rolePassword = quoteTestPassword(adminUrl);
     await withClient(clientConfig(adminUrl), async client => {
         await client.query(
             `CREATE ROLE ${quoteIdentifier(MIGRATION_ROLE)}
-                LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
+                LOGIN PASSWORD ${rolePassword}
+                NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
         );
         await client.query(
             `CREATE ROLE ${quoteIdentifier(RUNTIME_ROLE)}
-                LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
+                LOGIN PASSWORD ${rolePassword}
+                NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
         );
         await client.query(
             `CREATE ROLE ${quoteIdentifier(IMPORT_ROLE)}
-                LOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
+                LOGIN PASSWORD ${rolePassword}
+                NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION`,
         );
         for (const database of DATABASES) {
             await client.query(`CREATE DATABASE ${quoteIdentifier(database)}`);
@@ -2026,12 +2038,17 @@ try {
 
 test("Goal 9B actual PostgreSQL contract", { timeout: 120_000 }, async t => {
     const plainUrl = requireEnvironment("GOAL9B_TEST_PLAIN_URL");
-    const tlsUrl = requireEnvironment("GOAL9B_TEST_TLS_URL");
-    const ca = await readFile(requireEnvironment("GOAL9B_TEST_CA_PATH"), "utf8");
-
-    await t.test("TLS: private CA succeeds and trust/hostname failures fail closed", () => {
-        return verifyTls(tlsUrl, ca);
-    });
+    if (process.env.GOAL9D_POSTGRES_SERVICE === "1") {
+        await t.test("TLS: covered by the isolated local PostgreSQL fixture", {
+            skip: "GitHub service uses job-local loopback",
+        }, () => {});
+    } else {
+        const tlsUrl = requireEnvironment("GOAL9B_TEST_TLS_URL");
+        const ca = await readFile(requireEnvironment("GOAL9B_TEST_CA_PATH"), "utf8");
+        await t.test("TLS: private CA succeeds and trust/hostname failures fail closed", () => {
+            return verifyTls(tlsUrl, ca);
+        });
+    }
 
     await createRolesAndDatabases(plainUrl);
 
