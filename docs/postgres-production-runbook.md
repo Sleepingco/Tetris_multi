@@ -44,7 +44,7 @@ Goal 9D local gate는 disposable PostgreSQL 17.10에서 custom-format backup/res
 1. maintenance role로 cutoff, `max_rows`, `max_bytes`를 parameter로 전달해 dry-run한다.
 2. 대상 수, bytes, 최소/최대 `ingested_at`을 확인하고 한도를 초과하면 중단한다.
 3. 운영자가 cutoff와 두 상한을 다시 확인한다.
-4. 서로 분리된 두 번의 명시적 확인 뒤 같은 cutoff와 row 상한으로 삭제한다.
+4. 서로 분리된 두 번의 명시적 확인 뒤 같은 cutoff, row 상한과 byte 상한으로 삭제한다.
 5. 반환된 row 수가 승인 수와 같은지 확인하고 relation size와 backup 상태를 기록한다.
 
 runtime role로 같은 `DELETE`가 거부돼야 한다. Goal 9D rehearsal은 91일 전 synthetic row 한 건만 삭제하며 실제 사용자 row에는 이 절차를 실행하지 않는다.
