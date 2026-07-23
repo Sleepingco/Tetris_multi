@@ -2,7 +2,7 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-23 기준. Goal 11E와 portfolio 문서 정정은 `main@937dcda`까지 반영됐고 hosted Fast/Docker/Browser가 모두 통과했다. Goal 9A는 raw PostgreSQL migration, canonical event와 idempotent repository의 local 구현·검증 및 review 보정 뒤 `main@1fb2633`과 origin/main에 반영됐으며 hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser가 모두 통과했다. production storage mode와 현재 JSONL runtime은 변경하지 않았다.
+- Last update: 2026-07-23 기준. Goal 11E와 portfolio 문서 정정은 main에 반영됐고 hosted Fast/Docker/Browser가 모두 통과했다. Goal 9A도 raw PostgreSQL migration, canonical event와 idempotent repository의 local 구현·검증 및 review 보정 뒤 main과 origin/main에 반영됐으며 hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser가 모두 통과했다. production storage mode와 현재 JSONL runtime은 변경하지 않았다.
 
 ## Current Project Status
 
@@ -514,8 +514,8 @@
 - [x] CSP/security headers와 dependency hardening 반영
 - [x] production Docker image와 graceful shutdown 반영
 - [x] Goal 11D workflow는 PR #1과 PR clean run을 거쳐 `main`에 반영됐으며, 이후 발견된 PVE timing 경계는 Goal 11E에서 별도로 안정화했다.
-- [x] Goal 11E 최종 `8cc16d9`은 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 SHA Browser 연속 2회가 통과했다.
-- [x] Goal 9A `1fb2633`은 raw SQL migration, canonical identity와 parameterized PostgreSQL repository를 실제 PostgreSQL 17.10으로 검증한 뒤 main과 origin/main에 반영됐다. hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser도 모두 green이다.
+- [x] Goal 11E는 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 코드 Browser 연속 2회가 통과했다.
+- [x] Goal 9A는 raw SQL migration, canonical identity와 parameterized PostgreSQL repository를 실제 PostgreSQL 17.10으로 검증한 뒤 main과 origin/main에 반영됐다. hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser도 모두 green이다.
 - [x] Goal 9A review에서 injective canonical serialization, PostgreSQL-safe text·64-byte identity와 whitespace-only SQL 거부, finite timestamp, strict loopback·ambient `PG*` 차단, explicit URL password와 migration bootstrap owner 검증을 고정했다. 최종 gate는 실제 PostgreSQL 6/6, Node 616 pass·기존 1 skip, artifact/release 각 1/1이며 production E2E는 같은 gameplay/client의 선행 36/36을 유지한다.
 
 ### 알려진 위험과 보류 범위
@@ -526,7 +526,7 @@
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
 - pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
 - T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.
-- Goal 11E 최종 `8cc16d9`의 hosted Fast/Docker와 Browser 연속 2회가 성공했다. 자연 중력과 browser scheduling에 의존하던 PVE 7-bag T-Spin E2E는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트로 보장한다. `main@8087712`의 hosted Fast/Docker/Browser도 모두 성공했다.
+- Goal 11E의 hosted Fast/Docker와 Browser 연속 2회가 성공했다. 자연 중력과 browser scheduling에 의존하던 PVE 7-bag T-Spin E2E는 제거했고, T-Spin은 core·authoritative·runtime 결정론적 테스트로 보장한다. 후속 main에서도 hosted Fast/Docker/Browser가 모두 성공했다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 장시간 soak, amd64 Docker run은 아직 별도 검증 대상이다.
 
 ### 현재 단계에서 하지 않을 것
@@ -552,9 +552,9 @@
 
 ### 이후 단계
 
-- [x] Goal 11E는 `8cc16d9`으로 main/origin/main에 반영됐고 hosted Fast/Docker 및 Browser 연속 2회가 통과함
-- [x] `main@8087712`의 Fast/Docker/Browser도 통과해 portfolio trailing whitespace와 PLAN 상태 정정 뒤 main CI green을 확인함
-- [x] Goal 9A 설계와 local schema/migration/repository 구현·검증, `1fb2633` main/origin/main 통합과 hosted Fast/Docker/Browser green
+- [x] Goal 11E는 main/origin/main에 반영됐고 hosted Fast/Docker 및 Browser 연속 2회가 통과함
+- [x] portfolio trailing whitespace와 PLAN 상태 정정 뒤 후속 main의 Fast/Docker/Browser green을 확인함
+- [x] Goal 9A 설계와 local schema/migration/repository 구현·검증, main/origin/main 통합과 hosted Fast/Docker/Browser green
 - [ ] Goal 9B 설계 gate와 구현 승인
 - [ ] Goal 9B → 9C → 9D를 각각 별도 승인과 main merge gate로 실행
 - [ ] 공개 배포가 필요해지면 registry, TLS/reverse proxy, origin/host 전달, rollback digest 정책을 별도 CD 문서로 설계
@@ -569,8 +569,8 @@
 
 - [x] Goal 11D PR 원격 실행 증거와 main 반영
 - [x] main push에서 확인된 PVE timing failure는 Goal 11E에서 deterministic coverage로 재배치하고 hosted CI green을 확인함
-- [x] `main@8087712`의 portfolio trailing whitespace와 PLAN 상태 정정 뒤 hosted Fast/Docker/Browser green을 확인함
-- [x] Goal 9A `1fb2633` main 통합과 hosted Fast/Docker/Browser green
+- [x] portfolio trailing whitespace와 PLAN 상태 정정 뒤 hosted Fast/Docker/Browser green을 확인함
+- [x] Goal 9A main 통합과 hosted Fast/Docker/Browser green
 - [ ] Goal 9B~9D runtime/import/hosted PostgreSQL 검증
 - [ ] 실제 배포가 필요할 때 registry publish, TLS/reverse proxy, origin/host 전달, rollback digest 정책 설계
 - [ ] WebKit/Firefox와 장시간 soak가 필요해지는 시점에 별도 browser matrix 추가
@@ -590,7 +590,7 @@
 - [x] production Docker health check
 - [ ] TTL 또는 오래된 room cleanup
 - [ ] external TLS/reverse proxy 환경 검증
-- [x] GitHub-hosted CI: `main@8087712`에서 Fast, Docker, Browser가 모두 성공
+- [x] GitHub-hosted CI에서 Fast, Docker, Browser가 모두 성공
 
 ### AI 원칙
 
@@ -648,7 +648,7 @@
 
 ### 실행·빌드 경계
 
-- 기준은 local `main@2d4d66e`이며 Goal 0 main 반영 commit `57152ce`를 포함한다.
+- 기준은 Goal 0가 반영된 clean local main이다.
 - Node는 `.nvmrc`와 `engines`에서 `24.18.0` 계열로 고정했다.
 - 개발은 `npm run dev:server`와 `npm run dev`를 분리하고, Vite가 `/socket.io`를 Express/Socket.IO로 proxy한다.
 - production은 `npm run build`가 `dist/client`를 만들고 기존 `npm start`가 그 결과만 제공한다. start가 build나 Vite 설치를 암묵적으로 수행하지 않는다.
@@ -673,7 +673,7 @@
 
 ### Player session과 reconnect 계약
 
-- 기준은 `main@21d191f`이며 Goal 1 main 반영을 포함한다.
+- 기준은 Goal 1이 반영된 main이다.
 - 서버는 256-bit CSPRNG opaque token과 UUID playerId를 발급하고 token은 SHA-256 digest만 memory session에 저장한다.
 - session record는 token digest, generation, active socket, canonical nickname과 최초 발급 기준 8시간 절대 만료만 소유한다. room membership은 계속 `roomService`가 단일 진실 원천이다.
 - client는 versioned JSON credential 하나를 sessionStorage에 원자 저장한다. Socket.IO auth callback은 연결할 때마다 최신 값을 읽고 `session:ready`가 된 active socket만 회전 credential을 기록한다.
@@ -707,7 +707,7 @@
 
 ### Socket 계약과 검증 경계
 
-- 기준은 `main@3b235dd`이며 Goal 2의 최종 terminal disconnect 수정까지 포함한다.
+- 기준은 Goal 2의 최종 terminal disconnect 수정까지 반영된 main이다.
 - production dependency `zod@4.4.3`을 exact version으로 추가하고, server CommonJS와 Vite browser가 함께 import하는 `src/shared/socketContracts.mjs`에 handshake, 12개 C2S와 16개 S2C schema를 둔다.
 - `src/shared/socketContractTypes.d.ts`는 wire payload를 `z.input`, parse 이후 payload를 `z.output`으로 파생한다. 현재 JavaScript handler는 `checkJs:false`이므로 compile-time Socket.IO generic 강제를 주장하지 않으며 그 적용은 Goal 4 범위다.
 - production runtime parse는 server의 handshake/C2S 수신과 browser의 S2C 수신에서 한 번만 수행한다. client outbound와 server outbound에는 parse wrapper를 추가하지 않고 실제 fake socket/server emission을 계약 테스트로 검증한다.
@@ -736,7 +736,7 @@
 
 ### Build와 module 경계
 
-- 기준은 `main@79042e8`이며 Goal 3 최종 수정까지 포함한다.
+- 기준은 Goal 3 최종 수정까지 반영된 main이다.
 - root CommonJS와 `socketContracts.mjs` 경계를 유지하고 `NodeNext + allowJs`로 `dist/server`를 emit한다. root `type: module`, server bundler와 runtime TypeScript loader는 추가하지 않았다.
 - `src/client/package.json`의 `type: module`을 NodeNext 입력과 output에 동일하게 적용해 stable client core를 ESM으로 emit한다. compiled `gameCoreLoader`에서 `BLOCKS.tree` 네 rotation을 직접 확인한다.
 - Vite hashed browser bundle은 `dist/client`, server가 dynamic import하는 core/state/AI는 `dist/server/client/game`에 분리한다. Zod 계약은 `dist/server/shared/socketContracts.mjs`, PVE model은 server asset 경로에 둔다.
@@ -750,13 +750,13 @@
 - clean build 직후 단일 artifact test가 output whitelist, `.ts`/`.map`/`.env`와 test fixture 부재, source/output manifest 일치와 compiled loader fixture를 함께 확인한다.
 - Node 24.18.0에서 fast gate는 artifact test 1개와 Node test 571개 중 570개 통과, 기존 조건부 1개 skip으로 통과했다. compiled `npm start` 기준 전체 Playwright는 24/24 통과했다.
 - production dependency-only release는 Express, Socket.IO와 Zod만으로 기동했다. 주요 HTML, hashed asset과 Socket.IO client는 HTTP 200, server artifact와 source map은 404였고 실제 bundled V4 decision은 `placement_v4`, fallback 0이었다.
-- Goal 4는 merge commit `128ac39`로 main에 반영했으며, Goal 5는 해당 main의 clean 상태와 선행 gate를 확인한 뒤 별도 branch에서 시작한다.
+- Goal 4는 main에 반영했으며, Goal 5는 해당 main의 clean 상태와 선행 gate를 확인한 뒤 별도 branch에서 시작한다.
 
 ## Migration Goal 5 React shell main 반영 (2026-07-21)
 
 ### React shell과 DOM 경계
 
-- 기준은 `main@2b18cba537402589df14ca587afc44c3bed2d5ff`이며 Goal 4 main 반영을 포함한다.
+- 기준은 Goal 4가 반영된 main이다.
 - Vite multi-page와 기존 URL을 유지하고 index와 multiplayer lobby만 독립 `React.StrictMode` TSX entry로 옮겼다. single/multiplayer Canvas page, game runtime, protocol과 server service는 변경하지 않았다.
 - HTML은 head, theme pre-paint, CSS link와 mount point만 소유한다. lobby는 classic `/socket.io/socket.io.js`를 React module보다 먼저 로드한다.
 - 기존 ID, class, href, form semantics와 `theme`, `tetrisSoundEnabled`, `tetris:nickname`, `tetris:roomId`, `room`, `tetris:playerSession` storage key를 보존한다.
@@ -778,13 +778,13 @@
 - production dependency-only 임시 설치는 Express, Socket.IO, Zod와 React/ReactDOM만으로 compiled server를 기동했다. root/index/lobby, Socket.IO client와 React/index/lobby bundle은 HTTP 200, `.tsx`와 source map은 404였다.
 - 공용 React runtime은 189.60 kB(gzip 59.63 kB) shared chunk 하나다. index entry는 4.68 kB(gzip 1.93 kB), lobby entry는 11.61 kB(gzip 3.98 kB)다.
 - WebKit/Firefox, 외부 TLS/reverse proxy, 실제 browser history 기반 BFCache eligibility와 장시간 soak는 이번 local Chromium gate에서 검증하지 않았다.
-- Goal 5 구현과 review fix `87a679d`는 main에 반영됐고 Goal 5 branch는 보존한다. Goal 6은 별도 승인 후 독립 branch에서 진행했다.
+- Goal 5 구현과 review fix는 main에 반영됐고 Goal 5 branch는 보존한다. Goal 6은 별도 승인 후 독립 branch에서 진행했다.
 
 ## Migration Goal 6 Single React main integration (2026-07-21)
 
 ### Runtime display bridge와 React 소유권
 
-- 기준은 `main@cc62f3e64e452767c8ea153a0a841dd0da5c0eb8`이며 Goal 5 main 반영을 포함한다.
+- 기준은 Goal 5가 반영된 main이다.
 - `gameState`와 runtime은 gameplay 상태의 단일 진실 원천으로 유지한다. React는 `useSyncExternalStore`로 score, lines, hold, next 2개와 phase만 포함한 cached display snapshot을 읽는다.
 - snapshot 값이 같으면 같은 객체를 반환하고 HUD 값이 실제로 바뀔 때만 새 객체와 알림을 만든다. 일반 이동·회전·gravity는 알리지 않으며 hold/lock, line clear, snapshot 적용과 init의 최종 표시 경계만 알린다.
 - `lines`는 display 계약과 unit/integration test에 포함하지만 기존 single 화면에 visible Lines HUD를 추가하지 않는다. 점수·line 계산과 gameplay/protocol 의미도 변경하지 않는다.
@@ -799,13 +799,13 @@
 - compiled production 전체 Chromium Playwright는 기존 Canvas 입력, PVP/PVE/session/rollback과 single lifecycle/artifact를 포함해 31/31 통과했다. `/pages/tetrisSingle.tsx`와 built single module source map은 HTTP 404였다.
 - current production bundle은 single entry 4.75 kB(gzip 1.76 kB), gameplay runtime chunk 34.58 kB(gzip 10.84 kB), shared React runtime 189.66 kB(gzip 59.65 kB)다. Goal 5 shared React 기준 증가는 0.06 kB(gzip 0.02 kB)이며 dependency와 lockfile 변화는 없다.
 - 실제 browser history 기반 BFCache eligibility, WebKit/Firefox, 장시간 timer/animation soak는 이번 local Chromium gate에서 검증하지 않았다.
-- `main`은 `cc62f3e`에서 Goal 6 최종 commit `0cdc3ce`까지 fast-forward 되었고, Node 24.18.0 기준 `bash scripts/verify.sh`를 다시 통과했다. Goal 6 branch는 보존하며 Goal 7은 시작하지 않았다.
+- `main`은 Goal 6 최종 변경까지 fast-forward 되었고, Node 24.18.0 기준 `bash scripts/verify.sh`를 다시 통과했다. Goal 6 branch는 보존하며 Goal 7은 시작하지 않았다.
 
 ## Migration Goal 7 Multiplayer React merge gate (2026-07-21)
 
 ### Runtime display와 React 소유권
 
-- 기준은 `main@b11e10c7190b52751d9e60a737a5a52645844a3d`이며 Goal 6 main 통합 기록까지 포함한다.
+- 기준은 Goal 6 main 통합 기록까지 반영된 main이다.
 - cached display snapshot에 표시 전용 `pendingGarbageLines`만 추가했다. 같은 값은 기존 snapshot reference와 알림 0회를 유지하고 pending-only 변경은 1회만 알린다. `applySnapshot`은 pending 갱신과 최종 publish를 한 번으로 합친다.
 - `startMultiplayerGame()`의 idempotent `destroy()`가 heartbeat, Socket disposer 5개, pending/deferred input, placement log, bag request와 두 runtime을 한 경계에서 정리한다. 기존 반환 필드는 rollback과 test 호환을 위해 유지한다.
 - `tetrisMulti.html`은 기존 head, theme pre-paint, CSS와 Socket.IO classic script 순서를 유지하고 `tetrisMulti.tsx`의 단일 `React.StrictMode` root를 mount한다. Host/Guest·AI의 두 Canvas만 runtime에 전달하며 score, lines, pending garbage, hold/next preview, badge와 overlay는 React가 소유한다.
@@ -825,13 +825,13 @@
 
 ### Main integration (2026-07-21)
 
-- clean한 `main`/`origin/main`이 `b11e10c`와 일치하고 Goal branch가 clean한 상태에서 `codex/migrate-react-multiplayer`의 최종 `c673856`을 `--ff-only`로 local main에 반영했다. merge commit은 만들지 않았고 Goal branch는 보존한다.
+- clean한 `main`/`origin/main`과 Goal branch를 확인한 뒤 `codex/migrate-react-multiplayer`의 최종 변경을 `--ff-only`로 local main에 반영했다. merge commit은 만들지 않았고 Goal branch는 보존한다.
 - main의 Node `24.18.0`/npm `11.16.0`에서 `bash scripts/verify.sh`를 재실행해 artifact 1/1, Node test 579개 중 578 pass와 기존 조건부 1 skip을 확인했다. main `git diff --check`와 clean worktree도 통과했다.
-- Goal branch 최종 HEAD `c673856`은 main의 조상이며 local main은 `origin/main`보다 6커밋 ahead다. push와 Goal 8은 수행하지 않았다.
+- Goal branch 최종 HEAD는 main의 조상이며 당시 local main은 `origin/main`보다 6커밋 ahead였다. push와 Goal 8은 수행하지 않았다.
 
 ## Migration Goal 7A SPA 보류 결정 (2026-07-21)
 
-- 보류 결정 기준 main과 origin/main HEAD는 Goal 7A 명세만 추가한 `f9ff7f7`이다. SPA 구현은 `codex/migrate-react-spa@5b0f848`의 clean worktree에만 존재하며 main에는 SPA runtime code가 없어 code revert는 필요하지 않다.
+- 보류 결정 당시 main과 origin/main에는 Goal 7A 명세만 추가돼 있었다. SPA 구현은 `codex/migrate-react-spa`의 clean worktree에만 존재하며 main에는 SPA runtime code가 없어 code revert는 필요하지 않다.
 - 구현 브랜치는 단일 shell, exact legacy URL allowlist, lazy multiplayer import와 route cleanup을 만들고 fast gate, Vite-dev 15 pass/2 skip, production Playwright 41/41을 통과했다. dependency와 lockfile은 변경하지 않았다.
 - review에서 start/leave 경합 시 pending intent가 다른 `room:result`로 제거되어 ghost match가 남을 수 있는 P1을 확인했다. stale Forward의 membership 보존과 hash-only history의 route exit 오판은 P2, modifier 새 탭 의미 훼손은 P3이다.
 - 현재 E2E는 leave 송신 1회는 확인하지만 ack와 최종 server room/match 제거 상태, multiplayer 구간의 same-document/Socket 유지, 반복 route 진입 뒤 runtime·subscription 단일성을 직접 증명하지 않는다. 필수 수동 PVP/PVE도 완료되지 않았다.
@@ -851,21 +851,21 @@
 
 ## Migration Goal 8A Core/State TypeScript merge gate (2026-07-21)
 
-- 기준은 `main@53b3fd5`이며 `codex/migrate-typescript-core-state`에서 production `core` 7개와 `state` 5개를 strict TypeScript로 전환했다. 아직 JavaScript인 내부 3개와 외부 19개 consumer의 source specifier도 같은 rename 경계에서 `.ts`로 갱신했다.
+- Goal 8 분할 문서가 반영된 main을 기준으로 `codex/migrate-typescript-core-state`에서 production `core` 7개와 `state` 5개를 strict TypeScript로 전환했다. 아직 JavaScript인 내부 3개와 외부 19개 consumer의 source specifier도 같은 rename 경계에서 `.ts`로 갱신했다.
 - `blocks.ts`가 `PieceType = keyof typeof BLOCKS`를 유일하게 소유하고 `piece.ts`는 이를 `import type`으로 가져와 `PieceState`만 소유한다. 빈 조각 sentinel은 `PieceType | ""`로 표현하며 별도 type registry나 중복 literal 목록은 만들지 않았다.
 - state deserialize는 기존 fallback을 유지하는 `Partial<SerializedGameState>` 입력을 허용한다. board와 row, active/pending piece 및 queue/bag/inputQueue 배열 컨테이너의 기존 복제 범위만 고정했고 inputQueue 원소의 deep clone이나 serialization schema 변경은 추가하지 않았다.
 - `rewriteRelativeImportExtensions`를 기존 shared tsconfig 경계에 적용해 source의 `.ts` specifier를 browser/server artifact의 `.js`로 emit한다. client/test의 Node source 경계는 `erasableSyntaxOnly`, `verbatimModuleSyntax`와 `import type`을 검사하며 root CommonJS, client ESM marker, `allowJs`와 compiled-only server 실행 계약은 유지한다.
 - clean artifact test는 compiled `loadGameCore()`의 `BLOCKS`, 빈 board와 대표 move/step fixture를 실제 실행한다. 별도 parity framework, dependency, lockfile, loader, gameplay/Socket/SPA 변경은 없다.
 - Node `24.18.0`/npm `11.16.0`에서 typecheck, build, artifact 1/1, targeted core/state 49/49, fast gate의 Node tests 584 pass·기존 조건부 1 skip과 production Playwright 34/34가 통과했다. Single/PVP/PVE 수동 검증에서도 Canvas 입력, hold/restart, authoritative 양방향 보드와 PVE AI line/garbage를 확인했고 네 page의 console error는 0개였다.
 - shared tetris bundle은 기준 34.82 kB(gzip 10.90 kB)에서 34.93 kB(gzip 10.93 kB)로 소폭 증가했다. package manifest와 lockfile checksum은 기준과 동일하다.
-- Goal 8A는 `7286ab6`까지 main과 origin/main에 반영됐다. Goal 8B는 이 기준에서 별도 branch로 시작했으며 Goal 8A branch와 보류된 SPA branch는 보존한다.
+- Goal 8A는 main과 origin/main에 반영됐다. Goal 8B는 이 기준에서 별도 branch로 시작했으며 Goal 8A branch와 보류된 SPA branch는 보존한다.
 
 ## Migration Goal 8B Client Runtime TypeScript main integration (2026-07-22)
 
-- 기준은 `main@7286ab6`이며 `codex/migrate-typescript-client-runtime`에서 production client AI 12개, Canvas entry/render/runtime/UI 8개, network/session 3개 등 기존 JavaScript 23개(전환 전 5,566 LOC)를 strict TypeScript로 전환했다. 리뷰 수정 후 최종 전환 source는 타입 선언을 포함해 6,865 LOC이며 기존 `entry/theme.ts`는 rename 수치에서 제외했다.
+- Goal 8A가 반영된 main을 기준으로 `codex/migrate-typescript-client-runtime`에서 production client AI 12개, Canvas entry/render/runtime/UI 8개, network/session 3개 등 기존 JavaScript 23개(전환 전 5,566 LOC)를 strict TypeScript로 전환했다. 리뷰 수정 후 최종 전환 source는 타입 선언을 포함해 6,865 LOC이며 기존 `entry/theme.ts`는 rename 수치에서 제외했다.
 - 각 값 모듈이 runtime handle/display snapshot, DOM/Canvas adapter, placement dataset·heuristic·V4 result와 multiplayer lifecycle 타입을 직접 소유한다. Goal 8A의 `PieceType`, `Board`, `PieceState`, `GameState`, `BoardMetrics`를 재사용하고 별도 type registry, manager, framework와 dependency는 추가하지 않았다.
 - `roomClient.ts` 내부에 browser Socket.IO global의 private structural type을 두고 기존 `socketContractTypes.d.ts`와 Zod parsed output을 재사용한다. page-facing session 타입은 공개 `playerId`와 `nickname`만 제공하며 token, socketId와 server-private session 필드는 React state, DOM, URL, console 또는 공개 타입에 포함하지 않는다.
-- 리뷰 수정 `386c853`, `842d23b`, `047347c`에서 malformed ranker 입력의 BASE 실패 이유를 복구하고 `INPUT_ACTION`의 닫힌 literal union을 state 소유 경계로 내렸다. `runtime/input.ts`는 그 타입을 import/re-export해 기존 public import를 보존하고 state/core의 runtime 역방향 의존을 제거했다. C2S emit은 event별 wire payload generic으로 연결했고 persisted credential은 `resumed`를 요구하지 않으며 각 session-ready subscriber는 독립 public projection을 받는다. multiplayer page는 display/session/Piece 타입을 소유 모듈에서 직접 import한다.
+- 리뷰 수정에서 malformed ranker 입력의 BASE 실패 이유를 복구하고 `INPUT_ACTION`의 닫힌 literal union을 state 소유 경계로 내렸다. `runtime/input.ts`는 그 타입을 import/re-export해 기존 public import를 보존하고 state/core의 runtime 역방향 의존을 제거했다. C2S emit은 event별 wire payload generic으로 연결했고 persisted credential은 `resumed`를 요구하지 않으며 각 session-ready subscriber는 독립 public projection을 받는다. multiplayer page는 display/session/Piece 타입을 소유 모듈에서 직접 import한다.
 - rename commit에서 page TSX, server dynamic import, test와 script consumer를 실제 `.ts` source specifier로 함께 갱신했다. `rewriteRelativeImportExtensions`를 통해 Vite와 compiled server artifact는 `.js` import를 사용하며, build artifact에는 `.ts`, `.tsx`, declaration과 source map이 남지 않는다.
 - Node `24.18.0`/npm `11.16.0`에서 typecheck, build 134 modules, artifact 1/1, ranker 14/14와 room/session/runtime targeted 84/84, ML Node 35/35·Python 115/115, fast gate의 Node tests 586 pass·기존 조건부 1 skip, Vite-dev 8 pass·production-only 2 skip과 production Playwright 34/34가 통과했다. 첫 기준선 PVE hold 시나리오는 한 번 timeout됐지만 격리 재실행과 전체 재실행에서 통과했으며 최종 production gate도 34/34다.
 - 수동 Single에서 이동·회전·soft/hard drop·hold·restart·sound/BFCache 경계를, PVP에서 양쪽 HUD·overlay·입력·reload reconnect를 확인했다. 최종 수동 production browser gate는 기본 heuristic과 명시적 `placement_v4` UI 선택, 양쪽 AI Canvas의 visible descent, heuristic 경기의 실제 승패 결과와 로비 복귀 후 같은 방 재시작을 확인했으며 console error는 0건이었다.
@@ -873,26 +873,26 @@
 - production HTTP에서 대표 runtime/net `.ts` source와 bundle source map은 404, root와 Socket.IO client는 200이었다. package manifest와 lockfile checksum은 기준과 동일하다.
 - shared tetris bundle은 직전 문서 기준 34.93 kB(gzip 10.93 kB)에서 36.31 kB(gzip 11.29 kB), roomClient chunk는 76.86 kB(gzip 21.19 kB)에서 77.39 kB(gzip 21.31 kB)로 증가했다. 새 dependency나 runtime chunk는 없다.
 - Chromium local dev/production과 수동 시나리오는 검증했지만 WebKit/Firefox, 장시간 soak와 외부 network 조건은 실행하지 않았다. server TypeScript는 Goal 8C에서 완료했으며 test/e2e/script 자체의 선택 전환은 Goal 8D 범위로 남는다.
-- rollback은 최종 문서 commit → `047347c` → `f93f7b8` → `842d23b` → `386c853` → `9a45ab7` → `0ee3736` → `189faf5` → `cda715e` → `7ca30b3` 순서로 역순 revert한다. rename과 consumer specifier를 같은 경계에서 되돌리고 일부 output만 복구하지 않는다.
-- `codex/migrate-typescript-client-runtime@bead1b7`를 clean한 local `main@7286ab6`에 `--ff-only`로 병합해 `main@bead1b7`로 통합했다. Goal branch와 worktree는 보존한다.
-- 병합 후 Node `24.18.0`에서 `bash scripts/verify.sh`를 재실행해 typecheck, clean build, artifact 1/1과 Node 586 pass·기존 조건부 1 skip을 확인했고 `git diff --check 7286ab6..HEAD`도 통과했다.
+- 정확한 rollback 순서는 Goal 8B 실행 기록을 따르며 목적별 커밋을 역순으로 revert한다. rename과 consumer specifier를 같은 경계에서 되돌리고 일부 output만 복구하지 않는다.
+- Goal branch를 clean한 local main에 `--ff-only`로 병합했다. Goal branch와 worktree는 보존한다.
+- 병합 후 Node `24.18.0`에서 `bash scripts/verify.sh`를 재실행해 typecheck, clean build, artifact 1/1과 Node 586 pass·기존 조건부 1 skip을 확인했고 `git diff --check`도 통과했다.
 - 동일한 Goal HEAD에서 이미 production Playwright 34/34와 Vite-dev 8 pass·2 production-only skip이 통과했으므로 main에서 전체 E2E는 코드 변경이 없어 반복하지 않았다. push 후 Goal 8C/8D, Goal 9와 SPA 작업은 별도 승인으로 남긴다.
 
 ## Migration Goal 8C Server TypeScript main integration (2026-07-22)
 
-- 기준은 `main@b4960ad`이며 `codex/migrate-typescript-server`에서 `src/server`의 production JavaScript를 strict TypeScript로 전환했다. source server `.js`는 0개이며 `socketContracts.mjs`만 shared production `allowJs` runtime 예외로 유지한다.
+- Goal 8B가 반영된 main을 기준으로 `codex/migrate-typescript-server`에서 `src/server`의 production JavaScript를 strict TypeScript로 전환했다. source server `.js`는 0개이며 `socketContracts.mjs`만 shared production `allowJs` runtime 예외로 유지한다.
 - root CommonJS와 `module: NodeNext`를 유지한다. server의 정적 source import는 `.js`, client ESM dynamic import는 `.ts`를 사용하고 build output에서 `.js`로 rewrite한다. root `type: module`, TypeScript runtime loader와 새 dependency는 추가하지 않았다.
 - Room, Match, authoritative player state, session, limiter, DTO, repository와 Socket handler가 값을 소유하는 모듈에서 type-aware export를 제공한다. production Socket.IO `Server`/`Socket` 타입을 유지하고 raw C2S payload는 `unknown`에서 기존 event별 Zod schema로 parse한 `validation.data`만 service에 전달한다.
 - handshake는 raw auth·remote address·credential 유무 판별 → credential 없는 신규 session rate-limit → handshake Zod parse → malformed resume rate-limit → authenticate → 인증 실패 resume rate-limit → 성공한 SocketData 설정 순서를 유지한다. mutation은 active-session/rate-limit → event별 Zod parse → ownership → service 순서를 보존했다. SocketData에는 token, digest나 internal session을 추가하지 않았고 protocol, gameplay, session/reconnect, JSONL/Python 의미를 변경하지 않았다.
 - `npm test`는 clean `build:server` 뒤 compiled suite를 실행하고 `test:compiled`는 기존 artifact를 재사용한다. `scripts/verify.sh`는 typecheck → full build → artifact → build-free compiled test 순서여서 full client/server artifact 사이에 server-only rebuild를 끼우지 않는다. production `npm start`는 prebuilt `dist/server/app.js`만 실행한다.
 - artifact gate는 source/dist V4 model byte equality와 SHA-256 `ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d`, default copied model의 실제 `placement_v4` decision, compiled client loader와 source-map 없는 expected stack trace를 검증한다.
 - hermetic release test는 별도 임시 디렉터리의 `dist`, package manifests와 `npm ci --omit=dev --ignore-scripts` production dependencies만으로 HTTP와 Socket.IO client asset, authoritative PVP와 PVE V4 decision을 실행한다. 실제 auth/handshake는 compiled security tests와 Playwright에서 검증한다. child cwd와 환경 allowlist를 고정하고 workspace dependency, source, test, script, devDependency, source map과 model override 유입을 금지한다.
-- 리뷰 수정 `0fa4f39`에서 TTL cleanup의 기본 game-over logger fallback을 복구하고 임시 `GAME_EVENTS_LOG_PATH`에 정확히 한 줄이 저장되는 integration test를 추가했다. stack-trace child는 token/session sentinel을 실제 room/player 인자로 사용하고 별도 고정 non-function mutation으로 실패한다.
+- 리뷰 수정에서 TTL cleanup의 기본 game-over logger fallback을 복구하고 임시 `GAME_EVENTS_LOG_PATH`에 정확히 한 줄이 저장되는 integration test를 추가했다. stack-trace child는 token/session sentinel을 실제 room/player 인자로 사용하고 별도 고정 non-function mutation으로 실패한다.
 - Node `24.18.0`/npm `11.16.0`에서 targeted authoritative gameplay 129/129, 기존 Socket/security 105/105와 TTL log 1/1, artifact 1/1과 hermetic release 1/1이 통과했다. `bash scripts/verify.sh`는 Node tests 587 pass·기존 조건부 1 skip, ML은 Node 35/35·Python 115/115, Vite-dev는 8 pass·production-only 2 skip, production Playwright는 34/34다.
 - package dependency와 lockfile은 기준과 동일하다. client source와 dependency를 변경하지 않았으며 final build의 기존 client bundle 구성을 유지했다.
 - Chromium local과 hermetic release를 검증했지만 WebKit/Firefox, 외부 TLS/reverse proxy와 장시간 soak는 실행하지 않았다. Express vendor surface는 현재 사용 API만 local declaration으로 좁혔으므로 사용 범위가 커지면 별도 type dependency 판단이 필요하다. test/e2e/script 자체의 선택적 TypeScript 전환은 Goal 8D, storage는 Goal 9 범위다.
-- rollback은 현재 리뷰 문서 commit → `0fa4f39` → `785dcf0` → `978398c` → `c8cdb9d` → `3a60750` → `e67ecf5` → `49187e4` 순서로 역순 revert한다. pre-interop 문서 commit `7680229`는 구현 rollback 대상이 아니다.
-- Goal 8C는 local `main@4d5bcd5`에 반영됐다. `origin/main` push, branch 삭제, Goal 8D와 SPA 작업은 수행하지 않았다.
+- 정확한 rollback 순서는 Goal 8C 실행 기록을 따르며 목적별 커밋을 역순으로 revert한다. pre-interop 문서 커밋은 구현 rollback 대상이 아니다.
+- Goal 8C는 local main에 반영됐다. 당시 `origin/main` push, branch 삭제, Goal 8D와 SPA 작업은 수행하지 않았다.
 
 ## Storage roadmap decision (2026-07-22, historical)
 
@@ -903,18 +903,18 @@
 ## CI and PostgreSQL roadmap reactivation (2026-07-23)
 
 - 실제 사용자 gameplay event를 container 수명과 분리해 장기 보존하고 SQL로 중복·완전성·용량을 점검한다는 요구가 생겼다. 위 2026-07-22 보류 판단은 당시 사실로 남기되 향후 실행 순서는 `11E → 9A → 9B → 9C → 9D`로 갱신한다.
-- Goal 11E는 timing-dependent PVE T-Spin E2E를 제거하고 pending garbage의 authoritative/UI 일관성 검증을 유지하는 방식으로 완료됐다. 최종 `8cc16d9`은 main과 origin/main에 반영됐고 hosted Fast/Docker 및 동일 SHA Browser 연속 2회가 통과했다. T-Spin 보장은 `test/testTSpin.js`, `test/testPlayerGameplayStep.js`, `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 이제 다음 단계는 Goal 9A 설계 준비다.
+- Goal 11E는 timing-dependent PVE T-Spin E2E를 제거하고 pending garbage의 authoritative/UI 일관성 검증을 유지하는 방식으로 완료됐다. 결과는 main과 origin/main에 반영됐고 hosted Fast/Docker 및 동일 revision의 Browser 연속 2회가 통과했다. T-Spin 보장은 `test/testTSpin.js`, `test/testPlayerGameplayStep.js`, `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 이제 다음 단계는 Goal 9A 설계 준비다.
 - Goal 9는 구현 index이며 9A schema/repository, 9B runtime canonical storage, 9C JSONL import/completeness, 9D PostgreSQL CI/release로 나눈다. 각 단계는 별도 branch/worktree와 main merge gate를 사용한다.
 - local/development는 JSONL, 배포 환경은 명시적 PostgreSQL 단일 sink를 사용한다. dual-write, silent fallback, Drizzle, Redis, Kafka와 custom in-memory queue는 현재 범위가 아니다.
 - Goal 9D와 production 활성화 승인이 끝나면 배포는 `GAME_EVENT_STORAGE=postgres`만 사용하고 JSONL writer와 writable volume을 끈다. 기존 JSONL 파일과 repository code는 삭제하지 않고 local/test 및 명시적 rollback 경로로 보존한다.
 - read-only 감사 기준 현재 JSONL은 약 82.7 MiB/17,636 event이며 lifecycle 불완전 경기와 placement 내부 gap이 존재한다. 모든 `game_start`에 포함된 nickname은 DB projection에서 제거하고 human payload는 `client_reported`로 유지한다. 실제 구현 preflight에서 수치를 다시 측정한다.
-- 문서 설계 시점의 `codex/add-postgres-event-shadow` merge-base는 Goal 8C `4d5bcd5`이며 current main 쪽 24 commit, old branch 쪽 6 commit으로 갈라져 있다. branch 고유 Drizzle/queue 구현은 payload conflict를 숨기며 queue drop, silent JSONL success와 65초 shutdown을 사용한다. CSP, Docker, 현재 8초 shutdown과 CI가 없으므로 전체 merge/rebase와 commit 전체 cherry-pick은 금지한다.
+- 문서 설계 시점의 `codex/add-postgres-event-shadow`는 Goal 8C 시점에서 갈라진 오래된 branch다. current main 쪽 24 commit, old branch 쪽 6 commit으로 나뉘어 있으며 branch 고유 Drizzle/queue 구현은 payload conflict를 숨기고 queue drop, silent JSONL success와 65초 shutdown을 사용한다. CSP, Docker, 현재 8초 shutdown과 CI가 없으므로 전체 merge/rebase와 commit 전체 cherry-pick은 금지한다.
 - 과거 branch에서 참고 가능한 것은 semantic identity, parameterized query, TLS/least-privilege 검토와 실제 DB integration test 아이디어뿐이다. 새 구현은 최신 main에서 `pg`와 검토된 SQL로 다시 작성한다.
 - 이 문서 branch는 Goal 명세만 변경한다. SQL, dependency, CI workflow, production env, managed DB와 기존 JSONL data를 변경하지 않는다.
 
 ## Migration Goal 11A CSP/security headers merge gate (2026-07-22)
 
-- 기준은 `main@1ab2237`이며 `codex/harden-csp-headers`에서 compiled production HTTP 응답에 CSP, `nosniff`, `X-Frame-Options: DENY`와 `Referrer-Policy: no-referrer`를 적용한다. Express `x-powered-by`는 비활성화했고 새 dependency는 추가하지 않았다.
+- Goal 8C가 반영된 main을 기준으로 `codex/harden-csp-headers`에서 compiled production HTTP 응답에 CSP, `nosniff`, `X-Frame-Options: DENY`와 `Referrer-Policy: no-referrer`를 적용한다. Express `x-powered-by`는 비활성화했고 새 dependency는 추가하지 않았다.
 - CSP는 `default-src 'none'`에서 시작한다. 네 page의 동일한 theme pre-paint script hash 하나와 세 종류의 inline theme style hash만 허용하고, script/style attribute, eval과 wildcard origin은 허용하지 않는다. HTML의 유일한 정적 style attribute는 기존 CSS로 이동했다.
 - `CSP_MODE=report-only`는 `Content-Security-Policy-Report-Only`, 기본 enforce mode는 `Content-Security-Policy`만 보낸다. 최초 report-only 관찰에서 Zod runtime의 eval probe를 확인해 shared Socket contract에 공식 `jitless` 설정을 적용했고 이후 네 page의 `securitypolicyviolation`, console error와 pageerror는 0건이다. React style prop과 개별 `element.style` property는 위반이 없어 변경하지 않았다.
 - 불필요한 static directory redirect는 비활성화했다. Express static 오류는 4-인자 error middleware가 유효한 4xx/5xx status를 보존하면서 두 CSP header를 제거하고 선택된 mode의 header 하나만 다시 적용하며 raw error 내용은 노출하지 않는다.
@@ -926,29 +926,29 @@
 
 ## Migration Goal 11B Dependency hardening merge gate (2026-07-22)
 
-- 기준은 `main@5a2bb22`이며 `codex/harden-dependencies`에서 fresh npm audit의 유일한 low advisory인 `body-parser@2.2.2`의 invalid-limit DoS 경계를 검토하고 patched `2.3.0`으로 갱신했다. `package.json`, production source, script와 engine 설정은 변경하지 않았다.
+- Goal 11A가 반영된 main을 기준으로 `codex/harden-dependencies`에서 fresh npm audit의 유일한 low advisory인 `body-parser@2.2.2`의 invalid-limit DoS 경계를 검토하고 patched `2.3.0`으로 갱신했다. `package.json`, production source, script와 engine 설정은 변경하지 않았다.
 - Express는 `body-parser` 모듈을 로드한다. 현재 애플리케이션은 `express.json()`, `express.urlencoded()`, `express.raw()`, `express.text()` 또는 `body-parser` middleware를 생성하지 않으므로 취약점의 invalid-limit 처리 경로는 현재 코드에서 도달하지 않는다. 그래도 알려진 취약점을 제거하기 위해 Express의 기존 `^2.2.1` 범위와 Node 24에 호환되는 patched version을 적용했다.
 - lockfile 변경은 `body-parser@2.3.0`, 그 dependency인 `type-is@2.1.0`과 각 모듈 아래 `content-type@2.0.0` 네 entry뿐이다. 모든 변경 package는 npm registry URL과 integrity를 가지며 install-script allowlist는 optional `fsevents@2.3.2`, Vite 내부 optional `fsevents@2.3.3` 두 개로 유지된다.
 - Node `24.18.0`/npm `11.16.0`에서 `npm ci --ignore-scripts`, production/full npm audit 0건, artifact 1/1, source-less release 1/1이 통과했다. `bash scripts/verify.sh`는 Node tests 592 pass·기존 조건부 1 skip, Vite-dev는 8 pass·production-only 2 skip, production Playwright는 CSP·Socket.IO·Single/PVP/PVE를 포함해 35/35다.
 - 기존 `tetris-ml` 환경은 수정하지 않았다. `/private/tmp`의 별도 prefix에서 `environment-ml.yml` exact pin을 clean resolve해 Python 115/115를 통과한 뒤 prefix를 제거했다. 기존 `npm run verify:ml`도 Node 35/35·Python 115/115를 통과했고 source/dist V4 model SHA-256은 모두 `ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d`다.
 - `package.json`과 `environment-ml.yml` checksum은 기준과 동일하다. `environment-ml.yml`은 exact top-level pin을 제공하지만 전체 transitive package/build lockfile은 아니며, Conda solver와 defaults channel의 미래 metadata 변화는 남은 재현성 한계다.
-- rollback은 현재 Goal 11B 문서 commit을 먼저 revert한 뒤 dependency commit `3fe121e`를 revert하고 `npm ci --ignore-scripts`로 기준 lock resolve를 복구한다. Python/Conda 파일은 변경하지 않아 별도 rollback이 없다.
+- rollback은 현재 Goal 11B 문서 커밋을 먼저 revert한 뒤 dependency 커밋을 revert하고 `npm ci --ignore-scripts`로 기준 lock resolve를 복구한다. Python/Conda 파일은 변경하지 않아 별도 rollback이 없다.
 - Goal 11B는 clean local merge gate에서 멈춘다. push, main merge, branch 삭제, Goal 11C와 보류된 Goal 8D/9/10/SPA는 수행하지 않는다.
 
 ## Migration Goal 11C Production Docker main integration (2026-07-22)
 
-- 초기 기준은 `main@a18801c`이며 `codex/add-production-docker`에서 official Node `24.18.0-bookworm-slim` digest를 고정한 multi-stage image를 추가했다. 이후 사운드 재시도 수정이 포함된 `main@65b1903`을 merge commit `6d09a28`로 동기화했으며 기존 Goal 11C commit과 Docker 계약을 보존했다. build dependency와 production dependency 설치를 분리하고 runtime에는 `dist`, production `node_modules`와 명시적인 `/app/data/logs` 경계만 둔다. package/lockfile과 dependency는 변경하지 않았다.
+- Goal 11B가 반영된 main을 기준으로 `codex/add-production-docker`에서 official Node `24.18.0-bookworm-slim` digest를 고정한 multi-stage image를 추가했다. 이후 사운드 재시도 수정이 포함된 최신 main을 merge commit으로 동기화했으며 기존 Goal 11C 커밋과 Docker 계약을 보존했다. build dependency와 production dependency 설치를 분리하고 runtime에는 `dist`, production `node_modules`와 명시적인 `/app/data/logs` 경계만 둔다. package/lockfile과 dependency는 변경하지 않았다.
 - runtime은 built-in `node` user로 실행하며 exec-form `CMD`, read-only root filesystem과 named JSONL volume을 사용한다. health check는 내부 상태를 노출하지 않고 `/`의 성공 여부만 확인한다. `.env`, credential, source, test, devDependency, first-party TypeScript와 source map은 image에 포함하지 않는다.
 - SIGTERM은 Socket.IO session cleanup interval, disconnect grace timer와 authoritative room ticker를 idempotent하게 정리하고 Socket.IO가 연결된 HTTP server를 닫는다. 8초 상한을 두었고 실제 container는 0.16초, exit code 0으로 종료됐다. restart 뒤 named volume의 기존 JSONL이 유지됐다.
 - production browser의 same-origin Socket.IO polling은 `Origin` header를 보내지 않는 실제 동작을 확인했다. exact origin allowlist 필수 정책과 cross-origin 거부를 유지하면서 `Sec-Fetch-Site: same-origin`과 allowlisted `Host`가 함께 맞는 경우만 no-Origin polling을 허용한다. 일반 no-Origin 요청과 forged/unlisted host·origin은 계속 거부한다.
 - 동기화 코드로 새로 build한 local image는 `tetris-multi:goal11c-6d09a28`, image ID `sha256:6c5a00b67f4013d901f6913da89f5328299b5c5ccf3cd47e9d054e77886118db`, linux/arm64 88,083,089 bytes다. health `starting → healthy`, non-root/read-only, writable JSONL volume, 네 page·asset·Socket.IO client HTTP 200, CSP/security header, first-party TS/TSX/map 404와 public Socket.IO map 200 예외를 확인했다.
 - container PVP/PVE Playwright는 6/6, `bash scripts/verify.sh`는 Node tests 594 pass·기존 조건부 1 skip, Vite-dev는 10 pass·production-only 2 skip, production Playwright는 37/37 통과했다. named volume은 재시작 전 484줄의 hash를 재시작 후 prefix에서 그대로 유지했고 lifecycle 로그 1줄을 append했으며, 최종 SIGTERM은 0.16초·exit code 0으로 종료됐다. production/full npm audit은 기존 Goal 11C 검증에서 모두 0건이다.
 - 첫 production image라 실제 이전 image로의 downgrade는 검증할 대상이 없다. 현재는 commit tag와 image ID 재실행만 확인했으며, 다음 배포부터는 배포 전 현재 registry digest를 보존하고 실패 시 해당 digest로 동일 runtime 환경을 재기동한다. registry publish/deploy, amd64 build, 외부 TLS/reverse proxy와 장시간 soak는 미검증이다.
-- Goal 11C는 `84f8659`까지 `main`/`origin/main`에 반영됐다. image publish/deploy, branch 삭제, Goal 11D와 보류된 Goal 8D/9/10/SPA는 수행하지 않았다.
+- Goal 11C는 main과 origin/main에 반영됐다. image publish/deploy, branch 삭제, Goal 11D와 보류된 Goal 8D/9/10/SPA는 수행하지 않았다.
 
 ## Migration Goal 11D CI execution gate (2026-07-23)
 
-- 기준은 Goal 11C가 반영된 `main@84f8659`이며 `codex/add-migration-ci`에 GitHub Actions workflow 하나를 추가했다. `fast`, `browser`, `docker` 세 job은 `ubuntu-24.04`에서 실행하고 `.nvmrc`를 Node 단일 기준으로 사용한다. 실제 npm 버전은 출력만 하며 `11.16.0`으로 고정됐다고 주장하지 않는다.
+- Goal 11C가 반영된 main을 기준으로 `codex/add-migration-ci`에 GitHub Actions workflow 하나를 추가했다. `fast`, `browser`, `docker` 세 job은 `ubuntu-24.04`에서 실행하고 `.nvmrc`를 Node 단일 기준으로 사용한다. 실제 npm 버전은 출력만 하며 `11.16.0`으로 고정됐다고 주장하지 않는다.
 - `fast`는 pull request에서 base/head merge-base부터 head까지, main push에서 `github.event.before`부터 `github.sha`까지 committed diff를 검사하고 수동 dispatch에서는 현재 HEAD commit을 검사한다. 이어 `npm ci --ignore-scripts`, `bash scripts/verify.sh`와 `npm run test:release`를 실행한다. `browser`는 독립 checkout·Node setup·clean install 뒤 기존 Playwright webServer lifecycle로 Chromium Vite-dev와 production PVP/PVE를 실행한다. `docker`는 registry push 없이 local image를 만들고 고유 container/volume, read-only root, JSONL writable volume, bounded health, HTTP/CSP/source-map 404와 SIGTERM exit 0을 확인한다.
 - workflow 권한은 `contents: read`뿐이며 공식 `actions/checkout`과 `actions/setup-node`를 검증된 full commit SHA로 고정했다. npm cache는 `package-lock.json`에 연결하되 모든 job이 clean install을 수행해 cache miss에도 동작한다. trace, HTML report, JSONL을 포함한 실패 artifact는 redaction 정책 전까지 업로드하지 않는다.
 - token rotation, stale credential 보존과 URL/DOM/console 비노출 E2E는 token 원문을 matcher에 넘기지 않는 boolean 비교로 바꿨다. 관련 production Playwright 19/19, canonical Node 594 pass·기존 조건부 1 skip, source-less release 1/1, Vite-dev 10 pass·2 skip, production Playwright 37/37과 Docker smoke가 통과했다. Docker smoke는 root HTML에서 동적으로 찾은 hashed module을 실제 HTTP 200으로 확인한 뒤 같은 module의 map 404를 확인한다.
