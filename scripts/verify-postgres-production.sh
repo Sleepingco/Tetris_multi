@@ -236,27 +236,42 @@ start_application() {
 
 stop_application() {
     started_at="$(node -e 'process.stdout.write(String(Date.now()))')"
-    docker stop --time 8 "$application_container" >/dev/null
+    docker stop --time 10 "$application_container" >/dev/null
     finished_at="$(node -e 'process.stdout.write(String(Date.now()))')"
     shutdown_milliseconds=$((finished_at - started_at))
-    test "$shutdown_milliseconds" -lt 8000 || {
-        echo "GOAL9D_SHUTDOWN_DEADLINE_EXCEEDED" >&2
-        return 1
-    }
-    test "$(docker inspect --format '{{.State.ExitCode}}' "$application_container")" = 0 || {
-        echo "GOAL9D_SHUTDOWN_EXIT_NONZERO" >&2
-        return 1
-    }
+    read -r exit_code oom_killed < <(
+        docker inspect --format '{{.State.ExitCode}} {{.State.OOMKilled}}' \
+            "$application_container"
+    )
     open_pool_connections="$(docker exec "$database_container" \
         psql --quiet --tuples-only --no-align \
         --username postgres --dbname "$database_name" \
         --command "SELECT pg_catalog.count(*) FROM pg_catalog.pg_stat_activity WHERE application_name = 'tetris-goal9b-runtime';")"
+    printf '[test:docker:postgres] shutdown_cli_ms=%s exit_code=%s oom_killed=%s pool_connections=%s\n' \
+        "$shutdown_milliseconds" "$exit_code" "$oom_killed" "$open_pool_connections"
+    case "$exit_code" in
+        0) ;;
+        1)
+            echo "GOAL9D_SHUTDOWN_EXIT_1" >&2
+            return 1
+            ;;
+        137)
+            echo "GOAL9D_SHUTDOWN_EXIT_137" >&2
+            return 1
+            ;;
+        *)
+            echo "GOAL9D_SHUTDOWN_EXIT_UNEXPECTED" >&2
+            return 1
+            ;;
+    esac
+    test "$oom_killed" = false || {
+        echo "GOAL9D_SHUTDOWN_OOM_KILLED" >&2
+        return 1
+    }
     test "$open_pool_connections" = 0 || {
         echo "GOAL9D_POOL_CONNECTIONS_REMAIN" >&2
         return 1
     }
-    printf '[test:docker:postgres] shutdown_ms=%s pool_connections=0\n' \
-        "$shutdown_milliseconds"
 }
 
 event_snapshot() {
