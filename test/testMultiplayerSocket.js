@@ -24,6 +24,7 @@ const {
     getAuthoritativePlayerSnapshot,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
+    recordHumanPlacementReceipt,
 } = require("../dist/server/server/services/matchService.js")
 const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js")
 const {
@@ -189,6 +190,7 @@ function createNoopAuthoritativeTickerService() {
         stopRoomTicker() {
             return { ok: true, stopped: false }
         },
+        stopAllRoomTickers() {},
     }
 }
 
@@ -212,7 +214,7 @@ function createDeferred() {
 }
 
 function registerTestSocketHandlers(socketServer, dependencies = {}) {
-    registerSocketHandlers(socketServer, {
+    return registerSocketHandlers(socketServer, {
         authoritativeTickerService: createNoopAuthoritativeTickerService(),
         saveGameEventLog: saveTestLog,
         savePlacementDecisionLog: saveTestLog,
@@ -395,6 +397,8 @@ function createHumanPlacementLogV1(roomId, overrides = {}) {
         schemaVersion: 1,
         gameId: `${roomId}-game`,
         pieceIndex: 2,
+        authoritativeClientSequence: 1,
+        authoritativePieceIndex: 2,
         boardBefore: [[null]],
         boardAfter: [["square"]],
         selectedPlacement: {
@@ -444,6 +448,8 @@ function createHumanPlacementLogV2(roomId, overrides = {}) {
         modelType: null,
         tick: 10,
         pieceIndex: 3,
+        authoritativeClientSequence: 1,
+        authoritativePieceIndex: 3,
         createdAt: 1,
         boardBefore: [[null, null], [null, null]],
         boardAfter: [["square", "square"], ["square", "square"]],
@@ -2752,6 +2758,10 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
         roomId,
         playerId: "log-host-player",
     })
+    assert.equal(
+        recordHumanPlacementReceipt(roomId, "log-host-player", 1, 2).ok,
+        true,
+    )
 
     await hostSocket.triggerAsync("game:log:placement_decision", {
         roomId,
@@ -2763,6 +2773,8 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
             playerId: "log-host-player",
             gameId: `${roomId}-game`,
             pieceIndex: 2,
+            authoritativeClientSequence: 1,
+            authoritativePieceIndex: 2,
             boardBefore: [[null]],
             boardAfter: [["square"]],
             placementResult: {
@@ -2793,6 +2805,9 @@ test("game:log:placement_decision은 유효한 로그를 저장하고 결과를 
 
     assert.equal(savedLogs.length, 1)
     assert.equal(savedLogs[0].eventType, "placement_decision")
+    assert.equal(savedLogs[0].gameId, getMatchState(roomId).match.gameId)
+    assert.notEqual(savedLogs[0].gameId, `${roomId}-game`)
+    assert.equal(savedLogs[0].playerId, "log-host-player")
     assert.equal(logResult.ok, true)
     assert.equal(logResult.reason, null)
 })
@@ -3039,6 +3054,10 @@ test("game:log:placement_decision은 finished 상태의 늦은 로그 저장을 
         roomId,
         playerId: "log-finished-host",
     })
+    assert.equal(
+        recordHumanPlacementReceipt(roomId, "log-finished-host", 2, 2).ok,
+        true,
+    )
     const gameCore = await loadGameCore()
     const matchResult = getMatchState(roomId)
     prepareTopOutState(gameCore, matchResult.match, "log-finished-guest")
@@ -3063,6 +3082,8 @@ test("game:log:placement_decision은 finished 상태의 늦은 로그 저장을 
             playerId: "log-finished-host",
             gameId: `${roomId}-game`,
             pieceIndex: 2,
+            authoritativeClientSequence: 2,
+            authoritativePieceIndex: 2,
             boardBefore: [[null]],
             boardAfter: [["square"]],
             selectedPlacement: {
@@ -3114,6 +3135,10 @@ test("human v2 placement log는 확장 좌표를 보존하고 private field를 �
     })
     const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
     hostSocket.trigger("room:start", { roomId })
+    assert.equal(
+        recordHumanPlacementReceipt(roomId, "log-v2-host", 1, 3).ok,
+        true,
+    )
 
     await hostSocket.triggerAsync("game:log:placement_decision", {
         roomId,
@@ -3234,6 +3259,30 @@ test("room:start는 game_start 로그를 저장한다", async () => {
     assert.equal(typeof startLog.startedAt, "number")
 })
 
+test("socket disposer 이후 기존 socket은 새 경기 event를 생산하지 않는다", async () => {
+    const socketServer = new FakeSocketServer()
+    const hostSocket = new FakeClientSocket("shutdown-host-socket")
+    const savedLogs = []
+    const dispose = registerTestSocketHandlers(socketServer, {
+        saveGameEventLog(log) {
+            savedLogs.push(log)
+            return Promise.resolve({ ok: true, log, reason: null })
+        },
+    })
+    socketServer.connect(hostSocket)
+    hostSocket.trigger("room:create", {
+        mode: "pve",
+        player: { playerId: "shutdown-host", nickname: "Host" },
+    })
+    const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
+
+    dispose()
+    await hostSocket.triggerAsync("room:start", { roomId })
+
+    assert.equal(getRoomState(roomId).status, "waiting")
+    assert.equal(savedLogs.length, 0)
+})
+
 test("server authoritative gameOver는 game_over 로그를 저장한다", async () => {
     const socketServer = new FakeSocketServer()
     const hostSocket = new FakeClientSocket("over-log-host-socket")
@@ -3289,7 +3338,7 @@ test("server authoritative gameOver는 game_over 로그를 저장한다", async 
     const overLog = savedLogs.find(log => log.eventType === "game_over")
 
     assert.equal(overLog.roomId, roomId)
-    assert.equal(overLog.gameId, `${roomId}-${matchResult.match.createdAt}`)
+    assert.equal(overLog.gameId, matchResult.match.gameId)
     assert.equal(overLog.mode, "multi")
     assert.equal(overLog.winnerPlayerId, "over-log-host")
     assert.equal(overLog.loserPlayerId, "over-log-guest")
@@ -4333,7 +4382,16 @@ test("진행 중 session TTL 만료는 기본 game_over JSONL을 한 번 저장�
         authoritativeTickerService: createNoopAuthoritativeTickerService(),
     })
 
-    const logs = (await readFile(logPath, "utf8"))
+    let serializedLogs = ""
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        try {
+            serializedLogs = await readFile(logPath, "utf8")
+            break
+        } catch {
+            await new Promise(resolve => setTimeout(resolve, 5))
+        }
+    }
+    const logs = serializedLogs
         .trim()
         .split("\n")
         .map(line => JSON.parse(line))

@@ -17,10 +17,15 @@ const {
     appendPendingGarbageToOpponent,
     applyAuthoritativeInputToMatchPlayerState,
     applyGravityStepToMatchPlayerState,
+    authenticateHumanPlacementReceipt,
     createMatch,
     deleteMatch,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
+    HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER,
+    HUMAN_PLACEMENT_RECEIPT_TTL_MS,
+    recordAiPlacementEventTarget,
+    recordHumanPlacementReceipt,
     resetMatches,
 } = matchService;
 const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
@@ -63,12 +68,106 @@ test("createMatch는 room 정보를 기준으로 authoritative match를 만든�
     assert.equal(result.match.players.length, 2);
     assert.equal(result.match.players[0].playerId, "host-player");
     assert.equal(result.match.players[0].lastProcessedClientSequence, 0);
+    assert.equal(result.match.players[0].expectedPlacementEventCount, 0);
+    assert.match(
+        result.match.gameId,
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     assert.equal(
         Object.hasOwn(result.match.players[0].authoritativeState, "lastProcessedClientSequence"),
         false,
     );
     assert.equal(result.match.players[0].aiPlan, null);
     assert.equal(typeof result.match.createdAt, "number");
+});
+
+test("human placement receipt는 exact tuple, TTL과 player별 128개 상한을 강제한다", () => {
+    resetMatches();
+    const matchResult = createMatch(createPlayingRoom("RECEIPT1"));
+    const gameId = matchResult.match.gameId;
+    const first = recordHumanPlacementReceipt(
+        "RECEIPT1",
+        "host-player",
+        1,
+        1,
+        1_000,
+    );
+    const duplicate = recordHumanPlacementReceipt(
+        "RECEIPT1",
+        "host-player",
+        1,
+        1,
+        1_001,
+    );
+
+    assert.equal(first.ok, true);
+    assert.equal(first.receipt.gameId, gameId);
+    assert.strictEqual(first.receipt, duplicate.receipt);
+    assert.equal(matchResult.match.players[0].expectedPlacementEventCount, 1);
+    assert.equal(
+        authenticateHumanPlacementReceipt("RECEIPT1", "host-player", 1, 1, 1_002).ok,
+        true,
+    );
+    assert.equal(
+        authenticateHumanPlacementReceipt("RECEIPT1", "host-player", 2, 1, 1_002).reason,
+        "PLACEMENT_RECEIPT_NOT_FOUND",
+    );
+    assert.equal(
+        authenticateHumanPlacementReceipt(
+            "RECEIPT1",
+            "host-player",
+            1,
+            1,
+            1_000 + HUMAN_PLACEMENT_RECEIPT_TTL_MS,
+        ).reason,
+        "PLACEMENT_RECEIPT_NOT_FOUND",
+    );
+
+    for (let index = 0; index <= HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER; index += 1) {
+        recordHumanPlacementReceipt(
+            "RECEIPT1",
+            "guest-player",
+            index + 1,
+            index,
+            2_000,
+        );
+    }
+    assert.equal(
+        authenticateHumanPlacementReceipt("RECEIPT1", "guest-player", 1, 0, 2_001).ok,
+        false,
+    );
+    assert.equal(
+        authenticateHumanPlacementReceipt(
+            "RECEIPT1",
+            "guest-player",
+            HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER + 1,
+            HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER,
+            2_001,
+        ).ok,
+        true,
+    );
+});
+
+test("AI expected placement count는 같은 pieceIndex를 중복 집계하지 않는다", () => {
+    resetMatches();
+    const result = createMatch({
+        ...createPlayingRoom("AI_COUNT"),
+        mode: "pve",
+        players: [
+            createPlayingRoom().players[0],
+            {
+                playerId: "heuristic-ai-AI_COUNT",
+                nickname: "Heuristic AI",
+                playerType: "heuristic_ai",
+            },
+        ],
+    });
+
+    recordAiPlacementEventTarget("AI_COUNT", "heuristic-ai-AI_COUNT", 1);
+    recordAiPlacementEventTarget("AI_COUNT", "heuristic-ai-AI_COUNT", 1);
+    recordAiPlacementEventTarget("AI_COUNT", "heuristic-ai-AI_COUNT", 2);
+
+    assert.equal(result.match.players[1].expectedPlacementEventCount, 2);
 });
 
 test("createMatch는 PVE room 난이도를 match 단일 실행 설정으로 복사한다", () => {

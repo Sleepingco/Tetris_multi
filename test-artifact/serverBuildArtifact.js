@@ -26,7 +26,10 @@ const CLIENT_RUNTIME_SOURCE_ROOTS = [
 ];
 const PLACEMENT_V4_MODEL_PATH = "server/assets/placement-v4-125g-experimental-model.json";
 const PLACEMENT_V4_MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d";
-const GAME_EVENTS_MIGRATION_PATH = "server/db/migrations/001_game_events.sql";
+const GAME_EVENTS_MIGRATION_PATHS = [
+    "server/db/migrations/001_game_events.sql",
+    "server/db/migrations/002_lifecycle_event_v2.sql",
+];
 
 async function listFiles(directory, prefix = "") {
     const files = [];
@@ -62,10 +65,11 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
             || file === "shared/socketContracts.mjs"
             || file === "server/assets/placement-v4-125g-experimental-model.json"
             || /^server\/db\/.+\.js$/.test(file)
-            || file === GAME_EVENTS_MIGRATION_PATH
+            || GAME_EVENTS_MIGRATION_PATHS.includes(file)
             || /^server\/(?:repositories|services|sockets|validators)\/.+\.js$/.test(file)
             || file === "server/httpSecurity.js"
             || file === "server/init.js"
+            || file === "server/serverShutdown.js"
             || file === "server/socketSecurity.js"
             || /^client\/game\/(?:ai|core|state)\/.+\.js$/.test(file);
     };
@@ -149,11 +153,21 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
     assert.equal(createHash("sha256").update(sourceModel).digest("hex"), PLACEMENT_V4_MODEL_SHA256);
     assert.equal(createHash("sha256").update(outputModel).digest("hex"), PLACEMENT_V4_MODEL_SHA256);
 
-    const sourceMigration = await readFile(
-        path.join(ROOT, "src", "server", "db", "migrations", "001_game_events.sql"),
-    );
-    const outputMigration = await readFile(path.join(SERVER_ROOT, GAME_EVENTS_MIGRATION_PATH));
-    assert.equal(outputMigration.equals(sourceMigration), true);
+    for (const migrationPath of GAME_EVENTS_MIGRATION_PATHS) {
+        const sourceMigration = await readFile(
+            path.join(ROOT, "src", migrationPath),
+        );
+        const outputMigration = await readFile(
+            path.join(SERVER_ROOT, migrationPath),
+        );
+        assert.equal(outputMigration.equals(sourceMigration), true);
+    }
+
+    assert.doesNotThrow(() => {
+        require(path.join(SERVER_ROOT, "server", "services", "gameEventProjector.js"));
+        require(path.join(SERVER_ROOT, "server", "services", "runtimeEventStorage.js"));
+        require(path.join(SERVER_ROOT, "server", "serverShutdown.js"));
+    });
 
     const { loadGameCore } = require(
         path.join(SERVER_ROOT, "server", "services", "gameCoreLoader.js")

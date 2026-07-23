@@ -289,7 +289,7 @@ test("event/schema/trust/nullability shape를 table-driven으로 강제한다", 
         createLifecycleEvent("game_start", { trustLevel: "client_reported" }),
         createLifecycleEvent("game_over", { occurredAt: null }),
         createLifecycleEvent("game_start", { playerId: "player-not-allowed" }),
-        createLifecycleEvent("game_start", { schemaVersion: 2 }),
+        createLifecycleEvent("game_start", { schemaVersion: 3 }),
         createPlacementEvent({ playerId: null }),
         createPlacementEvent({ pieceIndex: null }),
         createPlacementEvent({ schemaVersion: 2, occurredAt: null }),
@@ -318,6 +318,12 @@ test("event/schema/trust/nullability shape를 table-driven으로 강제한다", 
             trustLevel: "server_authoritative",
         })).trustLevel,
         "server_authoritative",
+    );
+    assert.equal(
+        createCanonicalGameEvent(createLifecycleEvent("game_start", {
+            schemaVersion: 2,
+        })).schemaVersion,
+        2,
     );
 });
 

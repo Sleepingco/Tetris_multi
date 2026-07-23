@@ -1,5 +1,5 @@
 /**
- * Goal 9A raw migration, role boundary, repository와 source-less artifact를
+ * Goal 9B raw migration, role boundary, repository와 source-less artifact를
  * loopback의 격리된 실제 PostgreSQL 하나에서 검증한다.
  */
 const test = require("node:test");
@@ -25,6 +25,11 @@ const {
 const {
     createPostgresEventRepository,
 } = require("../dist/server/server/repositories/postgresEventRepository.js");
+const {
+    createRuntimeEventStorage,
+    POSTGRES_RUNTIME_IN_FLIGHT_MAX,
+    POSTGRES_RUNTIME_POOL_MAX,
+} = require("../dist/server/server/services/runtimeEventStorage.js");
 
 const ROOT = path.resolve(__dirname, "..");
 const MIGRATIONS_DIRECTORY = path.join(
@@ -42,31 +47,33 @@ const SOURCE_MIGRATIONS_DIRECTORY = path.join(
     "db",
     "migrations",
 );
-const MIGRATION_ROLE = "tetris_goal9a_migration";
-const RUNTIME_ROLE = "tetris_goal9a_runtime";
-const MAIN_DATABASE = "tetris_goal9a_test";
-const CONCURRENT_DATABASE = "tetris_goal9a_concurrent";
-const FAILURE_DATABASE = "tetris_goal9a_failure";
-const HOSTILE_DATABASE = "tetris_goal9a_hostile";
-const RELEASE_DATABASE = "tetris_goal9a_release";
+const MIGRATION_ROLE = "tetris_goal9b_migration";
+const RUNTIME_ROLE = "tetris_goal9b_runtime";
+const MAIN_DATABASE = "tetris_goal9b_test";
+const CONCURRENT_DATABASE = "tetris_goal9b_concurrent";
+const FAILURE_DATABASE = "tetris_goal9b_failure";
+const HOSTILE_DATABASE = "tetris_goal9b_hostile";
+const RELEASE_DATABASE = "tetris_goal9b_release";
+const OLD_SCHEMA_DATABASE = "tetris_goal9b_old_schema";
 const DATABASES = [
     MAIN_DATABASE,
     CONCURRENT_DATABASE,
     FAILURE_DATABASE,
     HOSTILE_DATABASE,
     RELEASE_DATABASE,
+    OLD_SCHEMA_DATABASE,
 ];
 const ADVISORY_LOCK_KEY = "9026072300090001";
 
 function requireEnvironment(name) {
     const value = process.env[name];
-    if (!value) throw new Error(`GOAL9A_TEST_ENV_${name}_REQUIRED`);
+    if (!value) throw new Error(`GOAL9B_TEST_ENV_${name}_REQUIRED`);
     return value;
 }
 
 function quoteIdentifier(value) {
     if (!/^[a-z][a-z0-9_]*$/.test(value)) {
-        throw new Error("GOAL9A_TEST_IDENTIFIER_INVALID");
+        throw new Error("GOAL9B_TEST_IDENTIFIER_INVALID");
     }
     return `"${value}"`;
 }
@@ -84,7 +91,7 @@ function sha256(value) {
 
 function clientConfig(url, options = {}) {
     return createPostgresClientConfig(url, {
-        applicationName: options.applicationName ?? "goal9a-integration",
+        applicationName: options.applicationName ?? "goal9b-integration",
         ca: options.ca,
         connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5_000,
         queryTimeoutMillis: options.queryTimeoutMillis ?? 10_000,
@@ -303,7 +310,7 @@ async function verifyTls(tlsUrl, ca) {
         ...mismatchConfig.ssl,
         checkServerIdentity(_hostname, certificate) {
             return checkServerIdentity(
-                "goal9a-hostname-mismatch.invalid",
+                "goal9b-hostname-mismatch.invalid",
                 certificate,
             );
         },
@@ -320,25 +327,29 @@ async function verifyTls(tlsUrl, ca) {
 
 async function verifyMigrations(plainUrl) {
     const first = await runPostgresMigrations(
-        migrationOptions(plainUrl, MAIN_DATABASE, "goal9a-migrate-first"),
+        migrationOptions(plainUrl, MAIN_DATABASE, "goal9b-migrate-first"),
     );
     const second = await runPostgresMigrations(
-        migrationOptions(plainUrl, MAIN_DATABASE, "goal9a-migrate-second"),
+        migrationOptions(plainUrl, MAIN_DATABASE, "goal9b-migrate-second"),
     );
-    assert.deepEqual(first, { applied: 1, skipped: 0 });
-    assert.deepEqual(second, { applied: 0, skipped: 1 });
+    assert.deepEqual(first, { applied: 2, skipped: 0 });
+    assert.deepEqual(second, { applied: 0, skipped: 2 });
 
     const adminUrl = databaseUrl(plainUrl, "postgres", MAIN_DATABASE);
     await withClient(clientConfig(adminUrl), async client => {
         const history = await client.query(`
             SELECT version, name, checksum, applied_at
               FROM tetris_analytics.schema_migrations
+             ORDER BY version
         `);
-        assert.equal(history.rowCount, 1);
+        assert.equal(history.rowCount, 2);
         assert.equal(history.rows[0].version, 1);
         assert.equal(history.rows[0].name, "game_events");
         assert.match(history.rows[0].checksum, /^[0-9a-f]{64}$/);
         assert.ok(history.rows[0].applied_at instanceof Date);
+        assert.equal(history.rows[1].version, 2);
+        assert.equal(history.rows[1].name, "lifecycle_event_v2");
+        assert.match(history.rows[1].checksum, /^[0-9a-f]{64}$/);
 
         const invalidHistoryRows = [
             [-1, "negative", sha256("negative")],
@@ -380,7 +391,7 @@ async function verifyMigrations(plainUrl) {
     });
     await assert.rejects(
         runPostgresMigrations(
-            migrationOptions(plainUrl, HOSTILE_DATABASE, "goal9a-hostile-owner"),
+            migrationOptions(plainUrl, HOSTILE_DATABASE, "goal9b-hostile-owner"),
         ),
         { code: "MIGRATION_BOOTSTRAP_OWNER_MISMATCH" },
     );
@@ -394,7 +405,7 @@ async function verifyMigrations(plainUrl) {
                    (
                        SELECT pg_catalog.count(*)
                          FROM pg_catalog.pg_stat_activity
-                        WHERE application_name = 'goal9a-hostile-owner'
+                        WHERE application_name = 'goal9b-hostile-owner'
                    )::integer AS open_runner_count
               FROM pg_catalog.pg_namespace AS n
               JOIN pg_catalog.pg_class AS c
@@ -412,14 +423,14 @@ async function verifyMigrations(plainUrl) {
 
     const concurrentResults = await Promise.all([
         runPostgresMigrations(
-            migrationOptions(plainUrl, CONCURRENT_DATABASE, "goal9a-concurrent-a"),
+            migrationOptions(plainUrl, CONCURRENT_DATABASE, "goal9b-concurrent-a"),
         ),
         runPostgresMigrations(
-            migrationOptions(plainUrl, CONCURRENT_DATABASE, "goal9a-concurrent-b"),
+            migrationOptions(plainUrl, CONCURRENT_DATABASE, "goal9b-concurrent-b"),
         ),
     ]);
-    assert.equal(concurrentResults.reduce((sum, value) => sum + value.applied, 0), 1);
-    assert.equal(concurrentResults.reduce((sum, value) => sum + value.skipped, 0), 1);
+    assert.equal(concurrentResults.reduce((sum, value) => sum + value.applied, 0), 2);
+    assert.equal(concurrentResults.reduce((sum, value) => sum + value.skipped, 0), 2);
 
     const concurrentAdminUrl = databaseUrl(
         plainUrl,
@@ -436,7 +447,7 @@ async function verifyMigrations(plainUrl) {
                 runPostgresMigrations(migrationOptions(
                     plainUrl,
                     CONCURRENT_DATABASE,
-                    "goal9a-lock-timeout",
+                    "goal9b-lock-timeout",
                     { lockTimeoutMillis: 50 },
                 )),
                 { code: "MIGRATION_LOCK_TIMEOUT" },
@@ -460,7 +471,7 @@ async function verifyMigrations(plainUrl) {
         try {
             await assert.rejects(
                 runPostgresMigrations(
-                    migrationOptions(plainUrl, MAIN_DATABASE, "goal9a-checksum"),
+                    migrationOptions(plainUrl, MAIN_DATABASE, "goal9b-checksum"),
                 ),
                 { code: "MIGRATION_CHECKSUM_MISMATCH" },
             );
@@ -473,17 +484,17 @@ async function verifyMigrations(plainUrl) {
     });
 
     await runPostgresMigrations(
-        migrationOptions(plainUrl, FAILURE_DATABASE, "goal9a-failure-bootstrap"),
+        migrationOptions(plainUrl, FAILURE_DATABASE, "goal9b-failure-bootstrap"),
     );
     const failureDirectory = await mkdtemp(
-        path.join(os.tmpdir(), "tetris-goal9a-failing-migrations-"),
+        path.join(os.tmpdir(), "tetris-goal9b-failing-migrations-"),
     );
     try {
         await cp(SOURCE_MIGRATIONS_DIRECTORY, failureDirectory, {
             recursive: true,
         });
         await writeFile(
-            path.join(failureDirectory, "002_forced_failure.sql"),
+            path.join(failureDirectory, "003_forced_failure.sql"),
             `CREATE TABLE tetris_analytics.must_rollback (id integer PRIMARY KEY);
 SELECT 1 / 0;
 `,
@@ -493,7 +504,7 @@ SELECT 1 / 0;
             runPostgresMigrations(migrationOptions(
                 plainUrl,
                 FAILURE_DATABASE,
-                "goal9a-failure-runner",
+                "goal9b-failure-runner",
                 { migrationsDirectory: failureDirectory },
             )),
             { code: "MIGRATION_FAILED" },
@@ -512,21 +523,42 @@ SELECT 1 / 0;
                        (
                            SELECT pg_catalog.count(*)
                              FROM pg_catalog.pg_stat_activity
-                            WHERE application_name = 'goal9a-failure-runner'
+                            WHERE application_name = 'goal9b-failure-runner'
                        )::integer AS open_runner_count
             `);
             assert.equal(state.rows[0].rolled_back_table, null);
-            assert.equal(state.rows[0].migration_count, 1);
+            assert.equal(state.rows[0].migration_count, 2);
             assert.equal(state.rows[0].open_runner_count, 0);
         });
         assert.deepEqual(
             await runPostgresMigrations(
-                migrationOptions(plainUrl, FAILURE_DATABASE, "goal9a-after-failure"),
+                migrationOptions(plainUrl, FAILURE_DATABASE, "goal9b-after-failure"),
             ),
-            { applied: 0, skipped: 1 },
+            { applied: 0, skipped: 2 },
         );
     } finally {
         await rm(failureDirectory, { recursive: true, force: true });
+    }
+
+    const oldSchemaDirectory = await mkdtemp(
+        path.join(os.tmpdir(), "tetris-goal9b-old-schema-migrations-"),
+    );
+    try {
+        await cp(
+            path.join(SOURCE_MIGRATIONS_DIRECTORY, "001_game_events.sql"),
+            path.join(oldSchemaDirectory, "001_game_events.sql"),
+        );
+        assert.deepEqual(
+            await runPostgresMigrations(migrationOptions(
+                plainUrl,
+                OLD_SCHEMA_DATABASE,
+                "goal9b-old-schema",
+                { migrationsDirectory: oldSchemaDirectory },
+            )),
+            { applied: 1, skipped: 0 },
+        );
+    } finally {
+        await rm(oldSchemaDirectory, { recursive: true, force: true });
     }
 }
 
@@ -604,6 +636,22 @@ async function verifySchemaAndRoles(plainUrl) {
                 pieceIndex: null,
                 trustLevel: "server_authoritative",
             }),
+            rawEvent("valid-game-start-v2", {
+                eventType: "game_start",
+                schemaVersion: 2,
+                gameId: "raw-lifecycle-v2",
+                playerId: null,
+                pieceIndex: null,
+                trustLevel: "server_authoritative",
+            }),
+            rawEvent("valid-game-over-v2", {
+                eventType: "game_over",
+                schemaVersion: 2,
+                gameId: "raw-lifecycle-v2",
+                playerId: null,
+                pieceIndex: null,
+                trustLevel: "server_authoritative",
+            }),
             rawEvent("valid-identity-byte-boundary", {
                 gameId: "\u00e9".repeat(32),
                 playerId: "\u00e9".repeat(32),
@@ -657,6 +705,13 @@ async function verifySchemaAndRoles(plainUrl) {
             rawEvent("placement-without-piece", { pieceIndex: null }),
             rawEvent("placement-v2-without-time", { occurredAt: null }),
             rawEvent("future-identity-schema", { schemaVersion: 3 }),
+            rawEvent("future-lifecycle-schema", {
+                eventType: "game_start",
+                schemaVersion: 3,
+                playerId: null,
+                pieceIndex: null,
+                trustLevel: "server_authoritative",
+            }),
             rawEvent("game-id-byte-overflow", {
                 gameId: `${"\u00e9".repeat(32)}x`,
             }),
@@ -721,7 +776,7 @@ async function verifySchemaAndRoles(plainUrl) {
             SELECT version, name, checksum
               FROM tetris_analytics.schema_migrations
         `);
-        assert.equal(history.rowCount, 1);
+        assert.equal(history.rowCount, 2);
         const allowed = await client.query(`
             SELECT event_id, event_type, game_id, player_id, piece_index, event_sha256
               FROM tetris_analytics.game_events
@@ -898,6 +953,298 @@ async function verifySchemaAndRoles(plainUrl) {
             history_select: false,
         });
     });
+}
+
+function runtimeGameStart(gameId, mode, players) {
+    return {
+        eventType: "game_start",
+        schemaVersion: 1,
+        gameId,
+        roomId: mode === "pve" ? "PVERUN01" : "PVPRUN01",
+        mode,
+        aiDifficulty: mode === "pve" ? "normal" : null,
+        aiPolicyRequested: mode === "pve" ? "heuristic" : null,
+        startedAt: Date.now(),
+        nickname: "private-start-nickname",
+        token: "private-start-token",
+        players,
+    };
+}
+
+function runtimePlacement(gameId, playerId, pieceIndex, source) {
+    const piece = {
+        pieceType: "square",
+        rotation: 0,
+        row: 0,
+        col: 0,
+        cells: [
+            { row: 0, col: 0 },
+            { row: 0, col: 1 },
+            { row: 1, col: 0 },
+            { row: 1, col: 1 },
+        ],
+    };
+    const metrics = {
+        columnHeights: [2, 2],
+        aggregateHeight: 4,
+        maxHeight: 2,
+        holes: 0,
+        bumpiness: 0,
+        completeLines: 0,
+    };
+    const log = {
+        eventType: "placement_decision",
+        schemaVersion: 2,
+        gameId,
+        roomId: gameId.startsWith("pve") ? "PVERUN01" : "PVPRUN01",
+        mode: gameId.startsWith("pve") ? "pve" : "multi",
+        playerId,
+        source,
+        modelType: source === "heuristic_ai" ? "heuristic" : null,
+        aiDifficulty: gameId.startsWith("pve") ? "normal" : undefined,
+        tick: pieceIndex,
+        pieceIndex,
+        createdAt: Date.now(),
+        boardBefore: [[null, null], [null, null]],
+        boardAfter: [["square", "square"], ["square", "square"]],
+        activePiece: piece,
+        nextQueue: ["bar", "tree"],
+        holdPiece: null,
+        inputSequence: [],
+        selectedPlacement: piece,
+        placementResult: {
+            linesCleared: 0,
+            scoreDelta: 0,
+            gameOver: false,
+        },
+        metricsBefore: {
+            ...metrics,
+            columnHeights: [0, 0],
+            aggregateHeight: 0,
+            maxHeight: 0,
+        },
+        metricsAfter: metrics,
+        evaluation: {
+            score: 0,
+            candidateCount: 1,
+            reason: {
+                linesCleared: 0,
+                holesDelta: 0,
+                bumpinessDelta: 0,
+                aggregateHeightDelta: 4,
+                maxHeightDelta: 2,
+            },
+        },
+        nickname: "private-placement-nickname",
+        freeText: "private-placement-free-text",
+    };
+    if (source === "human") {
+        log.authoritativeClientSequence = pieceIndex + 1;
+        log.authoritativePieceIndex = pieceIndex;
+        log.aiComparison = {
+            heuristicPlacement: piece,
+            heuristicScore: 0,
+            userScore: 0,
+            betterBy: 0,
+            samePlacement: true,
+        };
+    }
+    return log;
+}
+
+function runtimeGameOver(gameId, mode, expectedPlacementEventCounts) {
+    return {
+        eventType: "game_over",
+        schemaVersion: 1,
+        gameId,
+        roomId: mode === "pve" ? "PVERUN01" : "PVPRUN01",
+        mode,
+        aiDifficulty: mode === "pve" ? "normal" : null,
+        aiPolicyRequested: mode === "pve" ? "heuristic" : null,
+        aiPolicyLastUsed: mode === "pve" ? "heuristic" : null,
+        aiPolicyFallbackCount: 0,
+        aiModelSha256: null,
+        endedAt: Date.now(),
+        winnerPlayerId: expectedPlacementEventCounts[0].playerId,
+        loserPlayerId: expectedPlacementEventCounts[1].playerId,
+        reason: "top_out",
+        finishType: "normal",
+        expectedPlacementEventCounts,
+        cookie: "private-game-over-cookie",
+    };
+}
+
+async function verifyRuntimeStorage(plainUrl) {
+    const runtimeUrl = databaseUrl(plainUrl, RUNTIME_ROLE, MAIN_DATABASE);
+    const runtimeEnvironment = {
+        NODE_ENV: "production",
+        GAME_EVENT_STORAGE: "postgres",
+        DATABASE_URL: runtimeUrl,
+    };
+    const storage = await createRuntimeEventStorage({
+        env: runtimeEnvironment,
+        warn() {},
+    });
+    try {
+        const pvpPlayers = [
+            { playerId: "pvp-human-1", role: "host", playerType: "human" },
+            { playerId: "pvp-human-2", role: "guest", playerType: "human" },
+        ];
+        const pvePlayers = [
+            { playerId: "pve-human", role: "host", playerType: "human" },
+            { playerId: "pve-ai", role: "guest", playerType: "heuristic_ai" },
+        ];
+        const events = [
+            runtimeGameStart("pvp-runtime-game", "multi", pvpPlayers),
+            runtimePlacement("pvp-runtime-game", "pvp-human-1", 0, "human"),
+            runtimePlacement("pvp-runtime-game", "pvp-human-2", 0, "human"),
+            runtimeGameOver("pvp-runtime-game", "multi", [
+                {
+                    playerId: "pvp-human-1",
+                    playerType: "human",
+                    expectedPlacementEventCount: 1,
+                },
+                {
+                    playerId: "pvp-human-2",
+                    playerType: "human",
+                    expectedPlacementEventCount: 1,
+                },
+            ]),
+            runtimeGameStart("pve-runtime-game", "pve", pvePlayers),
+            runtimePlacement("pve-runtime-game", "pve-human", 0, "human"),
+            runtimePlacement("pve-runtime-game", "pve-ai", 0, "heuristic_ai"),
+            runtimeGameOver("pve-runtime-game", "pve", [
+                {
+                    playerId: "pve-human",
+                    playerType: "human",
+                    expectedPlacementEventCount: 1,
+                },
+                {
+                    playerId: "pve-ai",
+                    playerType: "heuristic_ai",
+                    expectedPlacementEventCount: 1,
+                },
+            ]),
+        ];
+        for (const event of events) {
+            const result = await storage.saveGameEventLog(event);
+            assert.equal(result.ok, true);
+        }
+        assert.equal((await storage.saveGameEventLog(events[0])).ok, true);
+
+        const latencies = [];
+        await Promise.all(Array.from({ length: 16 }, async (_value, index) => {
+            const startedAt = performance.now();
+            const result = await storage.saveGameEventLog(runtimeGameStart(
+                `latency-runtime-${index}`,
+                "multi",
+                pvpPlayers,
+            ));
+            latencies.push(performance.now() - startedAt);
+            assert.equal(result.ok, true);
+        }));
+        latencies.sort((left, right) => left - right);
+        const percentile = percentileValue => {
+            const index = Math.ceil((percentileValue / 100) * latencies.length) - 1;
+            return latencies[Math.max(0, index)];
+        };
+        const p50 = percentile(50);
+        const p95 = percentile(95);
+        assert.equal(storage.getMetrics().poolMax, POSTGRES_RUNTIME_POOL_MAX);
+        assert.equal(storage.getMetrics().inFlightMax, POSTGRES_RUNTIME_IN_FLIGHT_MAX);
+        assert.ok(p95 < 250);
+        console.log(
+            `[test:db] runtime_latency_ms p50=${p50.toFixed(2)}`
+            + ` p95=${p95.toFixed(2)} pool=${POSTGRES_RUNTIME_POOL_MAX}`
+            + ` in_flight=${POSTGRES_RUNTIME_IN_FLIGHT_MAX}`,
+        );
+
+        const adminUrl = databaseUrl(plainUrl, "postgres", MAIN_DATABASE);
+        await withClient(clientConfig(adminUrl), async client => {
+            const persisted = await client.query(`
+                SELECT event_type, schema_version, trust_level, payload::text AS payload
+                  FROM tetris_analytics.game_events
+                 WHERE game_id IN ('pvp-runtime-game', 'pve-runtime-game')
+                 ORDER BY game_id, event_type, player_id NULLS FIRST
+            `);
+            assert.equal(persisted.rowCount, 8);
+            assert.equal(
+                persisted.rows.filter(row => row.schema_version === 2).length,
+                8,
+            );
+            assert.equal(
+                persisted.rows.filter(row => (
+                    row.event_type === "placement_decision"
+                    && row.trust_level === "client_reported"
+                )).length,
+                3,
+            );
+            assert.equal(
+                persisted.rows.filter(row => (
+                    row.event_type === "placement_decision"
+                    && row.trust_level === "server_authoritative"
+                )).length,
+                1,
+            );
+            const serialized = persisted.rows.map(row => row.payload).join("\n");
+            assert.doesNotMatch(
+                serialized,
+                /private-|nickname|token|cookie|freeText/i,
+            );
+        });
+    } finally {
+        await storage.close();
+    }
+
+    await assert.rejects(
+        createRuntimeEventStorage({
+            env: {
+                NODE_ENV: "production",
+                GAME_EVENT_STORAGE: "postgres",
+                DATABASE_URL: databaseUrl(
+                    plainUrl,
+                    MIGRATION_ROLE,
+                    OLD_SCHEMA_DATABASE,
+                ),
+            },
+            warn() {},
+        }),
+        { code: "POSTGRES_EVENT_STARTUP_FAILED" },
+    );
+
+    const failureStorage = await createRuntimeEventStorage({
+        env: runtimeEnvironment,
+        warn() {},
+    });
+    const containerName = requireEnvironment("GOAL9B_TEST_CONTAINER");
+    const pause = spawnSync("docker", ["pause", containerName], {
+        encoding: "utf8",
+    });
+    assert.equal(pause.status, 0);
+    const failureStartedAt = performance.now();
+    let failureResult;
+    try {
+        failureResult = await failureStorage.saveGameEventLog(runtimeGameStart(
+            "database-down-runtime",
+            "multi",
+            [
+                { playerId: "down-1", role: "host", playerType: "human" },
+                { playerId: "down-2", role: "guest", playerType: "human" },
+            ],
+        ));
+    } finally {
+        const unpause = spawnSync("docker", ["unpause", containerName], {
+            encoding: "utf8",
+        });
+        assert.equal(unpause.status, 0);
+    }
+    const failureElapsed = performance.now() - failureStartedAt;
+    assert.equal(failureResult.ok, false);
+    assert.ok(failureElapsed <= 2_700);
+    console.log(
+        `[test:db] runtime_failure_ms elapsed=${failureElapsed.toFixed(2)} attempts=3`,
+    );
+    await failureStorage.close();
 }
 
 async function verifyRepository(plainUrl) {
@@ -1089,7 +1436,7 @@ async function verifyRepository(plainUrl) {
         { code: "POSTGRES_EVENT_REPOSITORY_CLOSED" },
     );
 
-    const secret = "goal9a-sentinel-password";
+    const secret = "goal9b-sentinel-password";
     const unavailable = new URL(
         "postgresql://127.0.0.1:1/analytics?sslmode=disable",
     );
@@ -1115,7 +1462,7 @@ async function verifyRepository(plainUrl) {
         runPostgresMigrations({
             clientConfig: clientConfig(
                 unavailableUrl,
-                { applicationName: "goal9a-redaction" },
+                { applicationName: "goal9b-redaction" },
             ),
         }),
         error => {
@@ -1148,21 +1495,21 @@ function safeNpmEnvironment(extra = {}) {
 
 function runReleaseNpm(releaseRoot, args, environment) {
     const npmExecPath = process.env.npm_execpath;
-    if (!npmExecPath) throw new Error("GOAL9A_NPM_EXEC_PATH_REQUIRED");
+    if (!npmExecPath) throw new Error("GOAL9B_NPM_EXEC_PATH_REQUIRED");
     const result = spawnSync(process.execPath, [npmExecPath, ...args], {
         cwd: releaseRoot,
         env: environment,
         encoding: "utf8",
     });
     if (result.status !== 0) {
-        throw new Error(`GOAL9A_RELEASE_NPM_FAILED_${args.join("_")}`);
+        throw new Error(`GOAL9B_RELEASE_NPM_FAILED_${args.join("_")}`);
     }
     return result.stdout;
 }
 
 async function verifySourceLessArtifact(plainUrl) {
     const releaseRoot = await mkdtemp(
-        path.join(os.tmpdir(), "tetris-goal9a-release-"),
+        path.join(os.tmpdir(), "tetris-goal9b-release-"),
     );
     try {
         await cp(path.join(ROOT, "dist"), path.join(releaseRoot, "dist"), {
@@ -1199,19 +1546,24 @@ async function verifySourceLessArtifact(plainUrl) {
             "package-lock.json",
             "package.json",
         ]);
-        const sourceSql = await readFile(
-            path.join(SOURCE_MIGRATIONS_DIRECTORY, "001_game_events.sql"),
-        );
-        const releaseSql = await readFile(path.join(
-            releaseRoot,
-            "dist",
-            "server",
-            "server",
-            "db",
-            "migrations",
+        for (const filename of [
             "001_game_events.sql",
-        ));
-        assert.deepEqual(releaseSql, sourceSql);
+            "002_lifecycle_event_v2.sql",
+        ]) {
+            const sourceSql = await readFile(
+                path.join(SOURCE_MIGRATIONS_DIRECTORY, filename),
+            );
+            const releaseSql = await readFile(path.join(
+                releaseRoot,
+                "dist",
+                "server",
+                "server",
+                "db",
+                "migrations",
+                filename,
+            ));
+            assert.deepEqual(releaseSql, sourceSql);
+        }
 
         const first = runReleaseNpm(
             releaseRoot,
@@ -1223,29 +1575,55 @@ async function verifySourceLessArtifact(plainUrl) {
             ["run", "db:migrate", "--silent"],
             environment,
         );
-        assert.equal(first, "PostgreSQL migrations applied=1 skipped=0\n");
-        assert.equal(second, "PostgreSQL migrations applied=0 skipped=1\n");
+        assert.equal(first, "PostgreSQL migrations applied=2 skipped=0\n");
+        assert.equal(second, "PostgreSQL migrations applied=0 skipped=2\n");
 
         const repositoryProbe = `
 const { createPostgresEventRepository } =
     require("./dist/server/server/repositories/postgresEventRepository.js");
+const { createRuntimeEventStorage } =
+    require("./dist/server/server/services/runtimeEventStorage.js");
 const repository = createPostgresEventRepository({
-    connectionUrl: process.env.GOAL9A_RELEASE_REPOSITORY_URL,
+    connectionUrl: process.env.GOAL9B_RELEASE_REPOSITORY_URL,
 });
-repository.append({
-    identityVersion: "identity-v1",
-    eventType: "game_start",
-    schemaVersion: 1,
-    gameId: "source-less-release",
-    playerId: null,
-    pieceIndex: null,
-    trustLevel: "server_authoritative",
-    occurredAt: "2026-07-23T07:08:09.123Z",
-    payload: { artifact: true },
-}).then(async result => {
+(async () => {
+    const repositoryResult = await repository.append({
+        identityVersion: "identity-v1",
+        eventType: "game_start",
+        schemaVersion: 1,
+        gameId: "source-less-release",
+        playerId: null,
+        pieceIndex: null,
+        trustLevel: "server_authoritative",
+        occurredAt: "2026-07-23T07:08:09.123Z",
+        payload: { artifact: true },
+    });
     await repository.close();
-    process.stdout.write(JSON.stringify(result));
-}).catch(async () => {
+    const storage = await createRuntimeEventStorage({
+        env: {
+            NODE_ENV: "production",
+            GAME_EVENT_STORAGE: "postgres",
+            DATABASE_URL: process.env.GOAL9B_RELEASE_REPOSITORY_URL,
+        },
+        warn() {},
+    });
+    const runtimeResult = await storage.saveGameEventLog({
+        eventType: "game_start",
+        schemaVersion: 1,
+        gameId: "source-less-runtime",
+        roomId: "RELEASE1",
+        mode: "multi",
+        aiDifficulty: null,
+        aiPolicyRequested: null,
+        startedAt: 1784800000000,
+        players: [
+            { playerId: "release-1", role: "host", playerType: "human" },
+            { playerId: "release-2", role: "guest", playerType: "human" }
+        ],
+    });
+    await storage.close();
+    process.stdout.write(JSON.stringify({ repositoryResult, runtimeResult }));
+})().catch(async () => {
     await repository.close().catch(() => {});
     process.exitCode = 1;
 });
@@ -1254,12 +1632,13 @@ repository.append({
             cwd: releaseRoot,
             env: {
                 ...safeNpmEnvironment(),
-                GOAL9A_RELEASE_REPOSITORY_URL: releaseUrl,
+                GOAL9B_RELEASE_REPOSITORY_URL: releaseUrl,
             },
             encoding: "utf8",
         });
         assert.equal(probe.status, 0);
         assert.match(probe.stdout, /"status":"inserted"/);
+        assert.match(probe.stdout, /"runtimeResult":\{"ok":true/);
 
         const dependencyProbe = spawnSync(process.execPath, [
             "-e",
@@ -1281,10 +1660,10 @@ try {
     }
 }
 
-test("Goal 9A actual PostgreSQL contract", { timeout: 120_000 }, async t => {
-    const plainUrl = requireEnvironment("GOAL9A_TEST_PLAIN_URL");
-    const tlsUrl = requireEnvironment("GOAL9A_TEST_TLS_URL");
-    const ca = await readFile(requireEnvironment("GOAL9A_TEST_CA_PATH"), "utf8");
+test("Goal 9B actual PostgreSQL contract", { timeout: 120_000 }, async t => {
+    const plainUrl = requireEnvironment("GOAL9B_TEST_PLAIN_URL");
+    const tlsUrl = requireEnvironment("GOAL9B_TEST_TLS_URL");
+    const ca = await readFile(requireEnvironment("GOAL9B_TEST_CA_PATH"), "utf8");
 
     await t.test("TLS: private CA succeeds and trust/hostname failures fail closed", () => {
         return verifyTls(tlsUrl, ca);
@@ -1300,6 +1679,9 @@ test("Goal 9A actual PostgreSQL contract", { timeout: 120_000 }, async t => {
     });
     await t.test("repository: inserts, duplicates, conflicts and lifecycle", () => {
         return verifyRepository(plainUrl);
+    });
+    await t.test("runtime: PVP/PVE single sink, startup gate, latency and DB down", () => {
+        return verifyRuntimeStorage(plainUrl);
     });
     await t.test("artifact: source-less production migration runs twice", () => {
         return verifySourceLessArtifact(plainUrl);

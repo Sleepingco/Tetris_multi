@@ -1003,10 +1003,19 @@ test("ticker callback은 block-out reason으로 match finish를 emit하고 ticke
             ok: true,
             match: {
                 roomId: "room-1",
+                gameId: "11111111-1111-4111-8111-111111111111",
                 createdAt: 1000,
                 players: [
-                    { playerId: "p1" },
-                    { playerId: "p2" },
+                    {
+                        playerId: "p1",
+                        playerType: "human",
+                        expectedPlacementEventCount: 1,
+                    },
+                    {
+                        playerId: "p2",
+                        playerType: "human",
+                        expectedPlacementEventCount: 0,
+                    },
                 ],
             },
         }),
@@ -1099,7 +1108,7 @@ test("ticker callback은 block-out reason으로 match finish를 emit하고 ticke
     })), [
         {
             eventType: "game_over",
-            gameId: "room-1-1000",
+            gameId: "11111111-1111-4111-8111-111111111111",
             roomId: "room-1",
             mode: "multi",
             winnerPlayerId: "p2",
@@ -1126,10 +1135,19 @@ test("같은 callback의 복수 gameOver 결과도 match finish와 log를 한 �
             ok: true,
             match: {
                 roomId: "room-double-game-over",
+                gameId: "22222222-2222-4222-8222-222222222222",
                 createdAt: 1000,
                 players: [
-                    { playerId: "p1" },
-                    { playerId: "p2" },
+                    {
+                        playerId: "p1",
+                        playerType: "human",
+                        expectedPlacementEventCount: 1,
+                    },
+                    {
+                        playerId: "p2",
+                        playerType: "human",
+                        expectedPlacementEventCount: 0,
+                    },
                 ],
             },
         }),
@@ -1215,6 +1233,7 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
     const deletedRoomIds = [];
     let matchState = {
         roomId: "room-1",
+        gameId: "33333333-3333-4333-8333-333333333333",
         mode: "pve",
         aiDifficulty: "normal",
         aiPolicy: "placement_v4",
@@ -1225,6 +1244,18 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
             modelSha256: "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc69a5d9ab8bcd410cb33d",
         },
         createdAt: 1000,
+        players: [
+            {
+                playerId: "p1",
+                playerType: "human",
+                expectedPlacementEventCount: 1,
+            },
+            {
+                playerId: "p2",
+                playerType: "ai",
+                expectedPlacementEventCount: 2,
+            },
+        ],
     };
 
     const finishGame = (roomId, loserPlayerId, reason) => {
@@ -1312,7 +1343,7 @@ test("finishAuthoritativeMatch는 이미 처리된 finish의 emit과 log를 중�
     assert.equal(savedLogs.length, 1);
     assert.deepEqual(deletedRoomIds, ["room-1"]);
     assert.equal(savedLogs[0].eventType, "game_over");
-    assert.equal(savedLogs[0].gameId, "room-1-1000");
+    assert.equal(savedLogs[0].gameId, "33333333-3333-4333-8333-333333333333");
     assert.equal(savedLogs[0].aiPolicyRequested, "placement_v4");
     assert.equal(savedLogs[0].aiPolicyLastUsed, "heuristic");
     assert.equal(savedLogs[0].aiPolicyFallbackCount, 2);

@@ -346,20 +346,31 @@ test("AI placement log 저장 실패는 성공한 turn과 match state를 되돌�
     resetMatches();
     const gameCore = await loadGameCore();
     createPveMatch("PVE-AI-3");
+    const warnings = [];
+    const originalWarn = console.warn;
+    console.warn = message => warnings.push(message);
     const service = createPveAiPlayerService({
         async savePlacementDecisionLog() {
             throw new Error("disk full");
         },
     });
 
-    const { result } = await processUntilPlacement(service, "PVE-AI-3", gameCore);
-    const aiState = getAuthoritativePlayerSnapshot("PVE-AI-3", "ai").snapshot;
+    try {
+        const { result } = await processUntilPlacement(service, "PVE-AI-3", gameCore);
+        await new Promise(resolve => setImmediate(resolve));
+        const aiState = getAuthoritativePlayerSnapshot("PVE-AI-3", "ai").snapshot;
 
-    assert.equal(result.ok, true);
-    assert.equal(result.logResult.ok, false);
-    assert.equal(result.logResult.reason, "LOG_WRITE_FAILED");
-    assert.equal(aiState.phase, "playing");
-    assert.equal(aiState.pieceIndex, 2);
+        assert.equal(result.ok, true);
+        assert.equal(result.logResult.ok, true);
+        assert.equal(result.logResult.reason, "LOG_WRITE_SCHEDULED");
+        assert.deepEqual(warnings, [
+            "[pveAiPlayerService] placement log failed: LOG_WRITE_FAILED",
+        ]);
+        assert.equal(aiState.phase, "playing");
+        assert.equal(aiState.pieceIndex, 2);
+    } finally {
+        console.warn = originalWarn;
+    }
 });
 
 test("AI action executor는 기존 authoritative line clear와 score 규칙을 사용한다", async () => {
