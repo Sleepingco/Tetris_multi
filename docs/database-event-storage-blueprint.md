@@ -4,16 +4,16 @@
 
 이 문서는 게임 이벤트를 컨테이너 수명과 분리해 장기 보존하기 위한 PostgreSQL 저장 구조의 설계 설명이다. 공부하는 개발자, 포트폴리오 검토자, 이후 Goal 9A~9D를 구현할 작업자, 운영 환경의 로그 저장 구조를 검토할 개발자를 독자로 둔다.
 
-- 상태: Goal 9A local 구현·검증 완료, implementation review와 main merge gate 대기
-- PostgreSQL 구현: Goal 9A branch에 schema, migration, canonical event와 repository 구현
+- 상태: Goal 9A main 통합 완료, Goal 9B local 구현·검증 완료와 main merge gate 대기
+- PostgreSQL 구현: schema, migration, canonical event/repository와 strict runtime single-sink 구현
 - production DB 연결: 없음
 - 현재 runtime sink: JSONL
-- 실제 table, migration, repository: 격리 PostgreSQL 17.10에서 검증
-- Goal 9B runtime wiring, push와 main 통합: 미수행
+- 명시적 PostgreSQL runtime mode: 격리 PostgreSQL 17.10에서 검증, production 미활성
+- Goal 9B push와 main 통합: 미수행
 
 현재 JSONL은 local 분석과 ML export에 계속 사용한다. PostgreSQL도 room, match, gameplay 상태의 원천이 아니다. 실시간 상태는 현재처럼 process memory가 소유하고, PostgreSQL은 확정된 gameplay event의 장기 보존 경계로만 계획한다.
 
-실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../migration-harness/goals/09-postgres-event-storage.md)와 [Goal 9A](../migration-harness/goals/09a-postgres-schema-repository.md)다. 정확한 SQL의 원천은 `src/server/db/migrations/001_game_events.sql`이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다. 구현·검증 근거는 [Goal 9A 실행 기록](../migration-harness/runs/goal-09a-2026-07-23.md)에 둔다.
+실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../migration-harness/goals/09-postgres-event-storage.md), [Goal 9A](../migration-harness/goals/09a-postgres-schema-repository.md)와 [Goal 9B](../migration-harness/goals/09b-postgres-runtime-storage.md)다. 정확한 SQL의 원천은 `src/server/db/migrations/001_game_events.sql`과 `002_lifecycle_event_v2.sql`이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다. 구현·검증 근거는 [Goal 9A 실행 기록](../migration-harness/runs/goal-09a-2026-07-23.md)과 [Goal 9B 실행 기록](../migration-harness/runs/goal-09b-2026-07-23.md)에 둔다.
 
 ## 2. 현재 JSONL 흐름
 
@@ -34,12 +34,13 @@ Socket/server AI event
 ```text
 client raw placement log
   → active session과 room 권한 확인
-  → session이 인증한 roomId/playerId로 덮어씀
+  → authoritative placement receipt 확인
+  → server gameId와 session roomId/playerId로 덮어씀
   → placement schema 재검증
   → 현재 JSONL sink에 저장
 ```
 
-즉, client가 보낸 `roomId`와 `playerId`는 저장 주체가 아니다. Socket handler가 현재 session의 값으로 바꾼 뒤 `validatePlacementDecisionLog`를 다시 통과한 값만 `savePlacementDecisionLog`에 전달한다.
+즉, client가 보낸 `gameId`, `roomId`와 `playerId`는 저장 주체가 아니다. Socket handler가 30초 TTL·player당 최대 128개의 authoritative receipt에서 client sequence와 piece index를 확인하고 server/session identity로 바꾼 뒤 `validatePlacementDecisionLog`를 다시 통과한 값만 선택된 sink에 전달한다.
 
 Socket handler는 client human placement log를 인증·재검증하고 game start log를 만든다. authoritative match finish는 game over log를 만들고, PVE AI service는 실제로 확정된 heuristic placement를 schema v2 log로 만든다. 이 흐름의 현재 구현 위치는 다음과 같다.
 
@@ -87,7 +88,7 @@ Goal은 한 번에 하나씩 main에 반영한다.
 | 9C | 기존 JSONL streaming import와 완전성 검사 |
 | 9D | GitHub Actions, Docker, production-like PostgreSQL gate |
 
-Goal 10과 DB 기반 dataset read cutover는 현재 보류다. 이 Blueprint는 9B~9D의 상세 구현을 확정하지 않는다.
+Goal 10과 DB 기반 dataset read cutover는 현재 보류다. Goal 9C~9D는 아직 구현하지 않는다.
 
 ## 5. 저장 이벤트
 
@@ -127,7 +128,7 @@ hash fixture는 primitive와 null, nested own `__proto__`, integer-like key의 c
 
 256 KiB 상한은 serialized canonical envelope 전체에 적용한다. 현재 JSONL validator의 raw log 전체 256 KiB 상한도 그대로 유지한다. 한 번 만든 immutable snapshot을 hash 계산과 INSERT 양쪽에서 그대로 사용해, 서로 다른 표현이 같은 event로 섞이지 않게 한다.
 
-현재 production identity 생성 경로에서 room ID는 UUID 앞 8 ASCII, lifecycle/placement game ID는 그 room ID와 `Date.now()`를 결합해 현재 22 ASCII bytes, human player ID는 UUID 36 ASCII bytes, heuristic AI player ID는 `heuristic-ai-`와 room ID를 합쳐 21 ASCII bytes다. canonical 경계는 이 현재 최대값을 포함하면서 future projector가 무제한 identity를 만들지 못하도록 `gameId`와 `playerId`를 각각 UTF-8 64 bytes로 제한한다. SQL도 같은 `octet_length <= 64`를 검사한다.
+현재 production identity 생성 경로에서 room ID는 UUID 앞 8 ASCII, match별 game ID와 human player ID는 UUID 36 ASCII bytes, heuristic AI player ID는 `heuristic-ai-`와 room ID를 합쳐 21 ASCII bytes다. canonical 경계는 이 현재 최대값을 포함하면서 future projector가 무제한 identity를 만들지 못하도록 `gameId`와 `playerId`를 각각 UTF-8 64 bytes로 제한한다. SQL도 같은 `octet_length <= 64`를 검사한다.
 
 ## 7. Identity와 멱등성
 
@@ -253,9 +254,9 @@ URL과 credential은 error, assertion, console, artifact, process argument에 �
 - 실제 provenance와 server authoritative 부여는 Goal 9B 내부 projector가 담당한다.
 - raw/client projector는 trust 값을 임의로 받지 않는다.
 
-현재 JSONL의 `game_start`에는 nickname이 포함된다. 이 사실을 PostgreSQL 계획으로 덮어쓰지 않는다. 향후 PostgreSQL canonical projection에는 nickname, session token, socketId, IP, Cookie, User-Agent, DB URL, credential, 자유형 사용자 문자열을 저장하지 않는다. 기존 JSONL을 backfill할 때 nickname을 어떻게 제거할지는 Goal 9C의 책임이다.
+현재 JSONL의 `game_start`에는 nickname이 포함된다. 이 사실을 PostgreSQL 경로로 덮어쓰지 않는다. 구현된 PostgreSQL canonical projection에는 nickname, session token, socketId, IP, Cookie, User-Agent, DB URL, credential, 자유형 사용자 문자열을 저장하지 않는다. 기존 JSONL을 backfill할 때 nickname을 어떻게 제거할지는 Goal 9C의 책임이다.
 
-pseudonymous `playerId`도 telemetry이므로 production 활성화 전 사용자 고지, retention 기간, 삭제 책임자, 용량 경고 기준을 정해야 한다.
+pseudonymous `playerId`도 telemetry다. 승인된 운영값은 raw telemetry 90일 보존, 삭제 승인 주체는 프로젝트 운영자인 사용자, DB 할당량 70% 경고·85% 긴급 경고다. Goal 9B는 자동 삭제, alerting job과 production 활성화를 구현하지 않는다.
 
 ## 13. 원자성·실패·게임 진행
 
@@ -263,7 +264,9 @@ pseudonymous `playerId`도 telemetry이므로 production 활성화 전 사용자
 
 Goal 9A repository의 `append()`은 inserted, duplicate, conflict를 구분한다. invalid canonical event와 닫힌 repository는 성공으로 가장하지 않으며, `close()`는 여러 번 호출해도 안전해야 한다. 같은 identity와 다른 hash는 `IDEMPOTENCY_CONFLICT`이고 기존 row는 유지한다.
 
-gameplay/runtime 연결, retry, in-flight shutdown drain, gameplay failure policy는 Goal 9B의 범위다. durable outbox도 현재 구현하지 않는다. 최종 DB 실패나 process crash에서 event가 유실될 수 있는 한계를 숨기지 않으며, 무손실 요구가 생길 때만 별도 outbox Goal을 검토한다.
+Goal 9B runtime은 pool 최대 4, direct in-flight 최대 16에서 별도 queue 없이 write를 추적한다. network timeout/reset, SQLSTATE `08*`, `40001`, `40P01`만 3회·총 2.7초 안에서 재시도하고 validation, constraint와 idempotency conflict는 재시도하지 않는다. 실패는 safe code·event type·attempt count와 counter로 관찰하며 gameplay는 계속한다.
+
+종료는 신규 DB write 차단, Socket/ticker producer 정지, 최대 3초 in-flight drain, PostgreSQL pool close, Socket.IO/HTTP close 순서이고 전체 hard deadline은 8초다. 최종 DB 실패나 process crash에서는 개별 event가 유실될 수 있으며 durable outbox는 구현하지 않는다.
 
 ## 14. 검증 전략
 
@@ -284,7 +287,7 @@ Goal 9A local 구현에서 다음을 검증했다.
 - source-less fixture에서 migration 두 번
 - actual PostgreSQL Docker test
 
-실제 명령, exact package version, test count는 [Goal 9A 실행 기록](../migration-harness/runs/goal-09a-2026-07-23.md)에 남긴다. 이 Blueprint에 중복하지 않는다.
+Goal 9B local 구현은 single-sink JSONL/PostgreSQL, PVP/PVE canonical projection, forged/stale/late receipt, lifecycle v1/v2, retry 분류, in-flight 상한, shutdown 순서, DB-down budget, source-less runtime과 production Docker/HTTP를 검증했다. 실제 명령, exact version, latency와 test count는 [Goal 9B 실행 기록](../migration-harness/runs/goal-09b-2026-07-23.md)에 남긴다.
 
 ## 15. 기존 PostgreSQL 실험 브랜치
 
@@ -296,7 +299,7 @@ Goal 9A local 구현에서 다음을 검증했다.
 
 application commit은 역순 revert할 수 있다. 생성된 table과 row는 자동 삭제하지 않는다. down migration이나 DB 삭제는 별도 사용자 승인이 필요하다.
 
-Goal 9B 전까지 runtime JSONL 경로는 유지한다. production PostgreSQL mode를 rollback할 때는 JSONL mode를 명시적으로 선택하며, rollback 과정에서 PostgreSQL row를 삭제하지 않는다.
+Goal 9B가 main에 통합되더라도 local/test 기본 runtime은 JSONL이고 production은 mode를 명시해야 한다. production PostgreSQL mode를 rollback할 때는 `GAME_EVENT_STORAGE=jsonl`을 명시적으로 선택하며, rollback 과정에서 PostgreSQL row를 삭제하지 않는다.
 
 ## 17. 아직 결정하지 않는 내용
 
@@ -304,7 +307,6 @@ Goal 9A는 production `pg@8.22.0`과 strict TypeScript compile에 필요한 devD
 
 - managed PostgreSQL provider
 - 실제 production credential과 CA
-- retention 일수
 - 무손실 outbox
 - multi-instance Socket.IO
 - Kafka, Redis, queue
