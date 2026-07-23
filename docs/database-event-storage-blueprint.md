@@ -1,0 +1,273 @@
+# PostgreSQL Game Event Storage Blueprint
+
+## 1. 문서 목적과 현재 상태
+
+이 문서는 게임 이벤트를 컨테이너 수명과 분리해 장기 보존하기 위한 PostgreSQL 저장 구조의 설계 설명이다. 공부하는 개발자, 포트폴리오 검토자, 이후 Goal 9A~9D를 구현할 작업자, 운영 환경의 로그 저장 구조를 검토할 개발자를 독자로 둔다.
+
+- 상태: 설계 승인 전
+- PostgreSQL 구현: 미착수
+- production DB 연결: 없음
+- 현재 runtime sink: JSONL
+- 실제 table, migration, repository: 아직 없음
+- 이 문서만으로 구현 완료를 주장하지 않음
+
+현재 JSONL은 local 분석과 ML export에 계속 사용한다. PostgreSQL도 room, match, gameplay 상태의 원천이 아니다. 실시간 상태는 현재처럼 process memory가 소유하고, PostgreSQL은 확정된 gameplay event의 장기 보존 경계로만 계획한다.
+
+실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../migration-harness/goals/09-postgres-event-storage.md)와 [Goal 9A](../migration-harness/goals/09a-postgres-schema-repository.md)다. 정확한 SQL의 원천은 아직 만들지 않은 `src/server/db/migrations/001_game_events.sql`이 될 예정이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다.
+
+## 2. 현재 JSONL 흐름
+
+현재 서버는 raw event를 검증한 뒤 JSONL 한 줄로 append한다.
+
+```text
+Socket/server AI event
+  → gameLogValidator
+  → logService
+  → jsonlLogRepository
+  → data/logs/game-events.jsonl
+```
+
+`gameLogValidator`는 event 종류별 필드, JSON 직렬화 가능성, 최대 256 KiB를 검사한다. `logService`는 검증 성공한 log만 주입 가능한 repository에 넘기고, 기록 실패가 이미 진행한 gameplay를 예외로 중단시키지 않도록 결과로 바꾼다. `jsonlLogRepository`는 대상 디렉터리를 만들고 JSON object 한 건을 한 줄씩 append한다.
+
+Socket handler는 human placement log와 game start log를 만들고, authoritative match finish는 game over log를 만든다. PVE AI service는 실제로 확정된 heuristic placement를 schema v2 log로 만든다. 이 흐름의 현재 구현 위치는 다음과 같다.
+
+- `src/server/validators/gameLogValidator.ts`
+- `src/server/services/logService.ts`
+- `src/server/repositories/jsonlLogRepository.ts`
+- `src/server/sockets/multiplayerHandlers.ts`
+- `src/server/services/pveAiPlayerService.ts`
+
+JSONL의 장점은 단순하고, local 분석과 ML export에 충분하며, 별도 DB 운영이 필요 없다는 점이다. 반면 container 교체와 저장 경로 관리를 분리하기 어렵고, 여러 instance의 공용 저장소가 되기 어렵다. 중복, 누락, immutable event의 완전성을 SQL 제약으로 확인하기도 불편하다. 실제 사용자 event를 장기 보존하려면 이보다 분명한 운영 경계가 필요하다.
+
+## 3. 목표 구조
+
+PostgreSQL 경로는 raw log를 그대로 저장하는 경로가 아니다. 인증되었거나 server가 소유한 event를 Goal 9B가 canonical event로 투영한 뒤 Goal 9A repository가 저장한다.
+
+```text
+server-owned or authenticated event
+  → Goal 9B canonical projector
+  → CanonicalGameEvent
+  → Goal 9A PostgreSQL repository
+  → tetris_analytics.game_events
+```
+
+환경별 runtime sink는 하나만 둔다.
+
+```text
+local/development
+  → JSONL
+
+approved production
+  → PostgreSQL
+  → JSONL writer 비활성화
+```
+
+runtime dual-write는 두 저장소의 성공 여부를 맞춰야 하고, 조용한 fallback은 운영자가 실제 저장 실패를 놓치게 한다. 따라서 한 process가 두 sink를 동시에 성공으로 주장하지 않는다. PostgreSQL 전환 전과 명시적 rollback에서는 JSONL 경로가 계속 남는다.
+
+## 4. Goal 9A~9D 역할
+
+Goal은 한 번에 하나씩 main에 반영한다.
+
+| Goal | 역할 |
+| --- | --- |
+| 9A | schema, migration, canonical identity, PostgreSQL repository |
+| 9B | server event를 canonical event로 변환하고 runtime에 연결 |
+| 9C | 기존 JSONL streaming import와 완전성 검사 |
+| 9D | GitHub Actions, Docker, production-like PostgreSQL gate |
+
+Goal 10과 DB 기반 dataset read cutover는 현재 보류다. 이 Blueprint는 9B~9D의 상세 구현을 확정하지 않는다.
+
+## 5. 저장 이벤트
+
+최소 저장 대상은 세 종류다.
+
+- `game_start`
+- `placement_decision`
+- `game_over`
+
+모든 키 입력, gravity tick, snapshot을 저장하지 않는다. 이들은 실시간 동기화와 process memory 상태에 필요한 정보이지 장기 event table의 최소 단위는 아니다. placement는 최종 확정된 piece 단위 event가 핵심이며, room/match/gameplay 상태는 계속 현재 process memory가 담당한다.
+
+## 6. CanonicalGameEvent
+
+`CanonicalGameEvent`는 raw validator 결과와 DB row 사이의 immutable snapshot이다. TypeScript type만으로 신뢰하지 않고 runtime에서도 검증한다.
+
+| 필드 | 의미 |
+| --- | --- |
+| `identityVersion` | 현재 identity 규칙인 `identity-v1` |
+| `eventType` | 저장 event 종류 |
+| `schemaVersion` | event payload schema version |
+| `gameId` | server가 소유하는 game identity |
+| `playerId` | placement의 player identity, lifecycle은 null |
+| `pieceIndex` | placement의 0 이상 PostgreSQL integer, lifecycle은 null |
+| `trustLevel` | `server_authoritative` 또는 `client_reported` |
+| `occurredAt` | null 또는 exact UTC ISO 문자열 |
+| `payload` | allowlist로 만든 plain JSON object |
+
+payload 최대 크기는 256 KiB다. `NaN`, `Infinity`, `undefined`, function, symbol, sparse array, 순환 참조는 canonical snapshot으로 만들기 전에 거부한다. 한 번 만든 immutable snapshot을 hash 계산과 INSERT 양쪽에서 그대로 사용해, 서로 다른 표현이 같은 event로 섞이지 않게 한다.
+
+## 7. Identity와 멱등성
+
+identity tuple은 event 종류별로 작고 결정적이다.
+
+```text
+game_start
+  [identity-v1, game_start, gameId]
+
+placement_decision
+  [identity-v1, placement_decision, gameId, playerId, pieceIndex]
+
+game_over
+  [identity-v1, game_over, gameId]
+```
+
+tuple의 canonical UTF-8 bytes를 SHA-256해 `event_id`를 만든다. immutable envelope 전체도 SHA-256해 `event_sha256`을 만든다. canonical JSON은 object key를 정렬하고 array 순서를 보존한다. DB가 생성하는 `ingested_at`은 envelope hash에서 제외하며, `event_id`와 `event_sha256` 자신도 다시 hash하지 않는다.
+
+```text
+same identity + same hash
+  → duplicate success
+
+same identity + different hash
+  → IDEMPOTENCY_CONFLICT
+  → 기존 row 유지
+```
+
+duplicate 성공은 조회 결과가 정확히 한 행이고 `event_id`, event type, game/player/piece semantic tuple, `event_sha256`가 모두 일치할 때만 허용한다. 0행, 2행, 또는 어느 하나의 불일치도 conflict다.
+
+이 계약은 network exactly-once를 주장하지 않는다. 정확한 표현은 다음과 같다.
+
+```text
+at-least-once attempt + unique constraint
+```
+
+## 8. 테이블 개념
+
+예정 table은 다음 하나다.
+
+```text
+tetris_analytics.game_events
+```
+
+| column | 의미 |
+| --- | --- |
+| `identity_version` | identity 규칙을 구분하는 version |
+| `event_id` | identity tuple의 SHA-256 primary key |
+| `event_type` | start, placement, over 구분 |
+| `schema_version` | payload schema version |
+| `game_id` | server game identity |
+| `player_id` | placement player, lifecycle에서는 null |
+| `piece_index` | placement piece identity, lifecycle에서는 null |
+| `trust_level` | event 신뢰 수준 |
+| `occurred_at` | event 발생 시각 |
+| `payload` | allowlist JSON payload |
+| `event_sha256` | immutable persistence envelope hash |
+| `ingested_at` | DB가 생성하는 수집 시각 |
+
+index는 primary event ID, lifecycle semantic identity, placement semantic identity, `gameId` 조회, `(eventType, ingestedAt)` 운영 조회를 위해서만 둔다. append-only event table에는 mutable status, UPDATE 기반 upsert, 미사용 파생 table을 만들지 않는다. 정확한 constraint와 index 정의는 예정된 `src/server/db/migrations/001_game_events.sql`의 책임이다.
+
+## 9. Migration 구조
+
+application startup은 schema를 자동 생성하지 않는다. 별도 migration CLI가 listen 또는 deploy 전에 실행된다.
+
+```text
+migration CLI
+  → version/checksum history 확인
+  → 고정 advisory lock 획득
+  → migration 한 건씩 transaction 실행
+  → history 기록
+  → unlock 및 connection close
+```
+
+history는 version, checksum, 적용 시각을 보관한다. checksum이 이미 적용된 version과 다르면 fail closed한다. empty DB와 동일 migration 재실행을 모두 지원한다. lock wait는 bounded이며, migration 실패 시 rollback, unlock, connection close를 순서대로 시도한다.
+
+advisory lock은 PostgreSQL server 기능이다. 이 한 table을 위해 별도 migration framework를 도입하지 않는다.
+
+## 10. DB 역할과 최소 권한
+
+```text
+tetris_migration
+  → schema/table owner
+  → migration과 DDL
+
+tetris_runtime
+  → schema USAGE
+  → 허용 column INSERT
+  → idempotency 확인용 제한 SELECT
+```
+
+runtime role에는 schema CREATE, UPDATE, DELETE, TRUNCATE, DDL, migration role membership, SUPERUSER, CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS 권한을 주지 않는다. `ingested_at`은 runtime이 입력하는 값이 아니라 DB가 생성하는 값이다.
+
+application migration이 role을 자동 생성하지 않는다. role과 database 권한은 admin provisioning의 선행조건이며, integration test에서 최소 권한을 검증한다.
+
+## 11. Connection과 TLS
+
+예정된 `postgresConnection.ts`는 다음 일을 한 번만 담당한다.
+
+- URL parsing
+- protocol 검증
+- loopback 판정
+- query override 거부
+- 최종 pg `ClientConfig` 생성
+
+local test의 loopback만 TLS 없이 허용한다. non-loopback 연결은 DNS hostname과 `sslmode=verify-full`을 요구한다. `host`, `ssl`, `sslcert`, `sslkey`, `sslrootcert` 같은 query override는 거부한다. 검증 뒤 pg에 넘기는 URL에서는 `sslmode`를 제거하고, 명시적 `ssl.ca`, `rejectUnauthorized: true`, `servername`을 사용한다.
+
+URL과 credential은 error, console, artifact, process argument에 출력하지 않는다. 실제 provider CA와 managed DB 설정은 Goal 9D 또는 배포 환경에서 확정한다.
+
+## 12. Trust와 개인정보
+
+- lifecycle event는 server authoritative다.
+- human placement는 client reported다.
+- 현재 서버가 생성한 heuristic AI placement만 server authoritative다.
+- SQL CHECK는 source/trust 조합만 검사하며 실제 provenance를 증명하지는 않는다.
+- server authoritative 부여는 Goal 9B 내부 projector가 담당한다.
+- raw/client projector는 trust 값을 임의로 받지 않는다.
+
+저장하지 않는 값은 nickname, session token, socketId, IP, Cookie, User-Agent, DB URL, credential이다. pseudonymous `playerId`도 telemetry이므로 production 활성화 전 사용자 고지, retention 기간, 삭제 책임자, 용량 경고 기준을 정해야 한다.
+
+## 13. 원자성·실패·게임 진행
+
+원자성 단위는 event 한 행 INSERT다. gameplay mutation과 DB INSERT를 하나의 transaction으로 묶지 않는다. 따라서 DB 실패가 이미 처리한 input, gravity, 승패를 rollback하지 않는다.
+
+Goal 9A는 runtime retry, in-flight shutdown drain, gameplay failure policy를 구현하지 않는다. retry, in-flight 상한, 8초 shutdown 연결은 Goal 9B의 범위다. durable outbox도 현재 구현하지 않는다. 최종 DB 실패나 process crash에서 event가 유실될 수 있는 한계를 숨기지 않으며, 무손실 요구가 생길 때만 별도 outbox Goal을 검토한다.
+
+## 14. 검증 전략
+
+Goal 9A 구현 시 다음을 검증한다.
+
+- empty migration과 재실행
+- checksum mismatch와 concurrent migration runner
+- 세 event insert
+- 반복·동시 duplicate와 immutable conflict
+- CHECK와 partial unique constraint
+- runtime role의 허용/거부 권한
+- secret과 payload 비노출
+- compiled migration/SQL artifact
+- source-less fixture에서 migration 두 번
+- actual PostgreSQL Docker test
+
+실제 명령, exact package version, test count는 구현 run 기록에 남긴다. 이 Blueprint에 고정하지 않는다.
+
+## 15. 기존 PostgreSQL 실험 브랜치
+
+`codex/add-postgres-event-shadow@2245fef`는 읽기 전용 참고 자료다. branch 전체 merge/rebase와 commit 전체 cherry-pick은 금지한다.
+
+과거 구현의 Drizzle, shadow queue, silent fallback, 65초 shutdown은 현재 계약과 맞지 않는다. identity, parameterized query, TLS, least-privilege, integration test 아이디어만 최신 계약으로 재검증한 뒤 참고할 수 있다.
+
+## 16. Rollback과 데이터 보존
+
+application commit은 역순 revert할 수 있다. 생성된 table과 row는 자동 삭제하지 않는다. down migration이나 DB 삭제는 별도 사용자 승인이 필요하다.
+
+Goal 9B 전까지 runtime JSONL 경로는 유지한다. production PostgreSQL mode를 rollback할 때는 JSONL mode를 명시적으로 선택하며, rollback 과정에서 PostgreSQL row를 삭제하지 않는다.
+
+## 17. 아직 결정하지 않는 내용
+
+- exact `pg`와 `@types/pg` version
+- managed PostgreSQL provider
+- 실제 production credential과 CA
+- retention 일수
+- 무손실 outbox
+- multi-instance Socket.IO
+- Kafka, Redis, queue
+- DB 기반 dataset read cutover
+- SPA와 Goal 8D
+
+이 항목들은 구현된 것처럼 표현하지 않는다.
