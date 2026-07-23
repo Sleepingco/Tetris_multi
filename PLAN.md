@@ -310,6 +310,7 @@
 - Goal 11E는 main push에서 관찰된 PVE T-Spin과 pending garbage timing race를 timeout/retry 없이 authoritative snapshot 기준으로 고친다. main hosted CI가 green이 되기 전에는 9A를 시작하지 않는다.
 - Goal 9는 구현 index이며 9A schema/repository, 9B runtime canonical storage, 9C JSONL import/completeness, 9D PostgreSQL CI/release로 나눈다. 각 단계는 별도 branch/worktree와 main merge gate를 사용한다.
 - local/development는 JSONL, 배포 환경은 명시적 PostgreSQL 단일 sink를 사용한다. dual-write, silent fallback, Drizzle, Redis, Kafka와 custom in-memory queue는 현재 범위가 아니다.
+- Goal 9D와 production 활성화 승인이 끝나면 배포는 `GAME_EVENT_STORAGE=postgres`만 사용하고 JSONL writer와 writable volume을 끈다. 기존 JSONL 파일과 repository code는 삭제하지 않고 local/test 및 명시적 rollback 경로로 보존한다.
 - read-only 감사 기준 현재 JSONL은 약 82.7 MiB/17,636 event이며 lifecycle 불완전 경기와 placement 내부 gap이 존재한다. 모든 `game_start`에 포함된 nickname은 DB projection에서 제거하고 human payload는 `client_reported`로 유지한다. 실제 구현 preflight에서 수치를 다시 측정한다.
 - 문서 설계 시점의 `codex/add-postgres-event-shadow` merge-base는 Goal 8C `4d5bcd5`이며 current main 쪽 24 commit, old branch 쪽 6 commit으로 갈라져 있다. branch 고유 Drizzle/queue 구현은 payload conflict를 숨기며 queue drop, silent JSONL success와 65초 shutdown을 사용한다. CSP, Docker, 현재 8초 shutdown과 CI가 없으므로 전체 merge/rebase와 commit 전체 cherry-pick은 금지한다.
 - 과거 branch에서 참고 가능한 것은 semantic identity, parameterized query, TLS/least-privilege 검토와 실제 DB integration test 아이디어뿐이다. 새 구현은 최신 main에서 `pg`와 검토된 SQL로 다시 작성한다.

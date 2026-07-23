@@ -76,6 +76,7 @@ Goal 1에서는 build environment에서 산출물을 만든 뒤 devDependencies�
 - DB down·동시 room 부하에서 `pg.Pool` max/timeout과 process-wide in-flight write 상한이 지켜지고 초과가 gameplay 중단이나 silent drop이 아닌 구조화된 실패로 관찰되는지 확인한다.
 - SIGTERM이 신규 write를 막고 기존 8초 server budget 안에서 in-flight write와 pool을 정리하는지 확인한다.
 - production storage mode 생략이 fail closed하고 runtime role이 event INSERT·idempotency/migration-history SELECT 외 DDL/UPDATE/DELETE를 수행하지 못하는지 확인한다.
+- postgres mode가 JSONL repository/file을 만들거나 append하지 않고, production container가 JSONL writable volume 없이 동작하는지 확인한다.
 - same identity에서 payload뿐 아니라 trust/time 등 immutable column이 달라져도 event hash conflict가 드러나는지 확인한다.
 - JSONL importer가 streaming으로 동작하고 두 번째 실행에서 row count/hash가 바뀌지 않는지 확인한다.
 - malformed/private/conflict row는 non-zero이며 raw payload를 출력하지 않는지 확인한다.

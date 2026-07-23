@@ -43,6 +43,8 @@
 - local/development 기본 sink는 기존 JSONL이다.
 - 배포 환경의 장기 수집 sink는 PostgreSQL이다.
 - 한 process는 `jsonl` 또는 `postgres` 중 하나만 사용한다. runtime dual-write와 조용한 fallback은 금지한다.
+- Goal 9D gate와 별도 production 활성화 승인이 끝나면 배포 설정을 `GAME_EVENT_STORAGE=postgres`로 전환하고 JSONL writer를 끈다. 이 mode에서는 JSONL file을 생성·open·append하지 않는다.
+- 기존 JSONL 파일과 JSONL repository code는 삭제하지 않는다. local/test와 명시적 production rollback에서만 `GAME_EVENT_STORAGE=jsonl`로 사용한다.
 - local/test만 storage mode 생략 시 `jsonl`을 기본값으로 사용할 수 있다. production profile에서 mode 생략은 fail closed하며 JSONL rollback도 `GAME_EVENT_STORAGE=jsonl`을 명시한다.
 - PostgreSQL은 gameplay 상태, room lifecycle, ticker, reconnect와 Socket.IO coordination의 원천이 아니다.
 - 한 append-only `game_events` table과 실제 조회에 필요한 최소 index만 만든다.

@@ -94,6 +94,7 @@ production PostgreSQL mode를 켜기 전에 다음을 문서와 실제 환경에
 - `pg_total_relation_size` warning/stop threshold와 비용 한도
 - DB outage 시 gameplay 지속과 event loss 허용 수준
 - 이전 application image digest와 `GAME_EVENT_STORAGE=jsonl` rollback 절차
+- 활성화 승인 후 production은 `GAME_EVENT_STORAGE=postgres` 단일 sink로 전환하고 JSONL writable volume을 mount하지 않는다. 기존 JSONL은 read-only backup으로 보존한다.
 
 strict lossless가 요구되면 이 Goal을 완료로 처리하지 않고 durable outbox를 별도 Goal로 설계한다.
 
@@ -113,6 +114,7 @@ production gameplay source 변경이 필요하면 Goal 9B 누락인지 먼저 �
 - migration/repository/runtime/import가 mock 없이 하나의 service에서 검증된다.
 - Browser와 Docker 기존 job이 계속 green이다.
 - source-less image가 migration artifact와 postgres runtime을 load한다.
+- postgres mode container가 JSONL writable volume 없이 기동하고 경기 후에도 JSONL file을 생성·변경하지 않는다.
 - test/production log와 artifact에 URL, password와 user payload가 없다.
 - required check 후보 이름, run URL, SHA, 시간과 cache 상태가 기록된다.
 - production enable/rollback runbook이 실제 명령 경계와 일치한다.
@@ -136,6 +138,7 @@ git diff --check <base>..HEAD
 - external PostgreSQL health → migration → application startup
 - `/`, 네 page, asset와 Socket.IO HTTP 200
 - PVP/PVE synthetic event insert와 DB query
+- JSONL volume 없는 postgres mode와 JSONL file 생성·append 0건
 - first-party TS/TSX/declaration/source map 404
 - no credential/source/test/dev tool in image
 - DB 중단 시 gameplay failure semantics
@@ -180,6 +183,7 @@ cache miss clean run을 최소 1회 확인한다. 의도적 DB migration/integra
 - workflow/document commit을 먼저 revert한다.
 - production enable 전이면 code/data rollback은 없다.
 - production enable 후에는 env를 JSONL mode 또는 이전 image digest로 되돌리되 PostgreSQL row를 삭제하지 않는다.
+- JSONL rollback에는 `GAME_EVENT_STORAGE=jsonl`, 기존 보존 file과 writable volume을 모두 명시적으로 복구한다.
 - migration down/drop은 자동 rollback에 포함하지 않는다.
 
 ## 즉시 중단 조건

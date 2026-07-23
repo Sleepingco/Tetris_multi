@@ -60,6 +60,7 @@ GAME_EVENT_STORAGE=jsonl
 GAME_EVENT_STORAGE=postgres
   → PostgreSQL repository 하나만 사용
   → DATABASE_URL과 expected schema가 없으면 listen 전에 실패
+  → JSONL repository를 만들거나 file을 open/append하지 않음
 ```
 
 - local/test default만 `jsonl`로 기존 실행을 보존한다.
@@ -67,6 +68,7 @@ GAME_EVENT_STORAGE=postgres
 - unknown mode, 잘못된 URL/TLS와 schema version mismatch는 fail closed한다.
 - startup 이후 DB 장애는 gameplay를 계속하되 저장 실패를 반환·집계한다.
 - 장애 시 JSONL로 몰래 전환하지 않는다. 두 sink 사이 원자성을 주장하지 않는다.
+- mode 선택은 composition 시 한 번만 수행한다. postgres mode에서 `GAME_EVENTS_LOG_PATH`가 설정돼 있어도 JSONL writer는 비활성 상태여야 한다.
 
 ## Canonical Event 계약
 
@@ -149,6 +151,7 @@ private-field denylist는 방어층으로 유지하지만 allowlist projection�
 
 - JSONL mode의 기존 log와 gameplay가 기준 main과 동일하다.
 - postgres mode가 실제 game start, human/AI 저장 대상 placement와 game over를 DB에 기록한다.
+- postgres mode 실행 전후 JSONL path의 존재 여부·byte count·hash가 변하지 않는다.
 - human event의 client identity와 nickname이 DB payload에 남지 않는다.
 - duplicate는 성공, immutable event conflict는 실패하며 row를 덮어쓰지 않는다.
 - DB down/timeout에도 gameplay와 match finish가 완료되고 저장 실패가 관찰된다.
@@ -174,6 +177,7 @@ git diff --check <base>..HEAD
 추가 필수 case:
 
 - JSONL/postgres mode selection, unknown mode와 production missing-mode startup failure
+- postgres mode의 JSONL repository 미생성·file byte/hash 불변
 - postgres mode의 missing URL, bad TLS와 old schema startup failure
 - server canonical game/room/player/sequence/piece identity
 - finished grace의 정상 late log와 forged/stale receipt 거부
