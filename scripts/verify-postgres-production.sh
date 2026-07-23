@@ -239,13 +239,22 @@ stop_application() {
     docker stop --time 8 "$application_container" >/dev/null
     finished_at="$(node -e 'process.stdout.write(String(Date.now()))')"
     shutdown_milliseconds=$((finished_at - started_at))
-    test "$shutdown_milliseconds" -lt 8000
-    test "$(docker inspect --format '{{.State.ExitCode}}' "$application_container")" = 0
+    test "$shutdown_milliseconds" -lt 8000 || {
+        echo "GOAL9D_SHUTDOWN_DEADLINE_EXCEEDED" >&2
+        return 1
+    }
+    test "$(docker inspect --format '{{.State.ExitCode}}' "$application_container")" = 0 || {
+        echo "GOAL9D_SHUTDOWN_EXIT_NONZERO" >&2
+        return 1
+    }
     open_pool_connections="$(docker exec "$database_container" \
         psql --quiet --tuples-only --no-align \
         --username postgres --dbname "$database_name" \
         --command "SELECT pg_catalog.count(*) FROM pg_catalog.pg_stat_activity WHERE application_name = 'tetris-goal9b-runtime';")"
-    test "$open_pool_connections" = 0
+    test "$open_pool_connections" = 0 || {
+        echo "GOAL9D_POOL_CONNECTIONS_REMAIN" >&2
+        return 1
+    }
     printf '[test:docker:postgres] shutdown_ms=%s pool_connections=0\n' \
         "$shutdown_milliseconds"
 }
@@ -304,6 +313,8 @@ PLAYWRIGHT_EXTERNAL_SERVER=1 npx --no-install playwright test \
     e2e/multiplayerPve.spec.js \
     --grep 'server game over|PVE server gameOver'
 
+stop_application
+
 event_counts="$(docker exec "$database_container" \
     psql --quiet --tuples-only --no-align --field-separator '|' \
     --username postgres --dbname "$database_name" --command "
@@ -333,7 +344,10 @@ for count in \
     "$pvp_start" "$pvp_placement" "$pvp_over" \
     "$pve_start" "$pve_placement" "$pve_over"
 do
-    test "$count" -gt 0
+    test "$count" -gt 0 || {
+        echo "GOAL9D_EVENT_COUNT_INVALID" >&2
+        exit 1
+    }
 done
 
 privacy_count="$(docker exec "$database_container" \
@@ -342,14 +356,24 @@ privacy_count="$(docker exec "$database_container" \
         SELECT pg_catalog.count(*)
         FROM tetris_analytics.game_events
         WHERE payload::text ~* 'nickname|token|socketid|cookie|useragent';")"
-test "$privacy_count" = 0
+test "$privacy_count" = 0 || {
+    echo "GOAL9D_PRIVACY_CHECK_FAILED" >&2
+    exit 1
+}
 duplicate_count="$(docker exec "$database_container" \
     psql --quiet --tuples-only --no-align \
     --username postgres --dbname "$database_name" --command "
         SELECT pg_catalog.count(*) - pg_catalog.count(DISTINCT event_id)
         FROM tetris_analytics.game_events;")"
-test "$duplicate_count" = 0
+test "$duplicate_count" = 0 || {
+    echo "GOAL9D_DUPLICATE_CHECK_FAILED" >&2
+    exit 1
+}
 row_snapshot="$(event_snapshot "$database_name")"
+test -n "$row_snapshot" || {
+    echo "GOAL9D_ROW_SNAPSHOT_EMPTY" >&2
+    exit 1
+}
 
 docker exec "$database_container" pg_dump \
     --format custom --username postgres "$database_name" > "$backup_file"
@@ -359,14 +383,22 @@ docker exec -i "$database_container" pg_restore \
     --username postgres --dbname "$restore_database" \
     --no-owner --exit-on-error < "$backup_file"
 restore_snapshot="$(event_snapshot "$restore_database")"
-test "$restore_snapshot" = "$row_snapshot"
+test "$restore_snapshot" = "$row_snapshot" || {
+    echo "GOAL9D_RESTORE_SNAPSHOT_MISMATCH" >&2
+    exit 1
+}
 
-stop_application
 start_application
 restart_snapshot="$(event_snapshot "$database_name")"
-test "$restart_snapshot" = "$row_snapshot"
+test "$restart_snapshot" = "$row_snapshot" || {
+    echo "GOAL9D_RESTART_SNAPSHOT_MISMATCH" >&2
+    exit 1
+}
 docker exec "$application_container" \
-    test ! -e /app/data/logs/game-events.jsonl
+    test ! -e /app/data/logs/game-events.jsonl || {
+        echo "GOAL9D_JSONL_FILE_CREATED" >&2
+        exit 1
+    }
 
 docker pause "$database_container" >/dev/null
 set +e
