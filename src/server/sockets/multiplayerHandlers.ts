@@ -17,13 +17,17 @@ import {
 
 import {
     acknowledgeClientInputSequence,
+    authenticateHumanPlacementReceipt,
     appendPendingGarbageToOpponent,
     applyAuthoritativeInputToMatchPlayerState,
+    clearHumanPlacementReceiptsForPlayer,
+    clearHumanPlacementReceiptsForRoom,
     createMatch,
     deleteMatch,
     ensurePlayerBagQueue,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
+    recordHumanPlacementReceipt,
     validateClientInputSequence,
 } from "../services/matchService.js";
 import { loadGameCore } from "../services/gameCoreLoader.js";
@@ -82,6 +86,7 @@ export type MultiplayerHandlerDependencies = {
     now?: () => number;
     setTimeoutFn?: typeof setTimeout;
     disconnectGraceMs?: number;
+    isEventProductionStopped?: () => boolean;
 };
 type GameInputPayload = ClientToServerParsedPayload<"game:input">;
 type InputResultPayload = ServerToClientParsedPayload<"game:input:result">;
@@ -227,6 +232,7 @@ export function registerMultiplayerHandlers(
     const now = dependencies.now || Date.now
     const setTimeoutFn = dependencies.setTimeoutFn || setTimeout
     const disconnectGraceMs = dependencies.disconnectGraceMs || DISCONNECT_GRACE_MS
+    const isEventProductionStopped = dependencies.isEventProductionStopped || (() => false)
     const sessionContext = clientSocket.data?.playerSession
     const playerIdentity = clientSocket.data?.playerIdentity
     const getPlayerId = (): string => playerIdentity?.playerId || ""
@@ -342,6 +348,7 @@ export function registerMultiplayerHandlers(
             : roomResult
         if (result.ok && result.roomId) {
             authoritativeTickerService.stopRoomTicker(result.roomId)
+            clearHumanPlacementReceiptsForPlayer(getPlayerId())
         }
         handlePlayerLeftRoom(
             socketServer,
@@ -357,6 +364,7 @@ export function registerMultiplayerHandlers(
     clientSocket.on("disconnect", () => {
         gameInputProcessingChain = null
         outstandingGameInputCount = 0
+        if (isEventProductionStopped()) return
         if (!sessionContext
             || !playerSessionService.markDisconnected(sessionContext, clientSocket.id)) return
 
@@ -392,6 +400,7 @@ export function registerMultiplayerHandlers(
     // room:start는 lifecycle을 playing으로 바꾼 뒤 별도 match, server bag, ticker를 만든다.
     // startGame 자체는 board를 만들지 않으므로 두 상태 저장소의 책임을 구분해 읽어야 한다.
     clientSocket.on("room:start", async (payload: unknown) => {
+        if (isEventProductionStopped()) return
         if (!isActiveSession()) {
             emitRoomResult(createNotAuthorizedResult())
             return
@@ -421,10 +430,11 @@ export function registerMultiplayerHandlers(
                 text: `${hostPlayer?.nickname || "Host"}님이 게임을 시작했습니다.`,
                 roomId: result.room.roomId,
             })
+            clearHumanPlacementReceiptsForRoom(result.room.roomId)
             const matchResult = createMatch(result.room)
             if (matchResult.ok) {
                 authoritativeTickerService.startRoomTicker(result.room.roomId, socketServer)
-                await persistGameEventLog(saveEventLog, createGameStartLog(result.room, matchResult.match))
+                persistGameEventLog(saveEventLog, createGameStartLog(result.room, matchResult.match))
             }
         } else {
             emitRoomResult(result)
@@ -487,6 +497,7 @@ export function registerMultiplayerHandlers(
      * state 변경 직전에도 active session을 다시 검사한다.
      */
     async function processGameInput(payload: GameInputPayload): Promise<void> {
+        if (isEventProductionStopped()) return
         const {
             roomId,
             action,
@@ -592,6 +603,15 @@ export function registerMultiplayerHandlers(
                         gameplayResult?.placementResult,
                         createGarbageHoleCol,
                     )
+                    if (gameplayResult?.placementResult) {
+                        recordHumanPlacementReceipt(
+                            roomId,
+                            getPlayerId(),
+                            clientSequence,
+                            gameplayResult.placementResult.pieceIndex,
+                            now(),
+                        )
+                    }
 
                     const snapshot = emitAuthoritativeSnapshot(
                         socketServer,
@@ -634,6 +654,7 @@ export function registerMultiplayerHandlers(
 
     // 신뢰 경계 순서는 session → rate limit → schema → bounded queue → domain 처리다.
     clientSocket.on("game:input", (payload: unknown) => {
+        if (isEventProductionStopped()) return null
         if (!isActiveSession()) {
             clientSocket.emit("game:input:result", {
                 ok: false,
@@ -692,6 +713,7 @@ export function registerMultiplayerHandlers(
     // 분석 로그 신뢰 경계
     // =============================
     clientSocket.on("game:log:placement_decision", async (payload: unknown) => {
+        if (isEventProductionStopped()) return
         if (!isActiveSession()) {
             clientSocket.emit("game:log:result", {
                 ok: false,
@@ -753,10 +775,42 @@ export function registerMultiplayerHandlers(
             return
         }
 
-        const authenticatedLog = {
+        const rawValidation = validatePlacementDecisionLog({
             ...logRecord,
             roomId,
             playerId: getPlayerId(),
+        })
+        if (!rawValidation.ok) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: rawValidation.reason,
+            })
+            return
+        }
+        const receiptResult = authenticateHumanPlacementReceipt(
+            roomId,
+            getPlayerId(),
+            Number(logRecord.authoritativeClientSequence),
+            Number(logRecord.authoritativePieceIndex),
+            now(),
+        )
+        if (!receiptResult.ok) {
+            clientSocket.emit("game:log:result", {
+                ok: false,
+                log: null,
+                reason: receiptResult.reason,
+            })
+            return
+        }
+        const authenticatedLog = {
+            ...logRecord,
+            gameId: receiptResult.receipt.gameId,
+            roomId: receiptResult.receipt.roomId,
+            playerId: receiptResult.receipt.playerId,
+            pieceIndex: receiptResult.receipt.pieceIndex,
+            authoritativeClientSequence: receiptResult.receipt.clientSequence,
+            authoritativePieceIndex: receiptResult.receipt.pieceIndex,
         }
         // 인증·인가된 roomId와 playerId로 저장 주체를 덮어쓴 뒤 전체 log schema를 다시 검증한다.
         const logValidation = validatePlacementDecisionLog(authenticatedLog)
@@ -877,6 +931,7 @@ export function registerMultiplayerHandlers(
         if (result.ok && result.room) {
             authoritativeTickerService.stopRoomTicker(roomId)
             deleteMatch(roomId)
+            clearHumanPlacementReceiptsForRoom(roomId)
             clientSocket.leave(roomId)
             clientSocket.to(roomId).emit("game:opponent-left", {
                 room: createRoomPublicDto(result.room),
@@ -1051,29 +1106,30 @@ async function handleServerGameOverResult(
     })
 }
 
-async function persistGameEventLog(
+function persistGameEventLog(
     saveEventLog: typeof saveGameEventLog,
     log: unknown,
-): Promise<void> {
+): void {
     try {
-        await saveEventLog(log)
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "UNKNOWN_ERROR"
-        console.warn(`[multiplayerHandlers] game event log failed: ${message}`)
+        void Promise.resolve(saveEventLog(log))
+            .then(result => {
+                if (!result.ok) {
+                    console.warn(`[multiplayerHandlers] game event log failed: ${result.reason}`)
+                }
+            })
+            .catch(() => {
+                console.warn("[multiplayerHandlers] game event log failed: LOG_WRITE_FAILED")
+            })
+    } catch {
+        console.warn("[multiplayerHandlers] game event log failed: LOG_WRITE_FAILED")
     }
-}
-
-function createGameId(roomId: string, match: MatchState | null): string {
-    return match?.createdAt
-        ? `${roomId}-${match.createdAt}`
-        : roomId
 }
 
 function createGameStartLog(room: RoomState, match: MatchState) {
     return {
         eventType: "game_start",
         schemaVersion: 1,
-        gameId: createGameId(room.roomId, match),
+        gameId: match.gameId,
         roomId: room.roomId,
         mode: room.mode === "pve" ? "pve" : "multi",
         aiDifficulty: match.aiDifficulty,
@@ -1139,6 +1195,7 @@ export async function handleDisconnectGraceExpired({
         if (!finishResult.finished) return
 
         const leaveResult = leaveRoom(room.roomId, playerId)
+        clearHumanPlacementReceiptsForPlayer(playerId)
         if (leaveResult.room) {
             socketServer.to(room.roomId).emit(
                 "room:updated",
@@ -1149,6 +1206,7 @@ export async function handleDisconnectGraceExpired({
     }
 
     const result = leaveRoom(room.roomId, playerId)
+    clearHumanPlacementReceiptsForPlayer(playerId)
     if (result.room) {
         socketServer.to(room.roomId).emit("room:updated", createRoomPublicDto(result.room))
         socketServer.to(room.roomId).emit("room:message", {

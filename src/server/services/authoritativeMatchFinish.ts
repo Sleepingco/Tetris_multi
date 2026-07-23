@@ -32,17 +32,12 @@ export type FinishAuthoritativeMatchResult = {
     finishResult?: FinishGameResult;
 };
 
-function createGameId(roomId: string, match: MatchState | null): string {
-    return match?.createdAt
-        ? `${roomId}-${match.createdAt}`
-        : roomId;
-}
-
 function createGameOverLog(result: Extract<FinishGameResult, { ok: true }>, match: MatchState | null) {
+    if (!match?.gameId) return null;
     return {
         eventType: "game_over",
         schemaVersion: 1,
-        gameId: createGameId(result.room.roomId, match),
+        gameId: match.gameId,
         roomId: result.room.roomId,
         mode: match?.mode === "pve" ? "pve" : "multi",
         aiDifficulty: match?.aiDifficulty ?? null,
@@ -56,18 +51,34 @@ function createGameOverLog(result: Extract<FinishGameResult, { ok: true }>, matc
         loserPlayerId: result.loserPlayerId,
         reason: result.finishReason,
         finishType: "normal",
+        expectedPlacementEventCounts: match.players.map(player => ({
+            playerId: player.playerId,
+            playerType: player.playerType,
+            expectedPlacementEventCount: player.expectedPlacementEventCount,
+        })),
     };
 }
 
-async function persistGameEventLog(
+function persistGameEventLog(
     saveGameEventLog: NonNullable<FinishAuthoritativeMatchOptions["saveGameEventLog"]>,
     log: unknown,
-): Promise<void> {
+): void {
     try {
-        await saveGameEventLog(log);
-    } catch (error) {
-        const message = error instanceof Error ? error.message : "UNKNOWN_ERROR";
-        console.warn(`[authoritativeMatchFinish] game event log failed: ${message}`);
+        void Promise.resolve(saveGameEventLog(log))
+            .then(result => {
+                if (!result.ok) {
+                    console.warn(
+                        `[authoritativeMatchFinish] game event log failed: ${result.reason}`,
+                    );
+                }
+            })
+            .catch(() => {
+                console.warn(
+                    "[authoritativeMatchFinish] game event log failed: LOG_WRITE_FAILED",
+                );
+            });
+    } catch {
+        console.warn("[authoritativeMatchFinish] game event log failed: LOG_WRITE_FAILED");
     }
 }
 
@@ -132,8 +143,8 @@ export async function finishAuthoritativeMatch({
     });
     deleteMatch?.(roomId);
 
-    if (saveGameEventLog) {
-        await persistGameEventLog(saveGameEventLog, gameOverLog);
+    if (saveGameEventLog && gameOverLog) {
+        persistGameEventLog(saveGameEventLog, gameOverLog);
     }
 
     return {

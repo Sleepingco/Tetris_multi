@@ -16,6 +16,7 @@ import {
     getAuthoritativePlayerSnapshot as defaultGetPlayerSnapshot,
     getMatchState as defaultGetMatchState,
     markAuthoritativePlayerGameOver as defaultMarkPlayerGameOver,
+    recordAiPlacementEventTarget as defaultRecordAiPlacementEventTarget,
 } from "./matchService.js";
 import {
     savePlacementDecisionLog as defaultSavePlacementDecisionLog,
@@ -227,6 +228,7 @@ type Dependencies = {
     applyInput?: typeof defaultApplyInput;
     ensurePlayerBagQueue?: typeof defaultEnsurePlayerBagQueue;
     markPlayerGameOver?: typeof defaultMarkPlayerGameOver;
+    recordAiPlacementEventTarget?: typeof defaultRecordAiPlacementEventTarget;
     savePlacementDecisionLog?: typeof defaultSavePlacementDecisionLog;
     loadPlacementV4Model?: typeof loadPlacementV4Model;
     recordAiPolicyEvidence?: (evidence: Record<string, unknown>) => unknown;
@@ -248,6 +250,8 @@ export function createPveAiPlayerService(
     const applyInput = dependencies.applyInput || defaultApplyInput;
     const ensurePlayerBagQueue = dependencies.ensurePlayerBagQueue || defaultEnsurePlayerBagQueue;
     const markPlayerGameOver = dependencies.markPlayerGameOver || defaultMarkPlayerGameOver;
+    const recordAiPlacementEventTarget = dependencies.recordAiPlacementEventTarget
+        || defaultRecordAiPlacementEventTarget;
     const savePlacementDecisionLog = dependencies.savePlacementDecisionLog
         || defaultSavePlacementDecisionLog;
     const loadV4Model = dependencies.loadPlacementV4Model || loadPlacementV4Model;
@@ -576,7 +580,26 @@ export function createPveAiPlayerService(
                     getBoardMetrics: ai.getBoardMetrics,
                     createdAt: now(),
                 });
-                logResult = await savePlacementDecisionLog(log);
+                recordAiPlacementEventTarget(roomId, playerId, placementResult.pieceIndex);
+                const pendingLogResult = Promise.resolve(savePlacementDecisionLog(log));
+                void pendingLogResult
+                    .then(result => {
+                        if (!result.ok) {
+                            console.warn(
+                                `[pveAiPlayerService] placement log failed: ${result.reason}`,
+                            );
+                        }
+                    })
+                    .catch(() => {
+                        console.warn(
+                            "[pveAiPlayerService] placement log failed: LOG_WRITE_FAILED",
+                        );
+                    });
+                logResult = {
+                    ok: true,
+                    log: null,
+                    reason: "LOG_WRITE_SCHEDULED",
+                };
             } catch (error) {
                 logResult = {
                     ok: false,
@@ -739,7 +762,7 @@ function createPlacementDecisionLog({
         eventType: "placement_decision",
         schemaVersion: 2,
         mode: "pve",
-        gameId: `${match.roomId}-${match.createdAt}`,
+        gameId: match.gameId,
         roomId: match.roomId,
         playerId,
         source: "heuristic_ai",

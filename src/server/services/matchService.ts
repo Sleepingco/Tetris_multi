@@ -5,6 +5,7 @@
 // mutation 함수는 내부 원본을 제자리에서 바꾼다. 조회 경계에서는 복제본을,
 // client 전송 경계에서는 server-only 필드를 뺀 축소 DTO를 반환한다.
 // =============================
+import { randomUUID } from "node:crypto";
 import {
     applyAuthoritativeInput,
     applyAuthoritativeGravityStep,
@@ -68,11 +69,14 @@ export type MatchPlayer = {
     playerId: string;
     playerType: PlayerType;
     lastProcessedClientSequence: number;
+    expectedPlacementEventCount: number;
+    countedPlacementPieceIndexes: Set<number>;
     bagChunks: PieceType[][];
     authoritativeState: AuthoritativePlayerState;
     aiPlan: PveAiPlan | null;
 };
 export type MatchState = {
+    gameId: string;
     roomId: string;
     mode: RoomState["mode"];
     aiDifficulty: AiDifficulty | null;
@@ -81,6 +85,23 @@ export type MatchState = {
     status: RoomStatus;
     players: MatchPlayer[];
     createdAt: number;
+};
+export type HumanPlacementReceipt = Readonly<{
+    gameId: string;
+    roomId: string;
+    playerId: string;
+    clientSequence: number;
+    pieceIndex: number;
+    expiresAt: number;
+}>;
+export type HumanPlacementReceiptResult = {
+    ok: true;
+    receipt: HumanPlacementReceipt;
+    reason: null;
+} | {
+    ok: false;
+    receipt: null;
+    reason: string;
 };
 export type AuthoritativeSnapshotDto = ServerToClientParsedPayload<
     "game:authoritative:snapshot"
@@ -129,6 +150,7 @@ export type AuthoritativeSnapshotDtoResult = Omit<MatchResultFields, "snapshot">
 });
 
 const matches = new Map<string, MatchState>();
+const recentHumanPlacementReceipts = new Map<string, HumanPlacementReceipt[]>();
 const BAG_PIECES: PieceType[] = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
 const INITIAL_BAG_CHUNK_COUNT = 3;
 const BOARD_ROWS = 20;
@@ -141,6 +163,8 @@ const POSITION_TRANSFORM_ACTIONS = new Set<AuthoritativeInput["action"]>([
 const LOCKING_TRANSFORM_ACTIONS = new Set<AuthoritativeInput["action"]>([
     "soft_drop", "hard_drop",
 ]);
+export const HUMAN_PLACEMENT_RECEIPT_TTL_MS = 30_000;
+export const HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER = 128;
 
 function createSuccess(match: MatchState, extra: MatchResultFields = {}): MatchResult {
     return {
@@ -196,6 +220,7 @@ export function createMatch(room: RoomState | null | undefined): MatchResult {
         }
     }
     const match = {
+        gameId: randomUUID(),
         roomId: room.roomId,
         mode,
         aiDifficulty,
@@ -209,6 +234,8 @@ export function createMatch(room: RoomState | null | undefined): MatchResult {
                 playerId: player.playerId,
                 playerType: player.playerType || "human",
                 lastProcessedClientSequence: 0,
+                expectedPlacementEventCount: 0,
+                countedPlacementPieceIndexes: new Set<number>(),
                 bagChunks,
                 authoritativeState: createInitialPlayerState(bagChunks),
                 aiPlan: null,
@@ -247,6 +274,143 @@ export function deleteMatch(roomId: string): MatchResult {
     matches.delete(roomId);
 
     return createSuccess(match);
+}
+
+function receiptKey(roomId: string, playerId: string): string {
+    return JSON.stringify([roomId, playerId]);
+}
+
+function purgeExpiredReceipts(key: string, now: number): HumanPlacementReceipt[] {
+    const receipts = recentHumanPlacementReceipts.get(key) || [];
+    const current = receipts.filter(receipt => receipt.expiresAt > now);
+    if (current.length > 0) {
+        recentHumanPlacementReceipts.set(key, current);
+    } else {
+        recentHumanPlacementReceipts.delete(key);
+    }
+    return current;
+}
+
+function countPlacementTarget(player: MatchPlayer, pieceIndex: number): void {
+    if (player.countedPlacementPieceIndexes.has(pieceIndex)) return;
+    player.countedPlacementPieceIndexes.add(pieceIndex);
+    player.expectedPlacementEventCount += 1;
+}
+
+/**
+ * 성공한 human authoritative placement를 짧은 receipt로 보존한다.
+ * match 삭제 뒤의 정상 late log도 exact sequence/piece tuple로만 인증한다.
+ */
+export function recordHumanPlacementReceipt(
+    roomId: string,
+    playerId: string,
+    clientSequence: number,
+    pieceIndex: number,
+    now = Date.now(),
+): HumanPlacementReceiptResult {
+    const match = matches.get(roomId);
+    const player = match?.players.find(candidate => candidate.playerId === playerId);
+    if (!match || !player || player.playerType === "heuristic_ai") {
+        return {
+            ok: false,
+            receipt: null,
+            reason: "PLACEMENT_RECEIPT_CONTEXT_NOT_FOUND",
+        };
+    }
+    if (
+        !Number.isInteger(clientSequence)
+        || clientSequence < 1
+        || !Number.isInteger(pieceIndex)
+        || pieceIndex < 0
+    ) {
+        return {
+            ok: false,
+            receipt: null,
+            reason: "PLACEMENT_RECEIPT_INVALID",
+        };
+    }
+
+    const key = receiptKey(roomId, playerId);
+    const receipts = purgeExpiredReceipts(key, now);
+    const existing = receipts.find(receipt => (
+        receipt.gameId === match.gameId
+        && receipt.clientSequence === clientSequence
+        && receipt.pieceIndex === pieceIndex
+    ));
+    if (existing) {
+        return { ok: true, receipt: existing, reason: null };
+    }
+
+    const receipt = Object.freeze({
+        gameId: match.gameId,
+        roomId,
+        playerId,
+        clientSequence,
+        pieceIndex,
+        expiresAt: now + HUMAN_PLACEMENT_RECEIPT_TTL_MS,
+    });
+    receipts.push(receipt);
+    if (receipts.length > HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER) {
+        receipts.splice(0, receipts.length - HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER);
+    }
+    recentHumanPlacementReceipts.set(key, receipts);
+    countPlacementTarget(player, pieceIndex);
+    return { ok: true, receipt, reason: null };
+}
+
+export function authenticateHumanPlacementReceipt(
+    roomId: string,
+    playerId: string,
+    clientSequence: number,
+    pieceIndex: number,
+    now = Date.now(),
+): HumanPlacementReceiptResult {
+    const receipt = purgeExpiredReceipts(receiptKey(roomId, playerId), now)
+        .find(candidate => (
+            candidate.clientSequence === clientSequence
+            && candidate.pieceIndex === pieceIndex
+        ));
+    return receipt
+        ? { ok: true, receipt, reason: null }
+        : {
+            ok: false,
+            receipt: null,
+            reason: "PLACEMENT_RECEIPT_NOT_FOUND",
+        };
+}
+
+export function recordAiPlacementEventTarget(
+    roomId: string,
+    playerId: string,
+    pieceIndex: number,
+): MatchResult {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+    const player = match.players.find(candidate => candidate.playerId === playerId);
+    if (!player || player.playerType !== "heuristic_ai") {
+        return createFailure("PLAYER_NOT_FOUND");
+    }
+    if (!Number.isInteger(pieceIndex) || pieceIndex < 0) {
+        return createFailure("PIECE_INDEX_REQUIRED");
+    }
+    countPlacementTarget(player, pieceIndex);
+    return createSuccess(match);
+}
+
+export function clearHumanPlacementReceiptsForPlayer(playerId: string): void {
+    for (const [key, receipts] of recentHumanPlacementReceipts) {
+        if (receipts.some(receipt => receipt.playerId === playerId)) {
+            recentHumanPlacementReceipts.delete(key);
+        }
+    }
+}
+
+export function clearHumanPlacementReceiptsForRoom(roomId: string): void {
+    for (const [key, receipts] of recentHumanPlacementReceipts) {
+        if (receipts.some(receipt => receipt.roomId === roomId)) {
+            recentHumanPlacementReceipts.delete(key);
+        }
+    }
 }
 
 /**
@@ -839,4 +1003,5 @@ function createClientSnapshotDto(
 
 export function resetMatches(): void {
     matches.clear();
+    recentHumanPlacementReceipts.clear();
 }

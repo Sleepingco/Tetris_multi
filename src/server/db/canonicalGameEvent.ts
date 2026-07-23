@@ -338,7 +338,7 @@ function createSnapshot(input: unknown): CanonicalGameEvent {
             return fail("CANONICAL_EVENT_INVALID");
         }
     } else if (
-        value.schemaVersion !== 1
+        (value.schemaVersion !== 1 && value.schemaVersion !== 2)
         || value.playerId !== null
         || value.pieceIndex !== null
         || occurredAt === null
