@@ -501,7 +501,7 @@
 
 ### 현재 상태
 
-- 이름: Goal 9B local 구현·검증 완료, main merge gate 대기
+- 이름: Goal 9B main 통합 완료, Goal 9C 설계 gate 대기
 
 ### 진행 현황
 
@@ -517,13 +517,13 @@
 - [x] Goal 11E는 main과 origin/main에 반영됐다. timing-dependent PVE T-Spin E2E를 제거하고 pending-garbage authoritative/UI 일관성 검증을 유지했으며 hosted Fast/Docker와 동일 코드 Browser 연속 2회가 통과했다.
 - [x] Goal 9A는 raw SQL migration, canonical identity와 parameterized PostgreSQL repository를 실제 PostgreSQL 17.10으로 검증한 뒤 main과 origin/main에 반영됐다. hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast/Docker/Browser도 모두 green이다.
 - [x] Goal 9A review에서 injective canonical serialization, PostgreSQL-safe text·64-byte identity와 whitespace-only SQL 거부, finite timestamp, strict loopback·ambient `PG*` 차단, explicit URL password와 migration bootstrap owner 검증을 고정했다. 최종 gate는 실제 PostgreSQL 6/6, Node 616 pass·기존 1 skip, artifact/release 각 1/1이며 production E2E는 같은 gameplay/client의 선행 36/36을 유지한다.
-- [x] Goal 9B는 `GAME_EVENT_STORAGE=jsonl|postgres` single-sink, lifecycle schema v2, server UUID game identity와 1회용 authoritative human receipt, privacy allowlist projector, pool 4/in-flight 16, 3회·2.7초 retry와 3초 drain/8초 shutdown을 local branch에 구현했다. 독립 최종 리뷰에서 receipt replay와 retry 최악 경로 budget을 수정했으며, 실제 PostgreSQL 17.10 7/7, Node 636 pass·기존 1 skip, artifact/release 각 1/1, Vite-dev 10 pass·2 skip과 production E2E 36/36이 통과했다.
+- [x] Goal 9B는 `GAME_EVENT_STORAGE=jsonl|postgres` single-sink, lifecycle schema v2, server UUID game identity와 1회용 authoritative human receipt, privacy allowlist projector, pool 4/in-flight 16, 3회·2.7초 retry와 3초 drain/8초 shutdown을 main에 통합했다. receipt replay와 retry 최악 경로 budget review 수정도 반영했으며, PR와 main의 Fast gate, Chromium PVP and PVE, Production container smoke가 모두 green이었다. JSONL은 계속 기본 sink이고 PostgreSQL runtime mode는 구현됐지만 production에서 활성화하지 않았다. 다음 단계는 Goal 9C 설계 gate다.
 
 ### 알려진 위험과 보류 범위
 
 - `src/client/game/runtime/tetris.ts`는 여전히 크다. 다만 현재 병목은 기능 부재가 아니라 장기 유지보수 비용이다.
 - room, match, session, limiter는 단일 Node process memory에 있다. 다중 instance나 restart persistence는 아직 목표가 아니다.
-- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. Goal 9B branch에는 PostgreSQL runtime wiring이 구현됐지만 아직 main/production에 반영되지 않았다. import, hosted PostgreSQL CI와 production 활성화는 Goal 9C~9D 및 별도 merge gate 전까지 없다.
+- JSONL은 local 분석에는 유효하지만 ephemeral container에서 실제 사용자 event를 장기 보존하는 production sink로는 부족하다. Goal 9B PostgreSQL runtime wiring은 main에 통합됐지만 production 활성화는 하지 않았다. import, hosted PostgreSQL CI와 production 활성화는 Goal 9C~9D 및 별도 merge gate 전까지 없다.
 - Experimental V4는 Human placement imitation 관찰용이다. 기본 PVE를 대체하거나 더 강한 gameplay AI라고 주장하지 않는다.
 - pending garbage E2E는 적용 전후 authoritative sequence·piece index·board 변화와 같은 snapshot 경계의 UI 숫자·danger class 일치를 검증한다. lock 뒤 새 AI attack으로 pending이 다시 증가하는 정상 동작은 허용한다.
 - T-Spin 판정은 `test/testTSpin.js`, authoritative placement scalar는 `test/testPlayerGameplayStep.js`, runtime placement log/attack 결과는 `test/testTetrisRuntime.js`의 결정론적 테스트가 담당한다. 자연 중력과 browser scheduling에 의존하는 PVE 7-bag T-Spin E2E는 gate에서 제거했다.

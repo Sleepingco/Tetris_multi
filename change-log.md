@@ -2502,3 +2502,10 @@ client input
 - raw PostgreSQL migration은 checksum history와 bounded advisory lock runner를 사용하며, canonical event identity/hash와 idempotent inserted/duplicate/conflict repository를 제공한다. strict TLS, ambient `PG*` 차단과 migration bootstrap owner 검증도 포함한다.
 - PostgreSQL 17.10 실제 integration test는 6/6, Node는 616 pass·기존 조건부 1 skip, artifact/release는 각각 1/1이며 production E2E는 같은 gameplay/client 코드에서 선행 36/36을 통과했다.
 - 64-byte identity, whitespace-only identity와 infinite timestamp는 거부한다. JSONL은 계속 기본 runtime sink이고 PostgreSQL runtime 저장은 아직 구현하지 않았으며 Goal 9B 설계 gate의 범위다. production storage mode, gameplay와 Socket protocol은 변경하지 않았다.
+
+## Migration Goal 9B PostgreSQL runtime event storage main 통합
+
+- Goal 9B를 fast-forward로 main에 통합했다. JSONL/PostgreSQL은 strict single-sink이며 JSONL은 계속 기본 sink다. PostgreSQL runtime mode는 구현됐지만 production에서 활성화하지 않았다.
+- server-owned `gameId`, authoritative receipt와 receipt replay 차단, lifecycle v1/v2 migration 호환, privacy allowlist, 3회·총 2.7초 retry, pool 4/in-flight 16과 안전한 shutdown 순서를 반영했다.
+- Draft PR #3과 main push의 Fast gate, Chromium PVP and PVE, Production container smoke가 모두 green이었다. main에서는 Node 24.18.0 `npm ci`, `bash scripts/verify.sh`, `git diff --check`를 통과했고, 같은 Goal HEAD의 hosted Browser/Docker green 결과가 있어 전체 E2E와 Docker는 반복하지 않았다.
+- managed provider, production TLS/credential, retention·deletion ownership과 용량 threshold는 남은 운영 위험이다. 다음 단계는 Goal 9C 설계 gate이며 Goal 9C/9D와 production PostgreSQL 활성화는 아직 미수행이다.
