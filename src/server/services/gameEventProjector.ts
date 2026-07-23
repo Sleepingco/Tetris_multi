@@ -308,40 +308,44 @@ function projectGameStart(log: RecordValue): CanonicalGameEvent {
 }
 
 function projectGameOver(log: RecordValue): CanonicalGameEvent {
+    const hasExpectedCounts = log.expectedPlacementEventCounts !== undefined;
+    const payload: Record<string, CanonicalJsonValue> = {
+        roomId: log.roomId as CanonicalJsonValue,
+        mode: enumString(log.mode, MODES),
+        aiDifficulty: optionalEnum(log.aiDifficulty, AI_DIFFICULTIES),
+        aiPolicyRequested: optionalEnum(log.aiPolicyRequested, AI_POLICIES),
+        aiPolicyLastUsed: optionalEnum(log.aiPolicyLastUsed, AI_POLICIES),
+        aiPolicyFallbackCount: integer(log.aiPolicyFallbackCount ?? 0, 0),
+        aiModelSha256: log.aiModelSha256 === null || log.aiModelSha256 === undefined
+            ? null
+            : typeof log.aiModelSha256 === "string"
+                && /^[0-9a-f]{64}$/.test(log.aiModelSha256)
+                ? log.aiModelSha256
+                : fail(),
+        winnerPlayerId: log.winnerPlayerId as CanonicalJsonValue,
+        loserPlayerId: log.loserPlayerId as CanonicalJsonValue,
+        reason: enumString(log.reason, FINISH_REASONS),
+        finishType: log.finishType === "normal" ? "normal" : fail(),
+    };
+    if (hasExpectedCounts) {
+        payload.expectedPlacementEventCounts = projectExpectedCounts(
+            log.expectedPlacementEventCounts,
+        );
+        payload.receiptPolicy = {
+            ttlMilliseconds: HUMAN_PLACEMENT_RECEIPT_TTL_MS,
+            maxPerPlayer: HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER,
+        };
+    }
     return createCanonicalGameEvent({
         identityVersion: "identity-v1",
         eventType: "game_over",
-        schemaVersion: 2,
+        schemaVersion: hasExpectedCounts ? 2 : 1,
         gameId: log.gameId,
         playerId: null,
         pieceIndex: null,
         trustLevel: "server_authoritative",
         occurredAt: timestamp(log.endedAt),
-        payload: {
-            roomId: log.roomId,
-            mode: enumString(log.mode, MODES),
-            aiDifficulty: optionalEnum(log.aiDifficulty, AI_DIFFICULTIES),
-            aiPolicyRequested: optionalEnum(log.aiPolicyRequested, AI_POLICIES),
-            aiPolicyLastUsed: optionalEnum(log.aiPolicyLastUsed, AI_POLICIES),
-            aiPolicyFallbackCount: integer(log.aiPolicyFallbackCount, 0),
-            aiModelSha256: log.aiModelSha256 === null || log.aiModelSha256 === undefined
-                ? null
-                : typeof log.aiModelSha256 === "string"
-                    && /^[0-9a-f]{64}$/.test(log.aiModelSha256)
-                    ? log.aiModelSha256
-                    : fail(),
-            winnerPlayerId: log.winnerPlayerId,
-            loserPlayerId: log.loserPlayerId,
-            reason: enumString(log.reason, FINISH_REASONS),
-            finishType: log.finishType === "normal" ? "normal" : fail(),
-            expectedPlacementEventCounts: projectExpectedCounts(
-                log.expectedPlacementEventCounts,
-            ),
-            receiptPolicy: {
-                ttlMilliseconds: HUMAN_PLACEMENT_RECEIPT_TTL_MS,
-                maxPerPlayer: HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER,
-            },
-        },
+        payload,
     });
 }
 
