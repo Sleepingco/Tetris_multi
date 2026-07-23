@@ -2494,4 +2494,11 @@ client input
 - event identity, immutable `event_sha256`, server-owned `gameId`, privacy allowlist, bounded retry, pool/in-flight 상한, 8초 shutdown과 retention 경계를 공통 계약으로 고정했다.
 - 과거 `codex/add-postgres-event-shadow`는 merge/rebase나 commit 전체 cherry-pick 없이 identity·parameterized SQL·TLS·integration test 아이디어만 참고한다.
 - Goal 9D와 별도 production 활성화 승인 후에는 `GAME_EVENT_STORAGE=postgres`만 사용하고 JSONL writer와 writable volume을 끈다. 기존 JSONL file과 repository code는 local/test 및 명시적 rollback용으로 보존한다.
-- 문서 commit `c7614e4`, `a1cf812`의 PostgreSQL 계약은 유지한다. Goal 9A~9D의 SQL, dependency, production DB, 실제 JSONL import와 배포는 아직 구현하지 않았다.
+- 문서 commit `c7614e4`, `a1cf812`의 PostgreSQL 계약은 유지한다. 이 시점의 Goal 9A~9D 미구현 상태는 아래 Goal 9A main 통합 기록으로 갱신한다.
+
+## Migration Goal 9A PostgreSQL schema/repository main 통합
+
+- Goal 9A `1fb2633`은 main과 origin/main에 fast-forward로 반영됐고 hosted [Migration CI #29994429680](https://github.com/Sleepingco/Tetris_multi/actions/runs/29994429680)의 Fast gate, Chromium PVP and PVE, Production container smoke가 모두 green이다.
+- raw PostgreSQL migration은 checksum history와 bounded advisory lock runner를 사용하며, canonical event identity/hash와 idempotent inserted/duplicate/conflict repository를 제공한다. strict TLS, ambient `PG*` 차단과 migration bootstrap owner 검증도 포함한다.
+- PostgreSQL 17.10 실제 integration test는 6/6, Node는 616 pass·기존 조건부 1 skip, artifact/release는 각각 1/1이며 production E2E는 같은 gameplay/client 코드에서 선행 36/36을 통과했다.
+- 64-byte identity, whitespace-only identity와 infinite timestamp는 거부한다. JSONL은 계속 기본 runtime sink이고 PostgreSQL runtime 저장은 아직 구현하지 않았으며 Goal 9B 설계 gate의 범위다. production storage mode, gameplay와 Socket protocol은 변경하지 않았다.
