@@ -41,7 +41,7 @@ client raw placement log
 
 즉, client가 보낸 `roomId`와 `playerId`는 저장 주체가 아니다. Socket handler가 현재 session의 값으로 바꾼 뒤 `validatePlacementDecisionLog`를 다시 통과한 값만 `savePlacementDecisionLog`에 전달한다.
 
-Socket handler는 human placement log와 game start log를 만들고, authoritative match finish는 game over log를 만든다. PVE AI service는 실제로 확정된 heuristic placement를 schema v2 log로 만든다. 이 흐름의 현재 구현 위치는 다음과 같다.
+Socket handler는 client human placement log를 인증·재검증하고 game start log를 만든다. authoritative match finish는 game over log를 만들고, PVE AI service는 실제로 확정된 heuristic placement를 schema v2 log로 만든다. 이 흐름의 현재 구현 위치는 다음과 같다.
 
 - `src/server/validators/gameLogValidator.ts`
 - `src/server/services/logService.ts`
@@ -117,9 +117,11 @@ Goal 10과 DB 기반 dataset read cutover는 현재 보류다. 이 Blueprint는 
 
 ### Canonical serialization
 
-canonicalization은 JSON primitive, array, plain object만 허용한다. object key는 재귀적으로 고정 순서로 정렬하고 array 순서는 보존한다. `occurredAt`은 UTC millisecond ISO 문자열로 정규화한다. number는 finite 값만 허용하며 BigInt, `undefined`, function, symbol, sparse array, custom prototype, `toJSON`, getter, 순환 참조는 거부한다.
+canonicalization은 JSON primitive, array, plain object만 허용한다. object key는 재귀적으로 `Object.keys(value).sort()` 순서로 정렬하고 array 순서는 보존한다. `localeCompare`와 Unicode normalization은 사용하지 않는다. `occurredAt`은 UTC millisecond ISO 문자열로 정규화한다. number는 finite 값만 허용하며 BigInt, `undefined`, function, symbol, sparse array, custom prototype, `toJSON`, getter, 순환 참조는 거부한다.
 
-검증된 canonical object를 `JSON.stringify`한 UTF-8 bytes가 hash 입력이다. `event_id`와 `event_sha256`은 고정 fixture로 같은 입력에서 항상 같은 값을 재현하는지 검증한다. 이를 위해 새 canonicalization dependency를 추가하지 않는다.
+검증된 canonical object를 `JSON.stringify`한 UTF-8 bytes가 hash 입력이다. identity preimage는 `event_id = SHA256(UTF8(canonicalJson(identityTuple)))`로 고정한다. `event_sha256`은 같은 `canonicalJson` 함수로 immutable envelope를 직렬화한 UTF-8 bytes의 SHA-256이다.
+
+hash fixture는 중첩 object key 순서가 달라도 같은 hash인지, 같은 identity에서 payload만 바꾸면 `event_id`는 같고 `event_sha256`은 달라지는지, 각 fixture의 exact expected digest가 일치하는지를 검증한다. 이를 위해 새 canonicalization dependency를 추가하지 않는다.
 
 256 KiB 상한은 serialized canonical envelope 전체에 적용한다. 현재 JSONL validator의 raw log 전체 256 KiB 상한도 그대로 유지한다. 한 번 만든 immutable snapshot을 hash 계산과 INSERT 양쪽에서 그대로 사용해, 서로 다른 표현이 같은 event로 섞이지 않게 한다.
 
@@ -212,6 +214,7 @@ tetris_runtime
   → 제한된 schema search_path와 schema USAGE
   → 허용 column INSERT
   → idempotency 확인용 제한 SELECT
+  → startup migration-history/schema-version 제한 SELECT
 ```
 
 runtime role에는 schema CREATE, UPDATE, DELETE, TRUNCATE, DDL, migration role membership, SUPERUSER, CREATEDB, CREATEROLE, REPLICATION, BYPASSRLS 권한을 주지 않는다. `ingested_at`은 runtime이 입력하는 값이 아니라 DB가 생성하는 값이다.
@@ -239,11 +242,12 @@ URL과 credential은 error, console, artifact, process argument에 출력하지 
 - lifecycle event는 server authoritative다.
 - human placement는 client reported다.
 - 현재 서버가 생성한 heuristic AI placement만 server authoritative다.
+- Goal 9A DB CHECK는 `game_start`와 `game_over`에 `server_authoritative`만 허용하고, `placement_decision`에는 `client_reported` 또는 `server_authoritative`를 허용한다.
 - Goal 9A DB는 `trust_level` enum과 event별 nullable 조합·row shape를 검증한다. schema에 없는 source column으로 provenance를 증명하거나 source/trust 조합을 CHECK한다고 주장하지 않는다.
 - 실제 provenance와 server authoritative 부여는 Goal 9B 내부 projector가 담당한다.
 - raw/client projector는 trust 값을 임의로 받지 않는다.
 
-현재 JSONL의 `game_start`에는 nickname이 포함된다. 이 사실을 PostgreSQL 계획으로 덮어쓰지 않는다. 향후 PostgreSQL canonical projection에는 nickname, session token, socketId, IP, Cookie, User-Agent, DB URL, credential을 저장하지 않는다. 기존 JSONL을 backfill할 때 nickname을 어떻게 제거할지는 Goal 9C의 책임이다.
+현재 JSONL의 `game_start`에는 nickname이 포함된다. 이 사실을 PostgreSQL 계획으로 덮어쓰지 않는다. 향후 PostgreSQL canonical projection에는 nickname, session token, socketId, IP, Cookie, User-Agent, DB URL, credential, 자유형 사용자 문자열을 저장하지 않는다. 기존 JSONL을 backfill할 때 nickname을 어떻게 제거할지는 Goal 9C의 책임이다.
 
 pseudonymous `playerId`도 telemetry이므로 production 활성화 전 사용자 고지, retention 기간, 삭제 책임자, 용량 경고 기준을 정해야 한다.
 
