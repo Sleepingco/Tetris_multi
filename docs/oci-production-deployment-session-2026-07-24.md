@@ -17,6 +17,9 @@
 각 명령과 옵션의 학습용 설명은
 [OCI 운영 배포 명령어 해설](oci-production-deployment-command-guide-2026-07-24.md)을
 참고한다.
+중간 장애의 재현·원인·해결 과정은
+[OCI 운영 배포 트러블슈팅 기록](oci-production-deployment-troubleshooting-2026-07-24.md)에
+정리되어 있다.
 
 > 보안: 이 문서에는 password, private key, database URL 원문 또는 token 값을
 > 기록하지 않는다. `<...>` 표시는 실행 환경에 맞게 채워야 하는 값이다.

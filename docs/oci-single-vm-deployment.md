@@ -6,6 +6,11 @@
 명령과 option의 의미는
 [OCI 운영 배포 명령어 해설](oci-production-deployment-command-guide-2026-07-24.md)에
 정리되어 있다.
+실제 장애와 해결 과정은
+[OCI 운영 배포 트러블슈팅 기록](oci-production-deployment-troubleshooting-2026-07-24.md)에
+정리되어 있다.
+배포 완료 후 점검·backup·update·rollback은
+[PostgreSQL Event Storage 운영 Runbook](postgres-production-runbook.md)을 따른다.
 
 ## 고정 경계
 

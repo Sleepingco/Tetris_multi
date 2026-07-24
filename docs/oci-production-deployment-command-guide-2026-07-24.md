@@ -4,6 +4,9 @@
 
 이 문서는 [OCI 단일 VM 운영 배포 실행 기록](oci-production-deployment-session-2026-07-24.md)에
 사용된 명령을 나중에 다시 공부할 수 있도록 해설한다.
+실제 오류별 원인 추적은
+[OCI 운영 배포 트러블슈팅 기록](oci-production-deployment-troubleshooting-2026-07-24.md)을
+참고한다.
 
 실행 기록은 당시의 순서·출력·장애를 보존하고, 이 문서는 다음 질문에 답한다.
 

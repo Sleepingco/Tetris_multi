@@ -1,13 +1,181 @@
 # PostgreSQL Event Storage 운영 Runbook
 
-이 문서는 provider가 정해지기 전에도 적용할 수 있는 Goal 9D 운영 경계다. 실제 cloud 계정, VM 배치, database와 secret을 만들거나 production mode를 켜는 절차는 아니다. 구현 계약은 [PostgreSQL event storage blueprint](database-event-storage-blueprint.md), local rehearsal은 [production boundary script](../scripts/verify-postgres-production.sh)를 기준으로 한다.
+이 문서는 2026-07-24 활성화한 OCI 단일 VM production 운영 기준이다.
+
+- 공개 주소: `https://tetra-arena.duckdns.org`
+- application sink: PostgreSQL single-sink
+- application image 기준선: `tetris-app:2411cd3`
+- PostgreSQL: Docker internal network의 17.10
+- public ingress: Caddy의 80/443만 사용
+- PostgreSQL 5432: host에 publish하지 않음
+- Compose: `/srv/tetris/repository/compose.production.yml`
+- production env: `/srv/tetris/secrets/production.env`
+- backup: `/srv/tetris/backups`
+
+최초 배포 과정은 [OCI 배포 실행 기록](oci-production-deployment-session-2026-07-24.md),
+명령 설명은 [OCI 배포 명령어 해설](oci-production-deployment-command-guide-2026-07-24.md),
+장애 원인은 [OCI 배포 트러블슈팅 기록](oci-production-deployment-troubleshooting-2026-07-24.md)을
+참고한다. 구현 계약은
+[PostgreSQL event storage blueprint](database-event-storage-blueprint.md), local
+rehearsal은 [production boundary script](../scripts/verify-postgres-production.sh)를
+기준으로 한다.
+
+## 운영 원칙
+
+1. 정상 운영 중에는 `compose.production.yml`만 사용한다.
+2. application에는 runtime credential만 전달한다.
+3. migration은 application 시작과 분리해 명시적으로 실행한다.
+4. backup 파일의 존재만 믿지 않고 임시 DB restore를 정기적으로 확인한다.
+5. rollback에서 PostgreSQL row, volume과 JSONL 보존본을 삭제하지 않는다.
+6. 실제 사용자 data 삭제는 자동화하지 않는다.
+7. 명령 실행 전 prompt가 OCI인지 확인한다.
+
+```text
+ubuntu@primary-vnic:/srv/tetris/repository$
+```
+
+다음 명령은 운영 중 실행하지 않는다.
+
+```text
+docker compose down -v
+docker volume prune
+docker system prune --volumes
+DROP DATABASE tetris
+TRUNCATE tetris_analytics.game_events
+```
+
+## 운영 주기
+
+| 주기 | 작업 |
+|---|---|
+| 매일 또는 접속할 때 | container health, HTTPS, DB 최신 row, RAM/swap/disk 확인 |
+| 주 1회 | custom-format backup, hash와 dump 목록 확인 |
+| 월 1회 | 최신 backup을 임시 DB에 restore해 row와 owner 확인 |
+| 새 버전 배포 전 | local verify, production backup, migration 두 번, app만 교체 |
+| OS/kernel update | maintenance 시간 확보, backup 후 upgrade/reboot, 전체 재검증 |
+| 장애 발생 시 | 상태를 보존하고 service별 inspect/log 확인, volume 삭제 금지 |
+
+자동 backup·retention·무중단 배포는 아직 구성하지 않았다. 현재는 아래 절차를
+운영자가 수동으로 실행한다.
+
+## 일상 점검
+
+### 1. service와 HTTPS
+
+```bash
+cd /srv/tetris/repository
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    ps
+
+curl -fsS \
+    --retry 3 \
+    --retry-delay 2 \
+    --retry-all-errors \
+    -o /dev/null \
+    -w 'HTTPS_STATUS=%{http_code}\n' \
+    https://tetra-arena.duckdns.org
+```
+
+정상 기준:
+
+```text
+app       healthy
+postgres  healthy
+caddy     running
+HTTPS_STATUS=200
+```
+
+### 2. DB row와 최신 저장 시각
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    exec -T postgres \
+    psql \
+    --username postgres \
+    --dbname tetris \
+    --tuples-only \
+    --no-align \
+    --field-separator='|' \
+    --command="
+        SELECT
+            'events',
+            count(*),
+            coalesce(max(ingested_at)::text, 'none')
+        FROM tetris_analytics.game_events;
+
+        SELECT
+            event_type,
+            count(*)
+        FROM tetris_analytics.game_events
+        GROUP BY event_type
+        ORDER BY event_type;
+    "
+```
+
+row count는 계속 증가할 수 있다. 실제 게임이 있었는데 최신 `ingested_at`이
+갱신되지 않으면 application storage log를 확인한다.
+
+### 3. memory, swap과 disk
+
+```bash
+free -h
+swapon --show
+df -h /
+sudo docker stats --no-stream
+sudo docker system df
+```
+
+현재 기준:
+
+- VM available memory가 지속적으로 급감하지 않아야 한다.
+- container가 각 memory limit을 넘지 않아야 한다.
+- `OOMKilled`가 없어야 한다.
+- root filesystem 70%부터 원인을 확인하고, 85%에서는 배포를 중단한다.
+- swap 사용 자체보다 지속 증가와 latency 악화를 본다.
+
+OOM 확인:
+
+```bash
+for service in app postgres caddy; do
+    container_id=$(sudo docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f compose.production.yml \
+        ps -q "$service")
+
+    sudo docker inspect "$container_id" \
+        --format \
+        "$service status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{end}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}"
+done
+```
+
+### 4. 최근 storage 오류
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    logs --since=24h app \
+    | grep -E \
+        'write_failed|write_rejected|POSTGRES_EVENT|IDEMPOTENCY_CONFLICT' \
+    || echo "NO_STORAGE_ERRORS_IN_MATCHED_LOGS"
+```
+
+`NO_STORAGE_ERRORS_IN_MATCHED_LOGS`만으로 정상이라고 판단하지 않는다. service
+health, HTTPS와 DB 최신 row를 함께 확인한다.
 
 ## 역할과 credential
 
-서로 다른 credential 세 개를 secret manager에서 주입한다. URL, password와 CA private key를 image, repository, CI artifact나 log에 넣지 않는다.
+서로 다른 credential을 `/srv/tetris/secrets`에서 주입한다. URL, password와
+CA private key를 image, repository, CI artifact나 log에 넣지 않는다.
 
 - migration role: `tetris_analytics` schema와 migration/event table owner다. release 단계에서만 `MIGRATION_DATABASE_URL`로 사용하고 application HTTP startup과 동시에 migration을 실행하지 않는다.
 - runtime role: 제한된 schema `USAGE`, event column `INSERT`, idempotency와 migration version 확인에 필요한 column `SELECT`만 가진다. DDL, `UPDATE`, `DELETE`, `TRUNCATE`는 허용하지 않는다.
+- import role: 검증된 JSONL import에서만 제한된 `INSERT`와 `SELECT`를 사용한다.
 - maintenance role: retention 대상 조회와 승인된 `DELETE`만 수행한다. application에 이 credential을 주입하지 않는다.
 
 database와 role의 `search_path`는 `tetris_analytics, pg_catalog`로 제한한다. application query와 운영 query는 계속 schema-qualified 이름을 사용한다. `public` schema의 `CREATE`와 불필요한 `PUBLIC` 권한은 제거한다.
@@ -21,23 +189,202 @@ database와 role의 `search_path`는 `tetris_analytics, pg_catalog`로 제한한
 5. application은 `GAME_EVENT_STORAGE=postgres`와 runtime credential만 받고 JSONL writable volume은 mount하지 않는다. health가 green이 된 뒤 synthetic PVP/PVE event chain을 확인한다.
 6. pool 4, in-flight 16은 현재 검증값이다. provider latency를 측정한 뒤에만 별도 변경을 승인한다.
 
-활성화 전에는 [Goal 9D](../migration-harness/goals/09d-postgres-ci-release.md)의 hosted 네 job과 cache-miss clean run, provider 환경의 TLS·backup·restore rehearsal이 모두 green이어야 한다.
+새 application version을 활성화하기 전에는
+[Goal 9D](../migration-harness/goals/09d-postgres-ci-release.md)의 release gate와
+현재 OCI의 TLS·backup·restore 경계가 모두 green이어야 한다.
 
 ## Backup과 restore rehearsal
 
-- backup 책임자, 주기, 암호화, 보존 기간과 접근자를 provider 선택 시 기록한다.
-- 최초 활성화 전에 synthetic row만 있는 별도 database/namespace로 backup을 만들고 다른 임시 database에 restore한다.
-- restore 전후 row count와 ordered `event_id + event_sha256` digest를 비교한다. dump, URL, credential과 payload를 CI artifact로 업로드하지 않는다.
-- rehearsal database와 backup 임시 파일만 확인 후 제거한다. production table/row는 rollback이나 rehearsal에서 삭제하지 않는다.
+### 주간 custom-format backup
 
-Goal 9D local gate는 disposable PostgreSQL 17.10에서 custom-format backup/restore와 count/hash 불변을 검증한다. 이는 provider backup 정책의 대체가 아니다.
+OCI에서 실행한다.
+
+```bash
+(
+    set -euo pipefail
+    umask 077
+
+    timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+    backup="/srv/tetris/backups/tetris-${timestamp}.dump"
+    temporary="${backup}.tmp"
+
+    test ! -e "$backup"
+    test ! -e "$temporary"
+
+    cleanupTemporary() {
+        test ! -e "$temporary" \
+            || rm -f -- "$temporary"
+    }
+
+    trap cleanupTemporary EXIT
+
+    sudo docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f /srv/tetris/repository/compose.production.yml \
+        exec -T postgres \
+        pg_dump \
+        --username postgres \
+        --dbname tetris \
+        --format=custom \
+        > "$temporary"
+
+    test -s "$temporary"
+    mv "$temporary" "$backup"
+    chmod 400 "$backup"
+    trap - EXIT
+
+    sha256sum "$backup"
+    stat -c '%a %U:%G %s %n' "$backup"
+
+    sudo docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f /srv/tetris/repository/compose.production.yml \
+        exec -T postgres \
+        pg_restore --list \
+        < "$backup" \
+        >/dev/null
+)
+```
+
+성공 조건:
+
+- `.dump`가 0 byte가 아님
+- mode `400`, owner `ubuntu`
+- SHA-256 출력 보존
+- `pg_restore --list` 성공
+
+backup 파일이나 hash를 Git에 넣지 않는다. 오래된 backup을 자동 삭제하지 않는다.
+현재 backup은 같은 OCI VM disk에 있으므로 logical 복구에는 쓸 수 있지만 VM이나
+boot volume 전체 손실에는 대응하지 못한다. 암호화된 off-VM backup과 자동
+schedule은 별도 운영 작업으로 남아 있다.
+
+### 월간 restore rehearsal
+
+먼저 복원할 backup 경로를 직접 확인한다.
+
+```bash
+ls -lh /srv/tetris/backups
+sha256sum /srv/tetris/backups/<verified-backup>.dump
+```
+
+임시 DB 이름과 backup을 지정한다.
+
+```bash
+backup=/srv/tetris/backups/<verified-backup>.dump
+restore_db="tetris_restore_$(date -u +%Y%m%d%H%M%S)"
+
+test -s "$backup"
+printf 'restore_db=%s\nbackup=%s\n' \
+    "$restore_db" \
+    "$backup"
+```
+
+복원:
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f /srv/tetris/repository/compose.production.yml \
+    exec -T postgres \
+    createdb \
+    --username postgres \
+    --owner tetris_migration \
+    "$restore_db"
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f /srv/tetris/repository/compose.production.yml \
+    exec -T postgres \
+    pg_restore \
+    --username postgres \
+    --dbname "$restore_db" \
+    --exit-on-error \
+    < "$backup"
+```
+
+검증:
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f /srv/tetris/repository/compose.production.yml \
+    exec -T postgres \
+    psql \
+    --username postgres \
+    --dbname "$restore_db" \
+    --tuples-only \
+    --no-align \
+    --field-separator='|' \
+    --command="
+        SELECT 'migrations', count(*)
+        FROM tetris_analytics.schema_migrations;
+
+        SELECT 'events', count(*)
+        FROM tetris_analytics.game_events;
+
+        SELECT 'owner', tablename, tableowner
+        FROM pg_tables
+        WHERE schemaname = 'tetris_analytics'
+        ORDER BY tablename;
+    "
+```
+
+확인 후 임시 DB만 삭제한다.
+
+```bash
+printf 'drop restore database only: %s\n' "$restore_db"
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f /srv/tetris/repository/compose.production.yml \
+    exec -T postgres \
+    dropdb \
+    --username postgres \
+    --force \
+    "$restore_db"
+```
+
+`restore_db`가 `tetris`이면 실행하지 않는다.
+
+Goal 9D local gate는 disposable PostgreSQL 17.10에서 custom-format
+backup/restore와 count/hash 불변을 검증한다. 이는 실제 OCI backup이나 off-VM
+복구 연습의 대체가 아니다.
 
 ## 용량과 보존
 
 - raw event retention 목표: 90일.
-- `pg_total_relation_size('tetris_analytics.game_events')`와 provider quota를 함께 관찰한다.
+- `pg_total_relation_size('tetris_analytics.game_events')`와 VM root filesystem
+  사용량을 함께 관찰한다.
 - quota 70%에서 warning, 85%에서 emergency로 알리고 신규 용량 계획 또는 수동 retention 승인을 요청한다.
-- Goal 9D는 자동 삭제를 만들지 않는다. 실제 사용자 row 삭제 승인 주체는 프로젝트 운영자인 사용자다.
+- 자동 삭제는 아직 없다. 실제 사용자 row 삭제 승인 주체는 프로젝트 운영자인 사용자다.
+
+월간 size 확인:
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    exec -T postgres \
+    psql \
+    --username postgres \
+    --dbname tetris \
+    --tuples-only \
+    --no-align \
+    --field-separator='|' \
+    --command="
+        SELECT
+            'game_events',
+            count(*),
+            pg_size_pretty(
+                pg_total_relation_size(
+                    'tetris_analytics.game_events'
+                )
+            ),
+            min(ingested_at),
+            max(ingested_at)
+        FROM tetris_analytics.game_events;
+    "
+```
 
 수동 retention은 다음 순서를 모두 지킨다.
 
@@ -55,13 +402,412 @@ PostgreSQL event 수집은 승인된 best-effort 경계다. write는 최대 3회
 
 DB 장애 중 gameplay, retry 시간, in-flight 상한과 ticker cadence를 함께 확인한다. strict lossless가 필요해지면 현재 설정을 확대하지 않고 durable outbox를 별도 Goal로 설계한다.
 
+### app unhealthy
+
+```bash
+app_id=$(sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    ps -q app)
+
+sudo docker inspect "$app_id" \
+    --format \
+    'status={{.State.Status}} health={{.State.Health.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    logs --tail=200 app
+```
+
+원인을 확인하기 전에 container나 volume을 삭제하지 않는다. 일시적인 process
+문제로 판단된 경우 app만 restart한다.
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    restart app
+```
+
+### PostgreSQL unhealthy
+
+```bash
+postgres_id=$(sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    ps -q postgres)
+
+sudo docker inspect "$postgres_id" \
+    --format \
+    'status={{.State.Status}} health={{if .State.Health}}{{.State.Health.Status}}{{end}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}} restarts={{.RestartCount}}'
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    logs --tail=200 postgres
+```
+
+disk full, permission, TLS와 OOM을 먼저 확인한다. volume은 유지한 채 PostgreSQL만
+restart할 수 있다.
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    restart postgres
+```
+
+PostgreSQL이 healthy가 된 뒤 app health와 최신 DB row를 다시 확인한다. 장애
+동안 best-effort event 일부가 유실될 수 있으므로 incident 시간 범위를 기록한다.
+
+### HTTPS failure
+
+```bash
+getent ahostsv4 tetra-arena.duckdns.org
+sudo iptables -L INPUT -n --line-numbers
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    logs --tail=200 caddy
+
+curl -I http://tetra-arena.duckdns.org
+curl -I https://tetra-arena.duckdns.org
+```
+
+정상은 HTTP `308`, HTTPS `200`이다. Caddy certificate volume을 삭제하지 않는다.
+
+## 새 application version 배포
+
+무중단 배포는 아직 없다. 사용자가 적은 시간에 짧은 app 교체가 발생한다.
+
+### 1. Mac에서 검증
+
+```bash
+git status --short
+source ~/.nvm/nvm.sh
+nvm exec 24.18.0 bash scripts/verify.sh
+
+release_sha=$(git rev-parse --short HEAD)
+printf 'release_sha=%s\n' "$release_sha"
+```
+
+배포 source와 commit을 일치시키고 immutable image tag로 `$release_sha`를
+사용한다. dirty working tree는 먼저 범위를 확인한다.
+
+### 2. OCI source와 image 준비
+
+검증된 artifact를 OCI에 전송하고 SHA-256을 비교한다. 자세한 archive/SCP 절차는
+[배포 실행 기록](oci-production-deployment-session-2026-07-24.md#5-source-artifact-전송)을
+따른다.
+
+OCI에서 새 source를 기존 운영 directory와 분리해 푼다.
+
+```bash
+new_tag=<new-approved-sha>
+artifact="/tmp/tetris-${new_tag}.tar.gz"
+build_directory="/srv/tetris/builds/${new_tag}"
+
+test -s "$artifact"
+sha256sum "$artifact"
+
+sudo install -d \
+    -o ubuntu \
+    -g ubuntu \
+    -m 750 \
+    "$build_directory"
+
+tar -tzf "$artifact" >/dev/null
+tar -xzf "$artifact" \
+    -C "$build_directory"
+
+test -f "$build_directory/compose.production.yml"
+test -f "$build_directory/Dockerfile"
+test -f "$build_directory/package.json"
+
+cd "$build_directory"
+
+sudo env APP_IMAGE_TAG="$new_tag" \
+    docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    config --quiet
+
+sudo env APP_IMAGE_TAG="$new_tag" \
+    docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    build app
+
+sudo docker image inspect "tetris-app:${new_tag}" \
+    --format \
+    'tags={{json .RepoTags}} architecture={{.Architecture}} size={{.Size}}'
+
+cd /srv/tetris/repository
+```
+
+application source만 바뀌고 Compose/Caddyfile이 그대로라면 실행 중 stack의
+`/srv/tetris/repository`를 덮어쓰지 않는다. production app은 build directory가
+아니라 새 image에서 실행된다.
+
+`compose.production.yml` 또는 `Caddyfile`도 바뀌었다면 자동으로 덮어쓰지 않는다.
+local release test, `docker compose config`, 기존 파일 backup과 별도 maintenance
+승인 후 `/srv/tetris/repository`의 해당 파일만 교체한다.
+
+이전 image는 rollback 확인이 끝날 때까지 삭제하지 않는다.
+
+### 3. 배포 전 backup
+
+위의 주간 backup 절차를 한 번 실행한다. backup과 `pg_restore --list`가
+성공하기 전 migration으로 넘어가지 않는다.
+
+### 4. migration
+
+새 image로 migration을 두 번 실행한다.
+
+```bash
+sudo docker run --rm \
+    --network tetris_database \
+    --mount \
+        type=bind,src=/srv/tetris/certs/ca.crt,dst=/run/secrets/postgres-ca.crt,readonly \
+    --env-file /srv/tetris/secrets/migration.env \
+    --env NODE_EXTRA_CA_CERTS=/run/secrets/postgres-ca.crt \
+    "tetris-app:${new_tag}" \
+    node dist/server/server/db/migrateCli.js
+```
+
+첫 실행은 pending migration을 적용하고 두 번째 실행은 전부 `skipped`여야 한다.
+migration 실패 시 기존 app을 유지하고 배포를 중단한다.
+
+### 5. active image tag 갱신
+
+현재 tag를 먼저 기록한다.
+
+```bash
+current_tag=$(sed -n \
+    's/^APP_IMAGE_TAG=//p' \
+    /srv/tetris/secrets/production.env)
+
+printf 'current=%s new=%s\n' \
+    "$current_tag" \
+    "$new_tag"
+```
+
+env 파일을 atomic하게 교체한다.
+
+```bash
+(
+    set -euo pipefail
+    umask 077
+
+    env_file=/srv/tetris/secrets/production.env
+    temporary=$(mktemp /srv/tetris/secrets/production.env.XXXXXX)
+
+    cleanupTemporary() {
+        test ! -e "$temporary" \
+            || rm -f -- "$temporary"
+    }
+
+    trap cleanupTemporary EXIT
+
+    sed \
+        "s/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=${new_tag}/" \
+        "$env_file" \
+        > "$temporary"
+
+    test "$(grep -c '^APP_IMAGE_TAG=' "$temporary")" -eq 1
+    chmod 600 "$temporary"
+    mv "$temporary" "$env_file"
+    trap - EXIT
+)
+```
+
+### 6. app만 교체
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    up -d \
+    --no-deps \
+    --no-build \
+    --force-recreate \
+    --wait \
+    app
+```
+
+Caddy와 PostgreSQL은 재생성하지 않는다.
+
+### 7. 배포 검증
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    ps
+
+curl -fsS \
+    --retry 10 \
+    --retry-delay 2 \
+    --retry-all-errors \
+    -o /dev/null \
+    -w 'HTTPS_STATUS=%{http_code}\n' \
+    https://tetra-arena.duckdns.org
+
+app_id=$(sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    ps -q app)
+
+sudo docker inspect "$app_id" \
+    --format \
+    'image={{.Config.Image}} status={{.State.Status}} health={{.State.Health.Status}} oom={{.State.OOMKilled}}'
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    logs --tail=100 app
+```
+
+브라우저에서 한 게임을 완료하고 DB row가 증가하는지 확인한다.
+
 ## Rollback
 
-1. 신규 DB write를 차단하고 event 생산자를 정지한 뒤 기존 in-flight write를 최대 3초 drain한다.
-2. PostgreSQL pool을 닫고 Socket.IO/HTTP close를 완료한다. 전체 shutdown hard deadline은 8초다.
-3. 검증된 이전 application image를 선택한다.
-4. `GAME_EVENT_STORAGE=jsonl`을 명시하고 보존된 JSONL writable volume/path를 복구한다.
-5. PostgreSQL row와 기존 JSONL은 삭제하지 않는다. migration down/drop도 자동 rollback에 포함하지 않는다.
-6. JSONL health와 새 event append를 확인한 뒤 incident와 잠재 event loss 구간을 기록한다.
+새 application version만 실패했다면 이전 PostgreSQL application image로 되돌린다.
+migration down이나 row 삭제는 하지 않는다.
 
-현재 production PostgreSQL은 활성화되지 않았다. 이 runbook 작성이나 Goal 9D local rehearsal은 production database provisioning, 실제 JSONL import 또는 배포 승인을 뜻하지 않는다.
+```bash
+rollback_tag=<previous-verified-tag>
+printf 'rollback_tag=%s\n' "$rollback_tag"
+
+sudo docker image inspect "tetris-app:${rollback_tag}" \
+    >/dev/null
+```
+
+위의 “active image tag 갱신” 절차에서 `new_tag` 대신 `rollback_tag`를 넣어
+`production.env`를 교체한 뒤 app만 다시 만든다.
+
+```bash
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    up -d \
+    --no-deps \
+    --no-build \
+    --force-recreate \
+    --wait \
+    app
+```
+
+health, HTTPS와 DB write를 다시 검증한다. 새 migration이 이전 image와 호환되지
+않는다면 application rollback으로 해결되지 않으므로 배포 전 migration
+호환성을 확인해야 한다.
+
+PostgreSQL 전체를 사용할 수 없어 JSONL mode로 긴급 복구할 때만
+[배포 실행 기록의 rollback 명령](oci-production-deployment-session-2026-07-24.md#rollback-명령)을
+사용한다. PostgreSQL row와 volume, 기존 JSONL과 snapshots는 삭제하지 않는다.
+
+## Ubuntu update와 reboot
+
+maintenance 시간을 잡고 최신 backup을 확인한 뒤 실행한다.
+
+```bash
+sudo apt update
+apt list --upgradable
+sudo DEBIAN_FRONTEND=noninteractive apt upgrade -y
+```
+
+reboot 필요 여부:
+
+```bash
+test -f /var/run/reboot-required \
+    && echo "REBOOT_REQUIRED" \
+    || echo "NO_REBOOT_REQUIRED"
+```
+
+필요하면:
+
+```bash
+sudo reboot
+```
+
+SSH가 일시적으로 끊기는 것은 정상이다. 재접속 후 다음을 확인한다.
+
+```bash
+uname -r
+sudo systemctl is-active docker
+
+cd /srv/tetris/repository
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    ps
+
+curl -I https://tetra-arena.duckdns.org
+free -h
+swapon --show
+```
+
+자동 `apt autoremove`, Docker volume prune와 old image 삭제는 운영 확인과
+rollback 보존 기간이 끝난 뒤 별도 검토한다.
+
+## TLS와 credential 운영
+
+- Caddy public certificate는 `caddy_data` volume에 보존되고 자동 갱신된다.
+- private PostgreSQL CA와 server certificate는 자동 갱신되지 않는다.
+- certificate 만료 30일 전 별도 maintenance에서 교체한다.
+- password rotation은 PostgreSQL role password와 해당 env 파일을 같은
+  maintenance 작업에서 교체한다.
+- private key나 password 원문을 terminal, Git, issue와 문서에 붙이지 않는다.
+
+public HTTPS certificate 확인:
+
+```bash
+openssl s_client \
+    -connect tetra-arena.duckdns.org:443 \
+    -servername tetra-arena.duckdns.org \
+    </dev/null 2>/dev/null \
+    | openssl x509 \
+        -noout \
+        -subject \
+        -issuer \
+        -dates
+```
+
+private PostgreSQL certificate 확인:
+
+```bash
+openssl verify \
+    -CAfile /srv/tetris/certs/ca.crt \
+    /srv/tetris/certs/postgres.crt
+
+openssl x509 \
+    -in /srv/tetris/certs/postgres.crt \
+    -noout \
+    -checkhost postgres \
+    -dates
+```
+
+## 운영 기록에 남길 값
+
+점검이나 배포마다 다음만 기록한다.
+
+- UTC 시각
+- application image tag와 image ID
+- app/PostgreSQL/Caddy health
+- HTTPS status
+- DB total rows와 latest `ingested_at`
+- backup 파일명, bytes와 SHA-256
+- restore rehearsal DB 이름과 결과
+- RAM available, swap과 disk 사용량
+- storage error code와 발생 시간
+- rollback 여부와 잠재 event loss 구간
+
+기록하지 않는 값:
+
+- password
+- full database URL
+- private key
+- DuckDNS token
+- raw user payload

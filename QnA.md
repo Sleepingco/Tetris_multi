@@ -4917,3 +4917,207 @@ PVE timing flake는 AI ticker, timer, game loop의 실행 순서가 CI 부하나
 어떤 버그가 있었고 어떻게 검증했는가?
 무엇을 아직 해결하지 않았는가?
 ```
+
+## Q. 최근 CI, PostgreSQL, OCI, Docker Compose 질문 정리 (2026-07-23 ~ 2026-07-24)
+
+### 1. Goal 11E에서 게임이 아니라 테스트가 실패했다는 것은 무슨 뜻인가?
+
+Goal 11E의 실패 원인은 T-Spin 또는 garbage 게임 규칙이 고장난 것이 아니라, E2E 테스트가 너무 이른 순간의 화면 값을 정답으로 가정한 timing 문제였다.
+
+```txt
+기존 테스트
+키 입력
+-> 특정 순간의 row/score/pending 값 확인
+-> server gravity 또는 AI event가 먼저 실행되면 실패
+
+수정 방향
+키 입력
+-> server authoritative snapshot과 최종 board/score/pieceIndex 대기
+-> 확정된 결과 확인
+```
+
+T-Spin에서는 과거 snapshot 중 `row === 16`이었던 적이 있다는 사실만 확인한 뒤 회전과 hard drop을 보냈다. 그 사이 gravity가 조각을 lock하면 다음 조각에 입력이 들어갈 수 있으므로 `scoreDelta = 0`이 나올 수 있다.
+
+```txt
+올바른 검증 순서
+1. 최신 snapshot에서 같은 T 조각과 pieceIndex 확인
+2. rotate 후 최신 snapshot에서 wall kick 회전 성공 확인
+3. 그 뒤 hard drop
+4. 최종 scoreDelta, board, pieceIndex 확인
+```
+
+강화된 precondition에서도 회전 전에 조각이 lock된다면 그때는 테스트 문제가 아니라 server lock delay 또는 gravity 규칙 문제로 분리 조사해야 한다.
+
+### 2. 문서의 줄 끝 공백 때문에 왜 CI가 멈추는가?
+
+CI Fast gate는 테스트 전에 `git diff --check`를 실행한다.
+
+```txt
+문서 줄 끝의 공백 두 칸
+-> git diff --check가 whitespace error로 판단
+-> Fast gate 실패
+-> Fast gate에 의존하는 Browser/Docker job은 skip
+```
+
+Markdown에서는 줄 끝 공백 두 칸이 줄바꿈 문법이 될 수 있다. 하지만 이 저장소는 모든 변경 diff에 trailing whitespace가 없어야 한다는 Git 규칙을 적용한다.
+
+```txt
+게임 코드 문제 X
+문서 내용 문제 X
+변경 파일 형식 규칙 위반 O
+```
+
+### 3. force-push 뒤 CI가 이전 SHA를 못 찾아 실패한 것은 무슨 뜻인가?
+
+일반 push CI는 변경분을 검사하려고 이전 SHA와 현재 SHA를 비교한다.
+
+```txt
+git diff --check <이전 SHA>..<현재 SHA>
+```
+
+force-push로 원격 branch 이력이 다시 작성되면 이전 SHA가 현재 branch 계보에서 사라질 수 있다. 이때 Fast gate가 테스트 시작 전 실패하고, `needs: fast`인 Browser/Docker job은 실행되지 않는다.
+
+```txt
+shallow checkout 문제 X
+사라진 이전 SHA를 비교 대상으로 사용한 문제 O
+```
+
+이 경우 기존 실패 run을 재실행하지 않고 GitHub Actions에서 `Run workflow`를 사용해 현재 `main` SHA로 새 수동 실행을 한다. 수동 실행은 이전 push SHA가 아니라 현재 커밋 자체를 검사할 수 있다.
+
+### 4. DB 작업에서 migration이라는 표현은 왜 쓰는가?
+
+DB migration은 데이터를 다른 서버로 옮기는 것만 뜻하지 않는다. DB table, column, index, constraint 같은 schema를 버전별로 생성·변경하는 작업이다.
+
+```txt
+migration 001
+-> CREATE TABLE game_events
+
+migration 002
+-> ALTER TABLE ... ADD COLUMN ...
+```
+
+개발 DB, 테스트 DB, 배포 DB가 모두 코드가 기대하는 같은 구조를 갖도록 만드는 장치다.
+
+```txt
+코드는 새 column을 사용
+-> 배포 DB에 column 없음
+-> runtime error
+```
+
+그래서 배포 전에 migration을 명시적으로 실행해 DB 구조를 맞춘다.
+
+### 5. Goal 9A~9D는 각각 무엇을 하는가?
+
+Goal 9는 단순 전적 table 하나가 아니라, 사용자 gameplay event를 장기적으로 저장하고 학습 데이터로도 활용할 수 있는 저장 파이프라인이다.
+
+```txt
+9A: DB 자체의 기초 공사
+9B: 실제 game server와 DB 연결
+9C: 기존 JSONL history import
+9D: CI/Docker/release 환경 검증
+```
+
+각 단계는 다음 책임을 가진다.
+
+```txt
+9A Schema, Migration, Repository
+-> game_events table 생성
+-> raw SQL migration runner
+-> duplicate/conflict 구분
+-> PostgreSQL에 한 event를 안전하게 insert
+-> 아직 gameplay는 DB에 저장하지 않음
+
+9B Runtime Storage
+-> game_start, placement_decision, game_over를 server에서 DB에 저장
+-> JSONL 또는 PostgreSQL 중 하나의 sink만 선택
+-> 개인정보 제거, trust level 구분
+-> DB 실패가 gameplay를 rollback하지 않도록 처리
+
+9C JSONL Backfill
+-> 기존 game-events.jsonl을 한 줄씩 읽음
+-> legacy schema 검증과 개인정보 제거
+-> 중복 없이 DB로 import
+-> lifecycle/placement 누락 보고
+
+9D CI and Release
+-> GitHub Actions의 실제 PostgreSQL service 검증
+-> Docker app과 DB network/shutdown 확인
+-> migration 재실행, runtime 저장, import가 clean 환경에서 되는지 확인
+```
+
+이렇게 나누는 이유는 schema 문제, runtime 연결 문제, 과거 로그 변환 문제, 배포 환경 문제를 한 변경에서 섞지 않기 위해서다.
+
+단, `users`, `match_results`, score ranking, rating만 만들 목적이라면 Goal 9 전체는 과하다. 그 경우에는 다음처럼 더 작은 DB 기능부터 시작하는 편이 맞다.
+
+```txt
+users table
+match_results table
+
+게임 종료
+-> 결과 한 행 INSERT
+-> 승률/점수/ranking SELECT
+```
+
+Goal 9는 ML용 placement event와 개인정보 정제, 기존 JSONL history까지 다루려는 큰 범위다.
+
+### 6. OCI Always Free VM 한 대에서 app과 PostgreSQL을 같이 돌릴 수 있는가?
+
+가능하다. 월 운영비 0원을 우선한다면 Render와 외부 DB를 분리하는 것보다 단순한 구조다.
+
+```txt
+OCI Always Free Linux VM
+├─ app container: Express + Socket.IO
+└─ postgres container: PostgreSQL
+```
+
+두 container는 같은 Docker network에서 통신하고 PostgreSQL 포트는 외부 인터넷에 열지 않는다.
+
+```txt
+Node app container
+-> postgres:5432
+```
+
+DB와 JSONL의 실제 데이터는 VM 디스크에 volume으로 연결한다.
+
+```txt
+/srv/tetris/postgres-data
+-> PostgreSQL volume
+
+/srv/tetris/logs
+-> JSONL log volume
+```
+
+app container를 새 image로 교체해도 VM 디스크의 DB 데이터와 로그는 유지된다. 단, VM 한 대이므로 app과 DB가 함께 중단될 수 있고, PostgreSQL backup과 server 보안·업데이트는 직접 관리해야 한다.
+
+OCI의 Always Free Autonomous Database는 Oracle Database다. 현재 프로젝트의 `pg` 기반 PostgreSQL 코드와 직접 호환되는 서비스가 아니므로, 이 프로젝트에서는 VM 안에 PostgreSQL을 직접 실행하는 쪽이 맞다.
+
+### 7. Docker Compose YAML은 다른 컴퓨터에서도 같은 container를 만드는 설정인가?
+
+맞다. `compose.yml`은 여러 container를 함께 어떻게 실행하고 연결할지 선언하는 파일이다.
+
+```yaml
+services:
+  app:
+    build: .
+    ports:
+      - "5500:5500"
+
+  postgres:
+    image: postgres:16
+```
+
+다른 컴퓨터에서 Docker를 설치하고 repository를 받은 뒤 다음을 실행하면 같은 app/PostgreSQL 구조를 만들 수 있다.
+
+```bash
+docker compose up --build
+```
+
+```text
+Dockerfile
+= app image를 어떻게 build할지
+
+compose.yml
+= app, PostgreSQL, network, volume을 어떻게 함께 실행할지
+```
+
+다만 YAML은 container 구성만 재현한다. 기존 PostgreSQL 데이터와 JSONL 로그를 다른 컴퓨터로 옮기려면 volume backup/restore가 별도로 필요하다.
