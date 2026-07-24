@@ -2,6 +2,16 @@
 
 Vite multi-page React·TypeScript UI와 Canvas 게임 엔진, server-authoritative Socket.IO 멀티플레이를 결합한 실시간 Tetris 프로젝트다. 싱글플레이, PVP, 휴리스틱 PVE와 사용자 선택형 placement 모방 AI를 제공한다.
 
+[Live demo](https://tetra-arena.duckdns.org)
+
+## 현재 진행 상태
+
+- 포트폴리오 MVP: Single, 2인 PVP, heuristic PVE와 opt-in Experimental V4 PVE 구현 완료
+- 기술 전환: Vite multi-page, page-local React, client/server TypeScript와 shared Zod contract 적용 완료
+- 운영 기준선: OCI 단일 VM에 Caddy HTTPS, Docker Compose와 PostgreSQL single sink 배포 완료
+- 검증 기준선: 최신 `main`의 Fast, Chromium, production container와 PostgreSQL CI 네 job 통과
+- 다음 범위: 정기 backup/retention·용량 경고, 장시간 운영과 다중 browser 검증, 배포 자동화
+
 이 프로젝트의 핵심은 기능 수보다 다음 문제를 직접 다룬 데 있다.
 
 - 빠른 조작감과 서버가 소유하는 최종 게임 상태를 함께 유지한다.
@@ -19,7 +29,7 @@ Vite multi-page React·TypeScript UI와 Canvas 게임 엔진, server-authoritati
 - Experimental PVE: 125게임 placement 선택을 학습한 V4 후보를 명시적으로 선택해 체험
 - 연결 복구: session token rotation, reconnect sync, stale input 차단
 - 사용자 설정: theme, lobby/game sound
-- 분석 데이터: 검증된 placement/game event를 append-only JSONL로 저장
+- 분석 데이터: 검증된 placement/game event를 local/test에서는 JSONL, production에서는 PostgreSQL single sink로 저장
 
 ## 핵심 설계
 
@@ -32,7 +42,9 @@ flowchart LR
     Socket --> Services["Room · Match · Session · Ticker services"]
     Services --> Core["Shared game core"]
     Services --> AI["Heuristic / Experimental V4 AI"]
-    Services --> Logs["Validated JSONL events"]
+    Services --> Logs["Validated game events"]
+    Logs --> Local["Local/Test JSONL"]
+    Logs --> Production["Production PostgreSQL"]
 ```
 
 | 문제 | 선택 | 결과 |
@@ -51,8 +63,9 @@ flowchart LR
 | Server | Node.js 24, Express 5, Socket.IO 4 |
 | Contract·Security | Zod 4, typed Socket events, CSP, exact Origin validation, rate limiting |
 | Game·AI | server-authoritative state, heuristic placement search, experimental pairwise ranker |
+| Storage | local/test JSONL, production PostgreSQL 17.10 |
 | Test | node:test, Playwright, source-less production release tests |
-| Delivery | multi-stage Docker, non-root runtime, read-only root, healthcheck, graceful shutdown |
+| Delivery | multi-stage Docker, Docker Compose, Caddy HTTPS, non-root/read-only app, healthcheck, graceful shutdown |
 
 ## 실행
 
@@ -77,16 +90,17 @@ npm run dev
 
 브라우저에서 `http://127.0.0.1:5173`으로 접속한다. Vite는 `/socket.io`를 기본 server인 `http://127.0.0.1:5500`으로 proxy한다.
 
-### Production artifact
+### 로컬 production artifact
 
 ```bash
 npm run build
 NODE_ENV=production \
+GAME_EVENT_STORAGE=jsonl \
 SOCKET_ALLOWED_ORIGINS=http://127.0.0.1:5500 \
 npm start
 ```
 
-`npm start`는 build를 다시 실행하지 않고 compiled entry인 `dist/server/app.js`를 시작한다. 실제 배포에서는 `SOCKET_ALLOWED_ORIGINS`를 공개 HTTPS origin으로 바꾼다. 배포 artifact에는 first-party TypeScript source와 source map을 포함하지 않는다.
+이 예시는 JSONL single sink로 compiled entry인 `dist/server/app.js`를 실행한다. `npm start`는 build를 다시 실행하지 않는다. 배포 artifact에는 first-party TypeScript source와 source map을 포함하지 않는다.
 
 ### Docker
 
@@ -96,12 +110,19 @@ docker build -t tetris-multi:local .
 docker run --rm --read-only \
   -p 5500:5500 \
   -e SOCKET_ALLOWED_ORIGINS=http://127.0.0.1:5500 \
+  -e GAME_EVENT_STORAGE=jsonl \
   -e GAME_EVENTS_LOG_PATH=/app/data/logs/game-events.jsonl \
   -v tetris-multi-logs:/app/data/logs \
   tetris-multi:local
 ```
 
-컨테이너는 built-in `node` 사용자로 실행되고 `/app/data/logs`만 영속 volume으로 쓴다.
+로컬 예시는 JSONL single sink를 사용한다. 컨테이너 앱은 built-in `node` 사용자와 read-only root filesystem으로 실행된다.
+
+### 공개 배포
+
+[공개 서비스](https://tetra-arena.duckdns.org)는 OCI 단일 VM에서 Caddy HTTPS, application과 PostgreSQL 17.10을 Docker Compose로 실행한다. 외부에는 80/443만 공개하고 application과 PostgreSQL은 Docker network 안에 둔다.
+
+production은 PostgreSQL single sink만 사용한다. 기존 JSONL 131건은 멱등 import했고 실제 게임 뒤 195행까지 증가한 event가 app 재시작 뒤에도 보존되는 것을 확인했다. 최초 backup/restore rehearsal도 완료했다. 재배포와 운영 절차는 [OCI 단일 VM 배포 Runbook](docs/oci-single-vm-deployment.md)과 [PostgreSQL 운영 Runbook](docs/postgres-production-runbook.md)을 따른다.
 
 ## 검증
 
@@ -121,15 +142,12 @@ npm run verify:ml
 
 `verify:ml`은 [environment-ml.yml](environment-ml.yml)의 `tetris-ml` Conda 환경이 필요하다.
 
-[2026-07-22 Goal 11C 검증 기준](migration-harness/runs/goal-11c-2026-07-22.md):
+[2026-07-24 최신 `main` Migration CI](https://github.com/Sleepingco/Tetris_multi/actions/runs/30055917173):
 
-- Node tests: 594 pass, 기존 조건부 1 skip
-- production Playwright: 37/37 pass
-- Vite-dev Playwright: 10 pass, production-only 2 skip
-- container PVP/PVE: 6/6 pass
-- production/full `npm audit`: known vulnerability 0
-- Docker: linux/arm64, 약 88 MB, health `starting → healthy`
-- SIGTERM: 0.16초, exit code 0
+- Fast gate: typecheck, clean build, artifact, Node 644개 중 643 pass·기존 조건부 1 skip, source-less release 1/1 통과
+- Chromium PVP/PVE: Vite development lifecycle과 production browser 36/36 통과
+- Production container smoke 통과
+- PostgreSQL event storage: PostgreSQL 17.10 integration 8/8, JSONL import, production-like release와 backup/restore gate 통과
 
 ## 보안과 운영 경계
 
@@ -139,6 +157,7 @@ npm run verify:ml
 - CSP는 기본 enforce이며 필요한 외부 연결만 `CSP_CONNECT_ORIGINS`로 추가한다.
 - rate limit과 placement log의 private field 차단·256 KiB 제한을 적용한다.
 - production image에는 source, test, dev tool, `.env`와 credential을 넣지 않는다.
+- 공개 OCI 배포는 Caddy HTTPS와 same-origin Socket.IO를 사용하고 PostgreSQL 연결은 TLS `verify-full`로 검증한다.
 
 ## AI 정책
 
@@ -150,13 +169,13 @@ npm run verify:ml
 
 - room, match, session과 limiter는 단일 Node process memory에 있다.
 - 재배포하면 진행 중인 경기는 이어지지 않는다.
-- 분석 로그는 단일 instance의 JSONL volume을 사용한다.
+- production 분석 event는 PostgreSQL에 보존하지만 room과 match 상태는 재시작 후 복구하지 않는다.
 - 게임 조작과 레이아웃은 desktop keyboard·Chromium 중심으로 검증했다.
-- WebKit/Firefox, 외부 TLS/reverse proxy와 장시간 soak는 아직 검증하지 않았다.
-- GitHub Actions CI workflow는 `main`에 반영됐다. PR clean run은 통과했지만, 첫 `main` push에서 기존 PVE T-Spin E2E 1건의 timing flake가 확인돼 main green 복구가 남아 있다.
-- branch protection과 공개 배포·CD workflow는 다음 운영 단계다.
+- WebKit/Firefox, 최종 production stack의 VM reboot recovery, Caddy 인증서 실제 갱신 주기와 장시간 soak는 아직 검증하지 않았다.
+- 공개 HTTPS 배포는 완료했지만 배포는 단일 VM·단일 app instance의 수동 운영이다.
+- 정기 PostgreSQL backup/retention, 용량 경고와 무중단 배포 자동화는 아직 구현하지 않았다.
 
-Redis·Kubernetes·다중 인스턴스·PostgreSQL 전환은 현재 요구 없이 복잡도만 늘리지 않도록 보류했다. 확장이 실제로 필요해지면 Socket.IO session affinity와 shared adapter, 외부 상태 저장소를 함께 설계해야 한다.
+Redis·Kubernetes·다중 인스턴스 운영은 현재 요구 없이 복잡도만 늘리지 않도록 보류했다. 확장이 실제로 필요해지면 Socket.IO session affinity와 shared adapter, room/match 외부 상태 저장소를 함께 설계해야 한다.
 
 ## 문서
 
@@ -164,4 +183,7 @@ Redis·Kubernetes·다중 인스턴스·PostgreSQL 전환은 현재 요구 없�
 - [기술 마이그레이션 로드맵](migration-harness/roadmap.md)
 - [AI/ML 문서 안내](docs/README.md)
 - [게임 로그·데이터셋 정책](docs/game-log-dataset-policy.md)
+- [OCI 단일 VM 배포 Runbook](docs/oci-single-vm-deployment.md)
+- [PostgreSQL 운영 Runbook](docs/postgres-production-runbook.md)
+- [OCI 실제 배포 실행 기록](docs/oci-production-deployment-session-2026-07-24.md)
 - [변경 기록](change-log.md)
