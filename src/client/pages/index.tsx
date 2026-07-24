@@ -111,7 +111,7 @@ function IndexPage() {
                     <a className="card" href="./multiLobby.html" data-multi-lobby-link
                         onClick={enterMultiLobby}>
                         <div className="card-title">Online</div>
-                        <div className="card-desc">웹소켓 멀티 대전 — 대기실/매칭은 순차 오픈 예정</div>
+                        <div className="card-desc">웹소켓 멀티 대전 — 게임 로그는 AI 학습에 사용될 수 있습니다.</div>
                         <div className="card-cta">입장하기 →</div>
                     </a>
                 </section>
@@ -131,7 +131,7 @@ function IndexPage() {
             <footer className="footer">
                 <span>© <span id="year">{new Date().getFullYear()}</span> Tetris Multi</span>
                 <span className="dot">•</span>
-                <a href="https://github.com/" target="_blank" rel="noreferrer">GitHub</a>
+                <a href="https://github.com/Sleepingco/Tetris_multi" target="_blank" rel="noreferrer">GitHub</a>
             </footer>
         </div>
     );
