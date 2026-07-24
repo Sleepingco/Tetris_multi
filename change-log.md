@@ -2451,11 +2451,14 @@ client input
 - production/full npm audit 0건, Node 592 pass·기존 조건부 1 skip, release 1/1, production Playwright 35/35와 ML Node 35/35·Python 115/115를 통과했다.
 - 최종 `a18801c`까지 main에 반영했다. Conda 환경은 exact top-level pin이지만 전체 transitive build lockfile은 아니라는 한계가 남아 있다.
 
-## 브라우저 BGM 재생 복구
+## 브라우저 BGM 자동재생 복구와 버튼 상태 동기화
 
-- 사운드 설정이 켜져 있어도 browser autoplay 정책으로 첫 BGM 재생이 차단되면 음악이 계속 재생되지 않던 문제를 수정했다.
-- 차단된 재생만 trusted user interaction 뒤 한 번 다시 시도하고, sound 설정과 기존 page lifecycle은 유지했다.
-- 수정 `65b1903`은 index와 single lifecycle E2E로 검증한 뒤 Goal 11C branch에 동기화했다.
+- 1차 수정에서는 browser autoplay 정책으로 차단된 BGM을 닉네임 입력창 클릭이나 게임 키 입력 같은 trusted user interaction 뒤 다시 시도하도록 보강했다.
+- 당시 테스트는 일반 click과 keyboard 경로만 확인해, 첫 상호작용이 사운드 버튼인 경우는 포함하지 못했다.
+- 초기 설정이 `true`이면 실제 재생이 차단돼도 버튼이 `사운드 끄기`로 표시됐고, 첫 버튼 클릭이 설정을 먼저 `false`로 바꿔 두 번째 클릭에서야 재생되는 문제가 남아 있었다.
+- 후속 수정에서는 저장 설정 `soundEnabled`와 실제 BGM 재생 상태 `musicPlaying`을 분리했다. 자동재생이 차단되면 버튼은 `사운드 켜기`로 표시되고 첫 클릭 한 번으로 재생한 뒤 `사운드 끄기`로 바뀐다.
+- 늦게 끝난 이전 `play()` Promise가 최신 성공 상태를 덮거나 꺼진 음악을 다시 재생하지 않도록 stale async 결과도 방어했다.
+- 사운드 회귀 2/2, Vite-dev 11 pass·2 production-only skip, production 관련 10/10, 전체 production Playwright 37/37, Node 643 pass·기존 조건부 1 skip을 통과했다.
 
 ## Migration Goal 11C production Docker
 

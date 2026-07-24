@@ -77,6 +77,95 @@ MPA/Vite multi-page 구조에서는 `index.html`에서 `multiLobby.html`로 이�
 
 ---
 
+## 2026-07-24 — BGM이 꺼져 있는데 버튼은 `사운드 끄기`로 표시됨
+
+### 재현 절차
+
+1. 저장된 사운드 설정이 켜진 상태에서 페이지를 새로 연다.
+2. 브라우저가 사용자 상호작용 전 BGM 자동재생을 차단한다.
+3. 버튼은 `사운드 끄기`로 표시되지만 실제 음악은 들리지 않는다.
+4. 사운드 버튼을 한 번 누르면 `사운드 켜기`로만 바뀐다.
+5. 버튼을 다시 누르면 음악이 재생된다.
+
+### 기대 동작과 실제 동작
+
+```text
+기대
+자동재생 차단
+→ 사운드 켜기 표시
+→ 버튼 한 번 클릭
+→ BGM 재생
+→ 사운드 끄기 표시
+
+기존 실제 동작
+자동재생 차단
+→ 사운드 끄기 표시
+→ 첫 클릭에서 설정 true → false
+→ document 재시도도 sound=false라 실행하지 않음
+→ 두 번째 클릭에서 false → true
+→ BGM 재생
+```
+
+### 왜 이전 수정 뒤에도 남았는가
+
+이전 수정은 자동재생 실패 뒤 첫 trusted interaction에서 BGM을 다시 시도했다.
+그러나 회귀 테스트가 다음 경로만 확인했다.
+
+- index의 닉네임 입력창 클릭
+- single game의 키보드 입력
+- 사운드 버튼은 `aria-pressed` 값이 반전되는지만 확인
+
+사운드 버튼을 처음 누르면 button handler가 document의 autoplay 재시도 listener보다 먼저 실행된다. 따라서 첫 클릭이 재생 기회로 사용되지 않고 사운드 설정을 끄는 데 사용됐다.
+
+즉, 이전 코드가 되돌아간 것이 아니라 사운드 버튼 경로와 실제 재생 상태 표시가 빠진 불완전한 수정이었다.
+
+### 근본 원인
+
+[sound runtime](../src/client/game/runtime/sound.ts)은 다음 두 상태를 하나의 `soundEnabled` 값으로 취급했다.
+
+- 사용자가 저장한 사운드 허용 설정
+- 현재 BGM이 실제로 재생 중인지 여부
+
+자동재생이 거부돼도 저장 설정은 `true`이므로 UI만 켜진 것처럼 표시됐다.
+
+### 어떻게 수정했는가
+
+- 저장 설정 `soundEnabled`와 실제 재생 상태 `musicPlaying`을 분리했다.
+- `play()`가 성공한 뒤에만 버튼을 `사운드 끄기`, `aria-pressed="true"`로 표시한다.
+- 자동재생이 차단된 상태의 첫 사운드 버튼 클릭은 설정을 끄지 않고 BGM 재생을 시도한다.
+- 실제 재생 중인 상태에서 다음 클릭을 해야 설정을 끄고 음악을 정지한다.
+- 오래된 `play()` Promise가 늦게 실패해 최신 성공 상태를 덮지 못하게 했다.
+- 이미 설정을 끄거나 다른 음악으로 전환한 뒤 오래된 재생이 성공하면 해당 음악을 즉시 정지한다.
+
+### 검증
+
+[React shell E2E](../e2e/reactShellLifecycle.spec.js)에 다음 계약을 추가했다.
+
+1. 초기 자동재생은 `NotAllowedError`로 차단한다.
+2. 버튼이 `사운드 켜기`, `aria-pressed="false"`인지 확인한다.
+3. 버튼을 한 번만 클릭한다.
+4. trusted interaction 안에서 `play()`가 한 번 호출되는지 확인한다.
+5. 성공 뒤 `사운드 끄기`, `aria-pressed="true"`인지 확인한다.
+6. 늦게 도착한 이전 자동재생 실패가 성공 상태를 덮지 않는지 확인한다.
+7. 다음 클릭은 설정과 localStorage를 `false`로 바꾸는지 확인한다.
+
+검증 결과:
+
+- 사운드 회귀: 2/2
+- Vite-dev: 11 pass, production-only 2 skip
+- production 관련 lifecycle: 10/10
+- 전체 production Playwright: 37/37
+- 전체 Node gate: 643 pass, 기존 조건부 1 skip
+
+### 재발 방지 원칙
+
+- 저장된 사용자 설정과 실제 media 재생 상태를 같은 값으로 표시하지 않는다.
+- autoplay 검증은 일반 click과 keyboard뿐 아니라 사운드 버튼 자체를 첫 interaction으로 사용하는 경로도 포함한다.
+- 버튼 text와 `aria-pressed`는 `play()` 요청 여부가 아니라 성공 결과를 기준으로 갱신한다.
+- async media Promise는 현재 음악과 최신 설정에 여전히 유효한지 확인한 뒤 상태를 반영한다.
+
+---
+
 ## 2026-07-17~24 — 기술 마이그레이션 트러블슈팅
 
 ### 문서 범위
