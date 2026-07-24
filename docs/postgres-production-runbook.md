@@ -258,6 +258,157 @@ backup 파일이나 hash를 Git에 넣지 않는다. 오래된 backup을 자동 
 boot volume 전체 손실에는 대응하지 못한다. 암호화된 off-VM backup과 자동
 schedule은 별도 운영 작업으로 남아 있다.
 
+### DB 내용을 CSV 또는 JSONL로 export
+
+복구가 목적이면 위의 custom-format `.dump`를 사용한다. 사람이 내용을 확인하거나
+분석 도구에서 읽는 것이 목적이면 `game_events`를 CSV 또는 JSONL로 export한다.
+export 파일은 backup을 대체하지 않는다.
+
+먼저 OCI에 export 전용 directory를 만든다.
+
+```bash
+sudo install -d \
+    -o ubuntu \
+    -g ubuntu \
+    -m 700 \
+    /srv/tetris/exports
+```
+
+CSV는 spreadsheet 또는 일반적인 데이터 분석 도구에서 사용할 때 적합하다.
+
+```bash
+(
+    set -euo pipefail
+    umask 077
+
+    timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+    csv_file="/srv/tetris/exports/game-events-${timestamp}.csv"
+    temporary="${csv_file}.tmp"
+
+    test ! -e "$csv_file"
+    test ! -e "$temporary"
+
+    cleanupTemporary() {
+        test ! -e "$temporary" \
+            || rm -f -- "$temporary"
+    }
+
+    trap cleanupTemporary EXIT
+
+    sudo docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f /srv/tetris/repository/compose.production.yml \
+        exec -T postgres \
+        psql \
+        --username postgres \
+        --dbname tetris \
+        --set=ON_ERROR_STOP=1 \
+        --csv \
+        --pset=footer=off \
+        --command='
+            SELECT *
+            FROM tetris_analytics.game_events
+            ORDER BY ingested_at, event_id;
+        ' \
+        > "$temporary"
+
+    test -s "$temporary"
+    mv "$temporary" "$csv_file"
+    chmod 400 "$csv_file"
+    trap - EXIT
+
+    wc -l "$csv_file"
+    sha256sum "$csv_file"
+    stat -c '%a %U:%G %s %n' "$csv_file"
+)
+```
+
+CSV의 첫 줄은 column header이므로 `wc -l` 결과는 실제 DB row 수보다 1 크다.
+
+JSONL은 한 줄에 event 하나가 필요한 기존 로그·ML 분석 경로에 적합하다.
+
+```bash
+(
+    set -euo pipefail
+    umask 077
+
+    timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+    jsonl_file="/srv/tetris/exports/game-events-${timestamp}.jsonl"
+    temporary="${jsonl_file}.tmp"
+
+    test ! -e "$jsonl_file"
+    test ! -e "$temporary"
+
+    cleanupTemporary() {
+        test ! -e "$temporary" \
+            || rm -f -- "$temporary"
+    }
+
+    trap cleanupTemporary EXIT
+
+    sudo docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f /srv/tetris/repository/compose.production.yml \
+        exec -T postgres \
+        psql \
+        --username postgres \
+        --dbname tetris \
+        --set=ON_ERROR_STOP=1 \
+        --tuples-only \
+        --no-align \
+        --command='
+            SELECT row_to_json(event_row)
+            FROM (
+                SELECT *
+                FROM tetris_analytics.game_events
+                ORDER BY ingested_at, event_id
+            ) AS event_row;
+        ' \
+        > "$temporary"
+
+    test -s "$temporary"
+    mv "$temporary" "$jsonl_file"
+    chmod 400 "$jsonl_file"
+    trap - EXIT
+
+    db_rows=$(sudo docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f /srv/tetris/repository/compose.production.yml \
+        exec -T postgres \
+        psql \
+        --username postgres \
+        --dbname tetris \
+        --tuples-only \
+        --no-align \
+        --command='
+            SELECT count(*)
+            FROM tetris_analytics.game_events;
+        ')
+
+    file_rows=$(wc -l < "$jsonl_file")
+    test "$file_rows" -eq "$db_rows"
+
+    printf 'DB_ROWS=%s JSONL_ROWS=%s\n' \
+        "$db_rows" \
+        "$file_rows"
+    sha256sum "$jsonl_file"
+    stat -c '%a %U:%G %s %n' "$jsonl_file"
+)
+```
+
+Mac으로 가져올 때는 SSH session을 종료하고 Mac terminal에서 정확한 파일명을
+지정한다.
+
+```bash
+scp \
+    -i "<KEY_PATH>/tetris.key" \
+    ubuntu@<OCI_PUBLIC_IP>:/srv/tetris/exports/<exact-export-file> \
+    ~/Downloads/
+```
+
+export에는 event payload와 player 식별 정보가 포함될 수 있다. `.dump`, CSV,
+JSONL과 SHA-256 결과를 Git에 commit하거나 공개 저장소에 올리지 않는다.
+
 ### 월간 restore rehearsal
 
 먼저 복원할 backup 경로를 직접 확인한다.
