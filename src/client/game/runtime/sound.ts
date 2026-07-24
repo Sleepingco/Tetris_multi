@@ -12,8 +12,9 @@ const lineClearSfx = createAudio(new URL("../../assets/sound/tetris_lineclear_sf
 
 let soundEnabled = loadSoundPref()
 let currentMusic: HTMLAudioElement | null = null
+let musicPlaying = false
 const toggleButtons = new Set<HTMLButtonElement>()
-const toggleButtonHandlers = new WeakMap<HTMLButtonElement, () => void>()
+const toggleButtonHandlers = new WeakMap<HTMLButtonElement, (event: MouseEvent) => void>()
 
 /**
   * 현재 음악을 로비 BGM으로 바꾸고 저장된 설정, 토글 버튼, autoplay 재시도를 연결한다.
@@ -22,6 +23,7 @@ const toggleButtonHandlers = new WeakMap<HTMLButtonElement, () => void>()
 export function initLobbySound(toggleBtn: HTMLButtonElement | null): () => void {
     pause(gameMusic)
     currentMusic = lobbyMusic
+    musicPlaying = !currentMusic.paused
     const cleanupToggle = registerToggle(toggleBtn)
     applySoundSetting(soundEnabled, { initial: true })
     const cleanupAutoplayRetry = registerAutoplayRetry()
@@ -38,6 +40,7 @@ export function initLobbySound(toggleBtn: HTMLButtonElement | null): () => void 
 export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
     pause(lobbyMusic)
     currentMusic = gameMusic
+    musicPlaying = !currentMusic.paused
     const cleanupToggle = registerToggle(toggleBtn)
     applySoundSetting(soundEnabled, { initial: true })
     const cleanupAutoplayRetry = registerAutoplayRetry({ includeKeyboard: false })
@@ -84,13 +87,28 @@ function registerAutoplayRetry(
 }
 
 async function attemptMusicPlayback(): Promise<boolean> {
-    if (!soundEnabled || !currentMusic) return false
-    if (!currentMusic.paused) return true
+    const music = currentMusic
+    if (!soundEnabled || !music) return false
+    if (!music.paused) {
+        musicPlaying = true
+        updateToggleButtons()
+        return true
+    }
 
     try {
-        await currentMusic.play()
+        await music.play()
+        if (music !== currentMusic || !soundEnabled) {
+            pause(music)
+            return false
+        }
+        musicPlaying = true
+        updateToggleButtons()
         return true
     } catch {
+        if (music === currentMusic && !musicPlaying) {
+            musicPlaying = false
+            updateToggleButtons()
+        }
         return false
     }
 }
@@ -139,7 +157,12 @@ function registerToggle(toggleBtn: HTMLButtonElement | null): () => void {
 
     cleanupDetachedToggleButtons()
     toggleButtons.add(toggleBtn)
-    const onClick = () => {
+    const onClick = (event: MouseEvent) => {
+        event.stopPropagation()
+        if (soundEnabled && !musicPlaying) {
+            tryPlayMusic()
+            return
+        }
         applySoundSetting(!soundEnabled)
     }
     toggleButtonHandlers.set(toggleBtn, onClick)
@@ -162,9 +185,17 @@ function cleanupDetachedToggleButtons(): void {
     })
 }
 
+function updateToggleButtons(): void {
+    const playing = soundEnabled && musicPlaying
+    toggleButtons.forEach(btn => {
+        btn.textContent = playing ? "사운드 끄기" : "사운드 켜기"
+        btn.setAttribute("aria-pressed", String(playing))
+    })
+}
+
 /**
-  * 하나의 `soundEnabled` 값을 메모리, localStorage, 연결된 버튼, 현재 BGM에 함께 반영한다.
-  * 초기 로드에서는 이미 저장된 값을 다시 쓰지 않고 화면과 음악만 동기화한다.
+  * `soundEnabled`를 메모리와 localStorage에 반영하고 현재 BGM 재생을 동기화한다.
+  * 버튼은 저장 설정이 아니라 실제 재생 성공 여부를 표시한다.
   */
 function applySoundSetting(
     enabled: boolean,
@@ -176,17 +207,20 @@ function applySoundSetting(
         localStorage.setItem(SOUND_KEY, String(enabled))
     }
 
-    toggleButtons.forEach(btn => {
-        btn.textContent = enabled ? "사운드 끄기" : "사운드 켜기"
-        btn.setAttribute("aria-pressed", String(enabled))
-    })
-
-    if (!currentMusic) return
+    if (!currentMusic) {
+        musicPlaying = false
+        updateToggleButtons()
+        return
+    }
     if (enabled) {
+        musicPlaying = !currentMusic.paused
+        updateToggleButtons()
         tryPlayMusic()
     } else {
         pause(currentMusic)
         currentMusic.currentTime = 0
+        musicPlaying = false
+        updateToggleButtons()
     }
 }
 

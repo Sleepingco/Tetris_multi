@@ -93,6 +93,10 @@ test("React lobby lifecycle은 listener와 초기 room sync를 한 세트만 유
 });
 
 test("index BFCache 복귀는 reload 후 sound toggle listener를 복원한다", async ({ page }) => {
+    await page.addInitScript(() => {
+        localStorage.setItem("tetrisSoundEnabled", "false");
+        HTMLMediaElement.prototype.play = () => Promise.resolve();
+    });
     await page.goto("/pages/index.html");
     const soundToggle = page.locator("#soundToggle");
     const initialPressed = await soundToggle.getAttribute("aria-pressed");
@@ -141,6 +145,53 @@ test("index는 자동재생 차단 뒤 첫 사용자 상호작용에서 BGM을 �
     expect(await page.evaluate(() => window.__musicPlayAttempts.at(-1))).toMatchObject({
         userActivated: true,
     });
+});
+
+test("index sound toggle은 차단된 BGM을 첫 클릭에서 켠다", async ({ page }) => {
+    await page.addInitScript(() => {
+        localStorage.setItem("tetrisSoundEnabled", "true");
+        window.__musicPlayAttempts = [];
+        window.__rejectBlockedMusic = [];
+        HTMLMediaElement.prototype.play = function play() {
+            const userActivated = navigator.userActivation.isActive;
+            window.__musicPlayAttempts.push({ src: this.src, userActivated });
+            if (userActivated) return Promise.resolve();
+            return new Promise((_, reject) => {
+                window.__rejectBlockedMusic.push(() => {
+                    reject(new DOMException("Autoplay blocked", "NotAllowedError"));
+                });
+            });
+        };
+    });
+    await page.goto("/pages/index.html");
+
+    const soundToggle = page.locator("#soundToggle");
+    await expect.poll(() => page.evaluate(() => window.__musicPlayAttempts.length))
+        .toBeGreaterThan(0);
+    await expect(soundToggle).toHaveText("사운드 켜기");
+    await expect(soundToggle).toHaveAttribute("aria-pressed", "false");
+
+    const attemptsBeforeClick = await page.evaluate(() => window.__musicPlayAttempts.length);
+    await soundToggle.click();
+    await expect.poll(() => page.evaluate(() => window.__musicPlayAttempts.length))
+        .toBe(attemptsBeforeClick + 1);
+    expect(await page.evaluate(() => window.__musicPlayAttempts.at(-1))).toMatchObject({
+        userActivated: true,
+    });
+    await expect(soundToggle).toHaveText("사운드 끄기");
+    await expect(soundToggle).toHaveAttribute("aria-pressed", "true");
+    expect(await page.evaluate(() => localStorage.getItem("tetrisSoundEnabled"))).toBe("true");
+
+    await page.evaluate(() => {
+        window.__rejectBlockedMusic.splice(0).forEach(reject => reject());
+    });
+    await expect(soundToggle).toHaveText("사운드 끄기");
+    await expect(soundToggle).toHaveAttribute("aria-pressed", "true");
+
+    await soundToggle.click();
+    await expect(soundToggle).toHaveText("사운드 켜기");
+    await expect(soundToggle).toHaveAttribute("aria-pressed", "false");
+    expect(await page.evaluate(() => localStorage.getItem("tetrisSoundEnabled"))).toBe("false");
 });
 
 test("production React artifact는 TSX source와 source map을 제공하지 않는다", async ({ page }) => {
