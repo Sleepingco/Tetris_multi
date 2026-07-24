@@ -657,46 +657,77 @@ OCI에서 새 source를 기존 운영 directory와 분리해 푼다.
 
 ```bash
 new_tag=<new-approved-sha>
-artifact="/tmp/tetris-${new_tag}.tar.gz"
-build_directory="/srv/tetris/builds/${new_tag}"
 
-test -s "$artifact"
-sha256sum "$artifact"
+(
+    set -euo pipefail
 
-sudo install -d \
-    -o ubuntu \
-    -g ubuntu \
-    -m 750 \
-    "$build_directory"
+    candidate_tag=${new_tag-}
 
-tar -tzf "$artifact" >/dev/null
-tar -xzf "$artifact" \
-    -C "$build_directory"
+    if [[ ! "$candidate_tag" =~ ^[0-9a-f]{7,40}$ ]]; then
+        printf 'INVALID_NEW_TAG=%q\n' "$candidate_tag" >&2
+        exit 1
+    fi
 
-test -f "$build_directory/compose.production.yml"
-test -f "$build_directory/Dockerfile"
-test -f "$build_directory/package.json"
+    artifact="/tmp/tetris-${candidate_tag}.tar.gz"
+    build_directory="/srv/tetris/builds/${candidate_tag}"
 
-cd "$build_directory"
+    printf 'NEW_TAG=%s\nARTIFACT=%s\nBUILD_DIRECTORY=%s\n' \
+        "$candidate_tag" \
+        "$artifact" \
+        "$build_directory"
 
-sudo env APP_IMAGE_TAG="$new_tag" \
-    docker compose \
-    --env-file /srv/tetris/secrets/production.env \
-    -f compose.production.yml \
-    config --quiet
+    test -s "$artifact" || {
+        printf 'ARTIFACT_MISSING_OR_EMPTY=%s\n' "$artifact" >&2
+        exit 1
+    }
 
-sudo env APP_IMAGE_TAG="$new_tag" \
-    docker compose \
-    --env-file /srv/tetris/secrets/production.env \
-    -f compose.production.yml \
-    build app
+    test ! -e "$build_directory" || {
+        printf 'BUILD_DIRECTORY_EXISTS=%s\n' "$build_directory" >&2
+        exit 1
+    }
 
-sudo docker image inspect "tetris-app:${new_tag}" \
-    --format \
-    'tags={{json .RepoTags}} architecture={{.Architecture}} size={{.Size}}'
+    sha256sum "$artifact"
+    tar -tzf "$artifact" >/dev/null
+
+    sudo install -d \
+        -o ubuntu \
+        -g ubuntu \
+        -m 750 \
+        "$build_directory"
+
+    tar -xzf "$artifact" \
+        -C "$build_directory"
+
+    test -f "$build_directory/compose.production.yml"
+    test -f "$build_directory/Dockerfile"
+    test -f "$build_directory/package.json"
+
+    cd "$build_directory"
+
+    sudo env APP_IMAGE_TAG="$candidate_tag" \
+        docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f compose.production.yml \
+        config --quiet
+
+    sudo env APP_IMAGE_TAG="$candidate_tag" \
+        docker compose \
+        --env-file /srv/tetris/secrets/production.env \
+        -f compose.production.yml \
+        build app
+
+    sudo docker image inspect "tetris-app:${candidate_tag}" \
+        --format \
+        'tags={{json .RepoTags}} architecture={{.Architecture}} size={{.Size}}'
+)
 
 cd /srv/tetris/repository
 ```
+
+괄호 안의 준비 단계는 별도 subshell에서 `set -euo pipefail`로 실행한다. 빈 tag,
+없는 artifact, 이미 존재하는 build directory 또는 누락된 필수 파일을 발견하면
+image build 전에 즉시 중단한다. `BUILD_DIRECTORY_EXISTS`가 나오면 directory를
+삭제하거나 덮어쓰지 말고 tag와 기존 내용을 먼저 확인한다.
 
 application source만 바뀌고 Compose/Caddyfile이 그대로라면 실행 중 stack의
 `/srv/tetris/repository`를 덮어쓰지 않는다. production app은 build directory가

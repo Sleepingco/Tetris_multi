@@ -80,7 +80,7 @@ df -h /
 | 6 | GitHub username/password 인증 실패 | private repository와 GitHub password 인증 폐지 | clone/push 실패 | 검증 artifact SCP, push는 별도 |
 | 7 | archive `No such file` | Mac source를 OCI shell에서 찾음 | 배포 파일 추출 불가 | Mac에서 SCP 후 hash 확인 |
 | 8 | Compose·Dockerfile 모두 없음 | archive가 없는데 다음 단계 계속 진행 | 빈 repository directory | 선행 파일 존재 검증 |
-| 9 | terminal 출력이 `command not found`로 실행됨 | prompt와 출력까지 다시 paste | 명령 noise, 상태 변경 가능성 | `Ctrl-C`, prompt만 확인 후 명령만 paste |
+| 9 | 출력이 command로 실행되거나 `/tmp/tetris-.tar.gz`를 조회 | prompt·출력·새 명령을 함께 paste해 변수 할당 실패 | 빈 tag를 사용한 연쇄 오류, 상태 변경 가능성 | `Ctrl-C`, prompt 확인, tag·artifact preflight부터 재시작 |
 | 10 | PostgreSQL `Restarting (0)`, `PS2='> '` | Compose가 shell script를 여러 argument로 분리 | PostgreSQL 기동 실패 | command를 one-element list로 수정 |
 | 11 | CA `Permission denied` | 공개 `ca.crt`까지 mode `600` | migration TLS 연결 실패 | certificate `644`, key `600` |
 | 12 | importer `EACCES` | host UID 1001, image UID 1000 | source/report 접근 실패 | one-off container를 host UID로 실행 |
@@ -662,6 +662,20 @@ terminal 출력의 각 줄을 shell이 새 command로 해석했다.
 - HTTP header의 `accept-ranges:`도 command로 해석
 - container 표의 `NAME`도 command로 해석
 
+새 배포 명령 앞에 이전 command 조각이 남아 있으면 첫 변수 할당도 실패할 수 있다.
+
+```text
+)new_tag=87d6e29
+-bash: syntax error near unexpected token `)'
+sha256sum: /tmp/tetris-.tar.gz: No such file or directory
+open /srv/tetris/builds/compose.production.yml: no such file or directory
+Error response from daemon: invalid reference format
+```
+
+이 경우 `new_tag`가 설정되지 않았지만 interactive shell은 다음 줄을 계속
+실행한다. 그 결과 `${new_tag}`가 빈 문자열로 확장되어 잘못된 artifact, build
+directory와 Docker image reference가 연쇄적으로 만들어진다.
+
 ### 해결
 
 즉시:
@@ -677,6 +691,34 @@ sudo docker compose -f compose.jsonl.yml ps
 curl -I https://tetra-arena.duckdns.org
 ```
 
+새 version 준비 중이었다면 먼저 현재 production이 바뀌지 않았는지 확인한다.
+
+```bash
+cd /srv/tetris/repository
+
+sed -n \
+    's/^APP_IMAGE_TAG=/ACTIVE_IMAGE_TAG=/p' \
+    /srv/tetris/secrets/production.env
+
+sudo docker compose \
+    --env-file /srv/tetris/secrets/production.env \
+    -f compose.production.yml \
+    ps
+```
+
+그다음 [PostgreSQL 운영 Runbook의 OCI source와 image 준비
+단계](postgres-production-runbook.md#2-oci-source와-image-준비)를 처음부터 다시
+실행한다. 새 preflight는 다음 조건에서 build 전에 중단한다.
+
+- `new_tag`가 7~40자리 lowercase hexadecimal Git SHA가 아님
+- `/tmp/tetris-${new_tag}.tar.gz`가 없거나 비어 있음
+- `/srv/tetris/builds/${new_tag}`가 이미 존재함
+- archive 또는 필수 build 파일 검증 실패
+
+실패한 build directory가 존재한다면 자동 삭제하지 않는다. tag와 directory
+내용을 확인해 이미 검증된 결과인지, 격리할지, 새 commit tag로 다시 시작할지를
+운영자가 결정한다.
+
 ### 검증
 
 `Ctrl-C` 후 app/Caddy 상태와 HTTPS를 다시 확인했고 둘 다 정상이었다.
@@ -686,6 +728,8 @@ curl -I https://tetra-arena.duckdns.org
 - prompt의 `$`, `%` 뒤에 있는 명령만 복사한다.
 - 출력은 다시 terminal에 paste하지 않는다.
 - 여러 줄 command는 code block의 시작과 끝을 확인한다.
+- 변수와 경로를 사용하기 전에 `printf`로 실제 값을 출력한다.
+- 여러 단계가 연결된 준비 작업은 `set -euo pipefail` subshell 안에서 실행한다.
 - command 실행 중 예상하지 못한 continuation prompt가 나오면 무작정 Enter를
   누르지 말고 `Ctrl-C`로 취소한다.
 
