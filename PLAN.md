@@ -195,8 +195,8 @@
 
 ### 코드베이스 정리 실행 계획
 
-- 상세 계획: `docs/codebase-cleanup-plan.md`
-- Goal 실행 프롬프트: `docs/codebase-cleanup-goal-prompt.md`
+- 상세 계획: `docs/maintenance/codebase-cleanup-plan.md`
+- Goal 실행 프롬프트: `docs/maintenance/codebase-cleanup-goal-prompt.md`
 - 상태: Phase 0~5 완료, 최종 검증 통과
 - 순서: 확정된 dead leaf 삭제 → client local garbage 제거 → 미사용 input relay 제거 → 조건부 server inputLog 제거 → 남은 test setup 축소
 - cleanup은 migration이나 새 기능과 섞지 않고, 각 단계를 독립 검증·커밋한다.

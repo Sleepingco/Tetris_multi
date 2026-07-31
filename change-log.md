@@ -1866,8 +1866,8 @@ client input
 ## 문서 정리
 
 - 프로젝트 진입용 `README.md`를 추가했다.
-- `docs/current-project-architecture-report.md`에 현재 client/server authoritative/PVE/로그 구조를 정리했다.
-- `PLAN.md`, `QnA.md`, `docs/heuristic-ai-design.md`, `docs/game-log-dataset-policy.md`, `docs/archive/ai-ml/plans/ml-dataset-plan.md`를 당시 구현 상태에 맞춰 갱신했다.
+- `docs/architecture/current-project-architecture-report.md`에 현재 client/server authoritative/PVE/로그 구조를 정리했다.
+- `PLAN.md`, `QnA.md`, `docs/ai-ml/strategy/heuristic-ai-design.md`, `docs/ai-ml/strategy/game-log-dataset-policy.md`, `docs/archive/ai-ml/plans/ml-dataset-plan.md`를 당시 구현 상태에 맞춰 갱신했다.
 - LLM은 게임 판단 원천이 아니라 분석 결과를 설명하는 후순위 코칭 계층으로 유지한다.
 
 ## 테스트와 검증
@@ -2146,7 +2146,7 @@ client input
 - Notebook 구현·smoke, 사용자 full 실행, 결과 분석과 동결 감사를 서로 다른 MODE로 분리했다.
 - 긴 실험 프롬프트 대신 `ai-harness/ml-experiments/`의 공통 계약과 실험 명세 하나를 사용한다.
 - source checksum, gameId leakage, train-only scaler, 결정성, ignored evidence 보존을 공통 gate로 고정했다.
-- 상세 실험 과정과 재현 명령은 [AI 실험 로그](docs/ai-experiments-log.md)에 정리했다.
+- 상세 실험 과정과 재현 명령은 [AI 실험 로그](docs/ai-ml/experiments/ai-experiments-log.md)에 정리했다.
 
 ## 현재 의미
 
@@ -2227,7 +2227,7 @@ client input
 - “나를 완전히 모방한다” 또는 “heuristic보다 강하다”는 표현은 사용하지 않는다.
 - 추가 100-stream, hybrid, 재학습과 production 기본값 변경은 새 질문과 성공 기준 없이 진행하지 않는다.
 - Experimental PVE 기능 commit `231d217`과 AI 작업 이력을 merge commit `76ade21`을 통해 main에 통합했다.
-- 향후 개선 방향은 [AI 전체 계획](docs/ai-plan.md)의 Human imitation Track과 Gameplay policy Track으로 분리했다.
+- 향후 개선 방향은 [AI 전체 계획](docs/ai-ml/strategy/ai-plan.md)의 Human imitation Track과 Gameplay policy Track으로 분리했다.
 
 ## 검증
 
@@ -2485,7 +2485,7 @@ client input
 
 - `README.md`를 현재 Vite/React/TypeScript, server-authoritative multiplayer, AI/ML, 보안, Docker와 CI 결과 중심의 포트폴리오 문서로 갱신했다.
 - architecture report, gameplay flow와 heuristic AI 문서를 실제 TypeScript 경로와 현재 책임 경계에 맞췄다.
-- `docs/goal-11-security-docker-ci-history.md`에 CSP, dependency, Docker와 GitHub Actions 변경 이유·검증·남은 위험을 학습용으로 정리했다.
+- `docs/operations/history/goal-11-security-docker-ci-history.md`에 CSP, dependency, Docker와 GitHub Actions 변경 이유·검증·남은 위험을 학습용으로 정리했다.
 - 이 구간은 documentation-only 변경이며 production behavior는 바꾸지 않았다.
 
 ## Goal 11E와 PostgreSQL roadmap 재개

@@ -1388,11 +1388,11 @@ event producer가 살아 있고 best-effort write가 in-flight인 상태에서 �
 | server 구조 | `src/server/init.ts`, `src/server/sockets`, `src/server/services` |
 | protocol·보안 | `src/shared/socketContracts.mjs`, `src/server/socketSecurity.ts`, `src/server/httpSecurity.ts` |
 | 저장 경계 | `src/server/services/runtimeEventStorage.ts`, `src/server/services/gameEventProjector.ts`, `src/server/repositories`, `src/server/db` |
-| PostgreSQL 운영 | `docs/database-event-storage-blueprint.md`, `docs/postgres-production-runbook.md`, `migration-harness/runs/goal-09a-*`~`goal-09d-*` |
+| PostgreSQL 운영 | `docs/operations/database/database-event-storage-blueprint.md`, `docs/operations/deployment/postgres-production-runbook.md`, `migration-harness/runs/goal-09a-*`~`goal-09d-*` |
 | AI/ML | `src/client/game/ai`, `scripts/ml`, `docs/placement-*`, `ai-harness/runs` |
 | test | `test`, `test-integration`, `e2e`, `test-artifact`, `python_tests` |
 | Docker·CI | `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, `scripts/run-postgres-tests.js`, `scripts/verify-postgres-production.sh` |
-| migration 과정 | `migration-harness/goals`, `migration-harness/runs`, `docs/goal-11-security-docker-ci-history.md` |
+| migration 과정 | `migration-harness/goals`, `migration-harness/runs`, `docs/operations/history/goal-11-security-docker-ci-history.md` |
 
 ---
 

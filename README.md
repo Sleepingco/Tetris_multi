@@ -122,7 +122,7 @@ docker run --rm --read-only \
 
 [공개 서비스](https://tetra-arena.duckdns.org)는 OCI 단일 VM에서 Caddy HTTPS, application과 PostgreSQL 17.10을 Docker Compose로 실행한다. 외부에는 80/443만 공개하고 application과 PostgreSQL은 Docker network 안에 둔다.
 
-production은 PostgreSQL single sink만 사용한다. 기존 JSONL 131건은 멱등 import했고 실제 게임 뒤 195행까지 증가한 event가 app 재시작 뒤에도 보존되는 것을 확인했다. 최초 backup/restore rehearsal도 완료했다. 재배포와 운영 절차는 [OCI 단일 VM 배포 Runbook](docs/oci-single-vm-deployment.md)과 [PostgreSQL 운영 Runbook](docs/postgres-production-runbook.md)을 따른다.
+production은 PostgreSQL single sink만 사용한다. 기존 JSONL 131건은 멱등 import했고 실제 게임 뒤 195행까지 증가한 event가 app 재시작 뒤에도 보존되는 것을 확인했다. 최초 backup/restore rehearsal도 완료했다. 재배포와 운영 절차는 [OCI 단일 VM 배포 Runbook](docs/operations/deployment/oci-single-vm-deployment.md)과 [PostgreSQL 운영 Runbook](docs/operations/deployment/postgres-production-runbook.md)을 따른다.
 
 ## 검증
 
@@ -163,7 +163,7 @@ npm run verify:ml
 
 기본 PVE는 휴리스틱 AI다. V4는 Human placement imitation을 확인하기 위한 사용자 선택형 실험 기능이며, 더 강한 gameplay AI나 사용자의 완전한 복제라고 주장하지 않는다. 모델 누락·손상·검증 실패 시 게임을 중단하지 않고 휴리스틱으로 전환한다.
 
-현재 정책과 평가 근거는 [AI/ML 문서 안내](docs/README.md)와 [AI 계획](docs/ai-plan.md)에 정리되어 있다.
+현재 정책과 평가 근거는 [AI/ML 문서 안내](docs/ai-ml/README.md)와 [AI 계획](docs/ai-ml/strategy/ai-plan.md)에 정리되어 있다.
 
 ## 현재 한계
 
@@ -181,9 +181,9 @@ Redis·Kubernetes·다중 인스턴스 운영은 현재 요구 없이 복잡도�
 
 - [현재 계획과 검증 상태](PLAN.md)
 - [기술 마이그레이션 로드맵](migration-harness/roadmap.md)
-- [AI/ML 문서 안내](docs/README.md)
-- [게임 로그·데이터셋 정책](docs/game-log-dataset-policy.md)
-- [OCI 단일 VM 배포 Runbook](docs/oci-single-vm-deployment.md)
-- [PostgreSQL 운영 Runbook](docs/postgres-production-runbook.md)
-- [OCI 실제 배포 실행 기록](docs/oci-production-deployment-session-2026-07-24.md)
+- [AI/ML 문서 안내](docs/ai-ml/README.md)
+- [게임 로그·데이터셋 정책](docs/ai-ml/strategy/game-log-dataset-policy.md)
+- [OCI 단일 VM 배포 Runbook](docs/operations/deployment/oci-single-vm-deployment.md)
+- [PostgreSQL 운영 Runbook](docs/operations/deployment/postgres-production-runbook.md)
+- [OCI 실제 배포 실행 기록](docs/operations/history/oci/oci-production-deployment-session-2026-07-24.md)
 - [변경 기록](change-log.md)

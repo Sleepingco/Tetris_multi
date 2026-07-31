@@ -4,7 +4,7 @@
 - 상태: Phase 0~5 구현 및 검증 완료
 - 대상: over-engineering audit에서 확인된 dead code, legacy 경로, 반복 테스트
 - 기본 원칙: 동작 보존, 삭제 우선, 한 변경에 한 이유, 새 dependency 0개
-- Goal 실행 프롬프트: `docs/codebase-cleanup-goal-prompt.md`
+- Goal 실행 프롬프트: `docs/maintenance/codebase-cleanup-goal-prompt.md`
 
 ## 1. 목적
 

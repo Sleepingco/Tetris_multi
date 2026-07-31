@@ -81,7 +81,7 @@ Project-relative snapshot은 `data/datasets/human-behavior-v2-snapshot-26g-20260
 - Equivalence: 26,403 class, alias 12,972 제거, duplicate decision 670.
 - Pair: baseline 38,217, grouped 25,245, grouped zero-difference 0.
 - LOGO: 26/26 fold 두 모델 수렴, game leakage 0, 모든 fold raw train candidate scaler 공유.
-- Result: temp report와 `docs/placement-cell-equivalence-logo-result.json` payload가 동일.
+- Result: temp report와 `docs/ai-ml/experiments/results/placement-cell-equivalence-logo-result.json` payload가 동일.
 
 ## Metric 읽는 법
 

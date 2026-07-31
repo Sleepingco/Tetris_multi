@@ -12,12 +12,12 @@
 - production env: `/srv/tetris/secrets/production.env`
 - backup: `/srv/tetris/backups`
 
-최초 배포 과정은 [OCI 배포 실행 기록](oci-production-deployment-session-2026-07-24.md),
-명령 설명은 [OCI 배포 명령어 해설](oci-production-deployment-command-guide-2026-07-24.md),
-장애 원인은 [OCI 배포 트러블슈팅 기록](oci-production-deployment-troubleshooting-2026-07-24.md)을
+최초 배포 과정은 [OCI 배포 실행 기록](../history/oci/oci-production-deployment-session-2026-07-24.md),
+명령 설명은 [OCI 배포 명령어 해설](../history/oci/oci-production-deployment-command-guide-2026-07-24.md),
+장애 원인은 [OCI 배포 트러블슈팅 기록](../history/oci/oci-production-deployment-troubleshooting-2026-07-24.md)을
 참고한다. 구현 계약은
-[PostgreSQL event storage blueprint](database-event-storage-blueprint.md), local
-rehearsal은 [production boundary script](../scripts/verify-postgres-production.sh)를
+[PostgreSQL event storage blueprint](../database/database-event-storage-blueprint.md), local
+rehearsal은 [production boundary script](../../../scripts/verify-postgres-production.sh)를
 기준으로 한다.
 
 ## 운영 원칙
@@ -190,7 +190,7 @@ database와 role의 `search_path`는 `tetris_analytics, pg_catalog`로 제한한
 6. pool 4, in-flight 16은 현재 검증값이다. provider latency를 측정한 뒤에만 별도 변경을 승인한다.
 
 새 application version을 활성화하기 전에는
-[Goal 9D](../migration-harness/goals/09d-postgres-ci-release.md)의 release gate와
+[Goal 9D](../../../migration-harness/goals/09d-postgres-ci-release.md)의 release gate와
 현재 OCI의 TLS·backup·restore 경계가 모두 green이어야 한다.
 
 ## Backup과 restore rehearsal
@@ -650,7 +650,7 @@ printf 'release_sha=%s\n' "$release_sha"
 ### 2. OCI source와 image 준비
 
 검증된 artifact를 OCI에 전송하고 SHA-256을 비교한다. 자세한 archive/SCP 절차는
-[배포 실행 기록](oci-production-deployment-session-2026-07-24.md#5-source-artifact-전송)을
+[배포 실행 기록](../history/oci/oci-production-deployment-session-2026-07-24.md#5-source-artifact-전송)을
 따른다.
 
 OCI에서 새 source를 기존 운영 directory와 분리해 푼다.
@@ -887,7 +887,7 @@ health, HTTPS와 DB write를 다시 검증한다. 새 migration이 이전 image�
 호환성을 확인해야 한다.
 
 PostgreSQL 전체를 사용할 수 없어 JSONL mode로 긴급 복구할 때만
-[배포 실행 기록의 rollback 명령](oci-production-deployment-session-2026-07-24.md#rollback-명령)을
+[배포 실행 기록의 rollback 명령](../history/oci/oci-production-deployment-session-2026-07-24.md#rollback-명령)을
 사용한다. PostgreSQL row와 volume, 기존 JSONL과 snapshots는 삭제하지 않는다.
 
 ## Ubuntu update와 reboot

@@ -15,7 +15,7 @@ Current implementation:
 
 - `game_start`, `placement_decision`, and `game_over` logs exist.
 - JSONL persistence exists under `data/logs`.
-- A basic dataset policy exists in `docs/game-log-dataset-policy.md`.
+- A basic dataset policy exists in `docs/ai-ml/strategy/game-log-dataset-policy.md`.
 - New human and heuristic AI placement logs use feature-ready `schemaVersion: 2`.
 - Human logs include a same-state heuristic comparison.
 

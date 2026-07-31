@@ -21,15 +21,15 @@ Artifact 상태: `canonicalArtifact=false`, `productionIntegration=false`
 | 문서 | 책임 |
 |---|---|
 | [ai-plan.md](ai-plan.md) | 완료 단계, 앞으로의 작업 순서, 의존성, 동결·통합 gate |
-| [ai-experiments-log.md](ai-experiments-log.md) | 각 실험의 데이터, metric, checksum, 명령과 상세 근거 |
-| [placement-pair-weight-decomposition.md](placement-pair-weight-decomposition.md) | 최신 pair-weight 실험의 학습용 walkthrough |
-| [PLAN.md](../PLAN.md) | 전체 게임·멀티플레이 프로젝트의 현재 상태와 우선순위 |
-| [archived ai-pve-plan.md](archive/ai-ml/plans/ai-pve-plan.md) | 현재 구현으로 대체된 초기 PVE AI 구조 계획 |
-| [README.md](README.md) | 현재 재사용 파일, historical evidence, local ignored evidence의 단일 진입점 |
+| [ai-experiments-log.md](../experiments/ai-experiments-log.md) | 각 실험의 데이터, metric, checksum, 명령과 상세 근거 |
+| [placement-pair-weight-decomposition.md](../experiments/placement-pair-weight-decomposition.md) | 최신 pair-weight 실험의 학습용 walkthrough |
+| [PLAN.md](../../../PLAN.md) | 전체 게임·멀티플레이 프로젝트의 현재 상태와 우선순위 |
+| [archived ai-pve-plan.md](../../archive/ai-ml/plans/ai-pve-plan.md) | 현재 구현으로 대체된 초기 PVE AI 구조 계획 |
+| [README.md](../README.md) | 현재 재사용 파일, historical evidence, local ignored evidence의 단일 진입점 |
 
 실제 상태가 문서와 다르면 Git, 실제 코드, 테스트 결과를 우선한다.
 
-[archived ai-pve-plan.md](archive/ai-ml/plans/ai-pve-plan.md)의 Current State는
+[archived ai-pve-plan.md](../../archive/ai-ml/plans/ai-pve-plan.md)의 Current State는
 ML 실험 이전의 역사적 설명이다. 최신 placement ML 진행 상태는 이 문서와
 ai-experiments-log.md를 기준으로 본다.
 
@@ -94,7 +94,7 @@ Human gameplay log
 
 - Git branch, HEAD, main과의 계보, dirty/untracked 파일은 작업 시작 시 실제 Git으로 확인한다.
 - V4 125-game candidate artifact와 dev-only PVE 경계는 완료됐지만 production artifact가 아니다.
-- Gameplay evaluation의 상세 근거와 ignored report SHA는 [gameplay analyze-result record](../ai-harness/runs/placement-v4-pve-gameplay-benchmark-analyze-result-2026-07-20.md)에 보존한다.
+- Gameplay evaluation의 상세 근거와 ignored report SHA는 [gameplay analyze-result record](../../../ai-harness/runs/placement-v4-pve-gameplay-benchmark-analyze-result-2026-07-20.md)에 보존한다.
 
 ### 3.2 현재 바로 다음 작업
 
@@ -731,7 +731,7 @@ Track A와 Track B의 Dataset, objective, metric과 promotion gate를 섞지 않
 이후 Stage 1~10은 Phase 8 시점에 작성된 historical planning record다.
 Stage 7의 trainer, Stage 8의 reference inference, Stage 9의 dev-only PVE와
 gameplay evaluation은 완료됐다. 최신 상태와 제한은 이 문서의 앞부분,
-[ai-experiments-log.md](ai-experiments-log.md), 그리고 [gameplay analyze-result record](../ai-harness/runs/placement-v4-pve-gameplay-benchmark-analyze-result-2026-07-20.md)를 우선한다.
+[ai-experiments-log.md](../experiments/ai-experiments-log.md), 그리고 [gameplay analyze-result record](../../../ai-harness/runs/placement-v4-pve-gameplay-benchmark-analyze-result-2026-07-20.md)를 우선한다.
 
 앞으로의 계획은 **10개 milestone**과 이를 실제 프롬프트 크기로 나눈 **20개 작업 단위**로 관리한다.
 
@@ -1666,4 +1666,4 @@ Gameplay 개선을 승인할 경우 첫 후보는 `6.1.4`의 PVP outcome hybrid 
 3. 사전 고정된 metric, safety rule, production 영향 범위
 4. 결과를 보관할 run record와 ignored evidence 경로
 
-상세 historical metric과 실행 명령은 [ai-experiments-log.md](ai-experiments-log.md)와 각 run record를 사용한다.
+상세 historical metric과 실행 명령은 [ai-experiments-log.md](../experiments/ai-experiments-log.md)와 각 run record를 사용한다.

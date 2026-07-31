@@ -7,7 +7,7 @@
 
 - [전체 실행 순서](oci-production-deployment-session-2026-07-24.md)
 - [명령과 옵션 해설](oci-production-deployment-command-guide-2026-07-24.md)
-- [재배포 런북](oci-single-vm-deployment.md)
+- [재배포 런북](../../deployment/oci-single-vm-deployment.md)
 
 각 사례는 다음 순서를 따른다.
 

@@ -21,9 +21,9 @@ V1~V3 decomposition은 반복하지 않는다.
 
 정확한 V0/V4 수학 계약의 단일 원천:
 
-- `docs/placement-ml-evaluation-contract.md`
-- `docs/placement-pair-weight-decomposition.md`
-- `docs/placement-pair-weight-decomposition-result.json`
+- `docs/ai-ml/contracts/placement-ml-evaluation-contract.md`
+- `docs/ai-ml/experiments/placement-pair-weight-decomposition.md`
+- `docs/ai-ml/experiments/results/placement-pair-weight-decomposition-result.json`
 - `scripts/ml/notebooks/placement_pair_weight_decomposition_experiment.ipynb`
 - `python_tests/test_placement_pair_weight_decomposition_notebook.py`
 
@@ -69,13 +69,13 @@ V1~V3 decomposition은 반복하지 않는다.
 
 - `scripts/ml/notebooks/placement_temporal_holdout_v0_v4_experiment.ipynb`
 - `python_tests/test_placement_temporal_holdout_notebook.py`
-- 필요할 때 `docs/placement-temporal-holdout-v0-v4.md`
+- 필요할 때 `ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md`
 - Git ignored 새 cumulative dataset 경로
 
 ## 금지 변경
 
 - Preflight에서 발견한 기존 dirty/untracked 파일
-- `docs/ai-experiments-log.md`
+- `docs/ai-ml/experiments/ai-experiments-log.md`
 - 기존 Notebook과 canonical result
 - `environment-ml.yml`, `package.json`과 JavaScript exporter
 - `src/`, runtime, PVE, production과 migration

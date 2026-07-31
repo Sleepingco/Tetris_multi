@@ -56,7 +56,7 @@ LLM 코칭 문구 작성이나 게임 규칙 구현을 대신하는 모드는 �
 
 ## 현재 프로젝트 단계
 
-- 현재 범위와 선행 조건은 `PLAN.md`와 `docs/ai-plan.md`를 먼저 확인한다.
+- 현재 범위와 선행 조건은 `PLAN.md`와 `docs/ai-ml/strategy/ai-plan.md`를 먼저 확인한다.
 - 초기 PVE 단계 계획의 역사적 근거가 필요할 때만
   `docs/archive/ai-ml/plans/ai-pve-plan.md`를 확인한다.
 - `boardMetrics -> placementGenerator -> simulatePlacement -> heuristicEvaluator`의

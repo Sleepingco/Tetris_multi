@@ -12,7 +12,7 @@
 - 무엇으로 성공을 확인했는가
 - 재실행하면 안 되는 최초 provisioning 명령은 무엇인가
 
-규범적인 재배포 순서는 [OCI 단일 VM 배포 Runbook](oci-single-vm-deployment.md)을
+규범적인 재배포 순서는 [OCI 단일 VM 배포 Runbook](../../deployment/oci-single-vm-deployment.md)을
 따른다. 이 문서는 당시의 시행착오와 관찰값을 보존하는 실행 기록이다.
 각 명령과 옵션의 학습용 설명은
 [OCI 운영 배포 명령어 해설](oci-production-deployment-command-guide-2026-07-24.md)을

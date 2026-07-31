@@ -101,7 +101,7 @@ Docker Desktop만으로 검증할 수 없다.
 
 ### 무엇이 바뀌었는가
 
-핵심 구현은 [`src/server/httpSecurity.ts`](../src/server/httpSecurity.ts)에 있다.
+핵심 구현은 [`src/server/httpSecurity.ts`](../../../src/server/httpSecurity.ts)에 있다.
 
 - `default-src 'none'`에서 시작해 실제 사용하는 자원만 허용했다.
 - script와 style은 same-origin과 검토된 inline hash만 허용했다.
@@ -166,7 +166,7 @@ Range 요청의 `416` 같은 비정상 응답에도 header가 유지되는지 �
 | `774925f` | Goal 11A 실행 기록 |
 | `5a2bb22` | `/pages`, 4xx/5xx 오류 middleware와 exact 정책 검증 보강 |
 
-자세한 실행 증거는 [Goal 11A 실행 기록](../migration-harness/runs/goal-11a-2026-07-22.md)에
+자세한 실행 증거는 [Goal 11A 실행 기록](../../../migration-harness/runs/goal-11a-2026-07-22.md)에
 있다.
 
 ### 남은 한계
@@ -231,7 +231,7 @@ major upgrade는 API 변화와 새로운 회귀를 만들 수 있다. 이번에�
 | `3fe121e` | `package-lock.json`의 patched transitive dependency 갱신 |
 | `a18801c` | Goal 11B 판단과 검증 기록 |
 
-자세한 실행 증거는 [Goal 11B 실행 기록](../migration-harness/runs/goal-11b-2026-07-22.md)에
+자세한 실행 증거는 [Goal 11B 실행 기록](../../../migration-harness/runs/goal-11b-2026-07-22.md)에
 있다.
 
 ### 남은 한계
@@ -253,7 +253,7 @@ Docker image는 실행에 필요한 Node, production dependency와 build artifac
 
 ### 세 단계 image 구조
 
-[`Dockerfile`](../Dockerfile)은 Node `24.18.0-bookworm-slim`의 정확한 digest를 사용하고
+[`Dockerfile`](../../../Dockerfile)은 Node `24.18.0-bookworm-slim`의 정확한 digest를 사용하고
 세 stage로 나뉜다.
 
 ```text
@@ -331,9 +331,9 @@ SIGTERM
 - **room ticker**: server-authoritative gravity와 snapshot 진행을 담당한다.
 
 종료 함수는 idempotent하게 만들어 중복 호출되어도 정리를 한 번만 수행한다.
-[`src/server/init.ts`](../src/server/init.ts)는 종료를 시작하고,
-[`src/server/sockets/index.ts`](../src/server/sockets/index.ts)는 Socket 관련 timer를,
-[`src/server/services/authoritativeTickerService.ts`](../src/server/services/authoritativeTickerService.ts)는
+[`src/server/init.ts`](../../../src/server/init.ts)는 종료를 시작하고,
+[`src/server/sockets/index.ts`](../../../src/server/sockets/index.ts)는 Socket 관련 timer를,
+[`src/server/services/authoritativeTickerService.ts`](../../../src/server/services/authoritativeTickerService.ts)는
 room ticker 전체를 정리한다.
 
 현재 shutdown은 진행 중인 JSONL write를 별도로 추적해 drain 완료까지 기다리는 계약은
@@ -377,7 +377,7 @@ browser의 same-origin Socket.IO polling 중에는 `Origin`이 없는 요청이 
 | `6d09a28` | 별도 사운드 수정이 들어간 최신 main과 Goal branch 동기화 |
 | `84f8659` | 최신 main 동기화 후 Goal 11C 실행 기록 갱신 |
 
-자세한 실행 증거는 [Goal 11C 실행 기록](../migration-harness/runs/goal-11c-2026-07-22.md)에
+자세한 실행 증거는 [Goal 11C 실행 기록](../../../migration-harness/runs/goal-11c-2026-07-22.md)에
 있다.
 
 ### 남은 한계
@@ -765,21 +765,21 @@ container를 root로 실행하는 방식은 해결책이 아니다.
 
 ## 13. 관련 문서와 코드
 
-- [Goal 11A 범위](../migration-harness/goals/11a-csp-headers.md)
-- [Goal 11B 범위](../migration-harness/goals/11b-dependency-hardening.md)
-- [Goal 11C 범위](../migration-harness/goals/11c-production-docker.md)
-- [Goal 11D 범위](../migration-harness/goals/11d-ci.md)
-- [Goal 11A 실행 기록](../migration-harness/runs/goal-11a-2026-07-22.md)
-- [Goal 11B 실행 기록](../migration-harness/runs/goal-11b-2026-07-22.md)
-- [Goal 11C 실행 기록](../migration-harness/runs/goal-11c-2026-07-22.md)
-- [Goal 11D 실행 기록](../migration-harness/runs/goal-11d-2026-07-23.md)
-- [`Dockerfile`](../Dockerfile)
-- [`.dockerignore`](../.dockerignore)
-- [`src/server/httpSecurity.ts`](../src/server/httpSecurity.ts)
-- [`src/server/init.ts`](../src/server/init.ts)
-- [`src/server/socketSecurity.ts`](../src/server/socketSecurity.ts)
-- [`src/server/sockets/index.ts`](../src/server/sockets/index.ts)
-- [`src/server/services/authoritativeTickerService.ts`](../src/server/services/authoritativeTickerService.ts)
+- [Goal 11A 범위](../../../migration-harness/goals/11a-csp-headers.md)
+- [Goal 11B 범위](../../../migration-harness/goals/11b-dependency-hardening.md)
+- [Goal 11C 범위](../../../migration-harness/goals/11c-production-docker.md)
+- [Goal 11D 범위](../../../migration-harness/goals/11d-ci.md)
+- [Goal 11A 실행 기록](../../../migration-harness/runs/goal-11a-2026-07-22.md)
+- [Goal 11B 실행 기록](../../../migration-harness/runs/goal-11b-2026-07-22.md)
+- [Goal 11C 실행 기록](../../../migration-harness/runs/goal-11c-2026-07-22.md)
+- [Goal 11D 실행 기록](../../../migration-harness/runs/goal-11d-2026-07-23.md)
+- [`Dockerfile`](../../../Dockerfile)
+- [`.dockerignore`](../../../.dockerignore)
+- [`src/server/httpSecurity.ts`](../../../src/server/httpSecurity.ts)
+- [`src/server/init.ts`](../../../src/server/init.ts)
+- [`src/server/socketSecurity.ts`](../../../src/server/socketSecurity.ts)
+- [`src/server/sockets/index.ts`](../../../src/server/sockets/index.ts)
+- [`src/server/services/authoritativeTickerService.ts`](../../../src/server/services/authoritativeTickerService.ts)
 
 Goal 11D의 `.github/workflows/ci.yml`과 실행 기록은 PR #1을 통해 원격 `main`에
 반영됐다. 첫 main push에서 확인한 기존 PVE timing failure는 별도 bugfix와 green run

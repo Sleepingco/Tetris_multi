@@ -13,7 +13,7 @@
 
 현재 JSONL은 local 분석과 ML export에 계속 사용한다. PostgreSQL도 room, match, gameplay 상태의 원천이 아니다. 실시간 상태는 현재처럼 process memory가 소유하고, PostgreSQL은 확정된 gameplay event의 장기 보존 경계로만 계획한다.
 
-실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../migration-harness/goals/09-postgres-event-storage.md)와 Goal 9A~9D 상세 문서다. 정확한 SQL의 원천은 `src/server/db/migrations/001_game_events.sql`과 `002_lifecycle_event_v2.sql`이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다. 구현·검증 근거는 `migration-harness/runs/goal-09*-2026-07-*.md` 실행 기록에 둔다.
+실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../../../migration-harness/goals/09-postgres-event-storage.md)와 Goal 9A~9D 상세 문서다. 정확한 SQL의 원천은 `src/server/db/migrations/001_game_events.sql`과 `002_lifecycle_event_v2.sql`이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다. 구현·검증 근거는 `migration-harness/runs/goal-09*-2026-07-*.md` 실행 기록에 둔다.
 
 ## 2. 현재 JSONL 흐름
 
@@ -287,7 +287,7 @@ Goal 9A local 구현에서 다음을 검증했다.
 - source-less fixture에서 migration 두 번
 - actual PostgreSQL Docker test
 
-Goal 9B local 구현은 single-sink JSONL/PostgreSQL, PVP/PVE canonical projection, forged/stale/late receipt, lifecycle v1/v2, retry 분류, in-flight 상한, shutdown 순서, DB-down budget, source-less runtime과 production Docker/HTTP를 검증했다. 실제 명령, exact version, latency와 test count는 [Goal 9B 실행 기록](../migration-harness/runs/goal-09b-2026-07-23.md)에 남긴다.
+Goal 9B local 구현은 single-sink JSONL/PostgreSQL, PVP/PVE canonical projection, forged/stale/late receipt, lifecycle v1/v2, retry 분류, in-flight 상한, shutdown 순서, DB-down budget, source-less runtime과 production Docker/HTTP를 검증했다. 실제 명령, exact version, latency와 test count는 [Goal 9B 실행 기록](../../../migration-harness/runs/goal-09b-2026-07-23.md)에 남긴다.
 
 Goal 9C는 streaming JSONL importer의 dry-run, privacy projection, 멱등 재실행, partial failure 복구와 completeness 판정을 실제 PostgreSQL 17.10에서 검증했다. Goal 9D는 migration/runtime/import, source-less image, private-CA TLS, backup/restore, runtime 최소 권한, PVP/PVE, DB-down, restart와 shutdown을 local 및 GitHub-hosted PostgreSQL gate로 검증했다.
 
