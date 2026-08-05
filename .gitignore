@@ -19,3 +19,11 @@ playwright-report/
 blob-report/
 
 *.pyc
+
+# Environment & Secrets
+.env
+.env.*
+*.env
+!.env*.example
+!*.example
+
