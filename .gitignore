@@ -5,10 +5,7 @@ node_modules/
 coverage/
 dist/
 
-data/logs/*.jsonl
-data/datasets/
-data/ml-experiments/
-data/models/
+data/
 
 Obsidian.md
 테트리스 멀티 옵시디언 정리/
