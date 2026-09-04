@@ -173,10 +173,8 @@ jobs:
               /socket.io/socket.io.js
           do
               echo "========== CHECK $path =========="
-              curl --silent --show-error \
-                  --write-out "HTTP_STATUS=%{http_code}\n" \
-                  "http://127.0.0.1:5510$path" \
-                  >/dev/null
+              curl --fail --silent --show-error \
+                  "http://127.0.0.1:5510$path" >/dev/null
           done
 
           headers="$RUNNER_TEMP/tetris-security-headers.txt"
@@ -189,7 +187,7 @@ jobs:
           grep -qi '^Referrer-Policy: no-referrer' "$headers"
 
           module_path="$(printf '%s' "$root_html" \
-              | sed -n 's/.*src="\([^"]*\.js\)".*/\1/p' \
+              | sed -n 's/.*<script type="module"[^>]*src="\([^"]*\.js\)".*/\1/p' \
               | head -n 1)"
           test -n "$module_path"
           curl --fail --silent --show-error \
