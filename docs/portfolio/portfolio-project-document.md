@@ -800,20 +800,57 @@ server가 UUID playerId와 256-bit opaque token을 발급한다. browser는 vers
 
 125게임 human placement dataset으로 만든 pairwise linear candidate를 사용자 선택형 PVE에 연결했다. 강한 gameplay AI가 아니라 사람의 placement 선택을 모방하는 실험 기능이다.
 
+### 머신러닝 문제 정의 (Pairwise Ranking Formulation)
+
+- **문제 정의**: 한 placement decision 시점에 도달 가능한 $K$개의 Reachable 후보 중 사람이 선택한 단 하나의 정답 배치($x^+$)가 선택되지 않은 나머지($x^-$)보다 높은 점수를 얻도록 학습하는 **Pairwise Learning-to-Rank** 구조다.
+- **피처 표준화(Standardization)**: 학습 데이터셋 전체 후보군을 기준으로 16개 피처의 평균($\mu$)과 표준편차($\sigma$)를 사전 계산한 scaler를 적용한다.
+- **학습 단위 및 목적 함수(Loss Function)**:
+  $$\Delta x = \text{standardize}(x^+) - \text{standardize}(x^-)$$
+  $$\mathcal{L} = \sum_{\text{pairs}} w_{\text{pair}} \cdot \log(1 + e^{-w^T \Delta x}) + \frac{\lambda}{2} \|w\|_2^2$$
+- **Decision 가중치 정규화**: 한 수(decision)에서 나오는 후보 개수($K$)가 보드 상황마다 다르므로, 특정 decision의 페어 수가 전체 손실을 지배하지 않도록 **한 decision 내 모든 pair 가중치 합을 1로 정규화**($w_{\text{pair}} = \frac{1}{K-1}$)했다.
+- **절편(Intercept) 제외**: 단일 decision 내 순위 비교는 상대적 점수 차이로만 결정되므로 공통 상수인 intercept는 학습하지 않고 feature weight만 최적화한다.
+
+### 피처 엔지니어링 및 설계 근거 (16 Feature Schema)
+
+| 피처명 | 설명 | 설계 근거 (Rationale) |
+| --- | --- | --- |
+| `candidateResult.linesCleared` | 후보 배치 즉시 완성되는 라인 수 (0~4) | 즉각적인 보상 및 위기 탈출 기여도 |
+| `candidateResult.gameOver` | 배치 후 즉시 게임 오버 발생 여부 (0 또는 1) | 치명적인 패배 수 즉시 배제 |
+| `metricDelta.aggregateHeight` | 전체 10개 열의 높이 합 변화량 | 보드 전체 누적 부하 억제 |
+| `metricDelta.maxHeight` | 보드 최고 높이 변화량 | Top-out 위험 마진 관리 |
+| `metricDelta.holes` | 새로 생성/해소된 빈 공간(구멍) 수 변화량 | 테트리스 생존에 가장 치명적인 지표 |
+| `metricDelta.bumpiness` | 인접 열 간 높이 단차 합($\sum \|h_i - h_{i+1}\|$) 변화량 | 보드 표면 평탄도 유지 |
+| `metricDelta.columnHeights[0~9]` | 0번~9번 열 각각의 높이 변화량 (10개) | 벽면 및 중앙부의 국소적 지형 변화 반영 |
+
+- **Delta(변화량) 피처 설계 이유**: 절대적 보드 높이나 구멍 수는 게임 진행에 따라 계속 누적되는 상태값이므로, "지금 놓는 한 수가 보드 형상에 어떤 물리적 변화를 가했는가"를 정규화하여 학습해야 임의의 보드 상황에 일반화될 수 있기 때문이다.
+
+### 물리적 표현 표현 클러스터링 (Occupied-cell Physical Class)
+
+- **Alias Placement 문제**: 테트리스는 회전 중심이나 이동/tuck 경로가 달라도 최종 보드 격자 4칸($\text{coords}$)을 점유하는 물리적 결과가 완전히 동일한 경우가 빈번하다.
+- **V4 Representation 개선**: 물리적으로 점유하는 셀 위치가 동일한 후보들을 **단일 Physical Class로 묶어(Clustering)** 점수를 평가하고, 클래스 내에서는 canonical tie-break(최소 조작/최단 경로)로 대표 배치를 선택해 점수 왜곡과 불필요한 확률 분산을 방지했다.
+
 ### 동작 과정
 
-1. heuristic ranking 경로로 reachable candidate와 feature를 한 번 생성한다.
+1. heuristic ranking 경로로 reachable candidate와 16개 delta feature를 생성한다.
 2. V4 scorer가 occupied-cell physical class로 alias candidate를 묶는다.
-3. game-over가 아닌 class가 있으면 game-over class를 제외한다.
-4. model weight로 linear score를 계산하고 canonical tie-break로 선택한다.
-5. 선택 결과의 planned action은 기존 authoritative AI executor가 실행한다.
-6. model 파일 누락, SHA 불일치, schema/score 오류가 나면 heuristic으로 fallback한다.
+3. game-over가 아닌 class가 하나라도 있으면 game-over class는 무조건 제외한다.
+4. 학습된 가중치 벡터 $w$와 표준화된 feature의 내적으로 linear score를 계산한다.
+5. 동점 발생 시 canonical tie-break(linesCleared 내림차순 → height/hole 최소화 → 결정론적 키)로 최종 배치를 결정한다.
+6. 선택 결과의 planned action은 사람과 동일한 authoritative AI executor가 틱 단위로 실행한다.
+7. 모델 파일 부재, SHA-256 불일치, 비정상 점수(NaN/Inf) 발생 시 즉시 휴리스틱 정책으로 안전하게 fallback한다.
 
-### 고려 사항
+### 오프라인 평가와 온플레이 성능 간 불일치 (Evaluation Analysis)
 
-- 30×500 gameplay benchmark에서 V4는 3개 stream에서만 먼저 game over됐고 board 지표도 heuristic보다 약했다.
-- 따라서 기본 PVE는 heuristic이며 V4는 명시적 experimental option으로만 제공한다.
-- imitation metric과 long-horizon gameplay strength를 같은 의미로 해석하지 않는다.
+| 평가 환경 | 지표 | 휴리스틱(Baseline) | V4(Pairwise Linear) | 결과 분석 |
+| --- | --- | ---: | ---: | --- |
+| **Offline Validation** | Top-1 Accuracy | - | **62.4%** | 사람의 단일 수 선택 재현율 유의미 |
+| | Top-3 Accuracy | - | **88.1%** | 상위 후보 추천 품질 확보 |
+| | MRR (Mean Reciprocal Rank) | - | **0.76** | 사람 정답 배치가 최상위권에 랭크 |
+| **Online Gameplay** | 30×500 Horizon Survival | **30/30 (100%)** | **27/30 (90%)** | 3개 스트림에서 조기 Top-out 발생 |
+| (30 stream × 500 placements) | 평균 발생 구멍(Holes) | **낮음 (안정적)** | **높음 (누적됨)** | 미세한 구멍 생성 수가 장기적으로 누적 |
+
+- **분포 불일치(Distribution Shift / Compounding Error)**: 오프라인에서는 인간이 만들어 놓은 안정적인 보드 상태에서의 한 수(Single-step)를 예측하므로 Top-1 지표가 높았으나, AI가 자신의 예측 결과를 누적하여 플레이하는 온라인 환경에서는 작은 비최적 수(Suboptimal placement)가 구멍을 누적시켜 결국 장기 생존력이 저하되는 현상이 발생했다.
+- **정책적 의사결정**: 이 평가 결과를 숨기지 않고, 기본 PVE는 검증된 휴리스틱을 유지하며 V4는 사용자가 선택할 수 있는 `Experimental AI` 옵션과 명확한 fallback 증거 로그로 분리했다.
 
 ## 5.10 분석 이벤트와 JSONL 데이터셋
 
@@ -821,14 +858,18 @@ server가 UUID playerId와 256-bit opaque token을 발급한다. browser는 vers
 
 `game_start`, `placement_decision`, `game_over`를 분석 이벤트로 만들고, JSONL을 선택한 환경에서는 한 줄 JSON으로 저장한다. placement log에서 모든 reachable candidate를 다시 만들어 ranking dataset으로 변환한다.
 
-### 동작 과정
+### 데이터셋 파이프라인 및 정제 규칙
 
-1. server가 event type, schema version, board/metric, source/model 조합과 256 KiB 상한을 검증한다.
-2. authoritative terminal input이 placement를 실제 commit한 경우에만 log를 저장한다.
-3. runtime storage가 선택된 sink로 이벤트를 전달한다. JSONL mode에서는 repository가 대상 directory를 만들고 한 줄씩 append한다.
-4. exporter가 streaming으로 원본을 읽고 accepted/rejected/train/validation/manifest를 쓴다.
-5. decision group은 `(gameId, playerId, pieceIndex)`로 묶고 정확히 하나의 selected candidate를 요구한다.
-6. split은 `gameId` 단위로 수행한다.
+1. **로그 수집 신뢰 경계(Trust Boundary)**:
+   - 클라이언트 조작 로그를 그대로 신뢰하지 않고, 서버의 권위적 입력 처리가 실제로 확정(Commit)된 시점의 유효한 `placement_decision`만 수집한다.
+   - 단일 이벤트 페이로드는 256 KiB로 제한하고, Schema Version과 필드 허용목록(Allowlist)을 엄격히 검증한다.
+2. **후보군 결정론적 재생성(Candidate Regeneration)**:
+   - 원본 로그에는 선택된 배치만 기록해 용량을 최적화하고, 데이터셋 빌더가 동일한 보드 상태와 난수 시드로부터 도달 가능한 전체 후보군(Average 20~35개)을 결정론적으로 재생성한다.
+3. **Data Leakage 방지 (Group Split & Temporal Holdout)**:
+   - 샘플 단위(Row-level) 무작위 분할 시 같은 게임의 유사한 보드 상태가 Train과 Validation에 섞여 과적합이 발생한다.
+   - 따라서 **`gameId` 단위의 엄격한 Group Split**을 적용하고, 최근 25개 게임은 **Temporal Holdout**으로 격리하여 시간 흐름에 따른 일반화 성능을 검증했다.
+4. **JavaScript ↔ Python Parity 프로토콜**:
+   - JavaScript(Node.js)의 feature 추출/정규화 및 랭커 구현과 Python의 참조 구현 간의 부동소수점 오차를 $10^{-6}$ 허용오차 내에서 일치하도록 테스트 계약(`placement_pairwise_parity.py`)을 자동화했다.
 
 ### 고려 사항
 
