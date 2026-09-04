@@ -27,6 +27,7 @@ const INPUT_ACTIONS = new Set([
     "move_left",
     "move_right",
     "rotate",
+    "rotate_ccw",
     "soft_drop",
     "hard_drop",
     "hold",

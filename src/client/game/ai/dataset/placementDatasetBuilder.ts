@@ -20,7 +20,7 @@ import type { ReachablePlacement } from "../heuristic/reachablePlacementPlanner.
 
 export type PlacementSource = "human" | "heuristic_ai";
 export type PlacementInputRecord = {
-    action: "move_left" | "move_right" | "soft_drop" | "rotate" | "hard_drop" | "hold";
+    action: "move_left" | "move_right" | "rotate_ccw" | "soft_drop" | "rotate" | "hard_drop" | "hold";
     tick: number;
     pieceIndex: number;
     sequence: number;
@@ -106,6 +106,7 @@ const SUPPORTED_INPUT_ACTIONS = new Set([
     "move_right",
     "soft_drop",
     "rotate",
+    "rotate_ccw",
     "hard_drop",
     "hold",
 ]);

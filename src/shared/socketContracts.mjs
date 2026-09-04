@@ -153,6 +153,7 @@ const gameInputSchema = z.discriminatedUnion("action", [
             "move_right",
             "soft_drop",
             "rotate",
+            "rotate_ccw",
             "hard_drop",
         ]),
         expectedTransform: expectedTransformSchema,

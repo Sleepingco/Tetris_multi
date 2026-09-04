@@ -81,7 +81,8 @@ export function applyAuthoritativeInput(
     if (
         action === "move_left" ||
         action === "move_right" ||
-        action === "rotate"
+        action === "rotate" ||
+        action === "rotate_ccw"
     ) {
         return applyServerInputToPlayerState(authoritativeState, input, gameCore);
     }

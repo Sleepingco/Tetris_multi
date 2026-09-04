@@ -169,6 +169,12 @@ test("resolveInputMoveIntent는 input action을 runtime move intent로 매핑한
     assert.deepEqual(resolveInputMoveIntent("rotate"), {
         kind: "rotate",
         moveType: "rotate",
+        direction: "cw",
+    });
+    assert.deepEqual(resolveInputMoveIntent("rotate_ccw"), {
+        kind: "rotate",
+        moveType: "rotate",
+        direction: "ccw",
     });
 });
 

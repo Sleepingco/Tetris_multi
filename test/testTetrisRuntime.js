@@ -434,6 +434,22 @@ test("enqueueInput은 rotate 입력으로 현재 조각을 회전한다", async 
     assert.equal(outcomes[0].reason, null);
 });
 
+test("enqueueInput은 rotate_ccw 입력으로 현재 조각을 반시계 방향 회전한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+
+    game.init({ autoStart: true });
+
+    const before = game.getSnapshot();
+    const targetTick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.ROTATE_CCW, targetTick, before.pieceIndex);
+
+    await waitForTick(game, targetTick);
+
+    assert.equal(game.getSnapshot().activePiece.rotation, (before.activePiece.rotation + 3) % 4);
+});
+
 test("wall kick 회전 성공은 applied true outcome을 남긴다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const outcomes = [];

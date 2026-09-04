@@ -665,6 +665,30 @@ test("applyAuthoritativeInput은 rotate를 처리한다", async () => {
     });
 });
 
+test("applyAuthoritativeInput은 rotate_ccw를 처리한다", async () => {
+    const gameCore = await loadGameCore();
+    const activePiece = {
+        pieceType: "tree",
+        rotation: 0,
+        row: 0,
+        col: 4,
+    };
+    const playerState = createPlayerState(gameCore, {
+        activePiece,
+        pendingPiece: { ...activePiece },
+    });
+
+    const result = applyAuthoritativeInput(playerState, {
+        action: "rotate_ccw",
+    }, gameCore);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.reason, null);
+    assert.equal(result.moveIntent.kind, "ok");
+    assert.equal(playerState.activePiece.rotation, 3);
+    assert.equal(playerState.lastActionWasRotation, true);
+});
+
 test("applyAuthoritativeInput은 hard_drop으로 lock, score, next spawn을 처리한다", async () => {
     const gameCore = await loadGameCore();
     const playerState = createPlayerState(gameCore);

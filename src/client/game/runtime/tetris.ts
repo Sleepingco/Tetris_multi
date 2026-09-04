@@ -591,11 +591,15 @@ export function createTetrisRuntime({
       * pendingPiece의 회전 후보를 시계 방향으로 한 단계 바꾼다.
       * 실제 배치 가능 여부와 wall kick은 다음 core 판정에서 처리한다.
       */
-    function rotatePendingPiece(): void {
+    function rotatePendingPiece(direction: "cw" | "ccw"): void {
         const { pendingPiece } = gameState
         if (!pendingPiece) return
         const rotation = pendingPiece.rotation
-        pendingPiece.rotation = rotation === 3 ? 0 : rotation + 1
+        if (direction === "cw") {
+            pendingPiece.rotation = (rotation + 1) % 4
+        } else {
+            pendingPiece.rotation = (rotation + 3) % 4
+        }
     }
 
     /**
@@ -640,7 +644,7 @@ export function createTetrisRuntime({
         }
 
         if (intent.kind === "rotate") {
-            rotatePendingPiece()
+            rotatePendingPiece(intent.direction)
             return intent.moveType
         }
 

@@ -96,6 +96,7 @@ const AI_ACTIONS = new Set<ReachableAction>([
     "move_left",
     "move_right",
     "rotate",
+    "rotate_ccw",
     "soft_drop",
     "hard_drop",
 ]);
@@ -255,7 +256,7 @@ export function createPveAiPlayerService(
     const savePlacementDecisionLog = dependencies.savePlacementDecisionLog
         || defaultSavePlacementDecisionLog;
     const loadV4Model = dependencies.loadPlacementV4Model || loadPlacementV4Model;
-    const recordAiPolicyEvidence = dependencies.recordAiPolicyEvidence || (() => {});
+    const recordAiPolicyEvidence = dependencies.recordAiPolicyEvidence || (() => { });
     const now = dependencies.now || Date.now;
     const env = dependencies.env || process.env;
     const configuredModelPath = env.PVE_PLACEMENT_V4_MODEL_PATH;
@@ -365,7 +366,7 @@ export function createPveAiPlayerService(
                 modelSha256: decision.modelSha256 ?? null,
                 selectedClassKey: decision.selectedClassKey ?? null,
                 selectedRepresentativeKey: decision.selectedRepresentativeKey ?? null,
-            })).catch(() => {});
+            })).catch(() => { });
         } catch {
             // 개발용 관찰 정보 저장 실패는 authoritative gameplay에 영향을 주지 않는다.
         }

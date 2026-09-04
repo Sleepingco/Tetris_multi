@@ -158,7 +158,7 @@ const BOARD_COLS = 10;
 const SPAWN_ROW = -1;
 const SPAWN_COL = 3;
 const POSITION_TRANSFORM_ACTIONS = new Set<AuthoritativeInput["action"]>([
-    "move_left", "move_right", "rotate",
+    "move_left", "move_right", "rotate", "rotate_ccw"
 ]);
 const LOCKING_TRANSFORM_ACTIONS = new Set<AuthoritativeInput["action"]>([
     "soft_drop", "hard_drop",
@@ -368,9 +368,9 @@ export function authenticateHumanPlacementReceipt(
     const key = receiptKey(roomId, playerId);
     const receipts = purgeExpiredReceipts(key, now);
     const receiptIndex = receipts.findIndex(candidate => (
-            candidate.clientSequence === clientSequence
-            && candidate.pieceIndex === pieceIndex
-        ));
+        candidate.clientSequence === clientSequence
+        && candidate.pieceIndex === pieceIndex
+    ));
     if (receiptIndex < 0) {
         return {
             ok: false,

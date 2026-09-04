@@ -9,26 +9,28 @@ import type { InputAction } from "../state/stateFactory.ts";
 export type { InputAction };
 
 export const INPUT_ACTION = {
-        MOVE_LEFT: "move_left",
-        MOVE_RIGHT: "move_right",
-        SOFT_DROP: "soft_drop",
-        ROTATE: "rotate",
-        HARD_DROP: "hard_drop",
-        HOLD: "hold",
+    MOVE_LEFT: "move_left",
+    MOVE_RIGHT: "move_right",
+    SOFT_DROP: "soft_drop",
+    ROTATE: "rotate",
+    HARD_DROP: "hard_drop",
+    HOLD: "hold",
+    ROTATE_CCW: "rotate_ccw",
 } as const satisfies Record<string, InputAction>
 
 const NON_REPEATABLE_ACTIONS = new Set<InputAction>([
-        INPUT_ACTION.HOLD,
-        INPUT_ACTION.HARD_DROP,
-        INPUT_ACTION.ROTATE,
+    INPUT_ACTION.HOLD,
+    INPUT_ACTION.HARD_DROP,
+    INPUT_ACTION.ROTATE,
+    INPUT_ACTION.ROTATE_CCW,
 ])
 
 const PREVENT_DEFAULT_KEYS = new Set([
-        "ArrowRight",
-        "ArrowLeft",
-        "ArrowDown",
-        "ArrowUp",
-        " ",
+    "ArrowRight",
+    "ArrowLeft",
+    "ArrowDown",
+    "ArrowUp",
+    " ",
 ])
 
 /**
@@ -36,13 +38,14 @@ const PREVENT_DEFAULT_KEYS = new Set([
   * 게임과 무관한 키는 null로 돌려보내 호출자가 그대로 무시하게 한다.
   */
 function mapKeyboardEventToAction(event: KeyboardEvent): InputAction | null {
-        if (event.code === "KeyC" || event.key?.toLowerCase() === "c") return INPUT_ACTION.HOLD
-        if (event.key === "ArrowRight") return INPUT_ACTION.MOVE_RIGHT
-        if (event.key === "ArrowLeft") return INPUT_ACTION.MOVE_LEFT
-        if (event.key === "ArrowDown") return INPUT_ACTION.SOFT_DROP
-        if (event.key === "ArrowUp") return INPUT_ACTION.ROTATE
-        if (event.code === "Space" || event.key === " ") return INPUT_ACTION.HARD_DROP
-        return null
+    if (event.code === "KeyC" || event.key?.toLowerCase() === "c") return INPUT_ACTION.HOLD
+    if (event.key === "ArrowRight") return INPUT_ACTION.MOVE_RIGHT
+    if (event.key === "ArrowLeft") return INPUT_ACTION.MOVE_LEFT
+    if (event.key === "ArrowDown") return INPUT_ACTION.SOFT_DROP
+    if (event.code === "KeyX" || event.key?.toLowerCase() === "x" || event.key === "ArrowUp") return INPUT_ACTION.ROTATE
+    if (event.code === "Space" || event.key === " ") return INPUT_ACTION.HARD_DROP
+    if (event.code === "KeyZ" || event.key?.toLowerCase() === "z") return INPUT_ACTION.ROTATE_CCW
+    return null
 }
 
 /**
@@ -54,28 +57,28 @@ function mapKeyboardEventToAction(event: KeyboardEvent): InputAction | null {
   * 페이지 unmount 시 반환한 함수를 호출해야 중복 listener와 메모리 누수를 막을 수 있다.
   */
 export function attachKeyboardInput({
-        enqueueAction,
-        onUserInteract,
+    enqueueAction,
+    onUserInteract,
 }: {
-        enqueueAction: ((action: InputAction) => unknown) | null | undefined;
-        onUserInteract?: (() => void) | null;
+    enqueueAction: ((action: InputAction) => unknown) | null | undefined;
+    onUserInteract?: (() => void) | null;
 }): () => void {
-        if (typeof enqueueAction !== "function") return () => { }
+    if (typeof enqueueAction !== "function") return () => { }
 
-        const onKeydown = (event: KeyboardEvent) => {
-                if (typeof onUserInteract === "function") onUserInteract()
+    const onKeydown = (event: KeyboardEvent) => {
+        if (typeof onUserInteract === "function") onUserInteract()
 
-                const action = mapKeyboardEventToAction(event)
-                if (!action) return
+        const action = mapKeyboardEventToAction(event)
+        if (!action) return
 
-                if (event.repeat && NON_REPEATABLE_ACTIONS.has(action)) return
-                if (PREVENT_DEFAULT_KEYS.has(event.key) || event.code === "Space") event.preventDefault()
+        if (event.repeat && NON_REPEATABLE_ACTIONS.has(action)) return
+        if (PREVENT_DEFAULT_KEYS.has(event.key) || event.code === "Space") event.preventDefault()
 
-                enqueueAction(action)
-        }
+        enqueueAction(action)
+    }
 
-        document.addEventListener("keydown", onKeydown)
-        return () => {
-                document.removeEventListener("keydown", onKeydown)
-        }
+    document.addEventListener("keydown", onKeydown)
+    return () => {
+        document.removeEventListener("keydown", onKeydown)
+    }
 }

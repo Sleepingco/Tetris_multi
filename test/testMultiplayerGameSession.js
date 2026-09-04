@@ -966,6 +966,38 @@ test("rotate와 hard_drop expectedTransform은 각각 after와 before 조각을 
     assert.equal(inputEvents.some(event => "row" in event.payload.expectedTransform), false);
 });
 
+test("Z 입력은 rotate_ccw와 after expectedTransform을 전송한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const session = startMultiplayerGame(createSessionParams());
+    t.after(() => cleanupSession(session));
+
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", {
+        key: "z",
+        code: "KeyZ",
+        repeat: false,
+        preventDefault() {},
+    });
+    await waitForLocalInputTick();
+
+    const inputEvent = sharedFakeSocket.emitted.find(event => {
+        return event.eventName === "game:input";
+    });
+    assert.deepEqual({
+        action: inputEvent.payload.action,
+        tick: inputEvent.payload.tick,
+        pieceIndex: inputEvent.payload.pieceIndex,
+        clientSequence: inputEvent.payload.clientSequence,
+        expectedTransform: inputEvent.payload.expectedTransform,
+    }, {
+        action: "rotate_ccw",
+        tick: 1,
+        pieceIndex: 1,
+        clientSequence: 1,
+        expectedTransform: { pieceType: "tree", rotation: 3, col: 3 },
+    });
+});
+
 test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조각을 사용한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());

@@ -5,43 +5,44 @@ import type { PieceType } from "./blocks.ts";
 export type GamePhase = "playing" | "lineClearing" | "gameOver";
 
 export type InputAction =
-        | "move_left"
-        | "move_right"
-        | "soft_drop"
-        | "rotate"
-        | "hard_drop"
-        | "hold";
+    | "move_left"
+    | "move_right"
+    | "soft_drop"
+    | "rotate"
+    | "rotate_ccw"
+    | "hard_drop"
+    | "hold";
 
 export type QueuedInput = {
-        tick: number;
-        action: InputAction;
-        pieceIndex: number | null;
+    tick: number;
+    action: InputAction;
+    pieceIndex: number | null;
 };
 
 export type CreateGameStateOptions = {
-        spawnRow: number;
-        spawnCol: number;
-        fallIntervalMs: number;
-        initialPhase: GamePhase;
+    spawnRow: number;
+    spawnCol: number;
+    fallIntervalMs: number;
+    initialPhase: GamePhase;
 };
 
 export type GameState = {
-        score: number;
-        lines: number;
-        fallIntervalMs: number;
-        board: Board | null;
-        pieceQueue: PieceType[];
-        bag: PieceType[];
-        holdPieceType: PieceType | null;
-        holdUsedThisDrop: boolean;
-        activePiece: PieceState;
-        pendingPiece: PieceState | null;
-        inputQueue: QueuedInput[];
-        phase: GamePhase;
-        lastActionWasRotation: boolean;
-        isTSpin: boolean;
-        combo: number;
-        backToBack: boolean;
+    score: number;
+    lines: number;
+    fallIntervalMs: number;
+    board: Board | null;
+    pieceQueue: PieceType[];
+    bag: PieceType[];
+    holdPieceType: PieceType | null;
+    holdUsedThisDrop: boolean;
+    activePiece: PieceState;
+    pendingPiece: PieceState | null;
+    inputQueue: QueuedInput[];
+    phase: GamePhase;
+    lastActionWasRotation: boolean;
+    isTSpin: boolean;
+    combo: number;
+    backToBack: boolean;
 };
 
 // =============================
@@ -55,32 +56,32 @@ export type GameState = {
   * `activePiece` 객체 참조는 runtime이 유지하므로 이후 값은 `setActivePiece`가 제자리에서 갱신한다.
   */
 export function createGameState({
-        spawnRow,
-        spawnCol,
-        fallIntervalMs,
-        initialPhase,
+    spawnRow,
+    spawnCol,
+    fallIntervalMs,
+    initialPhase,
 }: CreateGameStateOptions): GameState {
-        return {
-                score: 0,
-                lines: 0,
-                fallIntervalMs: fallIntervalMs,
-                board: null,
-                pieceQueue: [],
-                bag: [],
-                holdPieceType: null,
-                holdUsedThisDrop: false,
-                activePiece: {
-                        pieceType: "",
-                        rotation: 0,
-                        row: spawnRow,
-                        col: spawnCol,
-                },
-                pendingPiece: null,
-                inputQueue: [],
-                phase: initialPhase,
-                lastActionWasRotation: false,
-                isTSpin: false,
-                combo: -1,
-                backToBack: false,
-        }
+    return {
+        score: 0,
+        lines: 0,
+        fallIntervalMs: fallIntervalMs,
+        board: null,
+        pieceQueue: [],
+        bag: [],
+        holdPieceType: null,
+        holdUsedThisDrop: false,
+        activePiece: {
+            pieceType: "",
+            rotation: 0,
+            row: spawnRow,
+            col: spawnCol,
+        },
+        pendingPiece: null,
+        inputQueue: [],
+        phase: initialPhase,
+        lastActionWasRotation: false,
+        isTSpin: false,
+        combo: -1,
+        backToBack: false,
+    }
 }

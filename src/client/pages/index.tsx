@@ -121,9 +121,11 @@ function IndexPage() {
                     <ul>
                         <li><kbd>←</kbd><span>왼쪽 이동</span></li>
                         <li><kbd>→</kbd><span>오른쪽 이동</span></li>
+                        <li><kbd>↑ / X</kbd><span>시계방향 회전</span></li>
+                        <li><kbd>Z</kbd><span>반시계방향 회전</span></li>
                         <li><kbd>↓</kbd><span>한 칸 하강(소프트 드롭)</span></li>
-                        <li><kbd>↑</kbd><span>회전</span></li>
                         <li><kbd>Space</kbd><span>하드 드롭</span></li>
+                        <li><kbd>C</kbd><span>홀드 / 교체</span></li>
                     </ul>
                 </section>
             </main>

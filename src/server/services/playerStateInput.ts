@@ -117,13 +117,20 @@ function createPendingPiece(
 
     if (inputIntent.kind === "rotate") {
         if (!authoritativeState.pendingPiece) return null;
-
-        const pendingPiece = { ...authoritativeState.pendingPiece };
-        pendingPiece.rotation = pendingPiece.rotation === 3
-            ? 0
-            : pendingPiece.rotation + 1;
-
-        return pendingPiece;
+        let direction = inputIntent.direction;
+        if (direction === "cw") {
+            const pendingPiece = { ...authoritativeState.pendingPiece };
+            pendingPiece.rotation = pendingPiece.rotation === 3
+                ? 0
+                : pendingPiece.rotation + 1;
+            return pendingPiece;
+        } else {
+            const pendingPiece = { ...authoritativeState.pendingPiece };
+            pendingPiece.rotation = pendingPiece.rotation === 0
+                ? 3
+                : pendingPiece.rotation - 1;
+            return pendingPiece;
+        }
     }
 
     return null;

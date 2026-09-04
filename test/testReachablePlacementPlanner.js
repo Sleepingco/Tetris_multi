@@ -80,6 +80,7 @@ test("빈 board에서 기본 reachable placement와 hard_drop 계획을 생성�
         "move_left",
         "move_right",
         "rotate",
+        "rotate_ccw",
         "soft_drop",
     ]);
     assert.ok(candidates.every(candidate => {
@@ -120,6 +121,26 @@ test("좌우 이동과 회전 후보는 최단 plannedActions를 반환한다", 
         "hard_drop",
     ]);
     assert.deepEqual(rotated.plannedActions, ["rotate", "hard_drop"]);
+});
+
+test("반시계 회전 후보는 rotate_ccw 한 번으로 replay된다", async () => {
+    const { generateReachablePlacements } = await import(
+        "../src/client/game/ai/heuristic/reachablePlacementPlanner.ts"
+    );
+    const board = createBoard();
+    const activePiece = {
+        pieceType: "tree",
+        rotation: 0,
+        row: -1,
+        col: 3,
+    };
+    const ccw = generateReachablePlacements(board, activePiece).find(candidate => {
+        return candidate.placement.rotation === 3 && candidate.placement.col === 3;
+    });
+
+    assert.ok(ccw);
+    assert.deepEqual(ccw.plannedActions, ["rotate_ccw", "hard_drop"]);
+    await replayPlannedActions(board, activePiece, ccw);
 });
 
 test("wall kick 회전은 resolveMoveAttempt와 같은 위치를 사용한다", async () => {

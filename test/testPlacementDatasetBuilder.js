@@ -244,6 +244,25 @@ test("inputSequence 내부 항목의 action과 숫자 필드 타입 및 범위�
     }
 });
 
+test("inputSequence는 rotate_ccw action을 유효한 입력으로 보존한다", async () => {
+    const { buildPlacementDataset } = await import(
+        "../src/client/game/ai/dataset/placementDatasetBuilder.ts"
+    );
+    const result = await buildPlacementDataset([await createValidLog({
+        inputSequence: [{
+            action: "rotate_ccw",
+            tick: 10,
+            pieceIndex: 3,
+            sequence: 1,
+            createdAt: 1780000000000,
+        }],
+    })]);
+
+    assert.equal(result.rejected.length, 0);
+    assert.ok(result.samples.length > 0);
+    assert.equal(result.samples[0].metadata.inputSequence[0].action, "rotate_ccw");
+});
+
 test("schemaVersion 1 로그는 명시적인 reason으로 제외한다", async () => {
     const {
         buildPlacementDataset,

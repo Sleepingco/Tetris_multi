@@ -89,6 +89,7 @@ const AFTER_ACTION_TRANSFORM_INPUTS = new Set([
     "move_left",
     "move_right",
     "rotate",
+    "rotate_ccw",
 ])
 const BEFORE_ACTION_TRANSFORM_INPUTS = new Set([
     "soft_drop",

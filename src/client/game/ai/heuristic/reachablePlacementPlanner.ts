@@ -23,7 +23,7 @@ import type { Placement } from "./placementGenerator.ts";
  * heuristic 평가, dataset 생성, PVE 실행이 공유하는 하나의 후보 계약이다.
  */
 
-export type ReachableAction = "move_left" | "move_right" | "rotate" | "soft_drop" | "hard_drop";
+export type ReachableAction = "move_left" | "move_right" | "rotate" | "rotate_ccw" | "soft_drop" | "hard_drop";
 export type ReachablePlacement = {
     placement: Placement;
     plannedActions: ReachableAction[];
@@ -33,6 +33,7 @@ export const REACHABLE_ACTION_ORDER: ReadonlyArray<Exclude<ReachableAction, "har
     "move_left",
     "move_right",
     "rotate",
+    "rotate_ccw",
     "soft_drop",
 ]);
 
@@ -101,11 +102,21 @@ function createPendingPiece(
     }
 
     if (inputIntent.kind === "rotate") {
+        const direction = inputIntent.direction;
         const rotationCount = BLOCKS[piece.pieceType].length;
-        return {
-            ...piece,
-            rotation: (piece.rotation + 1) % rotationCount,
-        };
+
+        if (direction === "cw") {
+            return {
+                ...piece,
+                rotation: (piece.rotation + 1) % rotationCount,
+            };
+        } else if (direction === "ccw") {
+            return {
+                ...piece,
+                rotation: (piece.rotation - 1 + rotationCount) % rotationCount,
+            };
+        }
+
     }
 
     return null;

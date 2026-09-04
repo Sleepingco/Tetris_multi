@@ -145,6 +145,26 @@ test("human placement projector는 server identity와 nested allowlist만 보존
     assert.doesNotMatch(JSON.stringify(event), /private|nickname|socketId|userAgent/);
 });
 
+test("placement projector는 rotate_ccw inputSequence를 canonical event로 보존한다", () => {
+    const event = projectGameEventLog(placement({
+        inputSequence: [{
+            action: "rotate_ccw",
+            tick: 10,
+            pieceIndex: 3,
+            sequence: 1,
+            createdAt: 1780000000000,
+        }],
+    }));
+
+    assert.deepEqual(event.payload.inputSequence, [{
+        action: "rotate_ccw",
+        tick: 10,
+        pieceIndex: 3,
+        sequence: 1,
+        createdAt: 1780000000000,
+    }]);
+});
+
 test("legacy human placement는 missing createdAt을 canonical null로 보존한다", () => {
     const event = projectGameEventLog(placement({
         schemaVersion: 1,
