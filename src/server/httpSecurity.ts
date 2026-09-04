@@ -73,7 +73,7 @@ export function createHttpSecurityHeaders(
         "img-src 'self' data:",
         "font-src 'none'",
         "media-src 'self'",
-        `connect-src 'self' ${connectOrigins.length ? ` ${connectOrigins.join(" ")}` : ""}`,
+        `connect-src 'self'${connectOrigins.length ? ` ${connectOrigins.join(" ")}` : ""}`,
         "worker-src 'none'",
     ].join("; ");
 
