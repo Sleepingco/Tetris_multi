@@ -172,7 +172,11 @@ jobs:
               /pages/tetrisMulti.html \
               /socket.io/socket.io.js
           do
-              curl --fail --silent --show-error "http://127.0.0.1:5510$path" >/dev/null
+              echo "========== CHECK $path =========="
+              curl --silent --show-error \
+                  --write-out "HTTP_STATUS=%{http_code}\n" \
+                  "http://127.0.0.1:5510$path" \
+                  >/dev/null
           done
 
           headers="$RUNNER_TEMP/tetris-security-headers.txt"
