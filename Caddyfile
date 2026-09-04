@@ -1,3 +1,22 @@
 tetra-arena.duckdns.org {
-	reverse_proxy app:5500
+    # 1. 우마미 스크립트 프록시
+    handle /stats/script.js {
+        rewrite * /script.js
+        reverse_proxy https://cloud.umami.is {
+            header_up Host cloud.umami.is
+        }
+    }
+
+    # 2. 우마미 데이터 전송 API 프록시
+    handle /stats/api/send {
+        rewrite * /api/send
+        reverse_proxy https://cloud.umami.is {
+            header_up Host cloud.umami.is
+        }
+    }
+
+    # 3. 그 외 기본 테트리스 웹소켓/앱
+    handle {
+        reverse_proxy app:5500
+    }
 }
