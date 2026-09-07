@@ -143,8 +143,9 @@ database_created=true
 
 database_ready=false
 for _ in $(seq 1 100); do
-    if docker exec "$database_container" \
-        pg_isready --quiet --username postgres --dbname postgres; then
+    if docker exec "$database_container" sh -c \
+        'test "$(cat /proc/1/comm)" = postgres &&
+         pg_isready --quiet --username postgres --dbname postgres'; then
         database_ready=true
         break
     fi
