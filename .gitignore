@@ -27,3 +27,4 @@ blob-report/
 !.env*.example
 !*.example
 
+docs/portfolio/*
