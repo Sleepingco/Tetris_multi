@@ -1,0 +1,47 @@
+name: Production deployment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ssh-check:
+    name: Check OCI SSH connection
+    runs-on: ubuntu-24.04
+    environment: production
+
+    steps:
+      - name: Prepare SSH files
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          KNOWN_HOSTS: ${{ secrets.OCI_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+
+          ssh_dir="$RUNNER_TEMP/tetris-ssh"
+          install -d -m 700 "$ssh_dir"
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/id_rsa"
+          printf '%s\n' "$KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+
+          chmod 600 "$ssh_dir/id_rsa" "$ssh_dir/known_hosts"
+
+      - name: Test OCI connection
+        env:
+          OCI_HOST: ${{ vars.OCI_HOST }}
+          OCI_USER: ${{ vars.OCI_USER }}
+          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
+            -p "$OCI_SSH_PORT" \
+            "$OCI_USER@$OCI_HOST" \
+            'printf "OCI SSH connection ok\n"'
