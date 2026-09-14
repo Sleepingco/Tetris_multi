@@ -8,11 +8,35 @@ permissions:
 
 jobs:
   ssh-check:
-    name: Check OCI SSH connection
+    name: Transfer production artifact
     runs-on: ubuntu-24.04
     environment: production
 
     steps:
+      - name: Check out selected commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create release artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_sha="${GITHUB_SHA:0:7}"
+          artifact="$RUNNER_TEMP/tetris-${release_sha}.tar.gz"
+
+          git archive --format=tar.gz --output="$artifact" "$GITHUB_SHA"
+          (
+              cd "$(dirname "$artifact")"
+              sha256sum "$(basename "$artifact")" > "$(basename "$artifact").sha256"
+          )
+          tar -tzf "$artifact" >/dev/null
+
+          printf 'release_sha=%s\n' "$release_sha" >> "$GITHUB_ENV"
+          printf 'artifact=%s\n' "$artifact" >> "$GITHUB_ENV"
+
       - name: Prepare SSH files
         shell: bash
         env:
@@ -29,13 +53,28 @@ jobs:
 
           chmod 600 "$ssh_dir/id_rsa" "$ssh_dir/known_hosts"
 
-      - name: Test OCI connection
+      - name: Transfer and verify artifact
         env:
           OCI_HOST: ${{ vars.OCI_HOST }}
           OCI_USER: ${{ vars.OCI_USER }}
           OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+          OCI_INCOMING_DIR: ${{ vars.OCI_INCOMING_DIR }}
         run: |
           set -euo pipefail
+
+          test -n "$OCI_INCOMING_DIR"
+          remote_artifact="$OCI_INCOMING_DIR/tetris-${release_sha}.tar.gz"
+          remote_checksum="$remote_artifact.sha256"
+
+          scp \
+            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
+            -P "$OCI_SSH_PORT" \
+            "$artifact" \
+            "$artifact.sha256" \
+            "$OCI_USER@$OCI_HOST:$OCI_INCOMING_DIR/"
 
           ssh \
             -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
@@ -44,4 +83,12 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
             -p "$OCI_SSH_PORT" \
             "$OCI_USER@$OCI_HOST" \
-            'printf "OCI SSH connection ok\n"'
+            "RELEASE_SHA='$release_sha' REMOTE_ARTIFACT='$remote_artifact' REMOTE_CHECKSUM='$remote_checksum' sh -s" <<'REMOTE'
+          set -eu
+
+          test -s "$REMOTE_ARTIFACT"
+          test -s "$REMOTE_CHECKSUM"
+          (cd "$(dirname "$REMOTE_ARTIFACT")" && sha256sum -c "$(basename "$REMOTE_CHECKSUM")")
+          tar -tzf "$REMOTE_ARTIFACT" >/dev/null
+          printf 'OCI artifact verified: %s\n' "$RELEASE_SHA"
+          REMOTE
