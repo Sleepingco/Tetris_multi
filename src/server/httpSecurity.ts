@@ -12,6 +12,8 @@ const INLINE_STYLE_HASHES = Object.freeze([
     "'sha256-IsVLBKuEy1m/EXcXkJQYt/4Hss2umZ0wV/cKhk8GzBs='",
 ]);
 
+const UMAMI_CLOUD_ORIGIN = "https://cloud.umami.is";
+
 const CONNECT_PROTOCOLS = new Set(["http:", "https:", "ws:", "wss:"]);
 
 export const CSP_INLINE_SCRIPT_HASHES = INLINE_SCRIPT_HASHES;
@@ -66,14 +68,14 @@ export function createHttpSecurityHeaders(
         "form-action 'self'",
         "frame-ancestors 'none'",
         "object-src 'none'",
-        `script-src 'self' ${INLINE_SCRIPT_HASHES.join(" ")}`,
+        `script-src 'self' ${UMAMI_CLOUD_ORIGIN} ${INLINE_SCRIPT_HASHES.join(" ")}`,
         "script-src-attr 'none'",
         `style-src 'self' ${INLINE_STYLE_HASHES.join(" ")}`,
         "style-src-attr 'none'",
         "img-src 'self' data:",
         "font-src 'none'",
         "media-src 'self'",
-        `connect-src 'self'${connectOrigins.length ? ` ${connectOrigins.join(" ")}` : ""}`,
+        `connect-src 'self' ${UMAMI_CLOUD_ORIGIN}${connectOrigins.length ? ` ${connectOrigins.join(" ")}` : ""}`,
         "worker-src 'none'",
     ].join("; ");
 

@@ -37,8 +37,8 @@ test("production CSP는 네 페이지와 first-party artifact를 위반 없이 �
         expect((await request.get(`${modulePath}.map`)).status()).toBe(404);
 
         const context = await browser.newContext();
-        // Umami는 Caddy가 제공하는 운영 경계이므로 Node 기반 E2E에서는 빈 스크립트로 대체한다.
-        await context.route("**/stats/script.js", route => route.fulfill({
+        // Umami Cloud는 외부 운영 경계이므로 Node 기반 E2E에서는 빈 스크립트로 대체한다.
+        await context.route("https://cloud.umami.is/script.js", route => route.fulfill({
             status: 200,
             contentType: "application/javascript",
             body: "",
