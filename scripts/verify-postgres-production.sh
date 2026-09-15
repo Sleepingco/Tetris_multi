@@ -329,7 +329,7 @@ grep -qi '^Content-Security-Policy: ' "$headers"
 grep -qi '^X-Content-Type-Options: nosniff' "$headers"
 grep -qi '^X-Frame-Options: DENY' "$headers"
 module_path="$(printf '%s' "$root_html" \
-    | sed -n 's/.*src="\([^"]*\.js\)".*/\1/p' \
+    | sed -n 's/.*<script type="module"[^>]*src="\([^"]*\.js\)".*/\1/p' \
     | head -n 1)"
 test -n "$module_path"
 test "$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
