@@ -154,3 +154,71 @@ jobs:
 
           printf 'candidate image prepared: %s\n' "$RELEASE_SHA"
           REMOTE
+
+      - name: Back up and verify production database
+        env:
+          OCI_HOST: ${{ vars.OCI_HOST }}
+          OCI_USER: ${{ vars.OCI_USER }}
+          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
+            -p "$OCI_SSH_PORT" \
+            "$OCI_USER@$OCI_HOST" \
+            "RELEASE_SHA='$release_sha' sh -s" <<'REMOTE'
+          set -eu
+          umask 077
+
+          case "$RELEASE_SHA" in
+              *[!0-9a-f]*|'')
+                  echo "INVALID_RELEASE_SHA" >&2
+                  exit 1
+                  ;;
+          esac
+          test "${#RELEASE_SHA}" -eq 7
+
+          timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          backup="/srv/tetris/backups/tetris-${RELEASE_SHA}-${timestamp}.dump"
+          temporary="${backup}.tmp"
+
+          sudo install -d -o ubuntu -g ubuntu -m 700 /srv/tetris/backups
+          test ! -e "$backup"
+          test ! -e "$temporary"
+
+          cleanupTemporary() {
+              test ! -e "$temporary" || rm -f -- "$temporary"
+          }
+          trap cleanupTemporary EXIT
+
+          sudo docker compose \
+              --env-file /srv/tetris/secrets/production.env \
+              -f /srv/tetris/repository/compose.production.yml \
+              exec -T postgres \
+              pg_dump \
+              --username postgres \
+              --dbname tetris \
+              --format=custom \
+              > "$temporary"
+
+          test -s "$temporary"
+          sudo docker compose \
+              --env-file /srv/tetris/secrets/production.env \
+              -f /srv/tetris/repository/compose.production.yml \
+              exec -T postgres \
+              pg_restore --list \
+              < "$temporary" \
+              >/dev/null
+
+          mv "$temporary" "$backup"
+          chmod 400 "$backup"
+          trap - EXIT
+
+          sha256sum "$backup"
+          stat -c '%a %U:%G %s %n' "$backup"
+          printf 'production database backup verified: %s\n' "$backup"
+          REMOTE
