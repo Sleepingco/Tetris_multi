@@ -222,3 +222,51 @@ jobs:
           stat -c '%a %U:%G %s %n' "$backup"
           printf 'production database backup verified: %s\n' "$backup"
           REMOTE
+
+      - name: Apply and verify database migrations
+        env:
+          OCI_HOST: ${{ vars.OCI_HOST }}
+          OCI_USER: ${{ vars.OCI_USER }}
+          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
+            -p "$OCI_SSH_PORT" \
+            "$OCI_USER@$OCI_HOST" \
+            "RELEASE_SHA='$release_sha' sh -s" <<'REMOTE'
+          set -eu
+          case "$RELEASE_SHA" in
+              *[!0-9a-f]*|'')
+                  echo "INVALID_RELEASE_SHA" >&2
+                  exit 1
+                  ;;
+          esac
+          test "${#RELEASE_SHA}" -eq 7
+
+          runMigration() {
+              sudo docker run --rm \
+                  --network tetris_database \
+                  --mount type=bind,src=/srv/tetris/certs/ca.crt,dst=/run/secrets/postgres-ca.crt,readonly \
+                  --env-file /srv/tetris/secrets/migration.env \
+                  --env NODE_EXTRA_CA_CERTS=/run/secrets/postgres-ca.crt \
+                  "tetris-app:${RELEASE_SHA}" \
+                  node dist/server/server/db/migrateCli.js
+          }
+
+          first_result="$(runMigration)"
+          printf '%s\n' "$first_result"
+          printf '%s\n' "$first_result" \
+              | grep -Eq '^PostgreSQL migrations applied=[0-9]+ skipped=[0-9]+$'
+
+          second_result="$(runMigration)"
+          printf '%s\n' "$second_result"
+          printf '%s\n' "$second_result" \
+              | grep -Eq '^PostgreSQL migrations applied=0 skipped=[1-9][0-9]*$'
+
+          printf 'database migrations verified: %s\n' "$RELEASE_SHA"
+          REMOTE
