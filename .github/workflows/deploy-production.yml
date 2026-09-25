@@ -6,6 +6,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
 jobs:
   ssh-check:
     name: Transfer production artifact
@@ -91,4 +95,62 @@ jobs:
           (cd "$(dirname "$REMOTE_ARTIFACT")" && sha256sum -c "$(basename "$REMOTE_CHECKSUM")")
           tar -tzf "$REMOTE_ARTIFACT" >/dev/null
           printf 'OCI artifact verified: %s\n' "$RELEASE_SHA"
+          REMOTE
+
+      - name: Prepare candidate image
+        env:
+          OCI_HOST: ${{ vars.OCI_HOST }}
+          OCI_USER: ${{ vars.OCI_USER }}
+          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+          OCI_INCOMING_DIR: ${{ vars.OCI_INCOMING_DIR }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
+            -p "$OCI_SSH_PORT" \
+            "$OCI_USER@$OCI_HOST" \
+            "RELEASE_SHA='$release_sha' OCI_INCOMING_DIR='$OCI_INCOMING_DIR' sh -s" <<'REMOTE'
+          set -eu
+
+          artifact="$OCI_INCOMING_DIR/tetris-${RELEASE_SHA}.tar.gz"
+          build_directory="/srv/tetris/builds/${RELEASE_SHA}"
+
+          test -s "$artifact"
+          test ! -e "$build_directory"
+
+          sudo install -d \
+              -o ubuntu \
+              -g ubuntu \
+              -m 750 \
+              "$build_directory"
+
+          tar -xzf "$artifact" -C "$build_directory"
+
+          test -f "$build_directory/Dockerfile"
+          test -f "$build_directory/compose.production.yml"
+          test -f "$build_directory/package.json"
+
+          cd "$build_directory"
+
+          sudo env APP_IMAGE_TAG="$RELEASE_SHA" \
+              docker compose \
+              --env-file /srv/tetris/secrets/production.env \
+              -f compose.production.yml \
+              config --quiet
+
+          sudo env APP_IMAGE_TAG="$RELEASE_SHA" \
+              docker compose \
+              --env-file /srv/tetris/secrets/production.env \
+              -f compose.production.yml \
+              build app
+
+          sudo docker image inspect "tetris-app:${RELEASE_SHA}" \
+              --format \
+              'tags={{json .RepoTags}} architecture={{.Architecture}} size={{.Size}}'
+
+          printf 'candidate image prepared: %s\n' "$RELEASE_SHA"
           REMOTE
