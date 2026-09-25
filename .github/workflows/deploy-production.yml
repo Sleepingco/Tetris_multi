@@ -270,3 +270,106 @@ jobs:
 
           printf 'database migrations verified: %s\n' "$RELEASE_SHA"
           REMOTE
+
+      - name: Activate and verify production app
+        env:
+          OCI_HOST: ${{ vars.OCI_HOST }}
+          OCI_USER: ${{ vars.OCI_USER }}
+          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+        run: |
+          set -euo pipefail
+
+          ssh \
+            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
+            -p "$OCI_SSH_PORT" \
+            "$OCI_USER@$OCI_HOST" \
+            "RELEASE_SHA='$release_sha' bash -s" <<'REMOTE'
+          set -euo pipefail
+
+          case "$RELEASE_SHA" in
+              *[!0-9a-f]*|'')
+                  echo "INVALID_RELEASE_SHA" >&2
+                  exit 1
+                  ;;
+          esac
+          test "${#RELEASE_SHA}" -eq 7
+
+          env_file=/srv/tetris/secrets/production.env
+          compose_file=/srv/tetris/repository/compose.production.yml
+          current_tag=$(sed -n 's/^APP_IMAGE_TAG=//p' "$env_file")
+          test "$(grep -c '^APP_IMAGE_TAG=' "$env_file")" -eq 1
+          case "$current_tag" in
+              *[!0-9a-f]*|'')
+                  echo "INVALID_CURRENT_IMAGE_TAG" >&2
+                  exit 1
+                  ;;
+          esac
+          test "${#current_tag}" -eq 7
+          test "$current_tag" != "$RELEASE_SHA"
+          sudo docker image inspect "tetris-app:${current_tag}" >/dev/null
+          sudo docker image inspect "tetris-app:${RELEASE_SHA}" >/dev/null
+
+          setImageTag() {
+              image_tag=$1
+              temporary=$(mktemp /srv/tetris/secrets/production.env.XXXXXX)
+              sed "s/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=${image_tag}/" \
+                  "$env_file" > "$temporary"
+              test "$(grep -c '^APP_IMAGE_TAG=' "$temporary")" -eq 1
+              chmod 600 "$temporary"
+              mv "$temporary" "$env_file"
+          }
+
+          replaceApp() {
+              sudo docker compose \
+                  --env-file "$env_file" \
+                  -f "$compose_file" \
+                  up -d --no-deps --no-build --force-recreate --wait app
+          }
+
+          verifyApp() {
+              app_id=$(sudo docker compose \
+                  --env-file "$env_file" \
+                  -f "$compose_file" \
+                  ps -q app)
+              test -n "$app_id"
+              actual=$(sudo docker inspect "$app_id" \
+                  --format '{{.Config.Image}} {{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}}')
+              test "$actual" = "tetris-app:${expected_tag} running healthy false"
+
+              http_status=$(curl -fsS \
+                  --retry 10 \
+                  --retry-delay 2 \
+                  --retry-all-errors \
+                  -o /dev/null \
+                  -w '%{http_code}' \
+                  https://tetra-arena.duckdns.org)
+              test "$http_status" = 200
+          }
+
+          rollback() {
+              echo "Deployment verification failed; restoring ${current_tag}" >&2
+              if ! setImageTag "$current_tag" || ! replaceApp; then
+                  echo "ROLLBACK_FAILED: app could not be recreated" >&2
+                  return 1
+              fi
+              expected_tag=$current_tag
+              if ! verifyApp; then
+                  echo "ROLLBACK_FAILED: restored app did not pass health checks" >&2
+                  return 1
+              fi
+              echo "rollback verified: ${current_tag}"
+          }
+
+          setImageTag "$RELEASE_SHA"
+          expected_tag=$RELEASE_SHA
+          if ! replaceApp || ! verifyApp; then
+              rollback || true
+              exit 1
+          fi
+
+          printf 'production app activated and verified: %s (previous=%s)\n' \
+              "$RELEASE_SHA" "$current_tag"
+          REMOTE
