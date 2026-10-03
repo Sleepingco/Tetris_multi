@@ -442,6 +442,36 @@ jobs:
               test "$http_status" = 200 || return 1
           }
 
+          diagnoseCandidate() {
+              app_id=$(sudo docker compose \
+                  --env-file "$env_file" \
+                  -f "$compose_file" \
+                  ps -aq app | head -n 1) || app_id=
+              if test -z "$app_id"; then
+                  echo "CANDIDATE_CONTAINER_NOT_FOUND" >&2
+                  return 0
+              fi
+
+              image=$(sudo docker inspect "$app_id" --format '{{.Config.Image}}') \
+                  || image=unknown
+              if test "$image" != "tetris-app:${RELEASE_SHA}"; then
+                  printf 'CANDIDATE_CONTAINER_NOT_FOUND; found image=%s\n' "$image" >&2
+                  return 0
+              fi
+
+              echo "Candidate container state:"
+              sudo docker inspect "$app_id" \
+                  --format 'image={{.Config.Image}} status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' \
+                  || true
+              echo "Candidate healthcheck history:"
+              sudo docker inspect "$app_id" \
+                  --format '{{if .State.Health}}{{json .State.Health}}{{else}}no-healthcheck{{end}}' \
+                  || true
+              echo "Candidate application logs (last 80 lines):"
+              sudo docker logs --timestamps --tail=80 "$app_id" 2>&1 \
+                  || true
+          }
+
           rollback() {
               echo "Deployment verification failed; restoring ${current_tag}" >&2
               if ! setImageTag "$current_tag" || ! replaceApp; then
@@ -470,6 +500,7 @@ jobs:
           setImageTag "$RELEASE_SHA"
           expected_tag=$RELEASE_SHA
           if ! replaceApp || ! verifyApp; then
+              diagnoseCandidate || true
               rollback || true
               exit 1
           fi
