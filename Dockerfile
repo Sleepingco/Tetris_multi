@@ -19,6 +19,12 @@ RUN npm ci --omit=dev --ignore-scripts
 
 FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runtime
 
+ARG RELEASE_COMMIT
+ARG RELEASE_ARTIFACT_SHA256
+
+LABEL org.opencontainers.image.revision="${RELEASE_COMMIT}" \
+    com.tetris.release.artifact-sha256="${RELEASE_ARTIFACT_SHA256}"
+
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PORT=5500

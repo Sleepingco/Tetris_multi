@@ -2,9 +2,15 @@ name: Production deployment
 
 on:
   workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Commit SHA to deploy (leave empty to deploy the selected workflow ref)
+        required: false
+        type: string
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: production-deployment
@@ -22,24 +28,49 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+          ref: ${{ inputs.release_ref || github.sha }}
 
       - name: Create release artifact
         shell: bash
         run: |
           set -euo pipefail
 
-          release_sha="${GITHUB_SHA:0:7}"
+          release_commit="$(git rev-parse --verify 'HEAD^{commit}')"
+          release_sha="${release_commit:0:7}"
           artifact="$RUNNER_TEMP/tetris-${release_sha}.tar.gz"
 
-          git archive --format=tar.gz --output="$artifact" "$GITHUB_SHA"
+          git archive --format=tar "$release_commit" | gzip -n > "$artifact"
           (
               cd "$(dirname "$artifact")"
               sha256sum "$(basename "$artifact")" > "$(basename "$artifact").sha256"
           )
+          artifact_sha256="$(sha256sum "$artifact" | awk '{print $1}')"
           tar -tzf "$artifact" >/dev/null
 
+          printf 'release_commit=%s\n' "$release_commit" >> "$GITHUB_ENV"
           printf 'release_sha=%s\n' "$release_sha" >> "$GITHUB_ENV"
+          printf 'artifact_sha256=%s\n' "$artifact_sha256" >> "$GITHUB_ENV"
           printf 'artifact=%s\n' "$artifact" >> "$GITHUB_ENV"
+
+      - name: Verify release commit passed main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          successful_ci_runs="$(gh run list \
+            --workflow ci.yml \
+            --commit "$release_commit" \
+            --limit 100 \
+            --json status,conclusion,event,headBranch \
+            --jq '[.[] | select(.status == "completed" and .conclusion == "success" and .event == "push" and .headBranch == "main")] | length')"
+
+          if test "$successful_ci_runs" -eq 0; then
+            printf 'RELEASE_COMMIT_HAS_NO_SUCCESSFUL_MAIN_CI=%s\n' "$release_commit" >&2
+            exit 1
+          fi
+
+          printf 'release commit passed main CI: %s\n' "$release_commit"
 
       - name: Prepare SSH files
         shell: bash
@@ -87,12 +118,14 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
             -p "$OCI_SSH_PORT" \
             "$OCI_USER@$OCI_HOST" \
-            "RELEASE_SHA='$release_sha' REMOTE_ARTIFACT='$remote_artifact' REMOTE_CHECKSUM='$remote_checksum' sh -s" <<'REMOTE'
+            "RELEASE_SHA='$release_sha' REMOTE_ARTIFACT='$remote_artifact' REMOTE_CHECKSUM='$remote_checksum' EXPECTED_ARTIFACT_SHA256='$artifact_sha256' sh -s" <<'REMOTE'
           set -eu
 
           test -s "$REMOTE_ARTIFACT"
           test -s "$REMOTE_CHECKSUM"
           (cd "$(dirname "$REMOTE_ARTIFACT")" && sha256sum -c "$(basename "$REMOTE_CHECKSUM")")
+          actual_artifact_sha256=$(sha256sum "$REMOTE_ARTIFACT" | awk '{print $1}')
+          test "$actual_artifact_sha256" = "$EXPECTED_ARTIFACT_SHA256"
           tar -tzf "$REMOTE_ARTIFACT" >/dev/null
           printf 'OCI artifact verified: %s\n' "$RELEASE_SHA"
           REMOTE
@@ -113,21 +146,39 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
             -p "$OCI_SSH_PORT" \
             "$OCI_USER@$OCI_HOST" \
-            "RELEASE_SHA='$release_sha' OCI_INCOMING_DIR='$OCI_INCOMING_DIR' sh -s" <<'REMOTE'
+            "RELEASE_SHA='$release_sha' RELEASE_COMMIT='$release_commit' ARTIFACT_SHA256='$artifact_sha256' OCI_INCOMING_DIR='$OCI_INCOMING_DIR' sh -s" <<'REMOTE'
           set -eu
 
           artifact="$OCI_INCOMING_DIR/tetris-${RELEASE_SHA}.tar.gz"
-          build_directory="/srv/tetris/builds/${RELEASE_SHA}"
+          candidate_image="tetris-app:${RELEASE_SHA}"
 
           test -s "$artifact"
-          test ! -e "$build_directory"
+          case "$RELEASE_COMMIT" in
+              *[!0-9a-f]*|'') echo "INVALID_RELEASE_COMMIT" >&2; exit 1 ;;
+          esac
+          test "${#RELEASE_COMMIT}" -eq 40
+          case "$RELEASE_COMMIT" in
+              "$RELEASE_SHA"*) ;;
+              *) echo "RELEASE_SHA_COMMIT_MISMATCH" >&2; exit 1 ;;
+          esac
+          case "$ARTIFACT_SHA256" in
+              *[!0-9a-f]*|'') echo "INVALID_ARTIFACT_SHA256" >&2; exit 1 ;;
+          esac
+          test "${#ARTIFACT_SHA256}" -eq 64
+          sudo docker info >/dev/null
 
-          sudo install -d \
-              -o ubuntu \
-              -g ubuntu \
-              -m 750 \
-              "$build_directory"
+          if sudo docker image inspect "$candidate_image" >/dev/null 2>&1; then
+              candidate_exists=yes
+          else
+              candidate_exists=no
+          fi
 
+          sudo install -d -o ubuntu -g ubuntu -m 750 /srv/tetris/builds
+          build_directory=$(mktemp -d "/srv/tetris/builds/.${RELEASE_SHA}.XXXXXX")
+          cleanupBuildDirectory() {
+              rm -rf -- "$build_directory"
+          }
+          trap cleanupBuildDirectory EXIT
           tar -xzf "$artifact" -C "$build_directory"
 
           test -f "$build_directory/Dockerfile"
@@ -142,13 +193,44 @@ jobs:
               -f compose.production.yml \
               config --quiet
 
-          sudo env APP_IMAGE_TAG="$RELEASE_SHA" \
-              docker compose \
-              --env-file /srv/tetris/secrets/production.env \
-              -f compose.production.yml \
-              build app
+          verifyCandidateImage() {
+              image_details=$(sudo docker image inspect "$candidate_image" \
+                  --format '{{.Architecture}} {{.Os}} {{.Config.User}} {{json .Config.Cmd}} {{index .Config.Labels "com.docker.compose.project"}} {{index .Config.Labels "com.docker.compose.service"}}') \
+                  || return 1
+              test "$image_details" = 'amd64 linux node ["node","dist/server/app.js"] tetris app' \
+                  || return 1
+              image_revision=$(sudo docker image inspect "$candidate_image" \
+                  --format '{{index .Config.Labels "org.opencontainers.image.revision"}}') \
+                  || return 1
+              image_artifact_sha256=$(sudo docker image inspect "$candidate_image" \
+                  --format '{{index .Config.Labels "com.tetris.release.artifact-sha256"}}') \
+                  || return 1
+              if test "$image_revision" != "$RELEASE_COMMIT" \
+                  || test "$image_artifact_sha256" != "$ARTIFACT_SHA256"; then
+                  echo "CANDIDATE_IMAGE_PROVENANCE_MISMATCH" >&2
+                  return 1
+              fi
+          }
 
-          sudo docker image inspect "tetris-app:${RELEASE_SHA}" \
+          if test "$candidate_exists" = yes; then
+              if ! verifyCandidateImage; then
+                  echo "Existing image cannot be safely reused; it was left untouched." >&2
+                  exit 1
+              fi
+              printf 'verified existing candidate image: %s\n' "$candidate_image"
+          else
+              sudo env APP_IMAGE_TAG="$RELEASE_SHA" \
+                  docker compose \
+                  --env-file /srv/tetris/secrets/production.env \
+                  -f compose.production.yml \
+                  build \
+                  --build-arg "RELEASE_COMMIT=${RELEASE_COMMIT}" \
+                  --build-arg "RELEASE_ARTIFACT_SHA256=${ARTIFACT_SHA256}" \
+                  app
+              verifyCandidateImage
+          fi
+
+          sudo docker image inspect "$candidate_image" \
               --format \
               'tags={{json .RepoTags}} architecture={{.Architecture}} size={{.Size}}'
 
@@ -286,7 +368,7 @@ jobs:
             -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
             -p "$OCI_SSH_PORT" \
             "$OCI_USER@$OCI_HOST" \
-            "RELEASE_SHA='$release_sha' bash -s" <<'REMOTE'
+            "RELEASE_SHA='$release_sha' RELEASE_COMMIT='$release_commit' bash -s" <<'REMOTE'
           set -euo pipefail
 
           case "$RELEASE_SHA" in
@@ -307,19 +389,28 @@ jobs:
                   exit 1
                   ;;
           esac
-          test "${#current_tag}" -eq 7
-          test "$current_tag" != "$RELEASE_SHA"
+          if [[ ! "$current_tag" =~ ^[0-9a-f]{7,40}$ ]]; then
+              echo "INVALID_CURRENT_IMAGE_TAG" >&2
+              exit 1
+          fi
           sudo docker image inspect "tetris-app:${current_tag}" >/dev/null
           sudo docker image inspect "tetris-app:${RELEASE_SHA}" >/dev/null
 
           setImageTag() {
               image_tag=$1
-              temporary=$(mktemp /srv/tetris/secrets/production.env.XXXXXX)
-              sed "s/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=${image_tag}/" \
-                  "$env_file" > "$temporary"
-              test "$(grep -c '^APP_IMAGE_TAG=' "$temporary")" -eq 1
-              chmod 600 "$temporary"
-              mv "$temporary" "$env_file"
+              temporary=$(mktemp /srv/tetris/secrets/production.env.XXXXXX) || return 1
+              if ! sed "s/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=${image_tag}/" \
+                  "$env_file" > "$temporary"; then
+                  rm -f -- "$temporary"
+                  return 1
+              fi
+              if ! test "$(grep -c '^APP_IMAGE_TAG=' "$temporary")" -eq 1 \
+                  || ! chmod 600 "$temporary" \
+                  || ! mv "$temporary" "$env_file"; then
+                  rm -f -- "$temporary"
+                  return 1
+              fi
+              return 0
           }
 
           replaceApp() {
@@ -333,11 +424,13 @@ jobs:
               app_id=$(sudo docker compose \
                   --env-file "$env_file" \
                   -f "$compose_file" \
-                  ps -q app)
-              test -n "$app_id"
+                  ps -q app) || return 1
+              test -n "$app_id" || return 1
               actual=$(sudo docker inspect "$app_id" \
-                  --format '{{.Config.Image}} {{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}}')
-              test "$actual" = "tetris-app:${expected_tag} running healthy false"
+                  --format '{{.Config.Image}} {{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}}') \
+                  || return 1
+              test "$actual" = "tetris-app:${expected_tag} running healthy false" \
+                  || return 1
 
               http_status=$(curl -fsS \
                   --retry 10 \
@@ -345,8 +438,8 @@ jobs:
                   --retry-all-errors \
                   -o /dev/null \
                   -w '%{http_code}' \
-                  https://tetra-arena.duckdns.org)
-              test "$http_status" = 200
+                  https://tetra-arena.duckdns.org) || return 1
+              test "$http_status" = 200 || return 1
           }
 
           rollback() {
@@ -362,6 +455,17 @@ jobs:
               fi
               echo "rollback verified: ${current_tag}"
           }
+
+          if test "$current_tag" = "$RELEASE_SHA" \
+              || test "$current_tag" = "$RELEASE_COMMIT"; then
+              expected_tag=$current_tag
+              if verifyApp; then
+                  printf 'release already active and healthy: %s\n' "$RELEASE_SHA"
+                  exit 0
+              fi
+              echo "CURRENT_RELEASE_UNHEALTHY; manual recovery is required" >&2
+              exit 1
+          fi
 
           setImageTag "$RELEASE_SHA"
           expected_tag=$RELEASE_SHA

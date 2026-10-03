@@ -640,8 +640,11 @@ git status --short
 source ~/.nvm/nvm.sh
 nvm exec 24.18.0 bash scripts/verify.sh
 
-release_sha=$(git rev-parse --short HEAD)
-printf 'release_sha=%s\n' "$release_sha"
+release_commit=$(git rev-parse HEAD)
+release_sha=${release_commit:0:7}
+printf 'release_commit=%s\nrelease_sha=%s\n' \
+    "$release_commit" \
+    "$release_sha"
 ```
 
 배포 source와 commit을 일치시키고 immutable image tag로 `$release_sha`를
@@ -656,22 +659,29 @@ printf 'release_sha=%s\n' "$release_sha"
 OCI에서 새 source를 기존 운영 directory와 분리해 푼다.
 
 ```bash
-new_tag=<new-approved-sha>
+release_commit=<full-new-approved-commit-sha>
+new_tag=${release_commit:0:7}
 
 (
     set -euo pipefail
 
-    candidate_tag=${new_tag-}
+    candidate_commit=${release_commit-}
 
-    if [[ ! "$candidate_tag" =~ ^[0-9a-f]{7,40}$ ]]; then
-        printf 'INVALID_NEW_TAG=%q\n' "$candidate_tag" >&2
+    if [[ ! "$candidate_commit" =~ ^[0-9a-f]{40}$ ]]; then
+        printf 'INVALID_RELEASE_COMMIT=%q\n' "$candidate_commit" >&2
         exit 1
     fi
 
+    candidate_tag=${new_tag-}
+    if [[ "$candidate_tag" != "${candidate_commit:0:7}" ]]; then
+        printf 'RELEASE_TAG_COMMIT_MISMATCH=%q\n' "$candidate_tag" >&2
+        exit 1
+    fi
     artifact="/tmp/tetris-${candidate_tag}.tar.gz"
     build_directory="/srv/tetris/builds/${candidate_tag}"
 
-    printf 'NEW_TAG=%s\nARTIFACT=%s\nBUILD_DIRECTORY=%s\n' \
+    printf 'RELEASE_COMMIT=%s\nNEW_TAG=%s\nARTIFACT=%s\nBUILD_DIRECTORY=%s\n' \
+        "$candidate_commit" \
         "$candidate_tag" \
         "$artifact" \
         "$build_directory"
@@ -681,6 +691,7 @@ new_tag=<new-approved-sha>
         exit 1
     }
 
+    artifact_sha256=$(sha256sum "$artifact" | awk '{print $1}')
     test ! -e "$build_directory" || {
         printf 'BUILD_DIRECTORY_EXISTS=%s\n' "$build_directory" >&2
         exit 1
@@ -714,7 +725,10 @@ new_tag=<new-approved-sha>
         docker compose \
         --env-file /srv/tetris/secrets/production.env \
         -f compose.production.yml \
-        build app
+        build \
+        --build-arg "RELEASE_COMMIT=${candidate_commit}" \
+        --build-arg "RELEASE_ARTIFACT_SHA256=${artifact_sha256}" \
+        app
 
     sudo docker image inspect "tetris-app:${candidate_tag}" \
         --format \
@@ -724,10 +738,11 @@ new_tag=<new-approved-sha>
 cd /srv/tetris/repository
 ```
 
-괄호 안의 준비 단계는 별도 subshell에서 `set -euo pipefail`로 실행한다. 빈 tag,
+괄호 안의 준비 단계는 별도 subshell에서 `set -euo pipefail`로 실행한다. 잘못된 commit,
 없는 artifact, 이미 존재하는 build directory 또는 누락된 필수 파일을 발견하면
-image build 전에 즉시 중단한다. `BUILD_DIRECTORY_EXISTS`가 나오면 directory를
-삭제하거나 덮어쓰지 말고 tag와 기존 내용을 먼저 확인한다.
+image build 전에 즉시 중단한다. 이미 존재하는 후보 image는 전체 commit SHA와
+artifact SHA-256 label이 실제 source와 일치할 때만 workflow가 재사용한다. 이전
+workflow에서 provenance label 없이 만든 image는 자동 재사용하지 않는다.
 
 application source만 바뀌고 Compose/Caddyfile이 그대로라면 실행 중 stack의
 `/srv/tetris/repository`를 덮어쓰지 않는다. production app은 build directory가
