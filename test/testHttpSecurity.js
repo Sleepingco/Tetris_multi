@@ -31,7 +31,7 @@ test("CSP는 strict source와 검증된 inline hash만 허용한다", () => {
         "img-src 'self' data:",
         "font-src 'none'",
         "media-src 'self'",
-        "connect-src 'self' https://cloud.umami.is wss://game.example.com https://api.example.com:8443",
+        "connect-src 'self' https://cloud.umami.is https://gateway.umami.is wss://game.example.com https://api.example.com:8443",
         "worker-src 'none'",
     ].join("; ");
 

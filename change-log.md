@@ -2537,3 +2537,35 @@ client input
 - 브라우저와 같은 same-origin 조건의 Socket.IO polling handshake는 `200`으로 성공하고, 필요한 출처 정보가 없는 직접 요청은 `403`으로 거부돼 기존 Socket 보안 경계도 유지됐다.
 - 실제 배포에서 발견한 PostgreSQL container 시작 command의 Compose 해석 문제를 수정하고, command가 하나의 shell script 인자로 유지되는지 자동 검증을 추가했다.
 - 이로써 로컬·CI 검증을 넘어 실제 OCI 공개 배포와 기본 운영 확인까지 성공했다. JSONL과 PostgreSQL은 계속 단일 sink 원칙을 따르며 실제 저장 방식은 배포 환경의 `GAME_EVENT_STORAGE` 설정으로 선택한다.
+
+---
+
+# 2026년 9월 14일 ~ 10월 4일
+
+## tar.gz 기반 production CD 배포 단계 자동화
+
+- GitHub Actions에서 지정한 release commit을 tar.gz로 만들고 SHA-256 checksum과 함께 OCI 서버로 전송·검증하도록 보강했다. 배포 서버에서 Git 저장소를 직접 `pull`하지 않고 검증된 artifact를 사용한다.
+- release commit 전체 SHA와 artifact checksum을 이미지 label에 기록한다. 서버에 같은 후보 이미지가 이미 있으면 두 label이 현재 release와 일치할 때만 재사용하고, 근거가 없는 이미지는 다시 준비한다.
+- 앱 교체 전 PostgreSQL 백업과 archive 검증을 수행하고, migration을 적용한 뒤 한 번 더 실행해 재실행 시 안전하게 생략되는지 확인한다.
+- 앱 이미지를 새 release tag로 전환한 뒤 Compose healthcheck와 공개 HTTPS 응답 `200`을 확인한다. 검증이 실패하면 직전 이미지 tag를 복원하고 복구 상태를 확인한다.
+- 배포 대상 commit이 `main` push 이벤트의 성공한 Migration CI 기록을 갖는지 사전 확인하도록 했다. 배포는 `workflow_dispatch`로 시작하며, 해당 commit을 `release_ref`로 지정할 수 있다.
+- 후보 앱 healthcheck 실패가 실제로 발생한 배포에서는 migration이 `applied=0 skipped=2`로 검증됐지만 앱은 unhealthy가 됐다. 자동 rollback 후 이전 `abb9ebc` 앱이 healthy임을 확인했다. 이 시점에는 후보 앱의 원인이 아직 확인되지 않았다.
+- 후속 변경에서 rollback 전에 후보 컨테이너 image/state/exit code/OOM 상태, healthcheck 기록과 최근 80줄의 앱 로그를 Actions 로그에 남기도록 추가했다. diagnostic 수집 실패가 rollback을 막지 않도록 했다.
+- `db83eef`의 release provenance 검사와 배포 안전장치에 대한 main CI는 통과했다. 이후 `a68b9ba`에서도 main CI 통과를 확인했으나, 이 기록을 작성할 때 새 release의 production 활성화 성공은 아직 확인되지 않았다.
+
+## PostgreSQL smoke test와 Umami 전송 경로 정리
+
+- PostgreSQL production smoke test가 빌드된 client module 파일을 안정적으로 선택하도록 경로 추출을 수정했다.
+- Umami tracker와 전송 API를 Caddy에서 별도로 proxy하던 설정을 제거하고, 브라우저가 Umami Cloud로 직접 전송하도록 바꿨다. 이에 맞춰 CSP의 허용 origin과 테스트 기대값도 조정했다.
+- tracker에 `data-domains="tetra-arena.duckdns.org"`를 추가해 운영 도메인에서만 Umami 수집이 동작하게 했다. 개발·테스트 hostname의 방문이 운영 통계에 섞이는 것을 줄이기 위한 설정이다.
+- 배포된 홈페이지 HTML에서 Umami Cloud script를 직접 로드하는 설정을 확인했다. tracker domain 변경의 `git diff --check`는 통과했다.
+
+---
+
+# 2026년 10월 6일
+
+## Umami Cloud collector endpoint CSP 허용
+
+- 브라우저 오류에서 tracker는 `cloud.umami.is`에서 로드되지만 통계 전송은 `gateway.umami.is/api/send`로 이루어지는 것을 확인했다.
+- Umami Cloud가 2026년 6월 collector endpoint를 `gateway.umami.is`로 변경한 공식 변경 기록을 확인했다. 기존 `connect-src`에는 `cloud.umami.is`만 있어 브라우저 CSP가 전송 요청을 차단했다.
+- `gateway.umami.is`를 `connect-src`에만 정확한 origin으로 추가하고, CSP 단위 테스트의 기대 정책도 갱신했다. 전체 테스트는 실행하지 않았다.

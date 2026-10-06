@@ -13,6 +13,7 @@ const INLINE_STYLE_HASHES = Object.freeze([
 ]);
 
 const UMAMI_CLOUD_ORIGIN = "https://cloud.umami.is";
+const UMAMI_COLLECT_ORIGIN = "https://gateway.umami.is";
 
 const CONNECT_PROTOCOLS = new Set(["http:", "https:", "ws:", "wss:"]);
 
@@ -75,7 +76,7 @@ export function createHttpSecurityHeaders(
         "img-src 'self' data:",
         "font-src 'none'",
         "media-src 'self'",
-        `connect-src 'self' ${UMAMI_CLOUD_ORIGIN}${connectOrigins.length ? ` ${connectOrigins.join(" ")}` : ""}`,
+        `connect-src 'self' ${UMAMI_CLOUD_ORIGIN} ${UMAMI_COLLECT_ORIGIN}${connectOrigins.length ? ` ${connectOrigins.join(" ")}` : ""}`,
         "worker-src 'none'",
     ].join("; ");
 
