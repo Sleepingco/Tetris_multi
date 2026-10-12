@@ -5,7 +5,7 @@ import { initLobbySound } from "../game/runtime/sound.ts";
 
 // =============================
 // 시작 페이지 React shell
-// nickname 입력과 페이지 이동, theme/sound 수명주기만 소유하며 게임 규칙은 실행하지 않는다.
+// 모드별 진입, 멀티 nickname, theme/sound 수명주기만 소유하며 게임 규칙은 실행하지 않는다.
 // 멀티 lobby가 읽을 nickname은 이동 직전에 sessionStorage에 저장한다.
 // =============================
 
@@ -55,16 +55,18 @@ function IndexPage() {
         );
         window.location.href = "./multiLobby.html";
     };
-    const enterSingleGame = () => {
-        if (nickname.trim()) {
-            sessionStorage.setItem("tetris:nickname", nickname.trim());
-        }
-    };
-
     return (
-        <div className="container">
+        <div className="container home-page">
             <header className="header">
-                <h1 className="brand">Tetris Multi</h1>
+                <h1 className="brand">
+                    <svg className="brand-mark" viewBox="0 0 40 56" aria-hidden="true">
+                        <rect x="20" y="2" width="15" height="15" rx="1.5" />
+                        <rect x="20" y="19" width="15" height="15" rx="1.5" />
+                        <rect x="20" y="36" width="15" height="15" rx="1.5" />
+                        <rect x="3" y="36" width="15" height="15" rx="1.5" />
+                    </svg>
+                    <span>Tetra Arena</span>
+                </h1>
                 <nav className="nav">
                     <button ref={themeToggleRef} id="themeToggle" type="button" className="btn ghost"
                         aria-pressed="false" onClick={() => toggleTheme(themeToggleRef.current)}>
@@ -75,63 +77,109 @@ function IndexPage() {
                 </nav>
             </header>
 
-            <main className="main">
-                <section className="hero">
-                    <h2 className="hero-title">Welcome to Tetris Multi</h2>
-                    <p className="hero-desc">이 게임은 다양한 사람들이 함께 테트리스를 하는 게임입니다.<br />많이 즐겨 주셨으면 좋겠습니다.</p>
-                    <div className="setup-container">
-                        <form className="nickname-form" id="nicknameEntryForm" onSubmit={enterMultiLobby}>
-                            <div className="input-wrapper">
-                                <span className="input-icon">
-                                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
-                                        strokeWidth="2" stroke="currentColor" width="20" height="20">
-                                        <path strokeLinecap="round" strokeLinejoin="round"
-                                            d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-                                    </svg>
-                                </span>
-                                <input id="nicknameInput" className="input-box" type="text" maxLength={16}
-                                    placeholder="닉네임 입력 (미입력 시 Guest)" autoComplete="nickname"
-                                    value={nickname} onChange={event => setNickname(event.target.value)} />
-                            </div>
-                            <div className="cta-group">
-                                <a id="btnSingle" className="btn" href="./tetrisSingle.html"
-                                    onClick={enterSingleGame}>싱글 게임</a>
-                                <button type="submit" id="btnMulti" className="btn primary">멀티 게임</button>
-                            </div>
-                        </form>
+            <main className="main home-main">
+                <section className="home-modes" aria-labelledby="homeTitle">
+                    <svg className="home-side-art home-side-art-left" viewBox="0 0 192 128" aria-hidden="true">
+                        <g className="piece-yellow">
+                            <rect x="64" y="0" width="31" height="31" />
+                            <rect x="64" y="32" width="31" height="31" />
+                            <rect x="96" y="0" width="31" height="31" />
+                            <rect x="96" y="32" width="31" height="31" />
+                        </g>
+                        <g className="piece-green">
+                            <rect x="128" y="0" width="31" height="31" />
+                            <rect x="128" y="32" width="31" height="31" />
+                            <rect x="160" y="32" width="31" height="31" />
+                            <rect x="160" y="64" width="31" height="31" />
+                        </g>
+                        <g className="piece-purple">
+                            <rect x="0" y="64" width="31" height="31" />
+                            <rect x="32" y="32" width="31" height="31" />
+                            <rect x="32" y="64" width="31" height="31" />
+                            <rect x="64" y="64" width="31" height="31" />
+                        </g>
+                        <g className="piece-red">
+                            <rect x="96" y="64" width="31" height="31" />
+                            <rect x="128" y="64" width="31" height="31" />
+                            <rect x="128" y="96" width="31" height="31" />
+                            <rect x="160" y="96" width="31" height="31" />
+                        </g>
+                        <g className="piece-cyan">
+                            <rect x="0" y="96" width="31" height="31" />
+                            <rect x="32" y="96" width="31" height="31" />
+                            <rect x="64" y="96" width="31" height="31" />
+                            <rect x="96" y="96" width="31" height="31" />
+                        </g>
+                    </svg>
+                    <div className="home-heading">
+                        <p className="home-eyebrow">한 판의 몰입, 한 줄의 역전.</p>
+                        <h2 id="homeTitle" className="hero-title">TETRA <span>ARENA</span></h2>
+                        <p className="home-intro">혼자 연습하거나, 상대와 한 판.</p>
                     </div>
+                    <div className="mode-grid">
+                        <article className="mode-option">
+                            <div>
+                                <span className="mode-caption">01 / SOLO</span>
+                                <h3>싱글 플레이</h3>
+                                <p>혼자 연습하기</p>
+                            </div>
+                            <a id="btnSingle" className="btn mode-button" href="./tetrisSingle.html">
+                                바로 시작 <span aria-hidden="true">↗</span>
+                            </a>
+                        </article>
+
+                        <article className="mode-option mode-option-multi">
+                            <div>
+                                <span className="mode-caption">02 / VERSUS</span>
+                                <h3>멀티 플레이</h3>
+                                <p>사람 또는 AI와 대전</p>
+                            </div>
+                            <form id="nicknameEntryForm" onSubmit={enterMultiLobby}>
+                                <label htmlFor="nicknameInput">닉네임 <span>(선택)</span></label>
+                                <input id="nicknameInput" className="input-box" type="text" maxLength={16}
+                                    placeholder="비우면 Guest로 입장" autoComplete="nickname"
+                                    value={nickname} onChange={event => setNickname(event.target.value)} />
+                                <button type="submit" id="btnMulti" className="btn primary mode-button">
+                                    로비 입장 <span aria-hidden="true">↗</span>
+                                </button>
+                            </form>
+                        </article>
+                    </div>
+                    <p className="home-data-note">플레이 기록은 AI 학습에 사용될 수 있습니다.</p>
+                    <svg className="home-side-art home-side-art-right" viewBox="0 0 192 96" aria-hidden="true">
+                        <g className="piece-blue">
+                            <rect x="0" y="32" width="31" height="31" />
+                            <rect x="0" y="64" width="31" height="31" />
+                            <rect x="32" y="64" width="31" height="31" />
+                            <rect x="64" y="64" width="31" height="31" />
+                        </g>
+                        <g className="piece-orange">
+                            <rect x="96" y="32" width="31" height="31" />
+                            <rect x="96" y="64" width="31" height="31" />
+                            <rect x="128" y="64" width="31" height="31" />
+                            <rect x="160" y="64" width="31" height="31" />
+                        </g>
+                    </svg>
                 </section>
 
-                <section className="cards">
-                    <a className="card" href="./tetrisSingle.html">
-                        <div className="card-title">Single</div>
-                        <div className="card-desc">혼자 연습하기 — 현재 구현된 싱글 플레이로 바로 시작</div>
-                        <div className="card-cta">시작하기 →</div>
-                    </a>
-                    <a className="card" href="./multiLobby.html" data-multi-lobby-link
-                        onClick={enterMultiLobby}>
-                        <div className="card-title">Online</div>
-                        <div className="card-desc">웹소켓 멀티 대전 — 게임 로그는 AI 학습에 사용될 수 있습니다.</div>
-                        <div className="card-cta">입장하기 →</div>
-                    </a>
-                </section>
-
-                <section id="guide" className="guide">
-                    <h3>키 가이드</h3>
-                    <ul>
-                        <li><kbd>←</kbd><span>왼쪽 이동</span></li>
-                        <li><kbd>→</kbd><span>오른쪽 이동</span></li>
-                        <li><kbd>↑ / X</kbd><span>시계방향 회전</span></li>
-                        <li><kbd>Z</kbd><span>반시계방향 회전</span></li>
-                        <li><kbd>↓</kbd><span>한 칸 하강(소프트 드롭)</span></li>
-                        <li><kbd>Space</kbd><span>하드 드롭</span></li>
-                        <li><kbd>C</kbd><span>홀드 / 교체</span></li>
-                    </ul>
+                <section className="home-guide">
+                    <details id="guide" className="guide-disclosure">
+                        <summary>조작법 보기</summary>
+                        <ul>
+                            <li><kbd>←</kbd><span>왼쪽 이동</span></li>
+                            <li><kbd>→</kbd><span>오른쪽 이동</span></li>
+                            <li><kbd>↑ / X</kbd><span>시계방향 회전</span></li>
+                            <li><kbd>Z</kbd><span>반시계방향 회전</span></li>
+                            <li><kbd>↓</kbd><span>한 칸 하강(소프트 드롭)</span></li>
+                            <li><kbd>Space</kbd><span>하드 드롭</span></li>
+                            <li><kbd>C</kbd><span>홀드 / 교체</span></li>
+                        </ul>
+                    </details>
                 </section>
             </main>
 
             <footer className="footer">
-                <span>© <span id="year">{new Date().getFullYear()}</span> Tetris Multi</span>
+                <span>© <span id="year">{new Date().getFullYear()}</span> Tetra Arena</span>
                 <span className="dot">•</span>
                 <a href="https://github.com/Sleepingco/Tetris_multi" target="_blank" rel="noreferrer">GitHub</a>
             </footer>
