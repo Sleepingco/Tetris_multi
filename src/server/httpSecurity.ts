@@ -10,6 +10,7 @@ const INLINE_STYLE_HASHES = Object.freeze([
     "'sha256-8WMI54/fYjLyQ+V0ZVpxKy2ddoWYIfTvf6INokq2xEo='",
     "'sha256-isAGgst8p0POY9YHnzg/K0CpLsdJtzLOcjeCXqEi6Q4='",
     "'sha256-IsVLBKuEy1m/EXcXkJQYt/4Hss2umZ0wV/cKhk8GzBs='",
+    "'sha256-YTKXzAi7pK9867AxR/RLRJhQ0YWSd1Need1r2mOx54E='",
 ]);
 
 const UMAMI_CLOUD_ORIGIN = "https://cloud.umami.is";
