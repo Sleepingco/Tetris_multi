@@ -131,7 +131,7 @@ test("game reload은 자동 game:join으로 같은 player session을 복구한�
         const beforeReload = await readPlayerSession(guestPage);
 
         await guestPage.reload();
-        await expect(guestPage.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(32);
+        await expect(guestPage.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
         const afterReload = await readPlayerSession(guestPage);
 
         expect(afterReload.playerId).toBe(beforeReload.playerId);
@@ -171,7 +171,7 @@ test("game transport reconnect는 authoritative match와 sequence, bag 흐름을
         await expect.poll(async () => {
             return (await readPlayerSession(guestPage))?.token === sessionBeforeReconnect.token;
         }).toBe(false);
-        await expect(guestPage.locator('.next-preview[data-player="2"] .next-cell')).toHaveCount(32);
+        await expect(guestPage.locator('.next-preview[data-player="2"] .next-cell')).toHaveCount(64);
         await expect.poll(async () => {
             const [guestBoard, hostBoard] = await Promise.all([
                 readBottomBoardFingerprint(guestPage, 2),

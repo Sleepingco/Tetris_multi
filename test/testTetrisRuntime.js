@@ -952,7 +952,7 @@ test("runtime은 next와 hold preview DOM을 렌더링한다", async (t) => {
         holdPieceType: "tree",
     });
 
-    assert.equal(nextPreviewEl.children.length, 2);
+    assert.equal(nextPreviewEl.children.length, 4);
     assert.equal(holdPreviewEl.children.length, 1);
     assert.equal(countPreviewCells(nextPreviewEl) > 0, true);
     assert.equal(countPreviewCells(holdPreviewEl) > 0, true);
@@ -1800,7 +1800,7 @@ test("display bridge는 applySnapshot과 init의 최종 표시 상태만 한 번
         score: 20,
         lines: 2,
         holdPieceType: "tree",
-        nextPieceTypes: ["bar", "square"],
+        nextPieceTypes: ["bar", "square", null, null],
         pendingGarbageLines: 0,
         phase: "gameOver",
     });

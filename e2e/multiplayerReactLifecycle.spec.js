@@ -60,8 +60,18 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
         ]) {
             for (const playerNumber of [1, 2]) {
                 const column = page.locator(`.player-column[data-player="${playerNumber}"]`);
-                await expect(column.locator(".next-preview .next-cell")).toHaveCount(32);
-                await expect(column.locator(".next-preview .next-cell.preview")).toHaveCount(8);
+                await expect(column.locator(".next-preview .next-cell")).toHaveCount(64);
+                await expect(column.locator(".next-preview .next-cell.preview")).toHaveCount(16);
+                const nextLayout = await column.evaluate(root => {
+                    const next = root.querySelector(".next-preview");
+                    const slots = [...next.querySelectorAll(".next-slot")]
+                        .map(slot => slot.getBoundingClientRect());
+                    return {
+                        vertical: slots.every((slot, index) => index === 0 || slot.top >= slots[index - 1].bottom),
+                        leftOfBoard: next.getBoundingClientRect().right <= root.querySelector("canvas").getBoundingClientRect().left,
+                    };
+                });
+                expect(nextLayout).toEqual({ vertical: true, leftOfBoard: true });
                 await expect(column.locator(".hold-preview .next-cell")).toHaveCount(16);
                 await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-live", "polite");
                 await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-atomic", "true");
@@ -161,7 +171,7 @@ test("multiplayer BFCache 복귀와 terminal replacement는 stale 입력을 남�
         await expect.poll(async () => {
             return (await readPlayerSession(page))?.token === tokenBeforeRestore;
         }).toBe(false);
-        await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(32);
+        await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
         await expect.poll(() => monitor.getSentEventCount("game:join")).toBe(2);
 
         const currentSession = await readPlayerSession(page);
@@ -209,7 +219,7 @@ test("placement V4 badge와 production artifact 경계를 유지한다", async (
         page.locator("#btnPrimaryAction").click(),
     ]);
 
-    await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(32);
+    await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
     const policyBadge = page.locator("#player2RoleBadge");
     await expect(policyBadge).toHaveText(
         /^(실험 AI · 동작 중|실험 AI · 휴리스틱 전환)$/,

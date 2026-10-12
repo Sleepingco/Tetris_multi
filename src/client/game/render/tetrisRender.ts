@@ -173,9 +173,6 @@ export function buildNextPreview({ nextPreviewEl, nextQueueSize, previewSize }: 
         for (let i = 0; i < nextQueueSize; i++) {
                 const slot = document.createElement("div")
                 slot.classList.add("next-slot")
-                const label = document.createElement("span")
-                label.classList.add("slot-label")
-                label.textContent = `Next ${i + 1}`
                 const cells = buildPreviewGrid(slot, previewSize)
                 nextPreviewEl.append(slot)
                 previewCells.push(cells)

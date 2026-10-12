@@ -63,7 +63,7 @@ test("싱글 입력 결과가 Canvas 이동·회전·하강·고정 상태에 �
     await page.clock.pauseAt(pausedTime);
     await page.goto("/pages/tetrisSingle.html");
 
-    await expect(page.locator(".next-preview .next-cell")).toHaveCount(32);
+    await expect(page.locator(".next-preview .next-cell")).toHaveCount(64);
     await expect(page.locator(".score")).toHaveText("0");
     const initialCells = sortCells(await readOpaqueTreeCells(page, { maxRow: 3 }));
     expect(initialCells).toEqual([

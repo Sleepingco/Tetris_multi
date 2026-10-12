@@ -285,7 +285,7 @@ test("PVE server gameOver 후 결과를 표시하고 같은 방을 재시작한�
 
         await expect(page.locator("#roomCodeText")).toContainText(roomId);
         await expect(page.locator("#player2Name")).toHaveText("Heuristic AI");
-        await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(32);
+        await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
     } finally {
         monitor.dispose();
     }

@@ -56,7 +56,7 @@ import type { SerializedGameState } from "../state/stateSerialization.ts"
 import { createHumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.ts"
 import type { HumanPlacementLogAnalysis } from "../ai/heuristic/placementLogAnalysis.ts"
 import type { AttackStateResult } from "../core/attackState.ts"
-const NEXT_QUEUE_SIZE = 2
+const NEXT_QUEUE_SIZE = 4
 
 type RuntimeMode = "single" | "multiplayer" | "pvp" | "pve" | string;
 type ActionResult = {
@@ -321,7 +321,12 @@ export function createTetrisRuntime({
         score: gameState.score,
         lines: gameState.lines,
         holdPieceType: gameState.holdPieceType,
-        nextPieceTypes: [gameState.pieceQueue[0], gameState.pieceQueue[1]],
+        nextPieceTypes: [
+            gameState.pieceQueue[0],
+            gameState.pieceQueue[1],
+            gameState.pieceQueue[2],
+            gameState.pieceQueue[3],
+        ],
         pendingGarbageLines: runtime.authoritativePendingGarbageLines,
         phase: gameState.phase,
     }))
@@ -1446,7 +1451,7 @@ export function createTetrisRuntime({
     }
 
     /**
-      * 현재 bag mode에 맞춰 스폰 한 개와 preview 두 개가 준비되도록 queue를 채운다.
+      * 현재 bag mode에 맞춰 스폰 한 개와 preview 네 개가 준비되도록 queue를 채운다.
       * - server 모드에서는 서버가 내려준 조각만 소비한다.
       * - local 모드에서는 gameState의 7-bag RNG 경로를 사용한다.
       * 서버 공급이 부족하면 임의 조각을 만들지 않고 현재 확보한 수에서 멈춘다.

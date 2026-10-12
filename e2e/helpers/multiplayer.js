@@ -92,8 +92,8 @@ async function startWaitingMatch(hostPage, guestPage) {
         hostPage.locator("#btnPrimaryAction").click(),
     ]);
 
-    await expect(hostPage.locator(GAME_READY_SELECTOR)).toHaveCount(32);
-    await expect(guestPage.locator(GAME_READY_SELECTOR)).toHaveCount(32);
+    await expect(hostPage.locator(GAME_READY_SELECTOR)).toHaveCount(64);
+    await expect(guestPage.locator(GAME_READY_SELECTOR)).toHaveCount(64);
 }
 
 async function enterTwoPlayerMatch(hostPage, guestPage) {

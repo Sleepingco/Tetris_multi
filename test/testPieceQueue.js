@@ -19,6 +19,23 @@ test("7-bag은 각 조각을 한 번씩 반환한다", async () => {
     assert.deepEqual([...bag].sort(), [...pieceTypes].sort());
 });
 
+test("preview 개수가 달라도 실제 조각 등장 순서는 유지된다", async () => {
+    const { takeNextFromQueue } = await import("../src/client/game/state/pieceQueue.ts");
+    const { default: BLOCKS } = await import("../src/client/game/state/blocks.ts");
+    const pieceTypes = Object.keys(BLOCKS);
+    const takePieces = (nextQueueSize) => {
+        const gameState = { bag: [], pieceQueue: [] };
+        return Array.from({ length: 28 }, () => takeNextFromQueue(
+            gameState,
+            nextQueueSize,
+            pieceTypes,
+            () => 0,
+        ));
+    };
+
+    assert.deepEqual(takePieces(4), takePieces(2));
+});
+
 test("빈 pieceTypes는 명시적으로 거부한다", async () => {
     const { takeNextFromQueue } = await import("../src/client/game/state/pieceQueue.ts");
     const gameState = { bag: [], pieceQueue: [] };

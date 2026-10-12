@@ -28,6 +28,8 @@ export function createRuntimeDisplayBridge(
             nextPieceTypes: [
                 values.nextPieceTypes?.[0] ?? null,
                 values.nextPieceTypes?.[1] ?? null,
+                values.nextPieceTypes?.[2] ?? null,
+                values.nextPieceTypes?.[3] ?? null,
             ],
             pendingGarbageLines: values.pendingGarbageLines ?? 0,
             phase: values.phase,
@@ -40,6 +42,8 @@ export function createRuntimeDisplayBridge(
             && snapshot.holdPieceType === next.holdPieceType
             && snapshot.nextPieceTypes[0] === next.nextPieceTypes[0]
             && snapshot.nextPieceTypes[1] === next.nextPieceTypes[1]
+            && snapshot.nextPieceTypes[2] === next.nextPieceTypes[2]
+            && snapshot.nextPieceTypes[3] === next.nextPieceTypes[3]
             && snapshot.pendingGarbageLines === next.pendingGarbageLines
             && snapshot.phase === next.phase;
     }
@@ -103,7 +107,7 @@ export type RuntimeDisplaySnapshot = {
     score: number;
     lines: number;
     holdPieceType: PieceType | null;
-    nextPieceTypes: [PieceType | null, PieceType | null];
+    nextPieceTypes: [PieceType | null, PieceType | null, PieceType | null, PieceType | null];
     pendingGarbageLines: number;
     phase: GamePhase;
 };
