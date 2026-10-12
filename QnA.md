@@ -5121,3 +5121,161 @@ compose.yml
 ```
 
 다만 YAML은 container 구성만 재현한다. 기존 PostgreSQL 데이터와 JSONL 로그를 다른 컴퓨터로 옮기려면 volume backup/restore가 별도로 필요하다.
+
+---
+
+## Q. Caddy 설정과 tar.gz 배포에서 생긴 문제는 무엇인가? (2026-09-08 제공 로그 기준)
+
+### 1. `/stats/script.js` 같은 상대 주소는 항상 잘못된 것인가?
+
+항상 잘못된 것은 아니다. 이 주소는 게임 서버로 요청하므로 Caddy가 해당 경로를 Umami에 proxy하도록 설정돼 있으면 정상적인 구성이다. proxy 경로가 없는 경우에는 게임 앱이 요청을 받아 404를 반환할 수 있다.
+
+Caddy는 공개 HTTPS 요청을 받아 app이나 지정한 upstream으로 전달하는 서버다. Vite는 client source를 개발 서버에서 제공하거나 배포 artifact로 build하는 역할을 맡는다.
+
+### 2. 호스트의 Caddyfile을 바꿨는데 왜 container 안에는 이전 내용이 있었는가?
+
+제공 로그에서는 mount source가 `/srv/tetris/repository/Caddyfile`임에도 container 안에는 새 `/stats` 설정이 없었다. 단일 파일 bind mount에서는 파일 교체로 inode가 바뀌면 기존 container가 이전 파일을 계속 참조할 수 있다. `reload`는 container 안에서 읽히는 설정을 재적용할 뿐 mount를 다시 만들지는 않는다.
+
+따라서 호스트 파일과 container 내부 파일을 각각 확인해야 한다. mount를 갱신하려면 Caddy container를 재생성하거나, 상황에 맞게 기존 mount 파일의 내용을 갱신해야 한다. 실제 적용 여부는 내부 설정 확인과 공개 주소의 응답으로 판단한다.
+
+### 3. `compose.production.yml`과 `DATABASE_URL` 오류는 왜 발생했는가?
+
+Compose 파일의 상대 경로는 현재 작업 directory 기준이다. 파일이 없는 directory에서 실행하면 경로 오류가 발생한다. Compose는 명령 대상이 Caddy여도 전체 설정의 환경변수를 먼저 해석하므로 필수 `DATABASE_URL`이 없으면 실행 전 멈출 수 있다.
+
+운영 명령에는 올바른 Compose 경로와 `/srv/tetris/secrets/production.env`를 명시한다. 실행 중인 Caddy의 설정만 읽거나 reload하는 경우에는 정확한 container를 확인한 뒤 `docker exec`로 접근할 수도 있다.
+
+---
+
+## Q. GitHub Actions production 배포 과정은 어떻게 동작하는가? (2026-09-14 ~ 2026-10-04)
+
+### 1. CI가 green이면 CD도 완료된 것인가?
+
+CI는 해당 commit의 typecheck, build와 테스트가 통과했다는 의미다. CD는 검증된 commit의 artifact를 서버에 전달하고 실제 앱을 교체·확인하는 별도 과정이다. 현재 production workflow는 사람이 `Run workflow`로 시작하면 나머지 단계를 자동 수행한다. main push마다 자동으로 배포하는 구성은 아니다.
+
+### 2. SSH private key, `OCI_HOST`, `OCI_KNOWN_HOSTS`는 각각 왜 필요한가?
+
+private key는 runner가 서버에 접속할 권한을 증명한다. host는 접속할 서버 주소다. known hosts는 상대 서버가 기대한 서버인지 확인하는 공개 host key 기록이다. 맥에서 생성하는 기록도 맥의 신원 정보가 아니라, 맥이 접속하거나 조회한 서버의 host key다.
+
+`ssh-keyscan`은 key를 수집하는 도구이며 그 결과만으로 서버의 신원이 보증되지는 않는다. 서버에서 확인한 fingerprint 등 신뢰할 수 있는 값과 대조한 뒤 runner에 제공하는 것이 맞다. private key 내용은 문서·로그·Git에 남기지 않는다.
+
+### 3. GitHub Actions가 마지막 commit을 압축해서 서버에 보내는가?
+
+현재 workflow는 checkout한 정확한 release commit을 `git archive`로 압축한다. `release_ref`가 있으면 그 ref를 사용하고, 비어 있으면 workflow 실행에서 선택한 ref의 commit을 사용한다. 로컬의 미커밋 변경은 포함되지 않는다.
+
+압축 파일과 checksum은 서버의 incoming directory로 전송되고 SHA-256을 확인한 뒤 사용한다. `tetris-<sha>.tar.gz`의 `<sha>`는 설명용 자리표시자다. 실제 명령에서는 전달된 파일명의 SHA를 넣어야 하며, shell에서 꺾쇠를 그대로 입력하면 redirection으로 해석될 수 있다.
+
+### 4. build directory는 무엇이며 왜 배포마다 준비하는가?
+
+`/srv/tetris/builds/<release_sha>`는 해당 commit의 source를 풀어 Docker 이미지를 만드는 작업 directory다. 실행 중인 앱이 이 directory의 source를 직접 읽는 것은 아니다. 앱은 build된 이미지의 compiled `dist`를 실행한다.
+
+release별 directory를 쓰면 source가 섞이지 않는다. 같은 후보 이미지가 이미 있다면 현재 workflow는 commit과 artifact checksum label을 확인한 뒤 재사용할 수 있다.
+
+### 5. 이미지 label은 어디에 저장되고 무엇을 보증하는가?
+
+label은 Docker 이미지의 metadata에 저장된다. `docker image inspect`로 읽을 수 있으며 현재 workflow는 전체 release commit SHA와 artifact checksum을 기록한다. 재사용할 후보 이미지가 지금 배포하려는 source에 대응하는지 확인하는 근거다. 이름의 짧은 SHA만 비교하는 것보다 정확하지만, label이 이미지에 대한 독립적인 서명 검증을 대신하는 것은 아니다.
+
+이미지가 존재한다는 사실과 현재 앱이 그 이미지로 실행 중이라는 사실은 다르다. 실행 container의 image ref/ID도 확인해야 한다.
+
+### 6. `PostgreSQL migrations applied=0 skipped=2`가 두 번 나오는 것은 오류인가?
+
+migration 두 개가 이미 적용돼 있어 이번 실행에서는 추가 변경 없이 생략했다는 뜻이다. 배포 workflow는 migration을 적용하고 다시 실행해 멱등성을 확인하므로 결과가 두 번 출력된다. migration 성공과 앱 실행 성공은 각각 확인해야 한다.
+
+### 7. `RELEASE_COMMIT_HAS_NO_SUCCESSFUL_MAIN_CI`는 무엇인가?
+
+현재 배포 검사는 동일한 전체 commit SHA에 대해 `ci.yml`의 `main` push run이 completed/success인지 확인한다. 이전 commit의 green, 실행 중인 CI, PR CI나 수동 CI 성공은 이 조건을 만족하지 않는다. 해당 commit의 main push CI가 완료된 뒤 production workflow를 다시 실행한다.
+
+### 8. 후보 앱이 unhealthy가 되면 원인을 어떻게 찾는가?
+
+container state, exit code, OOM 여부, healthcheck의 실제 출력과 앱 로그를 함께 확인한다. 자동 rollback이 후보 container를 교체하기 전에 읽어야 원래 실패 흔적을 보존할 수 있다. 현재 workflow는 이 진단을 rollback 직전에 출력한다.
+
+제공된 로그에서는 migration은 통과했지만 후보 앱이 unhealthy가 됐고 이전 `abb9ebc`로 복구된 앱은 healthy였다. 이것만으로 후보의 원인이 메모리·DB·경로 문제 중 무엇인지 확정할 수는 없다. 로그에 release SHA가 설정돼 있었으므로 SHA 입력란을 비웠다는 사실만으로 실패 원인을 설명할 수 없다.
+
+### 9. production workflow 전체가 green이면 어느 범위까지 끝난 것인가?
+
+artifact 전송, 이미지 준비, DB 백업·migration, 앱 교체와 health/HTTPS 검사까지 통과한 것이다. 그 뒤 브라우저에서 실제 싱글·PVP/PVE와 게임 로그 저장을 확인하면 해당 release 검증을 보완할 수 있다.
+
+실패 시 rollback은 이전 앱 이미지를 복구하는 범위다. 이미 적용한 DB schema를 자동으로 이전 버전으로 되돌리지는 않는다. Compose/Caddy 설정 변경, 백업 보관·외부 복사와 장기 모니터링은 별도 운영 항목이다.
+
+---
+
+## Q. Umami 국가·hostname과 개발 통계는 어떻게 해석하는가? (2026-10-04)
+
+### 1. 일본 OCI 서버를 쓰면 방문 국가도 일본으로 잡히는가?
+
+브라우저가 Umami Cloud에 직접 보내는 현재 구성에서는 방문자 쪽 IP가 국가 판단의 기준이다. 게임 서버가 일본에 있다는 이유만으로 모든 방문이 일본이 되는 것은 아니다.
+
+통계 API까지 일본 서버를 통해 proxy하면 수집 서버가 OCI의 IP를 사용할 가능성이 있다. 실제 방문자 IP가 반영되는지는 별도 검증해야 한다. 과거 proxy 기간의 기록도 현재 조회 범위에 남을 수 있다. 당시 일본 기록의 원인은 로그와 전송 경로 확인 없이 확정하지 않았다.
+
+### 2. 미국 방문은 GitHub Actions 테스트일 수 있는가?
+
+CI의 Playwright는 실제 브라우저로 홈페이지를 열기 때문에 domain 제한이 없던 tracker가 테스트 방문을 기록할 수 있다. runner의 외부 IP가 미국으로 분류되면 US 방문이 나타날 수 있지만, 국가만으로 CI 방문이라고 단정하지 않는다.
+
+Umami에서 날짜를 CI 실행 시간에 맞추고 `Hostname Is 127.0.0.1` 필터를 적용한다. 기록이 있으면 CI 또는 로컬 테스트 수집이 있었다는 뜻이며 시각도 대조해야 한다. `Hostname Is tetra-arena.duckdns.org`는 운영 사이트 방문을 조회하는 조건이다. 값에는 scheme과 port를 넣지 않는다.
+
+Hostname은 방문한 페이지의 host를 뜻하며, 국가 판단에 사용한 IP를 보여주는 항목은 아니다. [공식 필터 안내](https://docs.umami.is/docs/filters)
+
+### 3. `data-domains`는 어떤 문제를 해결하는가?
+
+현재 설정은 `window.location.hostname`이 `tetra-arena.duckdns.org`일 때만 추적한다. 개발·CI 주소의 수집을 제한하며 국가를 강제로 한국으로 바꾸거나 광고 차단기를 우회하는 옵션은 아니다. [공식 tracker 설정](https://docs.umami.is/docs/tracker-configuration#data-domains)
+
+---
+
+## Q. Umami 공식 방식과 브라우저 차단은 어떻게 구분하는가? (2026-10-06)
+
+### 1. 현재 직접 연결 방식은 공식 권장 사용법과 맞는가?
+
+공식 기본 설치는 대시보드의 tracking code를 페이지 head에 넣는 방식이다. 현재 Cloud script 사용과 `data-domains`는 이 방식에서 지원되는 설정이다. proxy는 기본 설치의 필수 조건이 아니라 광고 차단기 대응을 위한 별도 선택지다. [공식 설치 안내](https://docs.umami.is/docs/collect-data), [proxy 안내](https://docs.umami.is/docs/bypass-ad-blockers)
+
+### 2. CSP에 `gateway.umami.is`를 추가하는 것이 억지 우회인가?
+
+공식 collector로 전송할 수 있도록 사이트가 관리하는 허용 목록을 맞추는 정상적인 설정이다. 스크립트는 Cloud에서 로드하지만 통계 전송은 Gateway로 이루어진다. Cloud 변경 기록의 2026-06-06 항목과 실제 제공 script에서 이 주소를 확인했다. 기존 Cloud만 허용한 설명·설정은 불완전했으며 이를 보완했다.
+
+`script-src`는 script 다운로드를, `connect-src`는 fetch나 beacon 같은 전송을 제한한다. CSP 자체를 끄거나 wildcard로 모든 외부 서버를 허용할 필요는 없다. [공식 Cloud 변경 기록](https://docs.umami.is/docs/cloud/changelog), [connect-src 설명](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Content-Security-Policy/connect-src)
+
+### 3. `UMAMI_CLOUD_ORIGIN` 상수는 여전히 필요한가?
+
+`cloud.umami.is/script.js`를 불러오는 `script-src`에 필요하다. collector용 `gateway.umami.is`는 `connect-src`에서 별도로 허용한다. 기본 통계 전송만 기준으로 Cloud의 connect 허용을 정리할 수는 있지만 script 허용과 상수까지 삭제하면 tracker 로딩이 막힌다.
+
+### 4. `ERR_BLOCKED_BY_CLIENT`와 CSP 위반은 같은 오류인가?
+
+`ERR_BLOCKED_BY_CLIENT`는 광고 차단 확장이나 브라우저 추적 방지 등이 요청을 막을 때 나타날 수 있다. CSP 위반은 사이트 응답의 정책이 요청 주소를 허용하지 않아 발생한다. domain 제한·CSP 허용만으로 사용자의 차단기까지 해제되지는 않는다.
+
+`favicon.ico`의 404는 아이콘 파일이 없다는 별도 요청 실패이며 Umami 통계 전송 오류의 원인은 아니다.
+
+### 5. Chrome에서는 한국 방문이 잡히고 Brave에서는 수집되지 않으면 어떻게 확인하는가?
+
+이 관찰은 직접 전송과 위치 판정이 Chrome에서 동작한다는 근거다. Brave에서는 기본 Shields 차단 가능성이 높지만 원인 확정에는 비교가 필요하다. 주소창 사자 아이콘에서 해당 사이트의 Shields를 잠시 끄고 새로고침해 수집되는지 확인한다. 확인 뒤 원래 설정으로 되돌릴 수 있다. [Brave 사이트별 Shields 안내](https://support.brave.com/hc/en-us/articles/360022806212-How-do-I-use-Shields-while-browsing)
+
+### 6. 광고 차단기 사용자를 위해 반드시 proxy로 바꿔야 하는가?
+
+방문 추세를 보는 보조 통계라면 일부 누락을 받아들이고 직접 연결을 유지할 수 있다. 사용자는 현재 정상 수집을 확인한 뒤 추가 proxy 작업을 보류했다.
+
+누락을 줄여야 한다는 요구가 생기면 공식 proxy 방식을 검토한다. script만 자체 domain으로 제공해도 collector 요청이 따로 차단될 수 있다. 두 경로와 CSP를 함께 확인해야 하며, 모든 차단기 우회나 위치 정확도가 자동으로 보장되는 것은 아니다.
+
+---
+
+## Q. React 페이지인데 왜 HTML마다 Umami script를 추가했는가? (2026-10-09)
+
+현재 네 화면은 하나의 SPA가 아니라 각 HTML이 독립 entry인 MPA다. index의 script는 새 문서인 lobby/single/multi로 이동하면 자동으로 따라가지 않는다. 각 HTML의 head에 같은 tracker를 한 번씩 설치해야 페이지별 방문을 수집할 수 있다.
+
+동일 website ID를 쓰므로 하나의 Umami 사이트 안에서 URL 경로별로 비교할 수 있다. 각 페이지에서도 운영 domain 제한을 유지했다. 게임 결과·공격 등 custom event 추가는 이번 pageview 설정에 포함하지 않았다.
+
+---
+
+## Q. 현재 디자인과 누적 로그 정제 작업은 어디까지 진행됐는가? (2026-10-12 기존 계획·대화 요약 기준)
+
+### 1. 싱글에 nickname을 입력해야 하는가? NEXT 4개도 구현됐는가?
+
+현재 홈 1단계 구현에서는 싱글은 바로 진입하고, 멀티 진입에만 nickname을 선택 입력한다. 빈 멀티 nickname에는 Guest 이름을 만든다. NEXT 4개 확대와 나머지 화면·공격 연출은 후속 계획이며 홈 구현 완료와 구분한다. [디자인 계획](docs/design/charcoal-gold-design-plan.md)
+
+### 2. 새로 받은 DB dump는 모두 새 학습 게임인가?
+
+새 파일이라고 모든 게임이 신규 또는 미학습 게임인 것은 아니다. 누적 운영 snapshot과 기존 모델의 실제 학습 gameId 목록을 대조해야 한다. 보고된 246게임 중 lifecycle이 완결된 230게임도 placement/source/candidate 검증 전에는 최종 학습 대상 수가 아니다.
+
+데이터를 단순 append하지 않고 event identity로 중복과 내용 충돌을 구분한다. 미학습 게임으로 기존 모델을 먼저 평가한 뒤 재학습에 편입할 데이터를 정한다. 시간상 이후 데이터임이 확인된 경우에만 temporal holdout이라고 부른다.
+
+### 3. 5시간 이상 기록된 게임은 사람이 계속 플레이한 것인가?
+
+기존 분석 요약의 최장 불완전 게임에는 종료 이벤트와 Human placement가 없고 AI placement만 기록돼 있었다. 이것은 사람의 장시간 플레이를 증명하지 않는다. 로그만으로 AFK나 서버 오류라고 확정하지 않고, 완결 게임의 duration과 종료 없는 게임의 관찰 구간을 구분한다.
+
+현재는 읽기 전용 분석과 계획 작성 단계다. 정제 결과 생성, dataset export, 모델 학습과 운영 AI 적용은 아직 수행하지 않았다. [기존 대화 요약](docs/ai-ml/strategy/data-cleaning-training-conversation-summary.md)

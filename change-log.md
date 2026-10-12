@@ -2540,25 +2540,60 @@ client input
 
 ---
 
-# 2026년 9월 14일 ~ 10월 4일
+# 2026년 9월 7일
 
-## tar.gz 기반 production CD 배포 단계 자동화
+## PostgreSQL production smoke test 기동 대기 보강
 
-- GitHub Actions에서 지정한 release commit을 tar.gz로 만들고 SHA-256 checksum과 함께 OCI 서버로 전송·검증하도록 보강했다. 배포 서버에서 Git 저장소를 직접 `pull`하지 않고 검증된 artifact를 사용한다.
-- release commit 전체 SHA와 artifact checksum을 이미지 label에 기록한다. 서버에 같은 후보 이미지가 이미 있으면 두 label이 현재 release와 일치할 때만 재사용하고, 근거가 없는 이미지는 다시 준비한다.
-- 앱 교체 전 PostgreSQL 백업과 archive 검증을 수행하고, migration을 적용한 뒤 한 번 더 실행해 재실행 시 안전하게 생략되는지 확인한다.
-- 앱 이미지를 새 release tag로 전환한 뒤 Compose healthcheck와 공개 HTTPS 응답 `200`을 확인한다. 검증이 실패하면 직전 이미지 tag를 복원하고 복구 상태를 확인한다.
-- 배포 대상 commit이 `main` push 이벤트의 성공한 Migration CI 기록을 갖는지 사전 확인하도록 했다. 배포는 `workflow_dispatch`로 시작하며, 해당 commit을 `release_ref`로 지정할 수 있다.
-- 후보 앱 healthcheck 실패가 실제로 발생한 배포에서는 migration이 `applied=0 skipped=2`로 검증됐지만 앱은 unhealthy가 됐다. 자동 rollback 후 이전 `abb9ebc` 앱이 healthy임을 확인했다. 이 시점에는 후보 앱의 원인이 아직 확인되지 않았다.
-- 후속 변경에서 rollback 전에 후보 컨테이너 image/state/exit code/OOM 상태, healthcheck 기록과 최근 80줄의 앱 로그를 Actions 로그에 남기도록 추가했다. diagnostic 수집 실패가 rollback을 막지 않도록 했다.
-- `db83eef`의 release provenance 검사와 배포 안전장치에 대한 main CI는 통과했다. 이후 `a68b9ba`에서도 main CI 통과를 확인했으나, 이 기록을 작성할 때 새 release의 production 활성화 성공은 아직 확인되지 않았다.
+- Docker 초기화 과정의 임시 PostgreSQL에 연결한 직후 서버가 종료되는 문제에 대응했다. `pg_isready` 성공뿐 아니라 PID 1이 최종 `postgres` process인지 함께 확인하도록 수정했다.
+- commit `4bf8dda`에 반영했다. 이 변경은 테스트 준비 조건을 보강하며 운영 DB schema나 gameplay를 변경하지 않는다.
 
-## PostgreSQL smoke test와 Umami 전송 경로 정리
+---
 
-- PostgreSQL production smoke test가 빌드된 client module 파일을 안정적으로 선택하도록 경로 추출을 수정했다.
-- Umami tracker와 전송 API를 Caddy에서 별도로 proxy하던 설정을 제거하고, 브라우저가 Umami Cloud로 직접 전송하도록 바꿨다. 이에 맞춰 CSP의 허용 origin과 테스트 기대값도 조정했다.
-- tracker에 `data-domains="tetra-arena.duckdns.org"`를 추가해 운영 도메인에서만 Umami 수집이 동작하게 했다. 개발·테스트 hostname의 방문이 운영 통계에 섞이는 것을 줄이기 위한 설정이다.
-- 배포된 홈페이지 HTML에서 Umami Cloud script를 직접 로드하는 설정을 확인했다. tracker domain 변경의 `git diff --check`는 통과했다.
+# 2026년 9월 14일
+
+## production SSH 연결과 release artifact 전송
+
+- GitHub production environment의 SSH private key, host/user/port와 known hosts를 사용해 OCI 연결을 검사하는 workflow를 추가했다(`08c67af`).
+- 지정한 release commit을 `git archive`로 tar.gz로 만들고 SHA-256 checksum과 함께 OCI 서버로 전송·검증하도록 보강했다(`314a09b`). 서버에서 Git 저장소를 직접 `pull`하지 않고 검증된 artifact를 사용한다.
+- 배포는 `workflow_dispatch`로 시작하며, `release_ref`를 지정하거나 선택한 workflow ref의 commit을 사용한다.
+
+---
+
+# 2026년 9월 15일
+
+## Umami 직접 전송과 PostgreSQL artifact 경로 수정
+
+- Umami tracker를 `cloud.umami.is/script.js`에서 직접 불러오도록 바꾸고 Caddy의 Umami proxy 설정을 제거했다. CSP와 관련 테스트 기대값도 조정했다(`b515669`). 당시 `connect-src`에는 Cloud 주소만 허용해 별도 collector 주소가 빠져 있었으며, 아래 10월 6일 기록에서 보완했다.
+- PostgreSQL production smoke test가 Vite로 빌드된 client module 파일을 선택하도록 경로 추출을 수정했다(`7abd9b9`).
+
+---
+
+# 2026년 9월 25일
+
+## 후보 이미지 준비부터 앱 교체까지 CD 확장
+
+- 전송한 artifact를 release별 build directory에 풀고 후보 Docker 이미지를 준비하는 단계를 추가했다(`a71ac05`).
+- 앱 교체 전 PostgreSQL 백업과 archive 검증을 추가했다(`5ac3d9d`).
+- migration을 적용한 뒤 한 번 더 실행해 재실행 시 안전하게 생략되는지 확인하도록 했다(`a5a04b3`).
+- 앱 이미지를 새 release tag로 전환한 뒤 Compose healthcheck와 공개 HTTPS 응답 `200`을 확인하도록 했다. 검증 실패 시 직전 이미지 tag를 복원하고 복구 상태를 확인한다(`abb9ebc`).
+- 기존 Caddy와 PostgreSQL container는 앱 교체 대상에 포함하지 않으며, DB schema 변경의 자동 역변환은 앱 rollback 범위에 포함하지 않는다.
+
+---
+
+# 2026년 10월 4일
+
+## release 검증, 후보 재사용과 실패 진단 보강
+
+- release commit 전체 SHA와 artifact checksum을 이미지 label에 기록했다. 기존 후보 이미지가 두 label과 일치할 때만 재사용하도록 보강했다(`db83eef`).
+- 배포 대상 commit에 `main` push 이벤트의 성공한 Migration CI 기록이 있는지 사전 확인한다. 실행 중인 CI, PR CI와 수동 CI 성공만으로는 이 조건을 통과하지 않는다.
+- 사용자 제공 배포 로그에서 migration이 두 번 모두 `applied=0 skipped=2`로 검증됐으나 후보 앱이 unhealthy가 된 것을 확인했다. 이전 `abb9ebc`로 rollback 후 healthy 상태가 확인됐다. 후보 앱 실패 원인은 이 로그만으로 확정하지 않았다.
+- rollback 전에 후보 container image/state/exit code/OOM 상태, healthcheck 기록과 최근 80줄의 앱 로그를 남기도록 했다. diagnostic 수집 실패가 rollback을 막지 않도록 했다(`a68b9ba`).
+- `db83eef`의 main CI 검사 통과 로그와 이후 `a68b9ba`의 CI 통과 보고를 확인했다. 이 시점의 새 release production 활성화 성공은 별도로 확인되지 않았다.
+
+## Umami 운영 도메인 제한
+
+- tracker에 `data-domains="tetra-arena.duckdns.org"`를 추가해 운영 도메인에서만 수집하도록 했다(`491b216`). 개발·CI hostname의 방문이 운영 통계에 섞이는 것을 줄이기 위한 설정이다.
+- 배포된 홈페이지 HTML에서 Umami Cloud script를 직접 로드하는 설정을 확인했다. domain 변경의 `git diff --check`는 통과했다.
 
 ---
 
@@ -2569,3 +2604,27 @@ client input
 - 브라우저 오류에서 tracker는 `cloud.umami.is`에서 로드되지만 통계 전송은 `gateway.umami.is/api/send`로 이루어지는 것을 확인했다.
 - Umami Cloud가 2026년 6월 collector endpoint를 `gateway.umami.is`로 변경한 공식 변경 기록을 확인했다. 기존 `connect-src`에는 `cloud.umami.is`만 있어 브라우저 CSP가 전송 요청을 차단했다.
 - `gateway.umami.is`를 `connect-src`에만 정확한 origin으로 추가하고, CSP 단위 테스트의 기대 정책도 갱신했다. 전체 테스트는 실행하지 않았다.
+- commit `ec91377`에 반영했다. 공식 기본 설치, domain 제한과 collector 허용은 정상적인 직접 연결 설정이며 광고 차단기 대응 proxy는 선택 사항임을 조사했다.
+- 사용자 관찰에서 Chrome 방문은 한국으로 기록됐고 Brave 방문은 수집되지 않았다. Brave Shields 차단 가능성을 안내했으며, 차단 해제 비교 결과는 받지 않았다. 현재 직접 연결을 유지하고 proxy 도입은 보류하기로 했다.
+
+---
+
+# 2026년 10월 9일
+
+## 네 페이지 Umami 추적 적용
+
+- 기존 index tracker와 같은 website ID와 운영 domain 제한을 `multiLobby.html`, `tetrisSingle.html`, `tetrisMulti.html`의 head에도 추가했다(`9751795`). 독립 HTML 페이지 각각에서 방문을 수집하도록 했다.
+- `bash scripts/verify.sh`의 typecheck, build와 artifact 검사를 통과했다. 최초 Node test 실행의 2개 실패는 샌드박스의 localhost listen 제한(`EPERM`)이었고, 제한 없는 환경의 재실행에서 649 pass·기존 조건부 1 skip·실패 0으로 통과했다.
+- 빌드된 네 HTML에도 website ID와 `data-domains`가 포함되는 것을 확인했다. 이 변경 이후 운영 서버에서 네 페이지의 통계를 직접 대조하는 검증은 수행하지 않았다.
+
+---
+
+# 2026년 10월 12일
+
+## 현재 디자인·데이터 정제 진행상태 기록
+
+- 현재 `PLAN.md`와 [디자인 계획](docs/design/charcoal-gold-design-plan.md)에 기록된 홈 1단계 구현을 확인했다. 현재 코드에서는 싱글이 닉네임 없이 진입하고, 멀티만 선택 nickname 입력 또는 Guest 이름을 전달한다. 이 구현 변경은 기록 시점에 미커밋 상태다.
+- NEXT 4개 확대, 나머지 화면 시각 통일과 공격 연출은 계획된 후속 단계이며 완료로 기록하지 않는다. 이번 문서 정리에서는 기존 UI 작업의 테스트·화면 검증을 재실행하지 않았다.
+- [데이터 정제 대화 요약](docs/ai-ml/strategy/data-cleaning-training-conversation-summary.md)을 기준으로 읽기 전용 분석과 정제·학습 계획 작성 상태를 기록했다. 요약에는 고유 246게임 중 시작·종료가 모두 있는 230게임과 lifecycle 불완전 16게임이 보고돼 있다. 이 수치는 최종 학습 대상 수가 아니다.
+- streaming 정제 구현, 결과 dataset 생성, 모델 재학습과 운영 AI 교체는 아직 수행하지 않은 상태다. 기존 학습 snapshot과의 gameId 비교 및 장시간 제외 기준 확정이 남아 있다.
+- 배포·Umami 진행 기록을 commit 날짜별로 나누고 주요 질문과 답변을 `QnA.md`에 추가했다. 기존 gameplay·UI·ML 파일은 이 문서 작업에서 수정하지 않았다.
