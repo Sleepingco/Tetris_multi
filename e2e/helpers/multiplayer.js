@@ -94,6 +94,8 @@ async function startWaitingMatch(hostPage, guestPage) {
 
     await expect(hostPage.locator(GAME_READY_SELECTOR)).toHaveCount(64);
     await expect(guestPage.locator(GAME_READY_SELECTOR)).toHaveCount(64);
+    await Promise.all([hostPage, guestPage].map(page =>
+        expect(page.locator('.game-text[data-player="1"]')).toBeHidden()));
 }
 
 async function enterTwoPlayerMatch(hostPage, guestPage) {

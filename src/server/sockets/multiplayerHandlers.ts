@@ -27,6 +27,8 @@ import {
     ensurePlayerBagQueue,
     getAuthoritativePlayerSnapshotDto,
     getMatchState,
+    markMatchPlayerReady,
+    markMatchPlayerDisconnected,
     recordHumanPlacementReceipt,
     validateClientInputSequence,
 } from "../services/matchService.js";
@@ -59,7 +61,8 @@ import type {
     MatchResult,
     MatchState,
 } from "../services/matchService.js";
-import type { PlacementResult, PresentationEffect } from "../services/playerGameplayStep.js";
+import { createCombatEffect } from "../services/playerGameplayStep.js";
+import type { CombatEffect, PlacementResult, PresentationEffect } from "../services/playerGameplayStep.js";
 import type {
     PlayerSessionContext,
     PlayerSessionService,
@@ -86,6 +89,7 @@ export type MultiplayerHandlerDependencies = {
     now?: () => number;
     setTimeoutFn?: typeof setTimeout;
     disconnectGraceMs?: number;
+    gameStartCountdownMs?: number;
     isEventProductionStopped?: () => boolean;
 };
 type GameInputPayload = ClientToServerParsedPayload<"game:input">;
@@ -93,6 +97,7 @@ type InputResultPayload = ServerToClientParsedPayload<"game:input:result">;
 type GameJoinMatchDto = NonNullable<ServerToClientParsedPayload<"game:join:result">["match"]>;
 
 const DISCONNECT_GRACE_MS = 30_000
+const GAME_START_COUNTDOWN_MS = 3_000
 const MAX_OUTSTANDING_GAME_INPUTS = 120
 const PRIVATE_FIELD_NAMES = new Set([
     "token",
@@ -232,6 +237,7 @@ export function registerMultiplayerHandlers(
     const now = dependencies.now || Date.now
     const setTimeoutFn = dependencies.setTimeoutFn || setTimeout
     const disconnectGraceMs = dependencies.disconnectGraceMs || DISCONNECT_GRACE_MS
+    const countdownMs = dependencies.gameStartCountdownMs ?? GAME_START_COUNTDOWN_MS
     const isEventProductionStopped = dependencies.isEventProductionStopped || (() => false)
     const sessionContext = clientSocket.data?.playerSession
     const playerIdentity = clientSocket.data?.playerIdentity
@@ -270,6 +276,22 @@ export function registerMultiplayerHandlers(
         })
     }
 
+    function emitCountdown(match: MatchState): void {
+        if (match.startsAt === undefined) return;
+        socketServer.to(match.roomId).emit("game:countdown", {
+            roomId: match.roomId,
+            gameId: match.gameId,
+            startsAt: match.startsAt,
+            serverNow: now(),
+        });
+    }
+
+    function hasGameStarted(roomId: string): boolean {
+        const match = getMatchState(roomId).match;
+        return Boolean(match && (match.startsAt === undefined
+            || (match.startsAt !== null && now() >= match.startsAt)));
+    }
+
     // =============================
     // 방 생명주기 이벤트
     // =============================
@@ -279,7 +301,7 @@ export function registerMultiplayerHandlers(
             return
         }
         if (!consumeRateLimit("lifecycle")) {
-            emitRoomResult(createNotAuthorizedResult())
+            emitRoomResult({ ok: false, room: null, reason: "RATE_LIMITED" })
             return
         }
         const validation = clientToServerSchemas["room:create"].safeParse(payload)
@@ -310,7 +332,7 @@ export function registerMultiplayerHandlers(
             return
         }
         if (!consumeRateLimit("lifecycle")) {
-            emitRoomResult(createNotAuthorizedResult())
+            emitRoomResult({ ok: false, room: null, reason: "RATE_LIMITED" })
             return
         }
         const validation = clientToServerSchemas["room:join"].safeParse(payload)
@@ -333,7 +355,7 @@ export function registerMultiplayerHandlers(
             return
         }
         if (!consumeRateLimit("lifecycle")) {
-            emitRoomResult(createNotAuthorizedResult())
+            emitRoomResult({ ok: false, room: null, reason: "RATE_LIMITED" })
             return
         }
         const validation = clientToServerSchemas["room:leave"].safeParse(payload)
@@ -367,6 +389,12 @@ export function registerMultiplayerHandlers(
         if (isEventProductionStopped()) return
         if (!sessionContext
             || !playerSessionService.markDisconnected(sessionContext, clientSocket.id)) return
+
+        const membership = findRoomByPlayerId(getPlayerId());
+        if (membership) {
+            const paused = markMatchPlayerDisconnected(membership.room.roomId, getPlayerId(), now());
+            if (paused.match?.startsAt === null) emitCountdown(paused.match);
+        }
 
         // 잠깐의 네트워크 단절에는 room/match를 유지하고, 같은 session 재연결이 없을 때만 정리한다.
         const disconnectedAt = now()
@@ -406,7 +434,7 @@ export function registerMultiplayerHandlers(
             return
         }
         if (!consumeRateLimit("lifecycle")) {
-            emitRoomResult(createNotAuthorizedResult())
+            emitRoomResult({ ok: false, room: null, reason: "RATE_LIMITED" })
             return
         }
         const validation = clientToServerSchemas["room:start"].safeParse(payload)
@@ -431,7 +459,7 @@ export function registerMultiplayerHandlers(
                 roomId: result.room.roomId,
             })
             clearHumanPlacementReceiptsForRoom(result.room.roomId)
-            const matchResult = createMatch(result.room)
+            const matchResult = createMatch(result.room, { waitForPlayers: countdownMs > 0 })
             if (matchResult.ok) {
                 authoritativeTickerService.startRoomTicker(result.room.roomId, socketServer)
                 persistGameEventLog(saveEventLog, createGameStartLog(result.room, matchResult.match))
@@ -451,7 +479,7 @@ export function registerMultiplayerHandlers(
         }
         if (!consumeRateLimit("lifecycle")) {
             clientSocket.emit("game:join:result", {
-                ...createPublicRoomResult(createNotAuthorizedResult()),
+                ok: false, room: null, reason: "RATE_LIMITED",
                 match: null,
             })
             return
@@ -470,13 +498,20 @@ export function registerMultiplayerHandlers(
         }
         const { roomId } = validation.data
         const result = isAuthorizedRoom(roomId)
+        if (result.ok && result.room?.status !== "playing") {
+            clientSocket.emit("game:join:result", {
+                ok: false, room: createRoomPublicDto(result.room!),
+                reason: "GAME_NOT_PLAYING", match: null,
+            });
+            return;
+        }
         if (result.ok && !hasJoinedGame) {
             // 새 game page socket의 첫 join만 이 player의 gravity 기준 시점을 다시 잡는다.
             authoritativeTickerService?.resetPlayerGravity?.(roomId, getPlayerId())
             hasJoinedGame = true
         }
         const matchResult = result.ok
-            ? getMatchState(roomId)
+            ? markMatchPlayerReady(roomId, getPlayerId(), now(), countdownMs)
             : { match: null }
 
         if (result.ok && result.room) {
@@ -486,7 +521,9 @@ export function registerMultiplayerHandlers(
         clientSocket.emit("game:join:result", {
             ...createPublicRoomResult(result),
             match: createGameJoinMatchDto(matchResult.match),
+            serverNow: now(),
         })
+        if (result.ok && matchResult.match) emitCountdown(matchResult.match);
     })
 
     /**
@@ -539,6 +576,10 @@ export function registerMultiplayerHandlers(
             emitInputResult(false, "GAME_NOT_PLAYING")
             return
         }
+        if (!hasGameStarted(roomId)) {
+            emitInputResult(false, "GAME_NOT_STARTED");
+            return;
+        }
 
         const input = {
             action,
@@ -568,6 +609,10 @@ export function registerMultiplayerHandlers(
                     if (!isActiveSession()) {
                         emitInputResult(false, "NOT_AUTHORIZED")
                         return
+                    }
+                    if (!hasGameStarted(roomId)) {
+                        emitInputResult(false, "GAME_NOT_STARTED");
+                        return;
                     }
                     const authoritativeResult = applyAuthoritativeInputToMatchPlayerState(
                         roomId,
@@ -618,6 +663,8 @@ export function registerMultiplayerHandlers(
                         roomId,
                         getPlayerId(),
                         gameplayResult?.presentationEffect,
+                        createCombatEffect(authoritativeResult.match.gameId, getPlayerId(),
+                            gameplayResult?.placementResult, placementSideEffect),
                     )
                     if (placementSideEffect?.targetPlayerId) {
                         // garbage를 받은 상대도 변경됐으므로 같은 input 처리 흐름에서 상대 snapshot도 이어서 알린다.
@@ -911,7 +958,7 @@ export function registerMultiplayerHandlers(
             return
         }
         if (!consumeRateLimit("lifecycle")) {
-            clientSocket.emit("game:leave:result", createPublicRoomResult(createNotAuthorizedResult()))
+            clientSocket.emit("game:leave:result", { ok: false, room: null, reason: "RATE_LIMITED" })
             return
         }
         const validation = clientToServerSchemas["game:leave"].safeParse(payload)
@@ -928,13 +975,13 @@ export function registerMultiplayerHandlers(
         const result = roomResult.ok
             ? leaveGame(roomId, getPlayerId())
             : createNotAuthorizedResult()
-        if (result.ok && result.room) {
+        if (result.ok) {
             authoritativeTickerService.stopRoomTicker(roomId)
             deleteMatch(roomId)
             clearHumanPlacementReceiptsForRoom(roomId)
             clientSocket.leave(roomId)
             clientSocket.to(roomId).emit("game:opponent-left", {
-                room: createRoomPublicDto(result.room),
+                room: result.room ? createRoomPublicDto(result.room) : null,
                 playerId: getPlayerId()
             })
         }
@@ -950,7 +997,7 @@ export function registerMultiplayerHandlers(
             return
         }
         if (!consumeRateLimit("lifecycle")) {
-            emitRoomResult(createNotAuthorizedResult())
+            emitRoomResult({ ok: false, room: null, reason: "RATE_LIMITED" })
             return
         }
         const validation = clientToServerSchemas["room:sync"].safeParse(payload)
@@ -1028,6 +1075,7 @@ function emitAuthoritativeSnapshot(
     roomId: string,
     playerId: string,
     presentationEffect: PresentationEffect | null = null,
+    combatEffect: CombatEffect | null = null,
 ): AuthoritativeSnapshotDto | null {
     const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId)
     if (!snapshotResult.ok) return null
@@ -1043,6 +1091,7 @@ function emitAuthoritativeSnapshot(
             id: presentationEffect.id,
         }
     }
+    if (combatEffect) payload.combatEffect = combatEffect;
 
     socketServer.to(roomId).emit("game:authoritative:snapshot", payload)
 
@@ -1057,6 +1106,8 @@ function createGameJoinMatchDto(match: MatchState | null): GameJoinMatchDto | nu
     if (!match) return null
 
     return {
+        gameId: match.gameId,
+        ...(match.startsAt !== undefined ? { startsAt: match.startsAt } : {}),
         roomId: match.roomId,
         mode: match.mode || "pvp",
         aiPolicy: match.aiPolicy ?? null,

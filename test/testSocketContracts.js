@@ -162,6 +162,12 @@ const serverFixtures = {
     "room:result": roomResult,
     "room:updated": createRoom(),
     "game:join:result": { ...roomResult, match: createMatch() },
+    "game:countdown": {
+        roomId: ROOM_ID,
+        gameId: "00000000-0000-4000-8000-000000000003",
+        startsAt: 3000,
+        serverNow: 0,
+    },
     "game:input:result": {
         ok: true,
         reason: null,
@@ -382,3 +388,26 @@ module.exports = {
     createSnapshot,
     serverFixtures,
 }
+
+test("combatEffect는 line clear 없이도 허용하고 누락·잘못된 양·대상 조합을 거부한다", () => {
+    const gameId = "00000000-0000-4000-8000-000000000003";
+    const effect = {
+        id: `${gameId}:${HUMAN_ID}:0:combat`, gameId, pieceIndex: 0,
+        targetPlayerId: GUEST_ID, sentLines: 2, canceledLines: 1, appliedLines: 0,
+        linesCleared: 2, isTSpin: false, combo: 0, backToBackBonus: false,
+    };
+    const schema = serverToClientSchemas["game:authoritative:snapshot"];
+    const payload = { roomId: ROOM_ID, playerId: HUMAN_ID, snapshot: createSnapshot() };
+    assert.equal(schema.safeParse({ ...payload, combatEffect: effect }).success, true);
+    assert.equal(schema.safeParse({ ...payload, combatEffect: {
+        ...effect, targetPlayerId: null, sentLines: 0, linesCleared: 0, appliedLines: 3,
+    } }).success, true);
+    for (const invalid of [
+        { ...effect, gameId: "not-a-uuid" }, { ...effect, sentLines: -1 },
+        { ...effect, appliedLines: 1.5 }, { ...effect, linesCleared: 5 },
+        { ...effect, targetPlayerId: null }, { ...effect, sentLines: 0 },
+        { ...effect, extra: true }, { ...effect, canceledLines: undefined },
+    ]) {
+        assert.equal(schema.safeParse({ ...payload, combatEffect: invalid }).success, false);
+    }
+});

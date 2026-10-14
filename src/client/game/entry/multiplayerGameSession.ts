@@ -43,6 +43,8 @@ type MatchSnapshot = ServerToClientParsedPayload<"game:authoritative:snapshot">[
 type PresentationEffect = NonNullable<
     ServerToClientParsedPayload<"game:authoritative:snapshot">["presentationEffect"]
 >;
+type CombatEffect = NonNullable<ServerToClientParsedPayload<"game:authoritative:snapshot">["combatEffect"]>;
+export type CombatPresentation = { playerId: string; effect: CombatEffect };
 type GameInputResult = ServerToClientParsedPayload<"game:input:result">;
 type ExpectedTransform = { pieceType: PieceType; rotation: number; col: number };
 type PendingServerInput = InputOutcomeRecord["input"] & { expectedTransform?: ExpectedTransform };
@@ -72,6 +74,8 @@ export type MultiplayerGameOptions = {
     opponentLinesEl?: HTMLElement | null;
     opponentPendingGarbageEl?: HTMLElement | null;
     onUserInteract?: (() => void) | null;
+    onCombatEffect?: ((presentation: CombatPresentation) => void) | null;
+    deferStart?: boolean;
 };
 export type MultiplayerGameSession = {
     myGame: TetrisRuntime;
@@ -83,6 +87,7 @@ export type MultiplayerGameSession = {
     detachGameBagResult: () => void;
     detachSessionDisconnected: () => void;
     destroy: () => void;
+    start: () => void;
 };
 
 const AFTER_ACTION_TRANSFORM_INPUTS = new Set([
@@ -140,6 +145,8 @@ export function startMultiplayerGame({
     opponentLinesEl,
     opponentPendingGarbageEl,
     onUserInteract,
+    onCombatEffect,
+    deferStart = false,
 }: MultiplayerGameOptions): MultiplayerGameSession {
     const myBagChunks = getPlayerBagChunks(match, playerId)
     const opponentBagChunks = getPlayerBagChunks(match, opponentPlayerId)
@@ -158,6 +165,8 @@ export function startMultiplayerGame({
     let placementLogBufferClosed = false
     let hasAuthoritativeGameOver = false
     let destroyed = false
+    let presentationActive = true;
+    let gameplayStarted = !deferStart;
 
     const myGame = createTetrisRuntime({
         boardCanvasEl: myCanvas,
@@ -176,10 +185,10 @@ export function startMultiplayerGame({
         },
         inputOutcomeRecorder: handleLocalInputOutcome,
     })
-    myGame.init({ autoStart: true, serverBagChunks: myBagChunks })
+    myGame.init({ autoStart: !deferStart, serverBagChunks: myBagChunks })
     const myInitialSnapshot = getPlayerInitialSnapshot(match, playerId)
     if (myInitialSnapshot) {
-        myGame.applySnapshot(myInitialSnapshot, { resumeGravity: true })
+        myGame.applySnapshot(myInitialSnapshot, { resumeGravity: !deferStart })
     }
     const initialSequence = myInitialSnapshot?.lastProcessedClientSequence
     const initialClientSequence = typeof initialSequence === "number"
@@ -405,7 +414,7 @@ export function startMultiplayerGame({
     // 아래 snapshot listener가 전달한 authoritative 상태만 표시한다.
     myGame.runtime.detachKeyboard = attachKeyboardInput({
         enqueueAction: (action) => {
-            if (destroyed) return
+            if (destroyed || !gameplayStarted) return
             myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
         },
         onUserInteract: () => {
@@ -435,6 +444,12 @@ export function startMultiplayerGame({
     let hasPendingBagRequest = false
     let lastOpponentPresentationPieceIndex = -1
     let lastOpponentPresentationEffectId: string | null = null
+    const initialPieceIndexes = [
+        [playerId, myInitialSnapshot?.pieceIndex ?? 0],
+        [opponentPlayerId, opponentInitialSnapshot?.pieceIndex ?? 0],
+    ] as const;
+    const latestCombatSnapshotIndexes = new Map<string, number>(initialPieceIndexes);
+    const lastCombatPieceIndexes = new Map(initialPieceIndexes.map(([id, index]) => [id, index - 1]));
     const bagLowWatermark = 7
 
     // =============================
@@ -515,7 +530,7 @@ export function startMultiplayerGame({
 
         if (correctionDecision.shouldCorrect) {
             pendingOwnDriftState = null
-            myGame.applySnapshot(snapshot, { resumeGravity: true })
+            myGame.applySnapshot(snapshot, { resumeGravity: gameplayStarted })
             return true
         }
         return false
@@ -574,7 +589,7 @@ export function startMultiplayerGame({
         deferredOwnSnapshot = null
         pendingOwnDriftState = null
         myGame.applySnapshot(snapshot, {
-            resumeGravity: true,
+            resumeGravity: gameplayStarted,
             clearInputQueue: true,
             cancelPresentation: true,
         })
@@ -603,7 +618,7 @@ export function startMultiplayerGame({
             pendingServerInputs.clear()
             deferredOwnSnapshot = null
             pendingOwnDriftState = null
-            myGame.applySnapshot(snapshot, { resumeGravity: true })
+            myGame.applySnapshot(snapshot, { resumeGravity: gameplayStarted })
             maybeClosePlacementLogBufferAfterGameOver()
             return
         }
@@ -631,6 +646,7 @@ export function startMultiplayerGame({
      * @returns {void}
      */
     function requestBagIfNeeded(): void {
+        if (!gameplayStarted) return;
         if (!hasPendingBagRequest && myGame.getServerBagRemainingCount() <= bagLowWatermark) {
             hasPendingBagRequest = requestGameBagChunk(roomId, playerId)
         }
@@ -649,11 +665,14 @@ export function startMultiplayerGame({
     // =============================
 
     const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({
+        roomId: snapshotRoomId,
         playerId: remotePlayerId,
         snapshot,
         presentationEffect,
+        combatEffect,
     }) => {
         if (destroyed) return
+        if (snapshotRoomId !== roomId) return;
         if (!snapshot || !Array.isArray(snapshot.board)) return
 
         if (remotePlayerId === opponentPlayerId) {
@@ -668,13 +687,33 @@ export function startMultiplayerGame({
                     lastOpponentPresentationEffectId = presentationEffect.id
                 }
             }
+            playCombatPresentation(remotePlayerId, snapshot, combatEffect);
             return
         }
 
         if (remotePlayerId === playerId) {
             handleOwnAuthoritativeSnapshot(snapshot)
+            playCombatPresentation(remotePlayerId, snapshot, combatEffect);
         }
     })
+
+    /** match UUID와 placement 순서를 확인해 중복·재접속 이전·늦은 다른 match 효과를 버린다. */
+    function playCombatPresentation(
+        actorId: string,
+        snapshot: MatchSnapshot,
+        effect: CombatEffect | undefined,
+    ): void {
+        const latestIndex = Math.max(latestCombatSnapshotIndexes.get(actorId) ?? 0, snapshot.pieceIndex);
+        latestCombatSnapshotIndexes.set(actorId, latestIndex);
+        if (!presentationActive || !effect || !match.gameId || effect.gameId !== match.gameId) return;
+        if (effect.id !== `${match.gameId}:${actorId}:${effect.pieceIndex}:combat`) return;
+        if (effect.pieceIndex < latestIndex - 1 || effect.pieceIndex > snapshot.pieceIndex) return;
+        if (effect.pieceIndex <= (lastCombatPieceIndexes.get(actorId) ?? -1)) return;
+        const targetId = actorId === playerId ? opponentPlayerId : playerId;
+        if (effect.sentLines > 0 && effect.targetPlayerId !== targetId) return;
+        lastCombatPieceIndexes.set(actorId, effect.pieceIndex);
+        onCombatEffect?.({ playerId: actorId, effect });
+    }
 
     /**
      * 상대 line-clear 연출이 유효하고 아직 재생하지 않은 최신 effect인지 확인한다.
@@ -686,6 +725,7 @@ export function startMultiplayerGame({
      * @returns 한 번 재생해도 되는 새 line-clear effect이면 true
      */
     function shouldPlayOpponentPresentation(effect: PresentationEffect): boolean {
+        if (!presentationActive) return false;
         if (!effect || effect.type !== "line_clear") return false
         if (typeof effect.id !== "string" || effect.id.length === 0) return false
         if (!Number.isInteger(effect.pieceIndex) || effect.pieceIndex < 0) return false
@@ -741,6 +781,7 @@ export function startMultiplayerGame({
     })
     const detachSessionDisconnected = onSessionDisconnected(() => {
         if (destroyed) return
+        presentationActive = false;
         pendingServerInputs.clear()
         discardPlacementLogBuffer()
         deferredOwnSnapshot = null
@@ -776,6 +817,12 @@ export function startMultiplayerGame({
         opponentGame.destroy()
     }
 
+    function start(): void {
+        if (destroyed || gameplayStarted) return;
+        gameplayStarted = true;
+        myGame.applySnapshot(myGame.getSnapshot(), { resumeGravity: true });
+    }
+
     return {
         myGame,
         opponentGame,
@@ -786,5 +833,6 @@ export function startMultiplayerGame({
         detachGameBagResult,
         detachSessionDisconnected,
         destroy,
+        start,
     }
 }

@@ -67,6 +67,8 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
         onSessionReady,
         onSessionError,
         onSessionDisconnected,
+        requestStartGame,
+        requestRoomSync,
         sendGameInput,
         sendPlacementDecisionLogEvent,
     } = await import(
@@ -197,7 +199,9 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     });
 
     requestCreateRoom(player, "pvp", "hard", "placement_v4");
+    handlers.get("room:result")?.({ ok: false, room: null, reason: "ROOM_NOT_FOUND" });
     requestCreateRoom(player, "pve");
+    handlers.get("room:result")?.({ ok: false, room: null, reason: "RATE_LIMITED" });
     requestCreateRoom(player, "pve", "hard", "placement_v4");
 
     assert.deepEqual(emitted, [
@@ -218,6 +222,16 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
             },
         },
     ]);
+
+    handlers.get("room:result")?.({ ok: false, room: null, reason: "RATE_LIMITED" });
+    const beforeStart = emitted.length;
+    assert.equal(requestStartGame("ABCDEF12", player.playerId), true);
+    assert.equal(requestStartGame("ABCDEF12", player.playerId), false);
+    assert.equal(requestRoomSync("ABCDEF12", player.playerId), false);
+    assert.equal(emitted.length, beforeStart + 1);
+    handlers.get("room:result")?.({ ok: false, room: null, reason: "RATE_LIMITED" });
+    assert.equal(requestStartGame("ABCDEF12", player.playerId), true);
+    handlers.get("room:result")?.({ ok: false, room: null, reason: "RATE_LIMITED" });
 
     const emittedBeforeDisconnect = emitted.length;
     fakeSocket.sendBuffer.push({ eventName: "game:input" });

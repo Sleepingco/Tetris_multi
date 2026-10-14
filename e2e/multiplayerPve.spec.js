@@ -220,12 +220,26 @@ test("PVE AI attack은 human pending 표시 후 다음 lock에 적용된다", as
         const incomingStatus = page.locator(
             '.player-column[data-player="1"] .stat--incoming',
         );
+        const incomingMeter = page.locator('.player-column[data-player="1"] .incoming-meter');
 
         await expect.poll(async () => Number(await pendingGarbage.textContent()), {
             timeout: 20_000,
             intervals: [100, 150, 250],
         }).toBeGreaterThan(0);
         await expect(incomingStatus).toHaveClass(/is-danger/);
+        await expect(incomingMeter).toHaveAttribute("aria-valuenow", /[1-9]/);
+        await expect(incomingMeter.locator(".incoming-segment")).toHaveCount(20);
+        await expect.poll(() => page.locator('.player-column[data-player="1"]').evaluate(column => {
+            const pending = Number(column.querySelector(".pending-garbage").textContent);
+            const segments = [...column.querySelectorAll(".incoming-segment")];
+            const filled = Math.min(pending, 20);
+            return pending > 0 && segments.filter(segment => segment.classList.contains("is-filled")).length === filled &&
+                segments.every((segment, index) => segment.classList.contains("is-filled") === (index >= 20 - filled));
+        })).toBe(true);
+        const sentEffect = monitor.getSnapshots(aiPlayerId).findLast(snapshot => snapshot.combatEffect?.sentLines > 0)?.combatEffect;
+        expect(sentEffect?.targetPlayerId).toBe(humanPlayerId);
+        expect(sentEffect?.gameId).toMatch(/^[0-9a-f-]{36}$/i);
+        await expect(page.locator('.player-column[data-player="1"] .combat-feedback')).toContainText("줄 대기");
 
         const pendingSnapshot = monitor.getSnapshots(humanPlayerId).findLast(snapshot => {
             return snapshot.pendingGarbageLines > 0;
@@ -258,8 +272,15 @@ test("PVE AI attack은 human pending 표시 후 다음 lock에 적용된다", as
 
             return snapshotBeforeUi.sequence === snapshotAfterUi?.sequence &&
                 displayedPending === snapshotAfterUi.pendingGarbageLines &&
-                isDanger === (snapshotAfterUi.pendingGarbageLines > 0);
+                isDanger === (snapshotAfterUi.pendingGarbageLines > 0) &&
+                Number(await incomingMeter.getAttribute("aria-valuenow")) === Math.min(displayedPending, 20) &&
+                await incomingMeter.locator(".is-filled").count() === Math.min(displayedPending, 20);
         }).toBe(true);
+        const appliedEffect = monitor.getSnapshots(humanPlayerId).findLast(snapshot => snapshot.combatEffect?.appliedLines > 0)?.combatEffect;
+        expect(appliedEffect?.appliedLines).toBeGreaterThan(0);
+        expect(appliedEffect?.gameId).toBe(sentEffect.gameId);
+        await expect(page.locator('.player-column[data-player="1"] .combat-feedback')).toContainText("줄 적용");
+        await expect(page.locator(".combat-projectile")).toHaveCount(0);
     } finally {
         monitor.dispose();
     }
@@ -286,6 +307,51 @@ test("PVE server gameOver 후 결과를 표시하고 같은 방을 재시작한�
         await expect(page.locator("#roomCodeText")).toContainText(roomId);
         await expect(page.locator("#player2Name")).toHaveText("Heuristic AI");
         await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
+    } finally {
+        monitor.dispose();
+    }
+});
+
+test("PVE 공격은 여러 조각과 도착 파편을 표시하고 효과 축소 시 정리한다", async ({ page }) => {
+    test.setTimeout(45_000);
+    await page.addInitScript(() => {
+        localStorage.setItem("tetrisReducedEffects", "false");
+        window.__combatMotion = { maximum: 0, impacts: 0, added: 0, sizes: [] };
+        document.addEventListener("DOMContentLoaded", () => {
+            new MutationObserver(records => {
+                const stats = window.__combatMotion;
+                for (const record of records) {
+                    for (const node of record.addedNodes) {
+                        if (!(node instanceof HTMLElement) || !node.classList.contains("combat-projectile")) continue;
+                        stats.added++;
+                        if (node.classList.contains("combat-projectile--impact")) stats.impacts++;
+                        if (!stats.sizes.includes(node.style.width)) stats.sizes.push(node.style.width);
+                    }
+                }
+                stats.maximum = Math.max(stats.maximum, document.querySelectorAll(".combat-projectile").length);
+            }).observe(document.documentElement, { childList: true, subtree: true });
+        }, { once: true });
+    });
+    const monitor = createPveSocketMonitor(page);
+    try {
+        await createPveRoom(page, "hard");
+        await startPveMatch(page);
+        await expect.poll(() => page.evaluate(() => window.__combatMotion.maximum), { timeout: 20_000 }).toBeGreaterThanOrEqual(8);
+        await expect.poll(() => page.evaluate(() => window.__combatMotion.impacts)).toBeGreaterThan(0);
+        const motion = await page.evaluate(() => window.__combatMotion);
+        expect(motion.maximum).toBeLessThanOrEqual(40);
+        expect(motion.sizes.length).toBeGreaterThanOrEqual(3);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1600);
+        await page.locator("#effectsToggle").click();
+        await expect(page.locator("#effectsToggle")).toHaveAttribute("aria-pressed", "true");
+        await expect(page.locator(".combat-projectile")).toHaveCount(0);
+        const addedAfterReduction = await page.evaluate(() => window.__combatMotion.added);
+        const aiId = monitor.getObservedPlayerIds().find(id => id.startsWith("heuristic-ai-"));
+        const attackCount = () => monitor.getSnapshots(aiId).filter(snapshot => snapshot.combatEffect?.sentLines > 0).length;
+        const countBeforeReduction = attackCount();
+        await expect.poll(attackCount, { timeout: 20_000 }).toBeGreaterThan(countBeforeReduction);
+        expect(await page.evaluate(() => window.__combatMotion.added)).toBe(addedAfterReduction);
+        await expect(page.locator('.player-column[data-player="1"] .combat-feedback')).toContainText("줄 대기");
     } finally {
         monitor.dispose();
     }

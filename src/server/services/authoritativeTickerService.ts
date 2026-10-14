@@ -21,6 +21,7 @@ import {
 import { finishAuthoritativeMatch } from "./authoritativeMatchFinish.js";
 import { createPveAiPlayerService } from "./pveAiPlayerService.js";
 import { createAuthoritativePlayerMutationQueue } from "./authoritativePlayerMutationQueue.js";
+import { createCombatEffect } from "./playerGameplayStep.js";
 import type {
     ClientToServerEvents,
     ServerToClientEvents,
@@ -35,6 +36,7 @@ import type {
     GravityStepResult,
     PlacementResult,
     PresentationEffect,
+    CombatEffect,
 } from "./playerGameplayStep.js";
 
 type AuthoritativeSocketServer = Server<ClientToServerEvents, ServerToClientEvents>;
@@ -49,6 +51,7 @@ type TickerState = {
     playerGravityTimings: Map<string, GravityTiming>;
     aiAccumulatorMs: number;
     isProcessing: boolean;
+    countdownFinished: boolean;
 };
 type DuePlayerStepResult = {
     ok: boolean;
@@ -63,6 +66,7 @@ type DuePlayerStepResult = {
     presentationEffect?: PresentationEffect;
 };
 type TickerDependencies = {
+    now?: () => number;
     setIntervalFn?: typeof setInterval;
     clearIntervalFn?: typeof clearInterval;
     tickMs?: number;
@@ -170,6 +174,7 @@ export function createAuthoritativeTickerService(
     const authoritativePlayerMutationQueue = dependencies.authoritativePlayerMutationQueue
         || createAuthoritativePlayerMutationQueue();
     const tickers = new Map<string, TickerState>();
+    const now = dependencies.now || Date.now;
 
     function startRoomTicker(
         roomId: string,
@@ -202,6 +207,7 @@ export function createAuthoritativeTickerService(
             playerGravityTimings: new Map(),
             aiAccumulatorMs: 0,
             isProcessing: false,
+            countdownFinished: false,
         });
 
         return {
@@ -284,15 +290,21 @@ export function createAuthoritativeTickerService(
         ticker.isProcessing = true;
 
         try {
-            ticker.aiAccumulatorMs += elapsedMs;
-            const shouldProcessAi = ticker.aiAccumulatorMs >= aiActionIntervalMs;
-            if (shouldProcessAi) ticker.aiAccumulatorMs -= aiActionIntervalMs;
-
             const matchResult = getMatchState(roomId);
             if (!matchResult.ok || !matchResult.match) {
                 stopRoomTicker(roomId);
                 return;
             }
+
+            const startsAt = matchResult.match.startsAt;
+            if (startsAt === null || (startsAt !== undefined && now() < startsAt)) return;
+            if (startsAt !== undefined && !ticker.countdownFinished) {
+                ticker.countdownFinished = true;
+                elapsedMs = 0;
+            }
+            ticker.aiAccumulatorMs += elapsedMs;
+            const shouldProcessAi = ticker.aiAccumulatorMs >= aiActionIntervalMs;
+            if (shouldProcessAi) ticker.aiAccumulatorMs -= aiActionIntervalMs;
 
             const players = Array.isArray(matchResult.match.players)
                 ? matchResult.match.players
@@ -340,6 +352,7 @@ export function createAuthoritativeTickerService(
                     gameCore,
                     socketServer,
                     match: matchResult.match,
+                    tickerState: ticker,
                 });
 
                 if (player.playerType === "heuristic_ai") {
@@ -372,6 +385,7 @@ export function createAuthoritativeTickerService(
         gameCore,
         socketServer,
         match,
+        tickerState,
     }: {
         roomId: string;
         player: MatchPlayer;
@@ -379,8 +393,10 @@ export function createAuthoritativeTickerService(
         gameCore: GameCore;
         socketServer: AuthoritativeSocketServer;
         match: MatchState;
+        tickerState: TickerState;
     }): Promise<void> {
         const playerId = player.playerId;
+        if (tickers.get(roomId) !== tickerState) return;
         const isAiPlayer = player.playerType === "heuristic_ai";
         const ticker = tickers.get(roomId);
         const gravityTiming = !isAiPlayer
@@ -453,6 +469,7 @@ export function createAuthoritativeTickerService(
             socketServer,
             stepResult.presentationEffect
                 || stepResult.gameplayResult?.presentationEffect,
+            createCombatEffect(match.gameId, playerId, stepResult.placementResult, placementSideEffect),
         );
         if (placementSideEffect?.targetPlayerId) {
             emitAuthoritativeSnapshot(roomId, placementSideEffect.targetPlayerId, socketServer);
@@ -484,6 +501,7 @@ export function createAuthoritativeTickerService(
         playerId: string,
         socketServer: AuthoritativeSocketServer,
         presentationEffect: PresentationEffect | null = null,
+        combatEffect: CombatEffect | null = null,
     ): ServerToClientParsedPayload<"game:authoritative:snapshot">["snapshot"] | null {
         const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId);
         if (!snapshotResult.ok) return null;
@@ -499,6 +517,7 @@ export function createAuthoritativeTickerService(
                 id: presentationEffect.id,
             };
         }
+        if (combatEffect) payload.combatEffect = combatEffect;
 
         socketServer.to(roomId).emit("game:authoritative:snapshot", payload);
 

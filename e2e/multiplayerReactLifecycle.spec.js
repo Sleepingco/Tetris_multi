@@ -64,15 +64,32 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
                 await expect(column.locator(".next-preview .next-cell.preview")).toHaveCount(16);
                 const nextLayout = await column.evaluate(root => {
                     const next = root.querySelector(".next-preview");
+                    const board = root.querySelector("canvas");
                     const slots = [...next.querySelectorAll(".next-slot")]
                         .map(slot => slot.getBoundingClientRect());
+                    const nextBounds = next.getBoundingClientRect();
+                    const boardBounds = board.getBoundingClientRect();
                     return {
                         vertical: slots.every((slot, index) => index === 0 || slot.top >= slots[index - 1].bottom),
-                        leftOfBoard: next.getBoundingClientRect().right <= root.querySelector("canvas").getBoundingClientRect().left,
+                        onOuterSide: root.dataset.player === "1"
+                            ? nextBounds.right <= boardBounds.left
+                            : boardBounds.right <= nextBounds.left,
                     };
                 });
-                expect(nextLayout).toEqual({ vertical: true, leftOfBoard: true });
+                expect(nextLayout).toEqual({ vertical: true, onOuterSide: true });
                 await expect(column.locator(".hold-preview .next-cell")).toHaveCount(16);
+                await expect(column.locator(".incoming-segment")).toHaveCount(20);
+                await expect(column.getByRole("meter")).toHaveAttribute("aria-valuenow", "0");
+                await expect(column.locator(".incoming-segment.is-filled")).toHaveCount(0);
+                const railLayout = await column.evaluate(root => {
+                    const meter = root.querySelector(".incoming-meter").getBoundingClientRect();
+                    const board = root.querySelector("canvas").getBoundingClientRect();
+                    return {
+                        vertical: meter.height > meter.width * 4,
+                        besideBoard: root.dataset.player === "1" ? meter.right <= board.left : board.right <= meter.left,
+                    };
+                });
+                expect(railLayout).toEqual({ vertical: true, besideBoard: true });
                 await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-live", "polite");
                 await expect(column.locator(".stat--incoming")).toHaveAttribute("aria-atomic", "true");
                 const overlay = column.locator(".game-text");
@@ -90,6 +107,37 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
             }
         }
 
+        const desktopGap = await hostPage.evaluate(() => {
+            const boards = [...document.querySelectorAll("canvas")].map(canvas => canvas.getBoundingClientRect());
+            return boards[1].left - boards[0].right;
+        });
+        expect(desktopGap).toBeGreaterThan(240);
+        await hostPage.setViewportSize({ width: 1280, height: 720 });
+        await expect.poll(() => hostPage.evaluate(() => document.documentElement.scrollWidth)).toBe(1280);
+        expect(await hostPage.evaluate(() => {
+            const boards = [...document.querySelectorAll("canvas")].map(canvas => canvas.getBoundingClientRect());
+            return boards[1].left - boards[0].right;
+        })).toBeGreaterThan(160);
+        await hostPage.setViewportSize({ width: 390, height: 844 });
+        await expect.poll(() => hostPage.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+        for (const playerNumber of [1, 2]) {
+            const column = hostPage.locator(`.player-column[data-player="${playerNumber}"]`);
+            const onOuterSide = await column.evaluate(root => {
+                const preview = root.querySelector(".next-preview").getBoundingClientRect();
+                const board = root.querySelector("canvas").getBoundingClientRect();
+                return root.dataset.player === "1"
+                    ? preview.right <= board.left
+                    : board.right <= preview.left;
+            });
+            expect(onOuterSide).toBe(true);
+            const meterBesideBoard = await column.evaluate(root => {
+                const meter = root.querySelector(".incoming-meter").getBoundingClientRect();
+                const board = root.querySelector("canvas").getBoundingClientRect();
+                return root.dataset.player === "1" ? meter.right <= board.left : board.right <= meter.left;
+            });
+            expect(meterBesideBoard).toBe(true);
+        }
+
         const soundToggle = hostPage.locator("#soundToggle");
         const soundPressed = await soundToggle.getAttribute("aria-pressed");
         await soundToggle.click();
@@ -98,6 +146,10 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
         const themePressed = await themeToggle.getAttribute("aria-pressed");
         await themeToggle.click();
         await expect(themeToggle).not.toHaveAttribute("aria-pressed", themePressed);
+        const effectsToggle = hostPage.locator("#effectsToggle");
+        const effectsPressed = await effectsToggle.getAttribute("aria-pressed");
+        await effectsToggle.click();
+        await expect(effectsToggle).not.toHaveAttribute("aria-pressed", effectsPressed);
 
         const guestPlayerId = (await readPlayerSession(guestPage)).playerId;
         const inputCount = guestMonitor.getSentGameInputCount();

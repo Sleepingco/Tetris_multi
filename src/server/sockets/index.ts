@@ -22,6 +22,8 @@ import {
     TEST_RATE_LIMITS,
 } from "../services/socketRateLimitService.js";
 import { handshakeAuthSchema } from "../../shared/socketContracts.mjs";
+import { findRoomByPlayerId } from "../services/roomService.js";
+import { markMatchPlayerDisconnected } from "../services/matchService.js";
 import type {
     ClientToServerEventName,
     ServerToClientEvents,
@@ -194,6 +196,20 @@ export function registerSocketHandlers(
         const replacedSocket = result.replacedSocketId
             ? socketServer.sockets?.sockets?.get?.(result.replacedSocketId)
             : null
+        if (result.replacedSocketId) {
+            // 이전 generation의 disconnect는 무시되므로 교체 시점에 시작 전 readiness를 회수한다.
+            const membership = findRoomByPlayerId(result.context.playerId);
+            if (membership) {
+                const serverNow = (dependencies.now || Date.now)();
+                const paused = markMatchPlayerDisconnected(membership.room.roomId, result.context.playerId, serverNow);
+                if (paused.match?.startsAt === null) socketServer.to(membership.room.roomId).emit("game:countdown", {
+                    roomId: membership.room.roomId,
+                    gameId: paused.match.gameId,
+                    startsAt: null,
+                    serverNow,
+                });
+            }
+        }
         replacedSocket?.disconnect?.(true)
         next()
     })

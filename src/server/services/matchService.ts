@@ -85,6 +85,8 @@ export type MatchState = {
     status: RoomStatus;
     players: MatchPlayer[];
     createdAt: number;
+    startsAt?: number | null;
+    readyPlayerIds?: Set<string>;
 };
 export type HumanPlacementReceipt = Readonly<{
     gameId: string;
@@ -187,7 +189,10 @@ function createFailure(reason: string): MatchResult {
  * room 상태를 기준으로 match를 시작하고 player별 초기 server bag과 authoritative state를 만든다.
  * 각 player는 독립된 board, queue, hold, score, garbage, sequence를 가지며 같은 match에 묶인다.
  */
-export function createMatch(room: RoomState | null | undefined): MatchResult {
+export function createMatch(
+    room: RoomState | null | undefined,
+    options: { waitForPlayers?: boolean } = {},
+): MatchResult {
     if (!room) {
         return createFailure("ROOM_REQUIRED");
     }
@@ -242,10 +247,42 @@ export function createMatch(room: RoomState | null | undefined): MatchResult {
             };
         }),
         createdAt: Date.now(),
+        ...(options.waitForPlayers ? { startsAt: null, readyPlayerIds: new Set<string>() } : {}),
     };
 
     matches.set(room.roomId, match);
 
+    return createSuccess(match);
+}
+
+/** Human 참가가 모두 준비된 첫 시점에만 공통 시작 시각을 예약한다. */
+export function markMatchPlayerReady(
+    roomId: string, playerId: string, now: number, countdownMs: number,
+): MatchResult {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+    if (!match.players.some(player => player.playerId === playerId && player.playerType === "human")) {
+        return createFailure("PLAYER_NOT_FOUND");
+    }
+    const readyPlayerIds = match.readyPlayerIds;
+    if (match.startsAt === null && readyPlayerIds) {
+        readyPlayerIds.add(playerId);
+        if (match.players.filter(player => player.playerType === "human")
+            .every(player => readyPlayerIds.has(player.playerId))) {
+            match.startsAt = now + countdownMs;
+        }
+    }
+    return createSuccess(match);
+}
+
+/** 시작 전 연결이 사라지면 참가 대기로 돌아가며, 이미 시작한 경기는 변경하지 않는다. */
+export function markMatchPlayerDisconnected(roomId: string, playerId: string, now: number): MatchResult {
+    const match = matches.get(roomId);
+    if (!match) return createFailure("MATCH_NOT_FOUND");
+    if (match.startsAt === null || (match.startsAt !== undefined && match.startsAt > now)) {
+        match.readyPlayerIds?.delete(playerId);
+        match.startsAt = null;
+    }
     return createSuccess(match);
 }
 
