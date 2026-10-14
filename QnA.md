@@ -5279,3 +5279,87 @@ Hostname은 방문한 페이지의 host를 뜻하며, 국가 판단에 사용한
 기존 분석 요약의 최장 불완전 게임에는 종료 이벤트와 Human placement가 없고 AI placement만 기록돼 있었다. 이것은 사람의 장시간 플레이를 증명하지 않는다. 로그만으로 AFK나 서버 오류라고 확정하지 않고, 완결 게임의 duration과 종료 없는 게임의 관찰 구간을 구분한다.
 
 현재는 읽기 전용 분석과 계획 작성 단계다. 정제 결과 생성, dataset export, 모델 학습과 운영 AI 적용은 아직 수행하지 않았다. [기존 대화 요약](docs/ai-ml/strategy/data-cleaning-training-conversation-summary.md)
+
+---
+
+## Q. 멀티 재시작 제한과 서버 기준 카운트다운을 어떻게 이해하고 설계했는가? (2026-10-13)
+
+### 1. Lifecycle, rate limit, limit은 각각 무엇인가? 그냥 속성값 객체인가?
+
+Lifecycle은 방 생성·대기·시작·참가·종료·로비 복귀라는 생명주기다. 코드의 `lifecycle`은 관련 요청을 묶은 bucket 이름이다. Rate limit은 일정 시간 동안의 요청 횟수를 제한하는 정책이고 `limit`은 허용 횟수다.
+
+```ts
+lifecycle: { limit: 10, windowMs: 60_000 }
+```
+
+이 값 자체는 일반 설정 객체다. 실제 동작은 `consume()`이 player별 count와 resetAt을 Map에서 확인해 결정한다. 첫 요청부터 60초 동안 이 묶음의 요청을 합쳐 10회 허용한다. 같은 player로 페이지/socket이 바뀌어도 횟수는 이어진다.
+
+### 2. `bag: { limit: 2, windowMs: 1_000 }`은 NEXT 4개를 나눠 보내는 설정인가?
+
+아니다. `bag`은 `game:bag:request` 보충 요청의 제한 이름이다. NEXT 4칸은 이미 확보한 다음 조각 목록의 일부를 표시한다. 7-bag은 조각 7종을 하나씩 섞은 묶음이며 게임 시작 시 3묶음, 총 21개를 준비한다.
+
+Client는 숨은 queue와 표시 queue를 합친 잔량이 7개 이하인지 500ms마다 확인하고, 필요하면 한 번 요청해 7개 묶음을 받는다. 이 설정은 player당 1초에 보충 요청 최대 2회라는 뜻이며 0.2초 간격 전송이나 블록 2개 공급을 뜻하지 않는다. 한도 초과 요청은 지연 queue에 넣지 않고 `RATE_LIMITED`로 거부한다.
+
+빠른 소비나 네트워크 지연으로 확보한 조각을 모두 소진할 가능성은 있다. 그 경우 잔량·요청/응답 시각·제한 응답을 함께 조사해야 한다. 이번 작업에서 bag 공급 정책이나 극단적 소비 속도를 변경·부하 검증하지는 않았다.
+
+### 3. 빠르게 세 판 반복하는 것을 제한하고 sync 제한 분리를 나중으로 미뤄도 되는가?
+
+현재 MVP 정책으로 가능하며 사용자 결정에 따라 lifecycle 공유 bucket과 60초·10회 한도를 유지했다. 다만 빠른 패배·재시작도 정상 사용일 수 있다. 사용자가 직접 연타하는 start와 앱이 자동으로 보내는 join/sync는 성격이 다르다.
+
+방 생성 1회와 세 판의 start/join/sync 각 3회면 총 10회다. 따라서 현재 정책은 필수 자동 요청까지 함께 제한한다. 이번에는 제한 초과를 정확히 안내하고 실패 복구를 마련했다. 정상 플레이에서도 자주 막힌다는 근거가 생기면 동기화 제한 분리를 다시 검토한다.
+
+### 4. 시작 버튼 중복 클릭 차단은 멱등성을 구현한 것인가?
+
+Client의 대기 flag는 응답 전 추가 요청을 보내지 않는 전송 차단이다. 서버 멱등성은 같은 요청이 여러 번 도착해도 실제 게임이 한 번만 시작되는 성질이다. 버튼 차단만으로 서버의 중복 실행 방지가 보장되지는 않는다.
+
+현재 서버는 첫 start에서 waiting을 playing으로 바꾸고 이후 start는 `GAME_ALREADY_STARTED`로 거부한다. 상태 변화 관점의 중복 시작 방지를 유지하며, 이번에는 ref의 즉시 차단과 React의 버튼 표시를 추가했다. 같은 요청의 재전송에 최초 성공 응답까지 그대로 돌려주는 requestId 기반 결과 저장은 구현하지 않았다.
+
+### 5. 일시적 제한 실패 처리는 다른 이벤트나 모든 예외를 같은 방식으로 처리한다는 뜻인가?
+
+어떤 event가 실패했는지와 reason이 무엇인지 함께 본다는 뜻이다. 선택한 start/sync/join 흐름에서 `RATE_LIMITED`는 이번 요청이 거절됐다는 의미이며 room 퇴장이 아니다.
+
+| 실패 | 처리 |
+| --- | --- |
+| start의 `RATE_LIMITED` | 방 유지, 요청 대기 해제, 사용자 재시도 |
+| sync의 `RATE_LIMITED` | 저장 room 유지, 시작 차단, `방 상태 다시 확인` 제공 |
+| game join의 `RATE_LIMITED` | runtime 실행 보류, `참가 다시 시도` 제공 |
+| game leave의 `RATE_LIMITED` | 성공 전 이동·캐시 삭제를 하지 않고 퇴장 실패 안내 |
+| `ROOM_NOT_FOUND` | 저장 room 정리 |
+| sync의 `NOT_AUTHORIZED` 또는 terminal session 오류 | 현재 권한을 신뢰할 수 없어 room 표시/캐시 정리 |
+
+서버가 `{ ok: false, reason }`으로 반환하는 예상 가능한 실패와 내부 exception, 응답을 못 받은 transport 단절은 구분한다. 응답 부재만으로 서버가 요청을 실행하지 않았다고 단정할 수 없으며, reconnect 뒤 sync로 현재 상태를 확인한다. 같은 malformed 요청을 자동 반복하거나 모든 실패를 방 삭제로 처리하지 않는다.
+
+### 6. 페이지에서 숫자만 3초 보여 주면 안 되는가?
+
+서버 ticker나 AI가 먼저 진행되면 client가 countdown을 보는 동안 게임 상태가 바뀐다. 그래서 실제 서버 실행과 local prediction도 함께 대기해야 한다.
+
+```text
+room:start로 match 준비
+→ 게임 페이지 이동
+→ 필요한 human의 game:join 완료
+→ 서버가 startsAt = now + 3000 예약
+→ game:countdown으로 시작 시각 전달
+→ client 표시와 서버 실행을 시작 시각에 맞춰 해제
+```
+
+PVP는 human 2명, PVE는 human 1명을 기다린다. 참가가 덜 끝났으면 `상대 참가 대기 중`을 표시한다. 준비·예약 정보는 match metadata이며 board나 gameplay phase에 새 상태를 추가하지 않았다. Client는 서버가 보낸 남은 시간을 `performance.now()` 기준으로 표시하므로, 네트워크 전달 지연까지 제거한 정밀 clock 동기화를 보장하는 구현은 아니다.
+
+### 7. Countdown 중 새로고침, reconnect나 퇴장이 발생하면 어떻게 되는가?
+
+시작 전 disconnect나 active socket 교체는 해당 player의 readiness를 회수하고 참가 대기로 돌아간다. 필요한 human이 다시 참가하면 새로운 3초를 예약한다. 같은 socket의 반복 join은 기존 예약을 연장하지 않고, 오래된 socket의 늦은 disconnect는 새 연결의 준비 상태를 취소하지 않는다.
+
+명시적 퇴장은 기존 membership 제거 정책을 따른다. ticker/match를 정리하고 남은 player를 로비로 복귀시킨다. 종료된 이전 ticker의 늦은 callback은 현재 ticker instance와 다르면 실행하지 않는다. 이미 시작된 게임의 disconnect에는 기존 grace 정책을 유지한다.
+
+### 8. E2E가 제한 실패를 모의로 만들면 실제 rate limit도 검증된 것인가?
+
+브라우저 복구 테스트는 첫 제한 응답만 모의로 발생시켜 버튼·room 캐시·재시도 화면을 결정적으로 확인한다. 실제 room/match는 서버가 소유한다. 이 테스트만으로 기본 한도를 검증했다고 말하지 않는다.
+
+기본 production 한도를 쓰는 별도 socket 테스트에서 start 성공 직후 join 제한, 인증 유효성, membership 보존과 60초 경과 후 재참가를 검증했다. 기존 E2E test profile은 lifecycle 한도가 높으므로 일반 gameplay 회귀와 제한 정책 검증의 역할을 구분한다.
+
+### 9. 착지 색상 오탐은 무엇이며 rollback 검사를 약하게 만든 것인가?
+
+오탐은 실제 rollback이 없는데 검사에서 rollback이라고 판단한 경우다. 실패 trace에서 고정 좌표와 authoritative board는 유지됐지만 착지 연출 중 local cell RGB가 `(11, 165, 230)`이고 상대 기본 색상은 `(14, 165, 233)`이었다. 정확한 Canvas 색상 비교가 이 차이를 상태 변화로 오인했다.
+
+Rollback spec에서 양쪽의 공개 `효과 축소` 설정을 켰다. 좌표, 보드 수렴과 committed fingerprint의 되감김 검사는 유지하며 실제 게임의 연출은 제거하지 않았다. 이 spec은 효과를 축소한 상태의 rollback을 검증하고, 연출 자체는 별도 E2E가 검증한다. 정상 효과가 켜진 상태의 색상 변화까지 같은 검사로 보장하는 것은 아니다.
+
+구현 시 최종 하네스는 Node 674 pass·1 skip이며 시작/복구 spec 5개와 rollback spec을 3회 반복해 18/18 통과했다. 최초 전체 Playwright는 색상 오탐 1건을 포함해 45/46이었고 수정 후 전체 46개를 재실행한 기록과 혼동하지 않는다. 이번 QnA 추가에서는 테스트를 재실행하지 않았다.
