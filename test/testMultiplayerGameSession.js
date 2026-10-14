@@ -57,6 +57,7 @@ class FakeSocket {
     }
 
     connect() {
+        this.connectCount = (this.connectCount || 0) + 1;
         this.connected = true;
         this.emitServer("connect");
         this.emitServer("session:ready", {
@@ -67,6 +68,12 @@ class FakeSocket {
             expiresAt: Date.now() + 60_000,
             resumed: false,
         });
+    }
+
+    disconnect() {
+        const wasConnected = this.connected;
+        this.connected = false;
+        if (wasConnected) this.emitServer("disconnect", "io client disconnect");
     }
 }
 
@@ -364,6 +371,63 @@ function createAuthoritativeSnapshot(overrides = {}) {
         ...overrides,
     };
 }
+
+test("서버 snapshot이 멈추면 countdown 뒤 5초에 예측을 정리하고 한 번 재인증한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const clock = installMonotonicClock(t);
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const callbacks = new Map();
+    let nextTimer = 1;
+    globalThis.setInterval = (callback, delay) => {
+        const timer = nextTimer++;
+        callbacks.set(timer, { callback, delay });
+        return timer;
+    };
+    globalThis.clearInterval = timer => callbacks.delete(timer);
+    const session = startMultiplayerGame(createSessionParams({ deferStart: true }));
+    t.after(() => {
+        session.destroy();
+        globalThis.setInterval = originalSetInterval;
+        globalThis.clearInterval = originalClearInterval;
+    });
+    const heartbeat = callbacks.get(session.heartbeatTimer).callback;
+    const connectCount = sharedFakeSocket.connectCount;
+    clock.set(10_000);
+    heartbeat();
+    assert.equal(sharedFakeSocket.connectCount, connectCount);
+    session.start();
+    clock.set(14_999);
+    heartbeat();
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "00000000-0000-4000-8000-000000000002",
+        snapshot: createAuthoritativeSnapshot(),
+    });
+    clock.set(18_000);
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        roomId: "FEDCBA98",
+        playerId: "00000000-0000-4000-8000-000000000001",
+        snapshot: createAuthoritativeSnapshot(),
+    });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "00000000-0000-4000-8000-000000000003",
+        snapshot: createAuthoritativeSnapshot(),
+    });
+    clock.set(19_000);
+    heartbeat();
+    assert.equal(sharedFakeSocket.connectCount, connectCount);
+    clock.set(19_999);
+    heartbeat();
+    assert.equal(sharedFakeSocket.connectCount, connectCount + 1);
+    assert.equal(session.myGame.runtime.inputTimer, undefined);
+    assert.equal(session.opponentGame.runtime.inputTimer, undefined);
+    assert.equal(callbacks.has(session.heartbeatTimer), false);
+    const inputCount = sharedFakeSocket.emitted.length;
+    emitDocumentEvent("keydown", { key: " ", code: "Space", preventDefault() {} });
+    heartbeat();
+    assert.equal(sharedFakeSocket.emitted.length, inputCount);
+    assert.equal(sharedFakeSocket.connectCount, connectCount + 1);
+});
 
 function installAnimationFrameQueue() {
     const callbacks = new Map();

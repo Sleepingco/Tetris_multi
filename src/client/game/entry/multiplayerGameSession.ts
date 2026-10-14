@@ -5,6 +5,7 @@ import {
     sendGameInput,
     onGameInputResult,
     requestGameBagChunk,
+    reconnectPlayerSession,
     receiveGameBagAppend,
     onGameBagResult,
     onSessionDisconnected,
@@ -101,6 +102,8 @@ const BEFORE_ACTION_TRANSFORM_INPUTS = new Set([
     "hard_drop",
 ])
 
+const SERVER_SNAPSHOT_TIMEOUT_MS = 5000;
+
 function getPlayerBagChunks(match: Match, targetPlayerId: string): PieceType[][] | null {
     const matchPlayer = match?.players?.find(player => player.playerId === targetPlayerId)
     return Array.isArray(matchPlayer?.bagChunks) ? matchPlayer.bagChunks : null
@@ -167,6 +170,7 @@ export function startMultiplayerGame({
     let destroyed = false
     let presentationActive = true;
     let gameplayStarted = !deferStart;
+    let lastAuthoritativeSnapshotAt = performance.now();
 
     const myGame = createTetrisRuntime({
         boardCanvasEl: myCanvas,
@@ -652,9 +656,14 @@ export function startMultiplayerGame({
         }
     }
 
-    // 이 heartbeat는 server bag 보충만 담당한다. gravity와 game over를 판정하는 game loop가 아니다.
+    // bag 보충과 서버 스트림 단절만 확인한다. gravity와 game over는 판정하지 않는다.
     const heartbeatTimer = setInterval(() => {
         if (destroyed) return
+        if (gameplayStarted && performance.now() - lastAuthoritativeSnapshotAt >= SERVER_SNAPSHOT_TIMEOUT_MS) {
+            destroy();
+            reconnectPlayerSession();
+            return;
+        }
         requestBagIfNeeded()
     }, 500)
 
@@ -674,6 +683,8 @@ export function startMultiplayerGame({
         if (destroyed) return
         if (snapshotRoomId !== roomId) return;
         if (!snapshot || !Array.isArray(snapshot.board)) return
+        if (remotePlayerId !== playerId && remotePlayerId !== opponentPlayerId) return;
+        lastAuthoritativeSnapshotAt = performance.now();
 
         if (remotePlayerId === opponentPlayerId) {
             opponentGame.applySnapshot(snapshot)
@@ -820,6 +831,7 @@ export function startMultiplayerGame({
     function start(): void {
         if (destroyed || gameplayStarted) return;
         gameplayStarted = true;
+        lastAuthoritativeSnapshotAt = performance.now();
         myGame.applySnapshot(myGame.getSnapshot(), { resumeGravity: true });
     }
 

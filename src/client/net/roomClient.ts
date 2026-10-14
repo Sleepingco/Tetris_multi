@@ -319,6 +319,14 @@ serverConnection.on("disconnect", (reason: string) => {
 
 serverConnection.connect()
 
+/** 열린 transport에서 서버 응답이 멈췄을 때 미확정 전송을 버리고 저장 credential로 다시 인증한다. */
+export function reconnectPlayerSession(): boolean {
+    if (!activeSession || !serverConnection.connected || !serverConnection.disconnect) return false;
+    serverConnection.disconnect();
+    serverConnection.connect();
+    return true;
+}
+
 /**
  * 현재 transport와 session이 모두 준비됐을 때만 mutation event를 전송한다.
  *
