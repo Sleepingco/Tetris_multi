@@ -1910,6 +1910,108 @@ test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playin
     assert.equal(game.getDisplaySnapshot().lines, 1);
 });
 
+test("착지 효과 종료·설정 전환·보정·destroy는 gameplay를 다시 실행하지 않는다", async (t) => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancel = globalThis.cancelAnimationFrame;
+    const originalStyle = globalThis.getComputedStyle;
+    const frames = new Map();
+    let id = 0;
+    globalThis.requestAnimationFrame = callback => { frames.set(++id, callback); return id; };
+    globalThis.cancelAnimationFrame = frame => frames.delete(frame);
+    globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+    t.mock.method(performance, "now", () => 0);
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ boardCanvasEl: createFakeCanvas(), rng: () => 0, reducedEffects: false });
+    t.after(() => {
+        game.destroy();
+        globalThis.requestAnimationFrame = originalRaf;
+        globalThis.cancelAnimationFrame = originalCancel;
+        globalThis.getComputedStyle = originalStyle;
+    });
+    game.init();
+    async function drop() {
+        const tick = game.runtime.currentTick + 1;
+        game.enqueueInput(INPUT_ACTION.HARD_DROP, tick);
+        await waitForTick(game, tick);
+    }
+    await drop();
+    assert.equal(frames.size, 1);
+    const afterLock = game.getSnapshot();
+    assert.equal(afterLock.board.flat().filter(Boolean).length, 4);
+    assert.equal(game.runtime.gravityRunning, true);
+    const complete = [...frames.values()][0];
+    complete(120);
+    assert.equal(frames.size, 0);
+    assert.deepEqual(game.getSnapshot(), afterLock);
+    assert.equal(game.getPlacementDecisionLog().length, 1);
+
+    await drop();
+    const stale = [...frames.values()][0];
+    game.applySnapshot(game.getSnapshot(), { cancelPresentation: true, resumeGravity: true });
+    const corrected = game.getSnapshot();
+    stale(200);
+    assert.equal(frames.size, 0);
+    assert.deepEqual(game.getSnapshot(), corrected);
+
+    await drop();
+    game.setReducedEffects(true);
+    assert.equal(frames.size, 0);
+    await drop();
+    assert.equal(frames.size, 0);
+    assert.equal(game.getPlacementDecisionLog().length, 4);
+    game.setReducedEffects(false);
+    await drop();
+    const destroyedFrame = [...frames.values()][0];
+    game.destroy();
+    const destroyed = game.getSnapshot();
+    destroyedFrame(200);
+    assert.equal(frames.size, 0);
+    assert.deepEqual(game.getSnapshot(), destroyed);
+});
+
+test("효과 축소 중 줄 삭제와 설정 전환은 기존 350ms 완료 시점을 유지한다", async (t) => {
+    const originalRaf = globalThis.requestAnimationFrame;
+    const originalCancel = globalThis.cancelAnimationFrame;
+    const originalStyle = globalThis.getComputedStyle;
+    let callback;
+    globalThis.requestAnimationFrame = next => { callback = next; return 1; };
+    globalThis.cancelAnimationFrame = () => {};
+    globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+    t.mock.method(performance, "now", () => 0);
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ boardCanvasEl: createFakeCanvas(), reducedEffects: true });
+    t.after(() => {
+        game.destroy();
+        globalThis.requestAnimationFrame = originalRaf;
+        globalThis.cancelAnimationFrame = originalCancel;
+        globalThis.getComputedStyle = originalStyle;
+    });
+    game.init();
+    const board = createEmptyBoard();
+    for (const row of [18, 19]) {
+        board[row].fill("bar");
+        board[row][4] = board[row][5] = null;
+    }
+    game.applySnapshot({
+        ...game.getSnapshot(), board,
+        activePiece: { pieceType: "square", rotation: 0, row: 0, col: 4 },
+    }, { resumeGravity: true });
+    const tick = game.runtime.currentTick + 1;
+    game.enqueueInput(INPUT_ACTION.HARD_DROP, tick);
+    await waitForTick(game, tick);
+    assert.equal(game.getSnapshot().phase, "lineClearing");
+    const locked = game.getSnapshot();
+    callback(349);
+    assert.deepEqual(game.getSnapshot(), locked);
+    game.setReducedEffects(false);
+    callback(350);
+    assert.equal(game.getSnapshot().lines, 2);
+    assert.equal(game.getSnapshot().score, locked.score + 20);
+    assert.equal(game.getSnapshot().phase, "playing");
+    assert.equal(game.runtime.gravityRunning, true);
+    assert.equal(game.getPlacementDecisionLog().length, 1);
+});
+
 test("runtime destroy는 중복 호출과 이후 display 변경을 무시한다", async () => {
     const { createTetrisRuntime } = await loadRuntime();
     const game = createTetrisRuntime({ rng: () => 0 });

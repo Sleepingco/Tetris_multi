@@ -106,6 +106,21 @@ test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 �
     expect(errors).toEqual([]);
 });
 
+test("효과 축소는 OS 기본값을 따르고 명시적 선택은 reload 뒤에도 유지한다", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/pages/tetrisSingle.html");
+    const button = page.locator("#effectsToggle");
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(await page.evaluate(() => localStorage.getItem("tetrisReducedEffects"))).toBe("false");
+    await page.reload();
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+});
+
 test("single 첫 키 입력은 차단된 BGM을 중복 없이 한 번 재시도한다", async ({ page }) => {
     await page.addInitScript(() => {
         window.__musicPlayAttempts = [];

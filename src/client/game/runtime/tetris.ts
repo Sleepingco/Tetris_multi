@@ -19,7 +19,9 @@ import { createSpawnedPiece, getHardDropRow } from "../core/piece.ts"
 import type { PieceState, PlaceablePieceState } from "../core/piece.ts"
 import type { Board } from "../core/board.ts"
 import { isTSpinLock } from "../core/tSpin.ts"
-import { playLineClearSfx } from "./sound.ts"
+import { playHardDropSfx, playLineClearSfx } from "./sound.ts"
+import { loadReducedEffects } from "./effectPreferences.ts";
+import type { HardDropEffect } from "../render/tetrisRender.ts";
 import { createRuntimeDisplayBridge } from "./displayBridge.ts"
 import type { RuntimeDisplayHandle } from "./displayBridge.ts"
 import { INPUT_ACTION } from "./input.ts"
@@ -179,6 +181,7 @@ type RuntimeState = {
     playerId: string | null;
 };
 export type TetrisRuntimeOptions = {
+    reducedEffects?: boolean;
     boardCanvasEl?: HTMLCanvasElement | null;
     gameOverEl?: HTMLElement | null;
     scoreEl?: HTMLElement | null;
@@ -207,6 +210,7 @@ export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "s
         cancelPresentation?: boolean;
     }) => void;
     playLineClearPresentation: (effect?: { rows?: number[]; board?: Board }) => boolean;
+    setReducedEffects: (reduced: boolean) => void;
     getPendingInputCount: () => number;
     setAuthoritativePendingGarbageLines: (lines: number | undefined, options?: { publish?: boolean }) => number;
     appendServerBag: (chunk: PieceType[]) => void;
@@ -251,6 +255,7 @@ const GAME_PHASE = {
   * 생성만으로 loop가 시작되지는 않으며 호출자는 `init`으로 새 게임을 시작하고 `destroy`로 자원을 정리한다.
   */
 export function createTetrisRuntime({
+    reducedEffects = loadReducedEffects(),
     boardCanvasEl = null,
     gameOverEl = null,
     scoreEl = null,
@@ -266,6 +271,10 @@ export function createTetrisRuntime({
     placementDecisionRecorder = null,
     inputOutcomeRecorder = null,
 }: TetrisRuntimeOptions = {}): TetrisRuntime {
+    let hardDropEffect: HardDropEffect | null = null;
+    let dropAnimationFrameId: number | null = null;
+    let dropAnimationVersion = 0;
+    let dropFrameAnimation: Animation | null = null;
     const gameState = createGameState({
         spawnRow: SPAWN_ROW,
         spawnCol: SPAWN_COL,
@@ -630,9 +639,17 @@ export function createTetrisRuntime({
             ui.renderScore(gameState.score)
         }
 
-        gameState.pendingPiece = { ...activePiece, row: nextRow }
+        const landedPiece: PlaceablePieceState = {
+            pieceType: activePiece.pieceType,
+            rotation: activePiece.rotation,
+            col: activePiece.col,
+            row: nextRow,
+        };
+        gameState.pendingPiece = landedPiece;
         const moveResult = renderBlocks("hardDrop")
-        return moveResult?.intent?.kind === "lock"
+        const locked = moveResult?.intent?.kind === "lock";
+        if (locked && gameState.phase !== GAME_PHASE.GAME_OVER) playHardDropEffect(landedPiece, row);
+        return locked;
     }
 
     /**
@@ -947,7 +964,7 @@ export function createTetrisRuntime({
         gameState.phase = GAME_PHASE.LINE_CLEARING
         gameState.inputQueue = []
         stopGravity()
-        playLineClearSfx()
+        playLineClearSfx(fullRows.length)
 
         addLineClearEffect(fullRows, () => {
             const clearedLines = clearFilledLines(board)
@@ -1022,6 +1039,7 @@ export function createTetrisRuntime({
     function stopGameLoops(): void {
         clearInterval(runtime.inputTimer)
         cancelLineClearEffect()
+        cancelHardDropEffect();
         runtime.currentTick = 0
         runtime.inputTimer = undefined
         runtime.gravityRunning = false
@@ -1075,7 +1093,51 @@ export function createTetrisRuntime({
             blocks: BLOCKS,
             flashRows: [],
             isFlash: false,
+            hardDropEffect,
+            reducedEffects,
         });
+    }
+
+    /** 착지 표시는 gameplay와 별도 RAF로 끝내며, 진행 중인 줄 삭제 프레임을 덮어쓰지 않는다. */
+    function playHardDropEffect(piece: PlaceablePieceState, fromRow: number): void {
+        cancelHardDropEffect();
+        playHardDropSfx();
+        if (reducedEffects || !runtime.boardCtx) return;
+        const startedAt = performance.now();
+        const version = dropAnimationVersion;
+        hardDropEffect = { piece: { ...piece }, fromRow, progress: 0 };
+        dropFrameAnimation = boardCanvasEl?.animate?.([
+            { transform: "translateY(0)" },
+            { transform: "translateY(2px)", offset: 0.25 },
+            { transform: "translateY(0)" },
+        ], { duration: 120, easing: "ease-out" }) ?? null;
+        function animate(now: number): void {
+            if (version !== dropAnimationVersion || !hardDropEffect) return;
+            hardDropEffect.progress = Math.max(0, Math.min(1, (now - startedAt) / 120));
+            if (hardDropEffect.progress === 1) {
+                cancelHardDropEffect();
+            } else {
+                dropAnimationFrameId = requestAnimationFrame(animate);
+            }
+            if (runtime.animationFrameId === null) renderBoard();
+        }
+        if (runtime.animationFrameId === null) renderBoard();
+        dropAnimationFrameId = requestAnimationFrame(animate);
+    }
+
+    function cancelHardDropEffect(): void {
+        dropAnimationVersion += 1;
+        if (dropAnimationFrameId !== null) cancelAnimationFrame(dropAnimationFrameId);
+        dropAnimationFrameId = null;
+        dropFrameAnimation?.cancel();
+        dropFrameAnimation = null;
+        hardDropEffect = null;
+    }
+
+    function setReducedEffects(reduced: boolean): void {
+        reducedEffects = reduced;
+        if (reduced) cancelHardDropEffect();
+        if (runtime.animationFrameId === null) renderBoard();
     }
 
     /**
@@ -1141,6 +1203,8 @@ export function createTetrisRuntime({
                 cols: COLS,
                 blocks: BLOCKS,
                 flashRows: animatedRows,
+                hardDropEffect,
+                reducedEffects,
             })
 
             if (progress < 1) {
@@ -1525,7 +1589,10 @@ export function createTetrisRuntime({
         cancelPresentation?: boolean;
     } = {}): void {
         if (!snapshot) return
-        if (cancelPresentation) cancelLineClearEffect()
+        if (cancelPresentation || snapshot.phase === GAME_PHASE.GAME_OVER) {
+            cancelLineClearEffect();
+            cancelHardDropEffect();
+        }
 
         const restored = deserializeGameState(snapshot, {
             spawnRow: SPAWN_ROW,
@@ -1661,6 +1728,7 @@ export function createTetrisRuntime({
         subscribeDisplay: displayBridge.subscribeDisplay,
         applySnapshot,
         playLineClearPresentation,
+        setReducedEffects,
         getPendingInputCount,
         setAuthoritativePendingGarbageLines,
         appendServerBag,

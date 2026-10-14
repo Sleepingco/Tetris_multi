@@ -6,6 +6,7 @@ import type { PieceType } from "../game/state/blocks.ts";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { attachKeyboardInput } from "../game/runtime/input.ts";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.ts";
+import { initEffectToggle } from "../game/runtime/effectPreferences.ts";
 import { createTetrisRuntime } from "../game/runtime/tetris.ts";
 import type { TetrisRuntime } from "../game/runtime/tetris.ts";
 import type { RuntimeDisplayHandle, RuntimeDisplaySnapshot } from "../game/runtime/displayBridge.ts";
@@ -119,6 +120,7 @@ function SingleGamePage() {
     const gameOverRootRef = useRef<HTMLDivElement>(null);
     const soundToggleRef = useRef<HTMLButtonElement>(null);
     const themeToggleRef = useRef<HTMLButtonElement>(null);
+    const effectsToggleRef = useRef<HTMLButtonElement>(null);
     const runtimeRef = useRef<TetrisRuntime | null>(null);
     const [displayHandle, setDisplayHandle] = useState<TetrisRuntime | null>(null);
 
@@ -129,6 +131,7 @@ function SingleGamePage() {
         applySavedTheme(themeToggleRef.current);
         const game = createTetrisRuntime({ boardCanvasEl });
         const cleanupSound = initGameSound(soundToggleRef.current);
+        const cleanupEffects = initEffectToggle(effectsToggleRef.current, game.setReducedEffects);
         game.runtime.detachKeyboard = attachKeyboardInput({
             enqueueAction: game.enqueueInput,
             onUserInteract: tryPlayMusic,
@@ -142,6 +145,7 @@ function SingleGamePage() {
             if (disposed) return;
             disposed = true;
             cleanupSound?.();
+            cleanupEffects();
             game.destroy();
             if (runtimeRef.current === game) runtimeRef.current = null;
             setDisplayHandle(current => current === game ? null : current);
@@ -183,6 +187,8 @@ function SingleGamePage() {
                         type="button" aria-pressed="false">사운드 켜기</button>
                     <button ref={themeToggleRef} id="themeToggle" className="sound-toggle"
                         type="button" aria-pressed="false" onClick={toggleGameTheme}>다크 모드</button>
+                    <button ref={effectsToggleRef} id="effectsToggle" className="sound-toggle"
+                        type="button" aria-pressed="false" title="잔상과 흔들림을 줄입니다">효과 축소</button>
                     <a className="home-btn" href="./index.html">홈으로</a>
                 </div>
             </header>

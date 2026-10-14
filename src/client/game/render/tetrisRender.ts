@@ -5,7 +5,7 @@
 // =============================
 
 import type { Board } from "../core/board.ts";
-import type { PieceState } from "../core/piece.ts";
+import type { PieceState, PlaceablePieceState } from "../core/piece.ts";
 import type { BlockDefinitions, PieceType } from "../state/blocks.ts";
 
 const BLOCK_COLORS: Record<string, string> = {
@@ -24,6 +24,12 @@ const BREAK_START_PROGRESS = 0.45;
 
 export type PreviewCells = HTMLLIElement[][];
 export type NextPreviewCells = PreviewCells[];
+
+export type HardDropEffect = {
+        piece: PlaceablePieceState;
+        fromRow: number;
+        progress: number;
+};
 
 export type LineClearFragment = {
         x: number;
@@ -206,6 +212,8 @@ export function renderBoardCanvas({
         cols,
         blocks,
         flashRows,
+        hardDropEffect = null,
+        reducedEffects = false,
 }: {
         ctx: CanvasRenderingContext2D | null;
         board: Board;
@@ -214,6 +222,8 @@ export function renderBoardCanvas({
         cols: number;
         blocks: BlockDefinitions;
         flashRows: FlashRow[];
+        hardDropEffect?: HardDropEffect | null;
+        reducedEffects?: boolean;
         isFlash?: boolean;
 }): void {
         if (!ctx) return;
@@ -244,6 +254,21 @@ export function renderBoardCanvas({
                         const flashData = flashRows.find(fr => typeof fr === 'object' ? fr.row === row : fr === row);
                         const progress = typeof flashData === "object" ? flashData.progress : 0;
 
+                        if (reducedEffects) {
+                                for (let col = 0; col < cols; col++) {
+                                        const pieceType = board[row][col];
+                                        if (pieceType) drawBlock(ctx, col, row, BLOCK_COLORS[pieceType]);
+                                }
+                                ctx.save();
+                                ctx.globalAlpha = 0.18 * (1 - progress);
+                                ctx.fillStyle = "#ffffff";
+                                ctx.fillRect(0, row * CELL_SIZE, width, CELL_SIZE);
+                                ctx.restore();
+                                continue;
+                        }
+
+                        const strength = Math.min(4, flashRows.length);
+
                         // line clear flash의 밝기 변화를 계산한다.
                         let scale = 1;
                         let translateY = 0;
@@ -264,6 +289,8 @@ export function renderBoardCanvas({
                                 translateY = -((progress - 0.60) / 0.40) * 24; // 0 -> -24
                         }
 
+                        scale = 1 + (scale - 1) * (0.65 + strength * 0.15);
+
                         // 행 중앙 기준 변환 적용
                         ctx.save();
                         const rowCenterY = row * CELL_SIZE + (CELL_SIZE / 2);
@@ -275,9 +302,9 @@ export function renderBoardCanvas({
                         ctx.globalAlpha = Math.max(0, opacity);
 
                         // 하얗게 빛나는 배경 그리기
-                        ctx.fillStyle = "rgba(255, 255, 255, 1)";
+                        ctx.fillStyle = `rgba(255, 255, 255, ${0.25 + strength * 0.12})`;
                         ctx.shadowColor = "rgba(255, 255, 255, 0.8)";
-                        ctx.shadowBlur = 15;
+                        ctx.shadowBlur = 8 + strength * 4;
                         ctx.fillRect(0, row * CELL_SIZE, width, CELL_SIZE);
 
                         // 해당 줄의 블록들도 투명도/크기가 같이 변하도록 그림
@@ -301,6 +328,23 @@ export function renderBoardCanvas({
                 }
         }
         ctx.restore();
+
+        if (hardDropEffect && !reducedEffects) {
+                const { piece, fromRow, progress } = hardDropEffect;
+                const fade = 1 - Math.max(0, Math.min(1, progress));
+                const trailHeight = Math.min(120, Math.max(0, piece.row - fromRow) * CELL_SIZE);
+                ctx.save();
+                ctx.fillStyle = BLOCK_COLORS[piece.pieceType];
+                blocks[piece.pieceType][piece.rotation].forEach(([offsetX, offsetY]) => {
+                        const x = (piece.col + offsetX) * CELL_SIZE + 2;
+                        const y = (piece.row + offsetY) * CELL_SIZE;
+                        ctx.globalAlpha = fade * 0.14;
+                        ctx.fillRect(x, y - trailHeight, CELL_SIZE - 4, trailHeight);
+                        ctx.globalAlpha = fade * 0.85;
+                        ctx.fillRect(x, y + CELL_SIZE - 3, CELL_SIZE - 4, 3);
+                });
+                ctx.restore();
+        }
 
         if (!activePiece || !activePiece.pieceType) return;
 
