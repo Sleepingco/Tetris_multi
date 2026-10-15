@@ -2,9 +2,15 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-07-24 기준. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
+- Last update: 2026-10-15. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
+
+### 개발 지침 정리 (2026-10-15)
+
+- 기술 마이그레이션 작업은 종료했다. 당시 명세·절차·검증 기록은 [migration archive](docs/archive/migration/README.md)에 보관하며 현재 작업의 실행 지침으로 사용하지 않는다. 보류 Goal은 당시 미실행 기록이다.
+- 현재 작업은 [AGENTS.md](AGENTS.md)와 필요한 [AI 작업 지침](ai-harness/README.md)을 따른다. 변경 범위와 검증 기준은 해당 작업에서 정한다.
+- 정리 범위와 확인 결과는 [하네스 개선 계획](docs/maintenance/harness-improvement-plan.md)에 기록한다. 게임 코드·ML 데이터·모델·배포 설정은 이번 문서 정리에서 변경하지 않았다.
 
 - 이 문서는 `ROADMAP.md`, `PROTOCOL.md`, `PHASE1_PLAN.md`의 핵심 내용을 현재 코드 기준으로 통합한 문서다.
 - 이상적인 장기 계획보다 현재 구현 상태와 바로 다음 작업을 우선한다.

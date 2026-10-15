@@ -1,5 +1,8 @@
 # Migration Harness Operations
 
+> 아래는 종료된 마이그레이션의 당시 운영 절차다. 현재 실행 지침이 아니며,
+> 명령과 권한 예시는 과거 기록으로 보존한다. [보관 안내](README.md)를 참고한다.
+
 이 문서는 사용자가 Goal 작업을 지시하고 merge 시점을 판단하는 방법을 설명한다.
 
 ## 0. Harness Bootstrap

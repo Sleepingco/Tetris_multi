@@ -189,9 +189,22 @@ database와 role의 `search_path`는 `tetris_analytics, pg_catalog`로 제한한
 5. application은 `GAME_EVENT_STORAGE=postgres`와 runtime credential만 받고 JSONL writable volume은 mount하지 않는다. health가 green이 된 뒤 synthetic PVP/PVE event chain을 확인한다.
 6. pool 4, in-flight 16은 현재 검증값이다. provider latency를 측정한 뒤에만 별도 변경을 승인한다.
 
-새 application version을 활성화하기 전에는
-[Goal 9D](../../../migration-harness/goals/09d-postgres-ci-release.md)의 release gate와
-현재 OCI의 TLS·backup·restore 경계가 모두 green이어야 한다.
+새 application version을 활성화하기 전에는 배포할 commit의 [CI](../../../.github/workflows/ci.yml)와 현재 OCI의 TLS·backup·restore 경계를 확인한다.
+CI 이름 `Migration CI`는 기존 workflow 식별자이며, 마이그레이션 작업 종료 후에도 아래 검증을 계속 담당한다.
+
+| 검증 범위 | 현재 실행 기준 |
+| --- | --- |
+| type/build/artifact/compiled test | `bash scripts/verify.sh` |
+| source 없는 production release | `npm run test:release` |
+| Vite lifecycle·production browser | `npm run test:e2e:vite-dev`, `npm run test:e2e` |
+| production container | CI의 `Production container smoke` job |
+| 실제 PostgreSQL migration·repository·runtime·import·release | `npm run test:db` |
+| 외부 DB container·재시작·장애·backup/restore·retention 경계 | `npm run test:docker:postgres` |
+
+명령의 원천은 [package.json](../../../package.json)과 [production boundary script](../../../scripts/verify-postgres-production.sh)다.
+DB 검증은 격리된 테스트 환경에서 실행한다. 테스트가 통과해도 실제 OCI의 TLS·backup·restore 확인을 대체하지 않는다.
+[배포 workflow](../../../.github/workflows/deploy-production.yml)는 선택한 commit의 성공한 main push CI를 확인한다.
+[당시 Goal 9D](../../archive/migration/goals/09d-postgres-ci-release.md)는 도입 범위의 역사적 근거이며 현재 실행 지침이 아니다.
 
 ## Backup과 restore rehearsal
 

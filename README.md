@@ -180,7 +180,7 @@ Redis·Kubernetes·다중 인스턴스 운영은 현재 요구 없이 복잡도�
 ## 문서
 
 - [현재 계획과 검증 상태](PLAN.md)
-- [기술 마이그레이션 로드맵](migration-harness/roadmap.md)
+- [완료된 기술 마이그레이션의 계획·검증 기록](docs/archive/migration/README.md)
 - [AI/ML 문서 안내](docs/ai-ml/README.md)
 - [게임 로그·데이터셋 정책](docs/ai-ml/strategy/game-log-dataset-policy.md)
 - [OCI 단일 VM 배포 Runbook](docs/operations/deployment/oci-single-vm-deployment.md)

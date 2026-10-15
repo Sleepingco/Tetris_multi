@@ -2,22 +2,27 @@
 
 ## 1. 문서 목적과 현재 상태
 
-이 문서는 게임 이벤트를 컨테이너 수명과 분리해 장기 보존하기 위한 PostgreSQL 저장 구조의 설계 설명이다. 공부하는 개발자, 포트폴리오 검토자, 이후 Goal 9A~9D를 구현할 작업자, 운영 환경의 로그 저장 구조를 검토할 개발자를 독자로 둔다.
+이 문서는 게임 이벤트를 컨테이너 수명과 분리해 장기 보존하기 위한 PostgreSQL 저장 구조의 설계 설명이다. 공부하는 개발자, 포트폴리오 검토자와 운영 환경의 로그 저장 구조를 검토할 개발자를 독자로 둔다.
+
+2026-10-15 문서 정리에서 아래 상태 설명을 기존 배포 기록과 맞췄다. 운영 근거는
+[2026-07-24 OCI 배포 기록](../history/oci/oci-production-deployment-session-2026-07-24.md)과
+[운영 runbook](../deployment/postgres-production-runbook.md)이며, 이번 문서 정리에서 실제 서버를 재검증한 것은 아니다.
+이하 Goal별 역할·단계·도입 판단은 당시 설계 배경이다. 새로운 작업을 지시하는 절차로 사용하지 않는다.
 
 - 상태: Goal 9A~9D main/origin 통합과 hosted PostgreSQL release gate 완료
 - PostgreSQL 구현: schema, migration, canonical event/repository, strict runtime single-sink, JSONL importer와 production-like release gate 구현
-- production DB 연결: 없음
-- 현재 runtime sink: JSONL
-- 명시적 PostgreSQL runtime mode: 격리 PostgreSQL 17.10에서 검증, production 미활성
-- 최종 hosted 검증: `6775bfb`의 Fast/Browser/Docker/PostgreSQL 네 job green
+- production DB: 2026-07-24 OCI 배포에서 PostgreSQL single-sink 활성화 완료
+- local/test 기본 sink: JSONL. production은 명시적 PostgreSQL mode를 사용한다.
+- 도입 당시 hosted 검증: `6775bfb`의 Fast/Browser/Docker/PostgreSQL 네 job green. 이후 상태는 [PLAN](../../../PLAN.md)과 배포 기록에서 확인한다.
 
-현재 JSONL은 local 분석과 ML export에 계속 사용한다. PostgreSQL도 room, match, gameplay 상태의 원천이 아니다. 실시간 상태는 현재처럼 process memory가 소유하고, PostgreSQL은 확정된 gameplay event의 장기 보존 경계로만 계획한다.
+JSONL은 local 분석과 ML export에 계속 사용한다. PostgreSQL은 room, match, gameplay 상태의 원천이 아니다. 실시간 상태는 process memory가 소유하고, PostgreSQL은 확정된 gameplay event의 장기 보존을 담당한다.
 
-실행 범위와 완료 gate의 원천은 [Goal 9 공통 index](../../../migration-harness/goals/09-postgres-event-storage.md)와 Goal 9A~9D 상세 문서다. 정확한 SQL의 원천은 `src/server/db/migrations/001_game_events.sql`과 `002_lifecycle_event_v2.sql`이다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다. 구현·검증 근거는 `migration-harness/runs/goal-09*-2026-07-*.md` 실행 기록에 둔다.
+현재 구현의 원천은 `src/server/db/migrations/`의 SQL과 서버의 projection·repository·runtime storage 코드다. 실행·검증 기준은 [운영 runbook](../deployment/postgres-production-runbook.md), [package scripts](../../../package.json), [CI](../../../.github/workflows/ci.yml)를 따른다.
+도입 당시 범위는 [Goal 9 공통 index](../../archive/migration/goals/09-postgres-event-storage.md)와 하위 Goal, 검증 증거는 [실행 기록](../../archive/migration/runs/README.md)에 보존한다. 이 Blueprint는 SQL을 복사하지 않고 왜 그 구조가 필요한지 설명한다.
 
-## 2. 현재 JSONL 흐름
+## 2. Local/test JSONL 흐름
 
-현재 서버는 raw event를 검증한 뒤 JSONL 한 줄로 append한다.
+JSONL mode에서는 서버가 raw event를 검증한 뒤 JSONL 한 줄로 append한다.
 
 ```text
 Socket/server AI event
@@ -37,7 +42,7 @@ client raw placement log
   → authoritative placement receipt 확인
   → server gameId와 session roomId/playerId로 덮어씀
   → placement schema 재검증
-  → 현재 JSONL sink에 저장
+  → 선택된 sink에 저장 (이 절에서는 JSONL)
 ```
 
 즉, client가 보낸 `gameId`, `roomId`와 `playerId`는 저장 주체가 아니다. Socket handler가 30초 TTL·player당 최대 128개의 authoritative receipt에서 client sequence와 piece index를 확인해 receipt를 한 번 소비하고, server/session identity로 바꾼 뒤 `validatePlacementDecisionLog`를 다시 통과한 값만 선택된 sink에 전달한다.
@@ -52,15 +57,15 @@ Socket handler는 client human placement log를 인증·재검증하고 game sta
 
 JSONL의 장점은 단순하고, local 분석과 ML export에 충분하며, 별도 DB 운영이 필요 없다는 점이다. 반면 container 교체와 저장 경로 관리를 분리하기 어렵고, 여러 instance의 공용 저장소가 되기 어렵다. 중복, 누락, immutable event의 완전성을 SQL 제약으로 확인하기도 불편하다. 실제 사용자 event를 장기 보존하려면 이보다 분명한 운영 경계가 필요하다.
 
-## 3. 목표 구조
+## 3. PostgreSQL 저장 구조
 
-PostgreSQL 경로는 raw log를 그대로 저장하는 경로가 아니다. 인증되었거나 server가 소유한 event를 Goal 9B가 canonical event로 투영한 뒤 Goal 9A repository가 저장한다.
+PostgreSQL 경로는 raw log를 그대로 저장하는 경로가 아니다. 인증되었거나 server가 소유한 event를 canonical projector가 투영한 뒤 PostgreSQL repository가 저장한다.
 
 ```text
 server-owned or authenticated event
-  → Goal 9B canonical projector
+  → canonical projector
   → CanonicalGameEvent
-  → Goal 9A PostgreSQL repository
+  → PostgreSQL repository
   → tetris_analytics.game_events
 ```
 
@@ -77,9 +82,9 @@ approved production
 
 runtime dual-write는 두 저장소의 성공 여부를 맞춰야 하고, 조용한 fallback은 운영자가 실제 저장 실패를 놓치게 한다. 따라서 한 process가 두 sink를 동시에 성공으로 주장하지 않는다. PostgreSQL 전환 전과 명시적 rollback에서는 JSONL 경로가 계속 남는다.
 
-## 4. Goal 9A~9D 역할
+## 4. 도입 당시 Goal 9A~9D 역할
 
-Goal은 한 번에 하나씩 main에 반영한다.
+도입 작업을 다음 역할로 나눠 main에 반영했다. 각 Goal의 구현과 검증은 종료됐다.
 
 | Goal | 역할 |
 | --- | --- |
@@ -287,7 +292,7 @@ Goal 9A local 구현에서 다음을 검증했다.
 - source-less fixture에서 migration 두 번
 - actual PostgreSQL Docker test
 
-Goal 9B local 구현은 single-sink JSONL/PostgreSQL, PVP/PVE canonical projection, forged/stale/late receipt, lifecycle v1/v2, retry 분류, in-flight 상한, shutdown 순서, DB-down budget, source-less runtime과 production Docker/HTTP를 검증했다. 실제 명령, exact version, latency와 test count는 [Goal 9B 실행 기록](../../../migration-harness/runs/goal-09b-2026-07-23.md)에 남긴다.
+Goal 9B local 구현은 single-sink JSONL/PostgreSQL, PVP/PVE canonical projection, forged/stale/late receipt, lifecycle v1/v2, retry 분류, in-flight 상한, shutdown 순서, DB-down budget, source-less runtime과 production Docker/HTTP를 검증했다. 실제 명령, exact version, latency와 test count는 [Goal 9B 실행 기록](../../archive/migration/runs/goal-09b-2026-07-23.md)에 남긴다.
 
 Goal 9C는 streaming JSONL importer의 dry-run, privacy projection, 멱등 재실행, partial failure 복구와 completeness 판정을 실제 PostgreSQL 17.10에서 검증했다. Goal 9D는 migration/runtime/import, source-less image, private-CA TLS, backup/restore, runtime 최소 권한, PVP/PVE, DB-down, restart와 shutdown을 local 및 GitHub-hosted PostgreSQL gate로 검증했다.
 

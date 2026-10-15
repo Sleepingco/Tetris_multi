@@ -166,7 +166,7 @@ Range 요청의 `416` 같은 비정상 응답에도 header가 유지되는지 �
 | `774925f` | Goal 11A 실행 기록 |
 | `5a2bb22` | `/pages`, 4xx/5xx 오류 middleware와 exact 정책 검증 보강 |
 
-자세한 실행 증거는 [Goal 11A 실행 기록](../../../migration-harness/runs/goal-11a-2026-07-22.md)에
+자세한 실행 증거는 [Goal 11A 실행 기록](../../archive/migration/runs/goal-11a-2026-07-22.md)에
 있다.
 
 ### 남은 한계
@@ -231,7 +231,7 @@ major upgrade는 API 변화와 새로운 회귀를 만들 수 있다. 이번에�
 | `3fe121e` | `package-lock.json`의 patched transitive dependency 갱신 |
 | `a18801c` | Goal 11B 판단과 검증 기록 |
 
-자세한 실행 증거는 [Goal 11B 실행 기록](../../../migration-harness/runs/goal-11b-2026-07-22.md)에
+자세한 실행 증거는 [Goal 11B 실행 기록](../../archive/migration/runs/goal-11b-2026-07-22.md)에
 있다.
 
 ### 남은 한계
@@ -377,7 +377,7 @@ browser의 same-origin Socket.IO polling 중에는 `Origin`이 없는 요청이 
 | `6d09a28` | 별도 사운드 수정이 들어간 최신 main과 Goal branch 동기화 |
 | `84f8659` | 최신 main 동기화 후 Goal 11C 실행 기록 갱신 |
 
-자세한 실행 증거는 [Goal 11C 실행 기록](../../../migration-harness/runs/goal-11c-2026-07-22.md)에
+자세한 실행 증거는 [Goal 11C 실행 기록](../../archive/migration/runs/goal-11c-2026-07-22.md)에
 있다.
 
 ### 남은 한계
@@ -765,14 +765,14 @@ container를 root로 실행하는 방식은 해결책이 아니다.
 
 ## 13. 관련 문서와 코드
 
-- [Goal 11A 범위](../../../migration-harness/goals/11a-csp-headers.md)
-- [Goal 11B 범위](../../../migration-harness/goals/11b-dependency-hardening.md)
-- [Goal 11C 범위](../../../migration-harness/goals/11c-production-docker.md)
-- [Goal 11D 범위](../../../migration-harness/goals/11d-ci.md)
-- [Goal 11A 실행 기록](../../../migration-harness/runs/goal-11a-2026-07-22.md)
-- [Goal 11B 실행 기록](../../../migration-harness/runs/goal-11b-2026-07-22.md)
-- [Goal 11C 실행 기록](../../../migration-harness/runs/goal-11c-2026-07-22.md)
-- [Goal 11D 실행 기록](../../../migration-harness/runs/goal-11d-2026-07-23.md)
+- [Goal 11A 범위](../../archive/migration/goals/11a-csp-headers.md)
+- [Goal 11B 범위](../../archive/migration/goals/11b-dependency-hardening.md)
+- [Goal 11C 범위](../../archive/migration/goals/11c-production-docker.md)
+- [Goal 11D 범위](../../archive/migration/goals/11d-ci.md)
+- [Goal 11A 실행 기록](../../archive/migration/runs/goal-11a-2026-07-22.md)
+- [Goal 11B 실행 기록](../../archive/migration/runs/goal-11b-2026-07-22.md)
+- [Goal 11C 실행 기록](../../archive/migration/runs/goal-11c-2026-07-22.md)
+- [Goal 11D 실행 기록](../../archive/migration/runs/goal-11d-2026-07-23.md)
 - [`Dockerfile`](../../../Dockerfile)
 - [`.dockerignore`](../../../.dockerignore)
 - [`src/server/httpSecurity.ts`](../../../src/server/httpSecurity.ts)

@@ -2628,3 +2628,13 @@ client input
 - [데이터 정제 대화 요약](docs/ai-ml/strategy/data-cleaning-training-conversation-summary.md)을 기준으로 읽기 전용 분석과 정제·학습 계획 작성 상태를 기록했다. 요약에는 고유 246게임 중 시작·종료가 모두 있는 230게임과 lifecycle 불완전 16게임이 보고돼 있다. 이 수치는 최종 학습 대상 수가 아니다.
 - streaming 정제 구현, 결과 dataset 생성, 모델 재학습과 운영 AI 교체는 아직 수행하지 않은 상태다. 기존 학습 snapshot과의 gameId 비교 및 장시간 제외 기준 확정이 남아 있다.
 - 배포·Umami 진행 기록을 commit 날짜별로 나누고 주요 질문과 답변을 `QnA.md`에 추가했다. 기존 gameplay·UI·ML 파일은 이 문서 작업에서 수정하지 않았다.
+
+# 2026년 10월 15일
+
+## 종료된 마이그레이션 보관과 개발 지침 정리
+
+- 마이그레이션 문서 54개를 [archive](docs/archive/migration/README.md)로 옮겼다. 50개는 내용이 동일하고, 4개는 보관 안내 또는 상대 링크만 바꿨다. 과거 Goal·검증 결과·보류 상태를 보존하고 현재 실행 지침에서 분리했다.
+- `AGENTS.md`를 428→125줄, AI README를 112→51줄로 정리했다. 서버 권위·상태 소유권·보안·검증·직접 구현 모드를 유지하고 ML은 현재 MODE에 필요한 절차·검증만 선택하도록 연결했다.
+- DB 운영 runbook은 현재 package scripts·CI를 검증 기준으로 직접 안내한다. DB blueprint의 배포 전 설명은 기존 배포 기록과 시점을 구분했다. 실제 운영 환경을 이번 작업에서 재검증하지 않았다.
+- 공백·링크·코드 블록 검사, archive 파일 보존 비교와 대표 요청별 지침 검토를 완료했다. ML 실험 명세 7개와 사용자 학습 문서는 그대로이며 runtime·test·데이터·모델·배포 설정은 변경하지 않았다. 문서만 변경해 전체 테스트는 실행하지 않았다.
+- 세부 변경과 검증 범위는 [하네스 개선 계획의 적용 결과](docs/maintenance/harness-improvement-plan.md#8-적용-결과-2026-10-15)에 기록했다.
