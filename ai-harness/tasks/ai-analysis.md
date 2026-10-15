@@ -61,22 +61,16 @@ LLM 코칭 문구 작성이나 게임 규칙 구현을 대신하는 모드는 �
   `docs/archive/ai-ml/plans/ai-pve-plan.md`를 확인한다.
 - `boardMetrics -> placementGenerator -> simulatePlacement -> heuristicEvaluator`의
   순수 모듈 흐름은 현재도 재사용하는 분석 기준이다.
-- Production/PVE 기본 정책은 heuristic이다. V4 경로는 명시적인 dev-only opt-in
-  범위를 넘겨 승격하지 않는다.
+- PVE 기본 정책은 heuristic이다. 현재 사용자 선택형 Experimental V4와
+  검증 실패 시 heuristic fallback을 유지하며, 실험 결과만으로 기본 정책을 바꾸지 않는다.
 - Python AI 서버, 강화학습, LLM 코칭은 별도 승인이 없는 한 현재 작업에 섞지 않는다.
 
 ## 반복 ML 실험 라우팅
 
 Placement dataset, Notebook, feature, pair weighting 또는 sklearn 평가를 반복 실행하는 작업은 이 파일에 세부 계약을 복제하지 않는다.
 
-다음 순서로 `ai-harness/ml-experiments/`를 추가 적용한다.
-
-1. 공통 constraints와 workflow
-2. verification profile
-3. 현재 experiment 파일 하나
-4. 현재 MODE에 필요한 implementation, documentation 또는 review task
-
-기본 MODE는 `implement-smoke`다. Full 실행과 결과 분석은 각각 별도 gate로 분리한다.
+[ML 안내](../ml-experiments/README.md)의 MODE별 읽기 경로를 따른다. 이번 작업에서 확인했고 변경되지 않은 공통 지침은 반복해서 읽지 않는다.
+기본 MODE는 `implement-smoke`다. Full 실행과 결과 분석은 각각 별도 gate로 분리하며 현재 실험만 수행한다.
 
 ## 검증 예시
 

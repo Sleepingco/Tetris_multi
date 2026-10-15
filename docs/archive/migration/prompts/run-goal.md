@@ -1,5 +1,8 @@
 # Run Migration Goal Prompt
 
+> 종료된 마이그레이션의 과거 프롬프트다. 아래 명령·경로·승인 문구를 현재 작업에
+> 적용하거나 그대로 실행하지 않는다. [보관 안내](../README.md)를 먼저 참고한다.
+
 아래 프롬프트는 Goal 번호와 권한만 전달한다. 제약과 완료 조건은 `migration-harness`의 문서를 단일 원천으로 사용한다.
 
 `CURRENT_GOAL`과 `CURRENT_GOAL_FILE`만 현재 단계에 맞게 바꾼다.

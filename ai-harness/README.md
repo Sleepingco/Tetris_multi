@@ -1,104 +1,43 @@
 # AI Harness
 
-이 폴더는 `AGENTS.md` 위에 얹는 작업별 하네스 레이어다.
+이 폴더는 [AGENTS.md](../AGENTS.md)의 공통 규칙에 현재 작업의 진행 방식만 더한다.
 
-- `AGENTS.md`: 프로젝트 전체 공통 규칙
 - `tasks/`: 이번 요청이 어떤 작업인지에 따라 고르는 작업 모드
 - `guides/`: 여러 작업에 공통으로 덧붙이는 설명 스타일 가이드
-- `runs/`: 필요하면 작업 기록을 남기는 폴더
+- `runs/`: 과거 실행 증거. 관련 결과를 확인할 때 필요한 기록만 읽는다.
 - `ml-experiments/`: 반복 ML 실험의 공통 계약, 실행 단계와 현재 실험 명세
 
-## 언제 쓰는가
+## 작업 선택
 
-아래처럼 요청이 조금 더 구조적일 때 쓴다.
+아래 표에서 현재 요청의 모드 하나를 고른다. AI 분석과 구현처럼 책임이 함께 필요한 경우에만 모드를 추가한다.
+단순 설명은 관련 코드와 설명 지침만 읽는다. 모든 작업 모드·실험·과거 기록을 한꺼번에 읽지 않는다.
+이번 작업에서 이미 확인했고 변경되지 않은 공통 규칙은 반복해서 읽지 않고, 작업 전환에 필요한 문서·절만 추가한다.
 
-- 특정 함수 흐름을 학습용으로 설명받고 싶을 때
-- 버그를 재현 절차부터 원인 가설까지 정리하고 싶을 때
-- 큰 파일을 작은 책임 단위로 나누는 제안을 받고 싶을 때
-- 멀티플레이 구조를 단계적으로 설계하고 싶을 때
-- 규칙 기반 AI, feature, 데이터셋, ML 평가 기준을 정리하고 싶을 때
-- Notebook 구현, smoke, 사용자 full 실행과 결과 분석을 분리하고 싶을 때
-- 코드 변경 후 회귀 위험을 검토하고 싶을 때
+| 요청 | 선택할 문서 |
+| --- | --- |
+| 코드 설명·문서화 | [documentation](tasks/documentation.md) |
+| 기능 구현 | [implementation](tasks/implementation.md) |
+| 책임 분리·점진적 구조 정리 | [refactor](tasks/refactor.md) |
+| 버그 재현·원인 추적 | [bug-analysis](tasks/bug-analysis.md) |
+| 변경의 회귀 위험 검토 | [review](tasks/review.md) |
+| 규칙 기반 AI·feature·데이터 평가 | [ai-analysis](tasks/ai-analysis.md) |
+| 반복 placement ML 실험 | [ML 안내](ml-experiments/README.md)의 MODE별 읽기 경로 |
 
-## 기본 원칙
+학습 중심 요청에는 [teaching guide](guides/teaching-style.md)를 추가한다.
+사용자가 직접 구현하겠다고 하면 코드 수정 대신 개념·힌트·검증 기준을 제공한다.
+구현 요청은 허용된 범위에서 진행하며, 완료한 뒤 별도 기능·실험을 자동 시작하지 않는다.
 
-- 기본값은 항상 `AGENTS.md`다.
-- 필요할 때만 `tasks/*.md`를 추가로 호출한다.
-- 학습 목적이 강하면 `guides/teaching-style.md`를 함께 적용한다.
-- 한 번에 큰 구조 변경보다 작은 diff와 검증 가능한 단계를 우선한다.
+## 실행 검증
 
-## 실행 하네스
-
-코드 변경 후에는 아래 명령으로 공백 오류와 전체 테스트를 한 번에 확인한다.
+런타임·테스트·빌드/실행 동작 변경 후에는 기존 [검증 스크립트](../scripts/verify.sh)를 실행한다.
 
 ```bash
 bash scripts/verify.sh
 ```
 
-이 스크립트는 다음 순서로 실행된다.
-
-1. `git diff --check`
-2. `npm test`
-
-문서만 변경한 경우에는 전체 테스트를 생략할 수 있다. 검증이 실패하면 실패 원인을 확인한 뒤 작업을 완료한다.
-
-## 추천 작업 모드
-
-- `tasks/documentation.md`
-  - 문서 정리, 개념 요약, 변경 의도 정리
-- `tasks/implementation.md`
-  - 기능 구현, 작은 코드 추가, 보조 로직 작성
-- `tasks/refactor.md`
-  - 책임 분리, 경계 정리, 점진 리팩토링
-- `tasks/bug-analysis.md`
-  - 재현, 기대/실제 비교, 원인 추적, 수정 방향
-- `tasks/review.md`
-  - 회귀 위험, 설계 위반, 테스트 누락 검토
-- `tasks/ai-analysis.md`
-  - AI 목표, state/data 계약, baseline, 평가 지표, 재현성 검토
-- `ml-experiments/`
-  - placement ML 반복 실험에서 긴 프롬프트 대신 공통 workflow와 현재 experiment 파일 사용
-
-## 공통 가이드
-
-- `guides/teaching-style.md`
-  - 왜 -> 무엇 -> 어떻게 순서
-  - 쉬운 언어
-  - 작은 예제
-  - 직접 해볼 포인트 남기기
-
-## Codex 앱에서 쓰는 예시
-
-```text
-ai-harness/tasks/bug-analysis.md 방식으로 이 버그를 봐줘
-
-ai-harness/tasks/refactor.md + ai-harness/guides/teaching-style.md 기준으로
-src/client/game/runtime/tetris.js 분리 방향을 제안해줘
-
-ai-harness/tasks/review.md 방식으로 이번 변경의 회귀 위험을 확인해줘
-
-ai-harness/tasks/ai-analysis.md + ai-harness/guides/teaching-style.md 기준으로
-placementGenerator를 내가 직접 구현할 수 있게 입력/출력 계약과 테스트 기준을 알려줘
-```
-
-## 현재 프로젝트에 맞는 추천 조합
-
-- 함수 흐름 이해
-  - `documentation.md + teaching-style.md`
-- 버그 분석
-  - `bug-analysis.md + teaching-style.md`
-- 구조 개선
-  - `refactor.md + teaching-style.md`
-- 멀티플레이 설계 검토
-  - `documentation.md + refactor.md + teaching-style.md`
-- AI 분석과 heuristic 구현
-  - `documentation.md + ai-analysis.md + implementation.md + teaching-style.md`
-- AI 변경 후 확인
-  - `ai-analysis.md + review.md`
-- Placement ML 실험
-  - `ml-experiments 공통 계약 + experiments/<현재 실험>.md + ai-analysis.md`
-- 코드 변경 후 확인
-  - `review.md`
+현재 순서는 공백 검사 → typecheck → build → artifact 검증 → compiled test다. 정확한 명령은 스크립트를 기준으로 한다.
+브라우저·DB·ML 검증은 관련 변경에 추가한다. 필수 검증이 실패하거나 실행되지 않았으면 완료로 보고하지 않는다.
+문서만 바꾸면 공백·링크·경로·코드 블록을 확인하고 전체 테스트 생략 이유를 보고한다. 테스트가 직접 읽는 문서 계약도 보존한다.
 
 ## 반복 ML 실험 호출
 
@@ -109,4 +48,4 @@ ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md를
 MODE=implement-smoke로 실행해. 사용자 full-run gate에서 멈춰.
 ```
 
-세부 읽기 순서와 MODE 책임은 `ai-harness/ml-experiments/README.md`를 따른다.
+세부 읽기 순서와 MODE 책임은 ML 안내를 따른다. 전체 실험 명세와 과거 실행 기록을 한꺼번에 읽지 않는다.

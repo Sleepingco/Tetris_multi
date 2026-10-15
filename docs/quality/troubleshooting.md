@@ -204,12 +204,12 @@ MPA/Vite multi-page 구조에서는 `index.html`에서 `multiLobby.html`로 이�
 
 상세 근거:
 
-- [Goal 0 실행 기록](../../migration-harness/runs/goal-00-2026-07-17.md)
-- [Goal 1 실행 기록](../../migration-harness/runs/goal-01-2026-07-20.md)
-- [Goal 4 실행 기록](../../migration-harness/runs/goal-04-2026-07-21.md)
-- [Goal 5 실행 기록](../../migration-harness/runs/goal-05-2026-07-21.md)
-- [Goal 8B 실행 기록](../../migration-harness/runs/goal-08b-2026-07-21.md)
-- [Goal 8C 실행 기록](../../migration-harness/runs/goal-08c-2026-07-22.md)
+- [Goal 0 실행 기록](../archive/migration/runs/goal-00-2026-07-17.md)
+- [Goal 1 실행 기록](../archive/migration/runs/goal-01-2026-07-20.md)
+- [Goal 4 실행 기록](../archive/migration/runs/goal-04-2026-07-21.md)
+- [Goal 5 실행 기록](../archive/migration/runs/goal-05-2026-07-21.md)
+- [Goal 8B 실행 기록](../archive/migration/runs/goal-08b-2026-07-21.md)
+- [Goal 8C 실행 기록](../archive/migration/runs/goal-08c-2026-07-22.md)
 
 ### 2. Socket.IO·React·브라우저 경계
 
@@ -233,11 +233,11 @@ MPA/Vite multi-page 구조에서는 `index.html`에서 `multiLobby.html`로 이�
 
 상세 근거:
 
-- [Goal 2 실행 기록](../../migration-harness/runs/goal-02-2026-07-20.md)
-- [Goal 3 실행 기록](../../migration-harness/runs/goal-03-2026-07-20.md)
-- [Goal 5 실행 기록](../../migration-harness/runs/goal-05-2026-07-21.md)
-- [Goal 6 실행 기록](../../migration-harness/runs/goal-06-2026-07-21.md)
-- [Goal 7 실행 기록](../../migration-harness/runs/goal-07-2026-07-21.md)
+- [Goal 2 실행 기록](../archive/migration/runs/goal-02-2026-07-20.md)
+- [Goal 3 실행 기록](../archive/migration/runs/goal-03-2026-07-20.md)
+- [Goal 5 실행 기록](../archive/migration/runs/goal-05-2026-07-21.md)
+- [Goal 6 실행 기록](../archive/migration/runs/goal-06-2026-07-21.md)
+- [Goal 7 실행 기록](../archive/migration/runs/goal-07-2026-07-21.md)
 
 ### 3. TypeScript 전환 중 parity 문제
 
@@ -254,9 +254,9 @@ MPA/Vite multi-page 구조에서는 `index.html`에서 `multiLobby.html`로 이�
 
 상세 근거:
 
-- [Goal 8A 실행 기록](../../migration-harness/runs/goal-08a-2026-07-21.md)
-- [Goal 8B 실행 기록](../../migration-harness/runs/goal-08b-2026-07-21.md)
-- [Goal 8C 실행 기록](../../migration-harness/runs/goal-08c-2026-07-22.md)
+- [Goal 8A 실행 기록](../archive/migration/runs/goal-08a-2026-07-21.md)
+- [Goal 8B 실행 기록](../archive/migration/runs/goal-08b-2026-07-21.md)
+- [Goal 8C 실행 기록](../archive/migration/runs/goal-08c-2026-07-22.md)
 
 ### 4. PostgreSQL 저장·import·CI 경계
 
@@ -277,10 +277,10 @@ MPA/Vite multi-page 구조에서는 `index.html`에서 `multiLobby.html`로 이�
 
 상세 근거:
 
-- [Goal 9A 실행 기록](../../migration-harness/runs/goal-09a-2026-07-23.md)
-- [Goal 9B 실행 기록](../../migration-harness/runs/goal-09b-2026-07-23.md)
-- [Goal 9C 실행 기록](../../migration-harness/runs/goal-09c-2026-07-24.md)
-- [Goal 9D 실행 기록](../../migration-harness/runs/goal-09d-2026-07-24.md)
+- [Goal 9A 실행 기록](../archive/migration/runs/goal-09a-2026-07-23.md)
+- [Goal 9B 실행 기록](../archive/migration/runs/goal-09b-2026-07-23.md)
+- [Goal 9C 실행 기록](../archive/migration/runs/goal-09c-2026-07-24.md)
+- [Goal 9D 실행 기록](../archive/migration/runs/goal-09d-2026-07-24.md)
 
 Goal 9D 최종 [Migration CI run 30041556298](https://github.com/Sleepingco/Tetris_multi/actions/runs/30041556298)에서는
 Fast, Chromium PVP/PVE, Production container smoke와 PostgreSQL event storage가 모두
@@ -303,10 +303,10 @@ Goal 11C는 컨테이너 수명주기와 shutdown 경계를 구현했지만 실�
 
 상세 근거:
 
-- [Goal 11A 실행 기록](../../migration-harness/runs/goal-11a-2026-07-22.md)
-- [Goal 11B 실행 기록](../../migration-harness/runs/goal-11b-2026-07-22.md)
-- [Goal 11D 실행 기록](../../migration-harness/runs/goal-11d-2026-07-23.md)
-- [Goal 11E 실행 기록](../../migration-harness/runs/goal-11e-2026-07-23.md)
+- [Goal 11A 실행 기록](../archive/migration/runs/goal-11a-2026-07-22.md)
+- [Goal 11B 실행 기록](../archive/migration/runs/goal-11b-2026-07-22.md)
+- [Goal 11D 실행 기록](../archive/migration/runs/goal-11d-2026-07-23.md)
+- [Goal 11E 실행 기록](../archive/migration/runs/goal-11e-2026-07-23.md)
 
 ### 공통 문제 해결 순서
 

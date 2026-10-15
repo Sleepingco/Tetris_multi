@@ -1,5 +1,16 @@
 # Migration Harness
 
+> 보관 전환: 2026-10-15. 이 마이그레이션 작업은 종료됐다. 아래 문서와 명령은
+> 당시 계획·실행 절차·검증 증거이며 현재 에이전트의 실행 지침이나 작업 승인이 아니다.
+> 보류된 Goal은 당시 미실행 기록으로 남긴다. 새 요구가 생기면 현재 코드에서 다시 계획한다.
+
+현재 개발은 [AGENTS.md](../../../AGENTS.md)와 [PLAN.md](../../../PLAN.md),
+배포·검증은 [PostgreSQL 운영 runbook](../../operations/deployment/postgres-production-runbook.md)을 따른다.
+과거 순서는 [roadmap](roadmap.md), 작업 범위는 `goals/`, 실행 결과는 `runs/`에서 확인한다.
+본문의 `migration-harness/` 경로·브랜치·명령은 당시 값이며 탐색용 링크만 이동 위치에 맞췄다.
+
+## 당시 하네스 안내
+
 이 폴더는 Tetris Multi의 기술 마이그레이션을 작은 Goal과 검증 가능한 병합 게이트로 실행하기 위한 저장소 전용 하네스다.
 
 ## 역할 분리
