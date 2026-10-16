@@ -91,6 +91,21 @@ const presentationEffectSchema = z.strictObject({
     rows: z.array(z.number().int().min(0).max(19)).max(20),
     boardBeforeClear: boardSchema,
 });
+const combatEffectSchema = z.strictObject({
+    id: z.string().min(1).max(180),
+    gameId: z.string().regex(UUID_V4_PATTERN),
+    pieceIndex: safeNonNegativeIntegerSchema,
+    targetPlayerId: z.union([humanPlayerIdSchema, heuristicPlayerIdSchema]).nullable(),
+    sentLines: safeNonNegativeIntegerSchema,
+    canceledLines: safeNonNegativeIntegerSchema,
+    appliedLines: safeNonNegativeIntegerSchema,
+    linesCleared: z.number().int().min(0).max(4),
+    isTSpin: z.boolean(),
+    combo: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER),
+    backToBackBonus: z.boolean(),
+}).refine(effect => (effect.sentLines > 0) === (effect.targetPlayerId !== null), {
+    message: "Sent garbage requires a target player",
+});
 const aiPolicyRuntimeSchema = z.strictObject({
     roomId: roomIdSchema,
     playerId: heuristicPlayerIdSchema,
@@ -108,12 +123,14 @@ const matchPlayerSchema = z.strictObject({
     snapshot: snapshotSchema.nullable(),
 });
 const matchSchema = z.strictObject({
+    gameId: z.string().regex(UUID_V4_PATTERN).optional(),
     roomId: roomIdSchema,
     mode: z.enum(["pvp", "pve"]),
     aiPolicy: z.enum(["heuristic", "placement_v4"]).nullable(),
     aiPolicyRuntime: aiPolicyRuntimeSchema.nullable(),
     status: z.enum(["waiting", "playing", "finished"]),
     createdAt: timestampSchema,
+    startsAt: timestampSchema.nullable().optional(),
     players: z.array(matchPlayerSchema).max(2),
 });
 
@@ -245,6 +262,13 @@ export const serverToClientSchemas = Object.freeze({
     "room:updated": roomPublicSchema,
     "game:join:result": roomResultSchema.extend({
         match: matchSchema.nullable(),
+        serverNow: timestampSchema.optional(),
+    }),
+    "game:countdown": z.strictObject({
+        roomId: roomIdSchema,
+        gameId: z.string().regex(UUID_V4_PATTERN),
+        startsAt: timestampSchema.nullable(),
+        serverNow: timestampSchema,
     }),
     "game:input:result": inputResultSchema,
     "game:log:result": z.strictObject({
@@ -274,6 +298,7 @@ export const serverToClientSchemas = Object.freeze({
         playerId: z.union([humanPlayerIdSchema, heuristicPlayerIdSchema]),
         snapshot: snapshotSchema,
         presentationEffect: presentationEffectSchema.optional(),
+        combatEffect: combatEffectSchema.optional(),
     }),
     "match:finish": z.strictObject({
         room: roomPublicSchema,

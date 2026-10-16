@@ -678,3 +678,99 @@ keyboard input
 5. **학습 로그는 local prediction이 아니라 authoritative commit을 기준으로 저장한다.**
 6. **Socket ID는 player identity가 아니라 현재 연결 ownership이다.**
 7. **단위 테스트와 실제 2탭 lifecycle 검증은 서로 대체할 수 없다.**
+
+---
+
+## 2026-10-13 — 빠른 재시작에서 NOT_AUTHORIZED와 PLAYER_ALREADY_IN_ROOM이 이어짐
+
+### 재현 절차
+
+1. 멀티 게임을 빠르게 종료하고 로비로 복귀해 같은 방에서 반복 시작한다.
+2. 시작 버튼을 여러 번 누르면 `게임 시작을 요청했습니다` 뒤 `NOT_AUTHORIZED`가 표시된다.
+3. 제한 시간이 지난 뒤 일부 시작 요청은 성공하지만 게임 참가에서 거부돼 로비로 돌아올 수 있다.
+4. 로비 화면은 방에서 나온 것처럼 보이는데, 새 방 생성은 처음 `NOT_AUTHORIZED`, 이후 `PLAYER_ALREADY_IN_ROOM`으로 실패한다.
+
+### 기대 동작과 실제 동작
+
+기대는 권한 실패와 요청 제한을 구분하고, 일시적 실패가 기존 membership을 잃게 하지 않는 것이다. 실제로는 인증이 유효해도 요청 제한을 권한 오류로 표시하고 client의 room 캐시만 삭제했다. 서버 membership은 남아 있어 새 방 생성이 중복 참가로 거부됐다.
+
+### 확인된 원인
+
+- `socketRateLimitService`의 lifecycle bucket은 player당 60초·10회다. create/start/join/sync/leave 관련 요청이 같은 한도를 소비하며 페이지/socket 교체로 초기화되지 않는다.
+- 방 생성 1회와 세 판의 start/join/sync로 총 10회가 된다. 제한 초과는 상태 변경 전에 발생하지만 기존 handler는 `NOT_AUTHORIZED`를 반환했다.
+- 마지막 허용 요청이 `room:start`면 room은 playing이고 match가 준비된다. 뒤따르는 `game:join`은 한도 초과로 실패할 수 있다.
+- 게임 페이지는 join 실패 때 room 캐시를 지우고 로비로 이동했고, 로비도 모든 sync 실패에 room 정보를 지웠다. 이런 client 처리가 서버의 실제 퇴장을 의미하지는 않는다.
+
+```text
+room:start 허용 → 서버 room/match는 playing
+→ game:join 한도 초과 → NOT_AUTHORIZED
+→ client가 room 캐시 삭제·로비 이동
+→ 서버 membership은 유지
+→ room:create도 한도 중에는 NOT_AUTHORIZED
+→ 한도 초기화 뒤 PLAYER_ALREADY_IN_ROOM
+```
+
+### 재현 근거와 기존 검증의 빈틈
+
+실제 session service와 기본 rate limiter, fake socket/clock을 사용한 조사에서 다음을 확인했다.
+
+- 빠른 세 판 후 start는 `NOT_AUTHORIZED`였지만 active session 검사는 true였다.
+- 다음 window에서 start가 마지막 허용 요청이면 성공했고 뒤의 game join은 거부됐다.
+- 거부 뒤에도 같은 player의 기존 membership은 남았다. window 초기화 후 create는 `PLAYER_ALREADY_IN_ROOM`이었다.
+
+기존 multiplayer socket harness는 limiter의 consume을 항상 true로 주입했고, Playwright test profile은 lifecycle 한도를 100회로 높였다. 이들은 일반 gameplay 검증에는 유효하지만 기본 한도 초과의 회귀를 잡지 못했다.
+
+### 어떻게 처리했는가
+
+- lifecycle 초과 응답을 `RATE_LIMITED`로 분리했다. 인증·권한 실패는 `NOT_AUTHORIZED`다. 공유 bucket과 60초·10회 한도는 그대로 유지한다.
+- 시작 클릭은 ref로 즉시 차단하고 React state로 버튼 상태를 표시한다. adapter도 방 요청을 한 번에 하나만 보내며 성공 start는 페이지 이동까지 추가 요청을 막는다.
+- 제한된 sync는 room 정보를 보존하고 시작을 차단한 채 수동 동기화 버튼을 표시한다. 제한된 join은 runtime을 시작하지 않고 기존 match 참가 재시도를 제공한다.
+- 게임 페이지 Home 퇴장은 서버 성공 응답 뒤에만 캐시 삭제와 이동을 수행한다. 제한된 퇴장이 화면만 방을 잃게 하지 않는다.
+
+### 3초 시작 카운트다운과 상태 소유권
+
+Client 표시만 늦추고 서버를 바로 실행하면 첫 조각·AI가 먼저 진행될 수 있어 서버 실행도 함께 대기시켰다.
+
+- `room:start`는 match를 준비한다. human readiness와 nullable `startsAt`은 match metadata에서 관리하며 room/gameplay enum은 유지한다.
+- PVP human 2명 또는 PVE human 1명의 join 뒤 `startsAt = now + 3000`을 예약하고 `game:countdown` 및 join 응답으로 전달한다.
+- 대기 중 client는 초기 board/NEXT만 표시하며 keyboard gameplay와 local gravity를 실행하지 않는다. 서버도 input은 `GAME_NOT_STARTED`로 거부하고 gravity/AI accumulator를 진행하지 않는다.
+- 시작 후 새로운 gravity/AI 주기를 센다. countdown 경과 시간을 몰아서 실행하지 않는다.
+- 시작 전 disconnect/socket 교체는 readiness를 회수하고 참가 대기로 돌아간다. 오래된 socket의 disconnect나 이전 ticker callback은 새 연결·match를 진행시키거나 취소하지 않는다.
+- 명시적 퇴장은 기존 lifecycle에 따라 ticker/match를 정리한다. PVE에서 human 퇴장 후 room이 null인 경우도 cleanup한다.
+
+### 검증과 남은 경계
+
+- 기본 한도로 start 성공·join 제한·membership 유지·window 경과 후 재참가를 검증했다. PVP/PVE readiness, 조기 input 차단, socket 교체와 stale disconnect, ticker 취소 후 재시작도 확인했다.
+- 새 `e2e/multiplayerStart.spec.js`는 중복 클릭, start/sync/join 제한 복구, 양쪽 countdown과 시작 전 퇴장을 검증한다. 제한 응답 모의는 client 복구 검증용이며 실제 기본 한도 검증과 구분한다.
+- 기존 E2E helper는 NEXT 준비와 countdown overlay 종료를 함께 기다린다. 준비 화면에서 gameplay 입력을 먼저 보내지 않는다.
+- 구현 최종 `bash scripts/verify.sh`: Node 674 pass·기존 조건부 1 skip·실패 0, typecheck/build/artifact·diff 검사 통과. 이 문서 추가에서는 테스트를 재실행하지 않았다.
+- 빠른 반복 요청 자체는 여전히 제한된다. sync/join 전용 bucket 분리는 보류했으며 제한이 끝나기 전 자동 반복 재전송하지 않는다.
+- Client countdown은 서버 메시지의 남은 시간을 monotonic clock으로 표시한다. 네트워크 전달 지연까지 제거한 정밀 clock 동기화나 극단적 지연 환경 검증은 이번 완료 범위가 아니다.
+
+---
+
+## 2026-10-13 — 착지 연출의 RGB 변화가 Rollback E2E 실패로 판정됨
+
+### 증상과 재현
+
+전체 Playwright에서 연속 placement rollback spec이 `stable: false`로 실패했다. 세 번째 Host 조각을 hard drop한 뒤 source/observer Canvas의 committed fingerprint가 계속 같아야 한다는 검사였다.
+
+### 확인된 원인
+
+- 테스트는 각 cell 중앙의 RGB를 정확히 비교하고, 한 번이라도 값이 달라지면 이후 일치해도 실패를 유지한다.
+- 실패 trace에서 local 착지 효과가 cell 색상을 잠깐 바꿨다. 같은 위치의 local RGB는 `(11, 165, 230)`, 상대 기본 RGB는 `(14, 165, 233)`이었다.
+- Authoritative 고정 board와 pieceIndex는 유지됐고 effect 종료 후 source/observer cell 상태도 일치했다. 이 사례는 이전 위치에 다시 lock된 rollback이 아니라 표시 색상에 의한 오탐이었다.
+
+### 수정과 검증
+
+- `e2e/multiplayerRollback.spec.js`에서 양쪽의 공개 `효과 축소` 설정을 켰다. production 연출 코드는 이 대응으로 변경하지 않았다.
+- 좌우 고정 위치, 새 고정 cell, 보드 수렴, 여러 authoritative tick 동안 committed fingerprint 유지와 이전 fingerprint 재출현 금지 검사는 유지했다.
+- 효과 축소 상태의 rollback 검증과 실제 연출 검증을 분리했다. 착지/전투/라인 클리어 연출은 기존 별도 테스트가 담당한다.
+- 최초 전체 Playwright는 45/46 통과했다. 수정 후 rollback spec과 새 시작 spec 5개를 각각 3회 실행해 18/18 통과했다. 수정 후 전체 46개를 다시 실행했다고 기록하지 않는다.
+
+### 다음에 같은 검사가 실패하면
+
+1. RGB가 달라졌는지, cell 위치·조각 종류가 달라졌는지 구분한다.
+2. 같은 pieceIndex의 authoritative board fingerprint가 실제로 변경됐는지 확인한다.
+3. 착지/line-clear effect 진행 중인 Canvas를 고정 board의 원본으로 오인하지 않았는지 확인한다.
+4. 연출이 끝나면 다시 같아졌다는 이유만으로 실제 rollback을 통과시키지는 않는다. 이번에는 trace에서 좌표·authoritative state 불변을 확인한 뒤 테스트 준비 조건만 변경했다.

@@ -2629,12 +2629,102 @@ client input
 - streaming 정제 구현, 결과 dataset 생성, 모델 재학습과 운영 AI 교체는 아직 수행하지 않은 상태다. 기존 학습 snapshot과의 gameId 비교 및 장시간 제외 기준 확정이 남아 있다.
 - 배포·Umami 진행 기록을 commit 날짜별로 나누고 주요 질문과 답변을 `QnA.md`에 추가했다. 기존 gameplay·UI·ML 파일은 이 문서 작업에서 수정하지 않았다.
 
-# 2026년 10월 15일
+## 홈 디자인과 NEXT 4개 구현
 
-## 종료된 마이그레이션 보관과 개발 지침 정리
+- 위 문서 정리 이후 홈을 Tetra Arena로 변경하고 싱글 즉시 진입·멀티 닉네임 선택 입력을 분리했다. 폰트·맞물린 테트로미노 장식·라이트/다크 표현과 버튼 반응을 보완했다(`e039796`). 홈의 인라인 style CSP hash도 실제 출력에 맞췄다(`708ef31`).
+- NEXT를 네 조각으로 확대했다(`d4daf13`). 격자·빈 칸을 숨겨 기존 조각 모양을 재사용하고, 싱글은 보드 왼편에 세로로 표시한다. 멀티는 HOLD가 위, NEXT가 아래에 오도록 배치했다. 이후 양쪽 보드의 바깥편 배치와 공격 공간 조정은 후속 누적 작업으로 진행했다.
+- 작업별 구현 기록과 commit 시점을 구분한다. 앞의 ‘계획된 후속 단계’ 표기는 당일 문서 정리 시점의 상태이며, 위 세 commit은 그 이후 같은 날 반영한 결과다.
 
-- 마이그레이션 문서 54개를 [archive](docs/archive/migration/README.md)로 옮겼다. 50개는 내용이 동일하고, 4개는 보관 안내 또는 상대 링크만 바꿨다. 과거 Goal·검증 결과·보류 상태를 보존하고 현재 실행 지침에서 분리했다.
-- `AGENTS.md`를 428→125줄, AI README를 112→51줄로 정리했다. 서버 권위·상태 소유권·보안·검증·직접 구현 모드를 유지하고 ML은 현재 MODE에 필요한 절차·검증만 선택하도록 연결했다.
-- DB 운영 runbook은 현재 package scripts·CI를 검증 기준으로 직접 안내한다. DB blueprint의 배포 전 설명은 기존 배포 기록과 시점을 구분했다. 실제 운영 환경을 이번 작업에서 재검증하지 않았다.
-- 공백·링크·코드 블록 검사, archive 파일 보존 비교와 대표 요청별 지침 검토를 완료했다. ML 실험 명세 7개와 사용자 학습 문서는 그대로이며 runtime·test·데이터·모델·배포 설정은 변경하지 않았다. 문서만 변경해 전체 테스트는 실행하지 않았다.
-- 세부 변경과 검증 범위는 [하네스 개선 계획의 적용 결과](docs/maintenance/harness-improvement-plan.md#8-적용-결과-2026-10-15)에 기록했다.
+---
+
+# 2026년 10월 13일
+
+## 게임 테마·로컬 피드백과 사운드
+
+- 10월 12일 홈·NEXT 개선 이후 누적한 작업을 이어서 네 페이지의 차콜·골드 팔레트를 통일하고, 멀티의 HOLD/NEXT를 각 보드 바깥편으로 배치했다. 1600/1280/390px에서 배치·가로 넘침을 확인했으며 기존 React·CSS·Canvas와 조각 식별 색상을 유지했다.
+- 하드 드롭에 120ms 잔상·착지선·2px 보드 반응을 추가했다. 줄 삭제의 350ms 완료 시점과 입력·중력·판정 순서는 보존했다. 효과 축소 옵션은 저장 설정과 OS 모션 축소 설정을 따르며 재시작·종료·snapshot 정리 경로를 검증했다.
+- 착지·전투 합성음 채널을 분리하고 AudioContext 재개를 보완했다. 전송·수신·피격음은 사용자 요청에 따라 직전 gain보다 30% 낮췄고, 라인 클리어 MP3 음량은 이후 10% 낮췄다. 외부 음원·UI 라이브러리를 추가하지 않았다.
+
+## 서버 확정 전투 효과와 대기 바
+
+- 사람 입력·자연 중력·PVE AI의 확정 결과를 `combatEffect`로 전달한다. 실제 전송·상쇄·적용량과 match UUID·사건 ID·pieceIndex를 사용해 중복 및 재접속 이전 효과를 걸렀다. 공격량·승패·AI 정책과 placement 로그 의미는 바꾸지 않았다.
+- 공격은 크기가 다른 골드 조각 10~14개가 시간차를 두고 이동하고, 도착 시 파편 6개가 흩어진다. 이동 시간은 보드 거리별 440~620ms, 도착 효과는 220ms이며 전체 파편은 최대 40개로 제한했다.
+- 각 보드 옆에 20칸 세로 대기 바를 배치하고 한 줄당 한 칸씩 아래부터 채운다. 20줄 초과는 실제 숫자와 초과량을 함께 표시한다. 가시성 보완 후 폭은 데스크톱 48px·모바일 34px이며 보드 높이에 맞춰 늘어난다. 카드 간격과 wrapper 폭을 늘려 공격 공간을 확보했다.
+- TETRIS·T-SPIN·COMBO 문구를 보드 옆에 표시한다. 동시 콤보·콤보 단독·줄 삭제 없는 T-SPIN을 포함하고 첫 clear의 combo 0은 표시하지 않는다. 보드당 한 문구로 제한하고 1.2초 후 정리한다. 모바일·효과 축소·resize·pagehide 경로를 검증했다.
+- 사용자가 효과 시간·강도와 연속·동시 상쇄의 실제 플레이에 문제가 없음을 확인했다. FIFO·연속 4+6줄·부분 상쇄·네 동시 공격 조건의 socket 통합 검증을 추가했다. 해당 단계 verify는 668 pass·1 skip, 성과 표시 완료 시 전체 E2E는 41 pass였다.
+
+## Chrome 프레임 분석
+
+- [사용자 녹화 분석](docs/design/performance-trace-2026-10-13.md): 약 88초에서 브라우저 그리기 빈도 약 59.97회/초, BeginFrame 5,261회 중 누락·부분 갱신 표시 8회, 50ms 초과 메인 스레드 작업 0회였다.
+- 가장 긴 30ms 작업은 Chrome 녹화 시작 비용이었다. 효과가 반복되는 기록에서 심한 JS 정지의 근거는 없었으며, 한 기기의 한 녹화 결과를 모든 기기의 성능 보장으로 확대하지 않았다.
+- [실기기 측정 가이드](docs/design/real-device-performance-guide.md)에 입력·메모리·효과 비교·재접속 확인 절차를 작성했다.
+
+## 빠른 재시작 요청 제한과 방 상태 복구
+
+- 빠른 게임 종료·재시작에서 유효한 session도 `NOT_AUTHORIZED`로 거부되고, 게임 페이지 이탈 뒤 방 생성은 `PLAYER_ALREADY_IN_ROOM`으로 실패하는 경로를 재현했다. 원인은 lifecycle 한도 초과를 권한 실패로 반환하고, client가 일시적 sync/join 실패에 저장된 room 정보를 삭제하던 조합이었다.
+- `room:create/join/leave/start/sync`와 `game:join/leave`의 lifecycle 한도 초과 응답을 `RATE_LIMITED`로 구분했다. 인증·권한 실패는 `NOT_AUTHORIZED`를 유지한다. lifecycle의 player별 60초·10회 한도와 공유 bucket은 변경하지 않았으며 동기화 제한 분리는 보류했다.
+- 로비는 시작 요청을 보낸 즉시 ref로 중복 클릭을 차단하고 React state로 버튼을 비활성화한다. 실패 응답이나 disconnect 뒤 대기 상태를 정리하며, 성공한 start는 게임 페이지 이동까지 차단을 유지한다.
+- `roomClient`도 방 요청을 한 번에 하나만 전송하고 실제 emit 여부를 boolean으로 반환한다. 처리 중 다른 방 요청이 `lastRoomRequestType`을 덮어 sync/start 응답을 잘못 해석하는 것을 방지한다. 서버의 기존 waiting 상태 검사와 중복 match 생성 방지도 유지한다.
+- sync 제한 실패에서는 room 캐시를 보존하고 동기화 완료 전 시작을 차단하며 `방 상태 다시 확인` 버튼을 제공한다. game join 제한 실패에서는 runtime을 시작하지 않고 `참가 다시 시도`를 제공해 이미 준비된 match로 복구한다.
+- 게임 페이지의 Home 퇴장은 서버의 성공 응답을 확인한 뒤 room 캐시를 삭제하고 이동한다. PVE human 퇴장으로 room이 null이 되는 경우에도 ticker와 match를 정리한다.
+
+## 서버 기준 3초 시작 카운트다운
+
+- `room:start`는 match를 준비하고 게임 페이지 이동을 유도한다. PVP의 human 2명 또는 PVE의 human 1명이 `game:join`을 완료한 뒤 서버가 `startsAt = now + 3000`을 한 번 예약한다.
+- match metadata의 `readyPlayerIds`와 nullable `startsAt`으로 참가 대기·예약 상태를 관리한다. room status나 gameplay phase에 새 값을 추가하지 않고, 기존 authoritative board와 prediction 경계를 유지했다.
+- `game:join:result`에 match `startsAt`과 `serverNow`를 전달하고, `game:countdown` 이벤트로 roomId·gameId·시작 시각을 공유한다. 페이지는 상대 참가 대기 또는 `3 → 2 → 1`을 표시하고 중복·다른 match의 countdown을 재실행하지 않는다.
+- client session은 초기 board/NEXT만 표시하고 입력·중력을 보류한다. countdown 종료 시 멱등적인 `session.start()`가 local 실행을 시작하며 상대 runtime은 계속 snapshot-only다.
+- 서버도 시작 전 human input을 `GAME_NOT_STARTED`로 거부하고 gravity·AI accumulator를 진행하지 않는다. 시작 시 누적 시간을 새로 세어 countdown 시간이 첫 gravity나 AI action으로 몰리지 않게 했다.
+- 시작 전 disconnect/socket 교체는 해당 player의 readiness를 회수하고 참가 대기로 돌아간다. 명시적 퇴장은 기존 room lifecycle을 따르며, 취소된 ticker의 늦은 callback이 재시작 match를 진행시키지 않도록 ticker instance를 확인한다.
+
+## 회귀 검증과 착지 색상 오탐 정리
+
+- 기본 production lifecycle 한도로 start 성공 직후 join 제한, membership 보존, 제한 시간 경과 후 재참가를 검증했다. 별도 socket/runtime/ticker 테스트로 조기 입력 차단, PVP/PVE readiness, socket 교체, stale disconnect, countdown 취소와 이전 callback 정리를 확인했다.
+- [시작 E2E](e2e/multiplayerStart.spec.js)에 중복 클릭, start/sync/join 제한 실패 복구, 양쪽 countdown과 시작 전 퇴장 시나리오 5개를 추가했다. 첫 세 시나리오는 제한 응답만 모의로 발생시키고 room/match는 실제 서버가 관리한다. 한도 자체의 검증은 기본 설정을 쓰는 socket 테스트가 담당한다.
+- 기존 PVP/PVE E2E helper는 NEXT 준비뿐 아니라 countdown overlay 종료까지 기다린 뒤 gameplay 입력을 보낸다.
+- 전체 Playwright 실행은 최초 45/46 통과했다. 실패한 rollback 검사의 trace에서는 authoritative board와 고정 좌표가 유지됐지만 local 착지 연출이 RGB를 일시적으로 바꿨다. 픽셀 색상 비교가 이를 rollback으로 오인했다.
+- rollback spec에서 공개 `효과 축소` 설정을 켰다. 좌표·수렴·되감김 검사는 유지하고, 연출은 별도 E2E에서 계속 검증한다. 수정 뒤 시작 spec 5개와 rollback spec 1개를 각각 3회 반복해 18/18 통과했다. 수정 후 전체 46개를 다시 실행한 결과로 기록하지 않는다.
+- 구현 최종 `bash scripts/verify.sh`는 typecheck/build/artifact와 Node 674 pass·기존 조건부 1 skip·실패 0으로 통과했다. 이 기록 추가는 documentation-only이며 테스트를 재실행하지 않았다. 구현 변경은 이 기록 시점에 미커밋이며 production 배포는 수행하지 않았다.
+
+---
+
+# 2026년 10월 14일
+
+## 입력·싱글 재시작 메모리와 멀티 효과 확인
+
+- [입력·싱글 A/B/C 분석](docs/design/input-memory-measurement-2026-10-14.md): 같은 페이지에서 재시작만 반복한 자료의 객체 크기는 23.347→23.302→23.409 MiB였다. A→C 증가는 약 63KiB이며, detached DOM 209개는 동일한 ID 집합이고 이벤트 리스너 수는 유지됐다. 이번 반복 범위에서 누적 누수 징후는 없었다.
+- 별도 멀티 입력 기록의 keydown 175건은 Event Timing 중앙값 약 74ms, 이벤트 핸들러 처리 95백분위 0.08ms였다. 브라우저 지표를 실제 블록 지연으로 확정하지 않았다. 사용자가 체감상 문제 없다고 확인해 추가 입력 계측은 수행하지 않는다.
+- [멀티 A/B 분석](docs/design/multiplayer-memory-offline-2026-10-14.md): 16.431→16.920 MiB, detached DOM은 동일한 13개, 이벤트 리스너는 증가하지 않았고 파편·성과 문구 DOM은 둘 다 0개였다. A/B의 상세 전후 조건과 장시간 증가 추세는 확인되지 않아 전체 누수 판정과 구분했다.
+
+## 서버 응답만 멈춘 연결의 복구
+
+- 사용자 Chrome에서 Offline을 10초 유지했을 때 상대 PVE는 멈추지만 내 조각은 계속 진행하고 재접속·종료 안내가 없었다. 일반 자동화 Offline은 기존 disconnect를 발생시켰으나, 열린 WebSocket의 메시지만 차단하면 같은 증상이 재현됐다.
+- 기존 500ms heartbeat에서 마지막 유효 authoritative snapshot을 확인한다. 경기 시작 후 5초 동안 내/상대 snapshot이 없으면 로컬 예측·입력·중력·효과·미확정 전송을 기존 destroy 경로로 정리하고 저장 credential로 재인증·재join한다. countdown 전에는 적용하지 않으며 다른 room/actor는 제한 시간을 연장하지 못한다.
+- 서버가 정하는 승패·공격·AI·bag과 16ms 입력 tick은 유지했다. 단절 중 눌린 키는 복구 후 몰아서 재생하지 않고 최신 서버 상태로 복구한다.
+- typecheck와 필수 verify 675 pass·1 skip, 관련 Chromium E2E 10 pass를 확인했다. 정상 스트림 유지, 열린 소켓의 메시지 단절, 입력·이펙트 정리, 재join·단일 입력 반영을 회귀 테스트로 고정했다.
+- 사용자가 수정 후 오프라인·복구 정상 작동을 확인했다. 장시간 재접속 메모리·페이지 이동·저사양 기기 확인은 아직 별도 검증 대상이다.
+
+## 일별 기록과 항목별 커밋 정리
+
+- 10월 12·13·14일의 구현·측정·사용자 확인을 날짜별로 보완하고 기존 요청 제한·카운트다운 기록을 보존했다. 과거 단계별 테스트 결과와 이번 최종 검증을 구분한다.
+- 누적 변경은 로컬 효과·테마, 멀티 전투·시작 흐름, 서버 응답 단절 복구, 기록·측정 문서, 기존 데이터 정제 대화 요약으로 나눠 로컬 커밋한다. 공유 파일의 응답 단절 수정은 index patch로 분리하며 작업 파일 내용은 보존한다. 커밋을 작업일로 소급하지 않고 push·merge·배포는 수행하지 않는다.
+- 커밋 전 현재 전체 변경 상태로 Chromium E2E를 다시 실행해 47/47 통과했다. 이전 10월 13일의 ‘수정 후 전체 재실행 없음’은 당시의 기록으로 보존하며 이번 전체 실행 결과와 구분한다. 항목별 중간 커밋도 임시 checkout에서 typecheck로 확인한다.
+
+---
+
+# 2026년 10월 16일
+
+## 모바일 성과 알림의 보드 겹침 방어
+
+- CI의 `combatAchievements` 모바일 배치 실패를 조사했다. 같은 코드의 기존 테스트는 macOS에서 3/3 통과했으나, 알림 높이를 고려하지 않고 40px feedback 영역 상단에 놓아 큰 글줄이 보드를 덮는 조건을 별도 재현했다. Linux 실패 trace가 artifact로 업로드되지 않아 CI의 정확한 글꼴·좌표 원인은 확정하지 않았다.
+- 세로 배치에서는 DOM에 추가한 알림의 실제 높이와 효과 축소 여부에 따른 진입 여유를 반영한다. 데스크톱 옆 배치, 게임 판정, socket과 authoritative 상태는 변경하지 않았다.
+- E2E에 기본·확대 글줄의 양쪽 보드 위 배치와 화면 경계 검사를 추가했다. boolean 하나 대신 실제 알림·보드 좌표를 실패 메시지에 포함하며 기존 축소 효과·중복 방지·cleanup 검사를 유지했다.
+- 확대 글줄의 보드 겹침은 수정 전 RED, 수정 후 5회 반복 GREEN을 확인했다. 최종 테스트는 기본·확대 글줄과 양쪽 보드 검사로 보강했고 필수 `scripts/verify.sh`는 typecheck·build·artifact와 Node 675 pass·기존 조건부 1 skip으로 통과했다. 최종 로컬 전체 Chromium E2E도 47/47 통과했으며 Linux CI 재실행은 남아 있다.
+- 작업은 `codex/next-preview-four` 기준 별도 worktree에만 남겼다. 원래 main은 변경하지 않았으며 커밋·push·배포는 수행하지 않았다.
+
+## CI 재실패 후 모바일 알림의 좌표 기준 수정
+
+- 위 높이 보완을 반영한 CI에서도 두 번째 보드의 기본 글줄 검사에 실패했다. 알림 bottom 936.40625px, board top 898.90625px로 약 37.5px 겹쳤고 가로 범위는 정상이었다. 따라서 이전 macOS 통과를 CI 문제 해결로 확정하지 않는다.
+- 표시 전후 앞쪽 HUD 높이를 48px 줄이면 공용 레이어의 일회성 좌표가 갱신되지 않아 두 번째 보드를 덮는 조건을 RED로 재현했다. CI에서 어떤 UI 변화가 해당 이동을 유발했는지는 이 기록만으로 확정하지 않는다.
+- 세로 배치의 성과 문구는 공용 레이어 대신 대상 `.playfield`에 붙이고 CSS `bottom: 100%`로 고정한다. 문구 높이·보드 위치 변화는 브라우저 레이아웃으로 따라가며 이전 `offsetHeight`·픽셀 top 보정을 제거했다. 데스크톱 좌표 배치는 유지하고 이동한 문구에도 `aria-hidden`, 클릭 비간섭과 기존 cleanup을 유지한다.
+- 기본·확대 글줄의 양쪽 보드 검사에 표시 도중 앞쪽 HUD 높이 변경을 추가했다. 수정 후 전용 E2E 5/5, 필수 verify 675 pass·기존 조건부 1 skip, 최종 로컬 전체 Chromium E2E 47/47을 확인했다. 이번 변경은 기존 next-preview worktree에 미커밋 상태로 보존하며 Linux CI 재실행은 남아 있다.

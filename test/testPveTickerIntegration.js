@@ -450,3 +450,38 @@ test("AI executor는 고정 fixture의 authoritative input 결과를 유지한�
         ],
     );
 });
+
+test("실제 PVE AI의 줄 삭제 없는 garbage 적용은 독립 combatEffect로 전달된다", async () => {
+    resetMatches();
+    const roomId = "PVE-COMBAT";
+    createMatch({ roomId, mode: "pve", status: "playing", players: [
+        { playerId: "human", playerType: "human" },
+        { playerId: "ai", playerType: "heuristic_ai" },
+    ] });
+    const match = getMatchState(roomId).match;
+    const ai = match.players.find(player => player.playerId === "ai");
+    ai.authoritativeState.pendingGarbageQueue = [{ lines: 3, holeCol: 5 }];
+    const events = [];
+    const socketServer = { to() { return { emit(eventName, payload) { events.push({ eventName, payload }); } }; } };
+    const ticker = createAuthoritativeTickerService({
+        pveAiPlayerService: createPveAiPlayerService({ savePlacementDecisionLog: log => ({ ok: true, log, reason: null }) }),
+        setIntervalFn: () => ({ unref() {} }), clearIntervalFn() {},
+    });
+    ticker.startRoomTicker(roomId, socketServer);
+    try {
+        for (let i = 0; i < 80 && ai.authoritativeState.pieceIndex === 1; i++) {
+            await ticker.tickRoom(roomId, socketServer, 100);
+        }
+        const event = events.find(event => event.payload.combatEffect?.appliedLines > 0);
+        assert.ok(event);
+        assert.equal(event.payload.playerId, "ai");
+        assert.equal(event.payload.combatEffect.gameId, match.gameId);
+        assert.equal(event.payload.combatEffect.linesCleared, 0);
+        assert.equal(event.payload.combatEffect.appliedLines, 3);
+        assert.equal(event.payload.combatEffect.sentLines, 0);
+        assert.equal(event.payload.presentationEffect, undefined);
+        assert.equal(ai.authoritativeState.pendingGarbageQueue.length, 0);
+    } finally {
+        ticker.stopRoomTicker(roomId);
+    }
+});

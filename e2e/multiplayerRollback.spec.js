@@ -152,6 +152,12 @@ test("Host와 Guest의 연속 placement가 양방향 수렴하고 rollback되지
 
     try {
         await enterTwoPlayerMatch(hostPage, guestPage);
+        // 착지 연출의 색상 변화를 고정 board rollback으로 오인하지 않도록 공개 설정을 사용한다.
+        for (const page of [hostPage, guestPage]) {
+            const toggle = page.locator("#effectsToggle");
+            if (await toggle.getAttribute("aria-pressed") !== "true") await toggle.click();
+            await expect(toggle).toHaveAttribute("aria-pressed", "true");
+        }
         const [hostPlayerId, guestPlayerId] = await Promise.all([
             readPlayerSession(hostPage).then(session => session.playerId),
             readPlayerSession(guestPage).then(session => session.playerId),

@@ -86,6 +86,77 @@ test("startRoomTicker는 room마다 100ms ticker를 하나만 시작한다", () 
     assert.equal(tickerService.hasRoomTicker("room-1"), true);
 });
 
+test("참가 대기와 3초 countdown 동안 gravity와 AI가 멈추고 시작 후 새 주기를 센다", async () => {
+    const scheduler = createFakeScheduler();
+    const server = createFakeSocketServer();
+    let now = 1000;
+    const match = {
+        startsAt: null,
+        players: [{ playerId: "human", playerType: "human" }, { playerId: "ai", playerType: "heuristic_ai" }],
+    };
+    const calls = [];
+    const ticker = createAuthoritativeTickerService({
+        now: () => now,
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        getMatchState: () => ({ ok: true, match }),
+        loadGameCore: async () => ({}),
+        applyGravityStepToMatchPlayerState() { calls.push("gravity"); return { ok: false }; },
+        pveAiPlayerService: {
+            async processAiStep() { calls.push("ai"); return { ok: false }; },
+        },
+    });
+    ticker.startRoomTicker("room", server);
+    await runTickerCallbacks(scheduler, 40);
+    assert.deepEqual(calls, []);
+    match.startsAt = 4000;
+    now = 3999;
+    await ticker.tickRoom("room", server, 10000);
+    assert.deepEqual(calls, []);
+    now = 4000;
+    await ticker.tickRoom("room", server, 10000);
+    assert.deepEqual(calls, []);
+    await runTickerCallbacks(scheduler, 4);
+    assert.deepEqual(calls, ["ai", "ai", "ai", "ai"]);
+    await runTickerCallbacks(scheduler, 1);
+    assert.equal(calls.filter(call => call === "gravity").length, 1);
+    ticker.stopRoomTicker("room");
+    match.startsAt = 9000;
+    ticker.startRoomTicker("room", server);
+    await runTickerCallbacks(scheduler, 5);
+    assert.equal(calls.filter(call => call === "gravity").length, 1);
+    ticker.stopAllRoomTickers();
+});
+
+test("취소한 이전 ticker의 늦은 callback은 재시작한 match를 진행시키지 않는다", async () => {
+    const scheduler = createFakeScheduler();
+    const server = createFakeSocketServer();
+    let releaseCore;
+    const pendingCore = new Promise(resolve => { releaseCore = resolve; });
+    let calls = 0;
+    let match = { players: [{ playerId: "human", playerType: "human" }] };
+    const ticker = createAuthoritativeTickerService({
+        now: () => 0,
+        setIntervalFn: scheduler.setInterval,
+        clearIntervalFn: scheduler.clearInterval,
+        getMatchState: () => ({ ok: true, match }),
+        loadGameCore: () => pendingCore,
+        applyGravityStepToMatchPlayerState() { calls++; return { ok: false }; },
+    });
+    ticker.startRoomTicker("room", server);
+    const oldTick = ticker.tickRoom("room", server, 500);
+    await Promise.resolve();
+    ticker.stopRoomTicker("room");
+    match = { ...match, startsAt: 3000 };
+    ticker.startRoomTicker("room", server);
+    releaseCore({});
+    await oldTick;
+    await ticker.tickRoom("room", server, 500);
+    assert.equal(calls, 0);
+    assert.deepEqual(server.roomEvents, []);
+    ticker.stopAllRoomTickers();
+});
+
 test("ticker callback은 500ms 누적 후 player별 gravity step과 authoritative full snapshot을 처리한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();
@@ -740,6 +811,7 @@ test("AI hard_drop은 기존 attack과 line clear presentation 경로를 유지�
             ok: true,
             match: {
                 roomId: "room-ai-lock",
+                gameId: "00000000-0000-4000-8000-000000000003",
                 players: [
                     { playerId: "human", playerType: "human" },
                     { playerId: "ai", playerType: "heuristic_ai" },
@@ -753,7 +825,9 @@ test("AI hard_drop은 기존 attack과 line clear presentation 경로를 유지�
                     skipped: false,
                     stateChanged: true,
                     action: "hard_drop",
-                    placementResult: { attackLines: 2, gameOver: false },
+                    placementResult: { attackLines: 2, gameOver: false, pieceIndex: 4,
+                        linesCleared: 2, isTSpin: false, combo: 0, backToBack: false,
+                        canceledGarbageLines: 0, appliedGarbageLines: 0 },
                     presentationEffect: {
                         id: "ai:4:line_clear",
                         type: "line_clear",
@@ -796,6 +870,10 @@ test("AI hard_drop은 기존 attack과 line clear presentation 경로를 유지�
     const humanSnapshot = socketServer.roomEvents.find(event => {
         return event.payload.playerId === "human";
     });
+    assert.equal(aiSnapshot.payload.combatEffect.sentLines, 2);
+    assert.equal(aiSnapshot.payload.combatEffect.targetPlayerId, "human");
+    assert.equal(aiSnapshot.payload.combatEffect.pieceIndex, 4);
+    assert.equal(Object.hasOwn(humanSnapshot.payload, "combatEffect"), false);
     assert.equal(aiSnapshot.payload.presentationEffect.id, "ai:4:line_clear");
     assert.deepEqual(aiSnapshot.payload.presentationEffect.rows, [19]);
     assert.equal(humanSnapshot.payload.snapshot.pendingGarbageLines, 2);
@@ -816,6 +894,7 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
             ok: true,
             match: {
                 roomId: "room-1",
+                gameId: "00000000-0000-4000-8000-000000000003",
                 players: [
                     { playerId: "p1" },
                     { playerId: "p2" },
@@ -830,6 +909,9 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
                 placementResult: {
                     attackLines: playerId === "p1" ? 2 : 0,
                     gameOver: false,
+                    pieceIndex: 3, linesCleared: playerId === "p1" ? 2 : 0,
+                    isTSpin: false, combo: 0, backToBack: false,
+                    canceledGarbageLines: 0, appliedGarbageLines: playerId === "p2" ? 2 : 0,
                 },
                 presentationEffect: playerId === "p1"
                     ? {
@@ -877,6 +959,12 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
     tickerService.startRoomTicker("room-1", socketServer);
     await runTickerCallbacks(scheduler, 5);
 
+    const combatEvents = socketServer.roomEvents.filter(event => event.payload.combatEffect);
+    assert.equal(combatEvents[0].payload.combatEffect.sentLines, 2);
+    assert.equal(combatEvents[0].payload.combatEffect.targetPlayerId, "p2");
+    assert.equal(combatEvents[1].payload.combatEffect.appliedLines, 2);
+    assert.equal(combatEvents[1].payload.combatEffect.linesCleared, 0);
+    assert.equal(combatEvents[1].payload.presentationEffect, undefined);
     assert.deepEqual(appendedGarbage, [
         {
             roomId: "room-1",

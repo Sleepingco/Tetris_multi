@@ -68,8 +68,28 @@ test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 �
     const errors = captureBrowserErrors(page);
     await page.goto("/pages/tetrisSingle.html");
 
-    await expect(page.locator(".next-slot")).toHaveCount(2);
-    await expect(page.locator(".next-preview .next-cell")).toHaveCount(32);
+    await expect(page.locator(".next-slot")).toHaveCount(4);
+    await expect(page.locator(".next-preview .next-cell")).toHaveCount(64);
+    await expect(page.locator(".next-strip h2")).toHaveText("NEXT");
+    await expect(page.locator(".slot-label")).toHaveCount(0);
+    const previewLayout = await page.locator(".next-preview").evaluate(root => {
+        const slots = [...root.querySelectorAll(".next-slot")];
+        const boxes = slots.map(slot => slot.getBoundingClientRect());
+        const overlaps = slots.some(slot => {
+            const cells = [...slot.querySelectorAll(".next-cell.preview")]
+                .map(cell => cell.getBoundingClientRect());
+            return cells.some((cell, index) => cells.slice(index + 1).some(other => (
+                cell.left < other.right && cell.right > other.left
+                && cell.top < other.bottom && cell.bottom > other.top
+            )));
+        });
+        return {
+            vertical: boxes.every((box, index) => index === 0 || box.top >= boxes[index - 1].bottom),
+            leftOfBoard: root.getBoundingClientRect().right <= document.querySelector("canvas").getBoundingClientRect().left,
+            overlaps,
+        };
+    });
+    expect(previewLayout).toEqual({ vertical: true, leftOfBoard: true, overlaps: false });
     await expect(page.locator(".hold-preview .next-cell")).toHaveCount(16);
     const soundToggle = page.locator("#soundToggle");
     const initialPressed = await soundToggle.getAttribute("aria-pressed");
@@ -84,6 +104,21 @@ test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 �
     await pressGameKey(page, "KeyC");
     await expect(page.locator(".hold-preview .next-cell.tree.preview")).toHaveCount(4);
     expect(errors).toEqual([]);
+});
+
+test("효과 축소는 OS 기본값을 따르고 명시적 선택은 reload 뒤에도 유지한다", async ({ page }) => {
+    await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.goto("/pages/tetrisSingle.html");
+    const button = page.locator("#effectsToggle");
+    await expect(button).toHaveAttribute("aria-pressed", "true");
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    expect(await page.evaluate(() => localStorage.getItem("tetrisReducedEffects"))).toBe("false");
+    await page.reload();
+    await expect(button).toHaveAttribute("aria-pressed", "false");
+    await page.emulateMedia({ reducedMotion: "no-preference" });
+    await button.click();
+    await expect(button).toHaveAttribute("aria-pressed", "true");
 });
 
 test("single 첫 키 입력은 차단된 BGM을 중복 없이 한 번 재시도한다", async ({ page }) => {

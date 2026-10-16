@@ -86,6 +86,7 @@ function createPveSocketMonitor(page) {
                         .flat()
                         .filter(cell => cell !== null).length,
                     pendingGarbageLines: snapshot.pendingGarbageLines,
+                    combatEffect: eventPayload.combatEffect ?? null,
                 });
                 if (snapshots.length > 500) snapshots.shift();
                 return;
@@ -170,10 +171,11 @@ async function startPveMatch(page) {
         page.locator("#btnPrimaryAction").click(),
     ]);
 
-    await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(32);
+    await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
     await expect(page.locator("#player2Name")).toHaveText("Heuristic AI");
     await expect(page.locator("#player1RoleBadge")).toHaveText("내 보드");
     await expect(page.locator("#player2RoleBadge")).toHaveText("AI 상대 · 휴리스틱");
+    await expect(page.locator('.game-text[data-player="1"]')).toBeHidden();
 }
 
 async function hardDropHumanUntilResult(page, maxDrops = 30) {

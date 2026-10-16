@@ -57,6 +57,7 @@ class FakeSocket {
     }
 
     connect() {
+        this.connectCount = (this.connectCount || 0) + 1;
         this.connected = true;
         this.emitServer("connect");
         this.emitServer("session:ready", {
@@ -67,6 +68,12 @@ class FakeSocket {
             expiresAt: Date.now() + 60_000,
             resumed: false,
         });
+    }
+
+    disconnect() {
+        const wasConnected = this.connected;
+        this.connected = false;
+        if (wasConnected) this.emitServer("disconnect", "io client disconnect");
     }
 }
 
@@ -365,6 +372,63 @@ function createAuthoritativeSnapshot(overrides = {}) {
     };
 }
 
+test("서버 snapshot이 멈추면 countdown 뒤 5초에 예측을 정리하고 한 번 재인증한다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const clock = installMonotonicClock(t);
+    const originalSetInterval = globalThis.setInterval;
+    const originalClearInterval = globalThis.clearInterval;
+    const callbacks = new Map();
+    let nextTimer = 1;
+    globalThis.setInterval = (callback, delay) => {
+        const timer = nextTimer++;
+        callbacks.set(timer, { callback, delay });
+        return timer;
+    };
+    globalThis.clearInterval = timer => callbacks.delete(timer);
+    const session = startMultiplayerGame(createSessionParams({ deferStart: true }));
+    t.after(() => {
+        session.destroy();
+        globalThis.setInterval = originalSetInterval;
+        globalThis.clearInterval = originalClearInterval;
+    });
+    const heartbeat = callbacks.get(session.heartbeatTimer).callback;
+    const connectCount = sharedFakeSocket.connectCount;
+    clock.set(10_000);
+    heartbeat();
+    assert.equal(sharedFakeSocket.connectCount, connectCount);
+    session.start();
+    clock.set(14_999);
+    heartbeat();
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "00000000-0000-4000-8000-000000000002",
+        snapshot: createAuthoritativeSnapshot(),
+    });
+    clock.set(18_000);
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        roomId: "FEDCBA98",
+        playerId: "00000000-0000-4000-8000-000000000001",
+        snapshot: createAuthoritativeSnapshot(),
+    });
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: "00000000-0000-4000-8000-000000000003",
+        snapshot: createAuthoritativeSnapshot(),
+    });
+    clock.set(19_000);
+    heartbeat();
+    assert.equal(sharedFakeSocket.connectCount, connectCount);
+    clock.set(19_999);
+    heartbeat();
+    assert.equal(sharedFakeSocket.connectCount, connectCount + 1);
+    assert.equal(session.myGame.runtime.inputTimer, undefined);
+    assert.equal(session.opponentGame.runtime.inputTimer, undefined);
+    assert.equal(callbacks.has(session.heartbeatTimer), false);
+    const inputCount = sharedFakeSocket.emitted.length;
+    emitDocumentEvent("keydown", { key: " ", code: "Space", preventDefault() {} });
+    heartbeat();
+    assert.equal(sharedFakeSocket.emitted.length, inputCount);
+    assert.equal(sharedFakeSocket.connectCount, connectCount + 1);
+});
+
 function installAnimationFrameQueue() {
     const callbacks = new Map();
     let nextFrameId = 1;
@@ -429,6 +493,35 @@ test("game join 초기 authoritative snapshot으로 내 보드와 상대 보드�
     assert.equal(session.opponentGame.getSnapshot().pieceIndex, 2);
     assert.equal(session.opponentGame.runtime.gravityRunning, false);
     assert.equal(session.myGame.getServerBagRemainingCount(), 3);
+});
+
+test("countdown session은 초기 보드만 표시하고 start 후 입력과 중력을 한 번 시작한다", async t => {
+    const { startMultiplayerGame } = await loadSession();
+    const params = createSessionParams({ deferStart: true });
+    params.match.players.forEach(player => { player.snapshot = createAuthoritativeSnapshot(); });
+    const session = startMultiplayerGame(params);
+    t.after(() => cleanupSession(session));
+    sharedFakeSocket.emitted = [];
+    const before = session.myGame.getSnapshot();
+    assert.equal(session.myGame.runtime.gravityRunning, false);
+    assert.equal(session.myGame.runtime.inputTimer, undefined);
+    emitDocumentEvent("keydown", { code: "Space", key: " ", preventDefault() {} });
+    await waitForLocalInputTick();
+    assert.deepEqual(session.myGame.getSnapshot(), before);
+    assert.equal(sharedFakeSocket.emitted.some(event => event.eventName === "game:input"), false);
+    session.start();
+    const inputTimer = session.myGame.runtime.inputTimer;
+    assert.equal(session.myGame.runtime.gravityRunning, true);
+    assert.equal(session.opponentGame.runtime.gravityRunning, false);
+    session.start();
+    assert.equal(session.myGame.runtime.inputTimer, inputTimer);
+    assert.deepEqual(session.myGame.getSnapshot().board, before.board);
+    emitDocumentEvent("keydown", { code: "ArrowLeft", key: "ArrowLeft", preventDefault() {} });
+    await waitForLocalInputTick();
+    assert.equal(sharedFakeSocket.emitted.filter(event => event.eventName === "game:input").length, 1);
+    session.destroy();
+    session.start();
+    assert.equal(session.myGame.runtime.gravityRunning, false);
 });
 
 test("heartbeatTimer는 game:snapshot과 game:over 없이 bag 요청만 유지한다", async (t) => {
@@ -2053,4 +2146,49 @@ test("내 playerId와 일치하는 authoritative snapshot은 full apply하지 �
     });
 
     assert.equal(applySnapshotCallCount, 0);
+});
+
+test("전투 표시는 현재 match 결과만 한 번 소비하며 이전·잘못된·disconnect 후 결과를 버린다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const seen = [];
+    const params = createSessionParams({ onCombatEffect: event => seen.push(event) });
+    const gameId = "00000000-0000-4000-8000-000000000003";
+    params.match.gameId = gameId;
+    params.match.players.forEach(player => { player.snapshot = createAuthoritativeSnapshot({ pieceIndex: 10 }); });
+    const session = startMultiplayerGame(params);
+    t.after(() => cleanupSession(session));
+    const emit = (index, actor = params.opponentPlayerId, overrides = {}, roomId = params.roomId) => {
+        sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+            roomId, playerId: actor, snapshot: createAuthoritativeSnapshot({ pieceIndex: index + 1 }),
+            combatEffect: {
+                id: `${gameId}:${actor}:${index}:combat`, gameId, pieceIndex: index,
+                targetPlayerId: actor === params.playerId ? params.opponentPlayerId : params.playerId,
+                sentLines: 2, canceledLines: 0, appliedLines: 0,
+                linesCleared: 2, isTSpin: false, combo: 0, backToBackBonus: false,
+                ...overrides,
+            },
+        });
+    };
+    emit(9);
+    emit(10);
+    emit(10);
+    emit(10, params.playerId);
+    assert.deepEqual(seen.map(event => event.playerId), [params.opponentPlayerId, params.playerId]);
+    emit(11, params.opponentPlayerId, { gameId: "00000000-0000-4000-8000-000000000004" });
+    emit(11, params.opponentPlayerId, { id: "wrong-id" });
+    emit(11, params.opponentPlayerId, { targetPlayerId: params.opponentPlayerId });
+    emit(11, params.opponentPlayerId, {}, "ABCDEF13");
+    emit(11, params.opponentPlayerId, { sentLines: -1 });
+    assert.equal(seen.length, 2);
+    sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+        playerId: params.opponentPlayerId, snapshot: createAuthoritativeSnapshot({ pieceIndex: 15 }),
+    });
+    emit(12);
+    assert.equal(seen.length, 2);
+    emit(15, params.opponentPlayerId, { sentLines: 0, targetPlayerId: null, appliedLines: 3, linesCleared: 0 });
+    assert.equal(seen.at(-1).effect.appliedLines, 3);
+    assert.equal(seen.length, 3);
+    sharedFakeSocket.emitServer("disconnect", "transport close");
+    emit(16);
+    assert.equal(seen.length, 3);
 });

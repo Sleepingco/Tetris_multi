@@ -11,8 +11,40 @@ import type { PieceState, PlaceablePieceState } from "../../client/game/core/pie
 import type { PieceType } from "../../client/game/state/blocks.js";
 import type { GameCore } from "./gameCoreLoader.js";
 import type { AuthoritativeInput, AuthoritativePlayerState } from "./matchService.js";
+import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes.js";
 
 type MoveIntent = ReturnType<GameCore["resolveMoveIntent"]>;
+export type CombatEffect = NonNullable<ServerToClientParsedPayload<"game:authoritative:snapshot">["combatEffect"]>;
+
+/** 상대 queue 추가 결과와 확정 placement만 표시용 DTO로 투영한다. gameplay를 변경하지 않는다. */
+export function createCombatEffect(
+    gameId: string,
+    playerId: string,
+    result: PlacementResult | null | undefined,
+    transfer: { ok: boolean; targetPlayerId?: string; garbage?: { lines: number } } | null,
+): CombatEffect | null {
+    if (!gameId || !result || !Number.isSafeInteger(result.pieceIndex) || result.pieceIndex < 0) return null;
+    const sentLines = transfer?.ok && transfer.targetPlayerId && transfer.garbage
+        ? transfer.garbage.lines
+        : 0;
+    const backToBackBonus = Boolean(result.backToBack &&
+        (result.linesCleared === 4 || (result.isTSpin && result.linesCleared > 0)));
+    if (!(sentLines > 0 || result.canceledGarbageLines > 0 || result.appliedGarbageLines > 0 ||
+        (result.linesCleared === 4 || result.isTSpin) || result.combo > 0 || backToBackBonus)) return null;
+    return {
+        id: `${gameId}:${playerId}:${result.pieceIndex}:combat`,
+        gameId,
+        pieceIndex: result.pieceIndex,
+        targetPlayerId: sentLines > 0 ? transfer!.targetPlayerId! : null,
+        sentLines,
+        canceledLines: result.canceledGarbageLines,
+        appliedLines: result.appliedGarbageLines,
+        linesCleared: result.linesCleared,
+        isTSpin: result.isTSpin,
+        combo: result.combo,
+        backToBackBonus,
+    };
+}
 export type PresentationEffect = {
     type: "line_clear";
     id?: string;

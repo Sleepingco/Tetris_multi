@@ -12,6 +12,7 @@ import type {
     ClientToServerParsedPayload,
     ClientToServerWirePayload,
     ServerToClientWirePayload,
+    ServerToClientParsedPayload,
 } from "../src/shared/socketContractTypes";
 
 const roomId = "ABCDEF12";
@@ -68,3 +69,16 @@ const invalidMoveInput: ClientToServerWirePayload<"game:input"> = {
 };
 
 void invalidMoveInput;
+
+type CombatEffectContract = NonNullable<ServerToClientParsedPayload<"game:authoritative:snapshot">["combatEffect"]>;
+const combatEffectContract: CombatEffectContract = {
+    id: "event", gameId: "00000000-0000-4000-8000-000000000003", pieceIndex: 1,
+    targetPlayerId: null, sentLines: 0, canceledLines: 2, appliedLines: 0,
+    linesCleared: 2, isTSpin: false, combo: 0, backToBackBonus: false,
+};
+// @ts-expect-error 전송량은 숫자 계약이다.
+const invalidCombatAmount: CombatEffectContract = { ...combatEffectContract, sentLines: "2" };
+// @ts-expect-error 확정 전투 결과에는 필수 필드가 모두 필요하다.
+const incompleteCombatEffect: CombatEffectContract = { id: "event" };
+void invalidCombatAmount;
+void incompleteCombatEffect;

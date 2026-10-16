@@ -215,6 +215,7 @@ function createDeferred() {
 
 function registerTestSocketHandlers(socketServer, dependencies = {}) {
     return registerSocketHandlers(socketServer, {
+        gameStartCountdownMs: 0,
         authoritativeTickerService: createNoopAuthoritativeTickerService(),
         saveGameEventLog: saveTestLog,
         savePlacementDecisionLog: saveTestLog,
@@ -2194,6 +2195,10 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
         "server-garbage-host-player:1:line_clear",
     )
     assert.deepEqual(hostSnapshotEvent.payload.presentationEffect.rows, [16, 17, 18, 19])
+    assert.equal(hostSnapshotEvent.payload.combatEffect.sentLines, 4)
+    assert.equal(hostSnapshotEvent.payload.combatEffect.targetPlayerId, "server-garbage-guest-player")
+    assert.equal(hostSnapshotEvent.payload.combatEffect.gameId, getMatchState(roomId).match.gameId)
+    assert.equal(Object.hasOwn(guestSnapshotEvent.payload, "combatEffect"), false)
     assert.equal(guestSnapshotResult.ok, true)
     assert.equal(guestSnapshotResult.snapshot.pendingGarbageLines, 4)
     assert.equal(Object.hasOwn(guestSnapshotResult.snapshot, "pendingGarbageQueue"), false)
@@ -2201,6 +2206,116 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
     assert.equal(Object.hasOwn(guestSnapshotEvent.payload.snapshot, "pendingGarbageQueue"), false)
     assert.equal(Object.hasOwn(guestSnapshotEvent.payload, "presentationEffect"), false)
 })
+
+
+function prepareTetrisAttack(gameCore, player) {
+    const piece = { pieceType: "bar", rotation: 1, row: 0, col: 3 };
+    const state = player.authoritativeState;
+    state.board = createLineClearBoard(gameCore, { ...piece, row: 16 }, [16, 17, 18, 19]);
+    state.activePiece = { ...piece };
+    state.pendingPiece = { ...piece };
+    state.pieceQueue = ["square"];
+}
+
+test("연속 공격은 상대 queue에 누적되고 일부 상쇄 뒤 남은 FIFO entry만 적용된다", async () => {
+    const holes = [2, 7];
+    const fixture = await createStartedPvpSocketFixture("successive-attack", {
+        createGarbageHoleCol: () => holes.shift(),
+    });
+    const core = await loadGameCore();
+    const { hostPlayer, guestPlayer, hostSocket, guestSocket, roomId, socketServer } = fixture;
+    for (let sequence = 1; sequence <= 2; sequence++) {
+        prepareTetrisAttack(core, hostPlayer);
+        await hostSocket.triggerAsync("game:input", {
+            roomId, action: "hard_drop", tick: sequence,
+            pieceIndex: hostPlayer.authoritativeState.pieceIndex, clientSequence: sequence,
+            expectedTransform: createExpectedTransform(hostPlayer.authoritativeState.activePiece),
+        });
+        assert.equal(hostSocket.lastClientEvent("game:input:result").payload.ok, true);
+    }
+    assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, [
+        { lines: 4, holeCol: 2 }, { lines: 6, holeCol: 7 },
+    ]);
+    const attacks = socketServer.roomEvents.filter(event => event.payload.combatEffect);
+    assert.deepEqual(attacks.map(event => event.payload.combatEffect.sentLines), [4, 6]);
+    assert.equal(new Set(attacks.map(event => event.payload.combatEffect.id)).size, 2);
+    assert.equal(getAuthoritativePlayerSnapshotDto(roomId, fixture.guestPlayerId).snapshot.pendingGarbageLines, 10);
+
+    prepareTetrisAttack(core, guestPlayer);
+    await guestSocket.triggerAsync("game:input", {
+        roomId, action: "hard_drop", tick: 1,
+        pieceIndex: guestPlayer.authoritativeState.pieceIndex, clientSequence: 1,
+        expectedTransform: createExpectedTransform(guestPlayer.authoritativeState.activePiece),
+    });
+    assert.equal(guestSocket.lastClientEvent("game:input:result").payload.ok, true);
+    const defense = socketServer.roomEvents.findLast(event => event.payload.combatEffect)?.payload.combatEffect;
+    assert.equal(defense.canceledLines, 4);
+    assert.equal(defense.appliedLines, 6);
+    assert.equal(defense.sentLines, 0);
+    assert.equal(defense.targetPlayerId, null);
+    assert.deepEqual(hostPlayer.authoritativeState.pendingGarbageQueue, []);
+    assert.deepEqual(guestPlayer.authoritativeState.pendingGarbageQueue, []);
+    assert.equal(getAuthoritativePlayerSnapshotDto(roomId, fixture.guestPlayerId).snapshot.pendingGarbageLines, 0);
+    assert.ok(guestPlayer.authoritativeState.board.slice(-6).every(row => (
+        row[7] === null && row.filter(cell => cell === "garbage").length === 9
+    )));
+});
+
+test("양쪽 동시 공격 입력은 확정 순서로 상쇄하며 중복 전송과 잔여 queue를 만들지 않는다", { timeout: 5000 }, async (t) => {
+    const core = await loadGameCore();
+    for (const firstRole of ["host", "guest"]) {
+        for (const initialPending of [0, 2]) {
+            await t.test(`${firstRole} first / pending ${initialPending}`, async () => {
+                const bothStarted = createDeferred();
+                const releaseCore = createDeferred();
+                let started = 0;
+                const fixture = await createStartedPvpSocketFixture(`concurrent-${firstRole}-${initialPending}`, {
+                    async loadGameCore() {
+                        if (++started === 2) bothStarted.resolve();
+                        return releaseCore.promise;
+                    },
+                    createGarbageHoleCol: () => 3,
+                });
+                const players = {
+                    host: { socket: fixture.hostSocket, player: fixture.hostPlayer },
+                    guest: { socket: fixture.guestSocket, player: fixture.guestPlayer },
+                };
+                for (const { player } of Object.values(players)) {
+                    prepareTetrisAttack(core, player);
+                    player.authoritativeState.pendingGarbageQueue = initialPending ? [{ lines: initialPending, holeCol: 1 }] : [];
+                }
+                const order = [firstRole, firstRole === "host" ? "guest" : "host"];
+                const inputs = order.map(role => players[role].socket.triggerAsync("game:input", {
+                    roomId: fixture.roomId, action: "hard_drop", tick: 1,
+                    pieceIndex: 1, clientSequence: 1,
+                    expectedTransform: createExpectedTransform(players[role].player.authoritativeState.activePiece),
+                }));
+                await bothStarted.promise
+                assert.equal(fixture.socketServer.roomEvents.filter(event => event.payload.combatEffect).length, 0);
+                releaseCore.resolve(core);
+                await Promise.all(inputs);
+                const effects = fixture.socketServer.roomEvents.filter(event => event.payload.combatEffect).map(event => event.payload);
+                assert.equal(effects.length, 2);
+                assert.equal(effects[0].playerId, players[firstRole].player.playerId);
+                assert.equal(effects[0].combatEffect.sentLines, 4 - initialPending);
+                assert.equal(effects[0].combatEffect.canceledLines, initialPending);
+                assert.equal(effects[1].combatEffect.sentLines, 0);
+                assert.equal(effects[1].combatEffect.canceledLines, 4);
+                assert.equal(effects[1].combatEffect.targetPlayerId, null);
+                for (const { socket, player } of Object.values(players)) {
+                    assert.equal(socket.lastClientEvent("game:input:result").payload.ok, true);
+                    assert.equal(player.lastProcessedClientSequence, 1);
+                    assert.equal(player.authoritativeState.pieceIndex, 2);
+                    assert.deepEqual(player.authoritativeState.pendingGarbageQueue, []);
+                    assert.equal(player.authoritativeState.board.flat().filter(cell => cell === "garbage").length, 0);
+                    assert.equal(getAuthoritativePlayerSnapshotDto(fixture.roomId, player.playerId).snapshot.pendingGarbageLines, 0);
+                }
+                assert.equal(new Set(effects.map(event => event.combatEffect.id)).size, 2);
+                assert.equal(effects.reduce((total, event) => total + event.combatEffect.appliedLines, 0), 0);
+            });
+        }
+    }
+});
 
 test("game:input server lock gameOver는 match finish와 ticker 정리를 처리한다", async () => {
     const stoppedRoomIds = []
@@ -3621,7 +3736,7 @@ test("game:join은 서버에 없는 room이면 실패 결과를 돌려준다", (
     assert.deepEqual(gameSocket.joinedRooms, [])
 })
 
-test("game:join은 roomService DTO 결과를 반환하고 성공 시 socket을 room에 참가시킨다", () => {
+test("game:join은 시작 전 waiting room에서 gameplay 참가를 거부한다", () => {
     const socketServer = new FakeSocketServer()
     const lobbySocket = new FakeClientSocket("game-join-lobby-socket")
     const gameSocket = new FakeClientSocket("game-join-game-socket")
@@ -3644,10 +3759,10 @@ test("game:join은 roomService DTO 결과를 반환하고 성공 시 socket을 r
 
     const joinResult = gameSocket.lastClientEvent("game:join:result").payload
 
-    assert.equal(joinResult.ok, true)
-    assert.equal(joinResult.reason, null)
+    assert.equal(joinResult.ok, false)
+    assert.equal(joinResult.reason, "GAME_NOT_PLAYING")
     assert.equal(joinResult.room.roomId, roomId)
-    assert.deepEqual(gameSocket.joinedRooms, [roomId])
+    assert.deepEqual(gameSocket.joinedRooms, [])
 })
 
 test("새 game socket join만 해당 player gravity를 reset하고 같은 socket 반복 join은 reset하지 않는다", async () => {

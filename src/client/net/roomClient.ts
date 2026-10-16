@@ -178,6 +178,7 @@ const serverConnection = io({
     auth: createHandshakeAuth,
 })
 let lastRoomRequestType: RequestType = null
+let hasPendingRoomRequest = false
 
 function toPlayerSession(session: Pick<ActiveSession, "playerId" | "nickname">): PlayerSession {
     return { playerId: session.playerId, nickname: session.nickname }
@@ -307,6 +308,7 @@ serverConnection.on("connect_error", (error: ConnectError) => {
 
 serverConnection.on("disconnect", (reason: string) => {
     activeSession = null
+    hasPendingRoomRequest = false
     if (Array.isArray(serverConnection.sendBuffer)) {
         serverConnection.sendBuffer.length = 0
     }
@@ -316,6 +318,14 @@ serverConnection.on("disconnect", (reason: string) => {
 })
 
 serverConnection.connect()
+
+/** 열린 transport에서 서버 응답이 멈췄을 때 미확정 전송을 버리고 저장 credential로 다시 인증한다. */
+export function reconnectPlayerSession(): boolean {
+    if (!activeSession || !serverConnection.connected || !serverConnection.disconnect) return false;
+    serverConnection.disconnect();
+    serverConnection.connect();
+    return true;
+}
 
 /**
  * 현재 transport와 session이 모두 준비됐을 때만 mutation event를 전송한다.
@@ -338,6 +348,19 @@ function emitAuthenticated<K extends ClientToServerEventName>(
     serverConnection.emit(eventName, payload)
     return true
 }
+
+function emitRoomRequest<K extends ClientToServerEventName>(
+    type: RequestType, eventName: K, payload: ClientToServerWirePayload<K>,
+): boolean {
+    if (hasPendingRoomRequest || !activeSession || !serverConnection.connected) return false;
+    lastRoomRequestType = type;
+    hasPendingRoomRequest = true;
+    if (emitAuthenticated(eventName, payload)) return true;
+    hasPendingRoomRequest = false;
+    return false;
+}
+
+onValidatedServerEvent("room:result", () => { hasPendingRoomRequest = false; });
 
 // =============================
 // Socket.IO 방 어댑터
@@ -414,8 +437,7 @@ export function requestCreateRoom(
     mode: "pvp" | "pve" = "pvp",
     aiDifficulty: "normal" | "hard" | null = null,
     aiPolicy: "heuristic" | "placement_v4" | null = null,
-): void {
-    lastRoomRequestType = "create"
+): boolean {
     const payload: {
         mode: "pvp" | "pve";
         aiDifficulty?: "normal" | "hard";
@@ -427,7 +449,7 @@ export function requestCreateRoom(
     if (mode === "pve" && aiPolicy !== null) {
         payload.aiPolicy = aiPolicy
     }
-    emitAuthenticated("room:create", payload)
+    return emitRoomRequest("create", "room:create", payload)
 }
 
 export function onRoomResult(handler: (
@@ -439,9 +461,8 @@ export function onRoomResult(handler: (
     })
 }
 
-export function requestJoinRoom(roomId: string, _player: PlayerIdentity): void {
-    lastRoomRequestType = "join"
-    emitAuthenticated("room:join", { roomId })
+export function requestJoinRoom(roomId: string, _player: PlayerIdentity): boolean {
+    return emitRoomRequest("join", "room:join", { roomId })
 }
 
 export function onRoomUpdated(
@@ -476,9 +497,8 @@ export function onChatResult(
     return onValidatedServerEvent("chat:result", handler)
 }
 
-export function requestLeaveRoom(roomId: string, _playerId: string | null): void {
-    lastRoomRequestType = "leave"
-    emitAuthenticated("room:leave", { roomId })
+export function requestLeaveRoom(roomId: string, _playerId: string | null): boolean {
+    return emitRoomRequest("leave", "room:leave", { roomId })
 }
 
 /**
@@ -489,8 +509,8 @@ export function requestLeaveRoom(roomId: string, _playerId: string | null): void
  *
  * @returns void
  */
-export function requestJoinGameRoom(roomId: string, _playerId: string): void {
-    emitAuthenticated("game:join", { roomId })
+export function requestJoinGameRoom(roomId: string, _playerId: string): boolean {
+    return emitAuthenticated("game:join", { roomId })
 }
 
 export function onGameJoinResult(
@@ -499,15 +519,20 @@ export function onGameJoinResult(
     return onValidatedServerEvent("game:join:result", handler)
 }
 
+export function onGameCountdown(
+    handler: (countdown: ServerToClientParsedPayload<"game:countdown">) => void,
+): Disposer {
+    return onValidatedServerEvent("game:countdown", handler);
+}
+
 export function onPveAiPolicy(
     handler: (policy: ServerToClientParsedPayload<"pve:ai-policy">) => void,
 ): Disposer {
     return onValidatedServerEvent("pve:ai-policy", handler)
 }
 
-export function requestStartGame(roomId: string, _playerId: string | null): void {
-    lastRoomRequestType = "start"
-    emitAuthenticated("room:start", { roomId })
+export function requestStartGame(roomId: string, _playerId: string | null): boolean {
+    return emitRoomRequest("start", "room:start", { roomId })
 }
 
 // =============================
@@ -609,9 +634,14 @@ export function receiveAuthoritativeSnapshot(
     return onValidatedServerEvent("game:authoritative:snapshot", handler)
 }
 
-export function leaveGame(roomId: string, _playerId: string | null): void {
-    emitAuthenticated("game:leave", { roomId })
+export function leaveGame(roomId: string, _playerId: string | null): boolean {
+    return emitAuthenticated("game:leave", { roomId })
+}
 
+export function onGameLeaveResult(
+    handler: (result: ServerToClientParsedPayload<"game:leave:result">) => void,
+): Disposer {
+    return onValidatedServerEvent("game:leave:result", handler);
 }
 
 export function onGameOpponentLeft(
@@ -620,9 +650,8 @@ export function onGameOpponentLeft(
     return onValidatedServerEvent("game:opponent-left", handler)
 }
 
-export function requestRoomSync(roomId: string, _playerId: string): void {
-    lastRoomRequestType = "sync"
-    emitAuthenticated("room:sync", { roomId })
+export function requestRoomSync(roomId: string, _playerId: string): boolean {
+    return emitRoomRequest("sync", "room:sync", { roomId })
 }
 
 export function onMatchFinish(

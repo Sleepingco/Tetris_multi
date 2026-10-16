@@ -19,7 +19,7 @@ test("display bridge는 변경된 표시 값만 새 snapshot으로 알린다", a
         score: 0,
         lines: 0,
         holdPieceType: null,
-        nextPieceTypes: ["tree", "bar", "square"],
+        nextPieceTypes: ["tree", "bar", "square", "zee"],
         pendingGarbageLines: 0,
         phase: "playing",
     };
@@ -35,25 +35,30 @@ test("display bridge는 변경된 표시 값만 새 snapshot으로 알린다", a
     assert.equal(bridge.publishDisplay(), false);
     assert.equal(bridge.getDisplaySnapshot(), first);
     assert.equal(calls, 0);
-    assert.deepEqual(first.nextPieceTypes, ["tree", "bar"]);
+    assert.deepEqual(first.nextPieceTypes, ["tree", "bar", "square", "zee"]);
 
     values.score = 1;
     assert.equal(bridge.publishDisplay(), true);
     assert.notEqual(bridge.getDisplaySnapshot(), first);
     assert.equal(calls, 2);
 
+    values.nextPieceTypes[3] = "ess";
+    assert.equal(bridge.publishDisplay(), true);
+    assert.deepEqual(bridge.getDisplaySnapshot().nextPieceTypes, ["tree", "bar", "square", "ess"]);
+    assert.equal(calls, 4);
+
     unsubscribeFirst();
     unsubscribeFirst();
     values.lines = 1;
     bridge.publishDisplay();
-    assert.equal(calls, 3);
+    assert.equal(calls, 5);
 
     unsubscribeSecond();
     bridge.destroyDisplay();
     bridge.destroyDisplay();
     values.phase = "gameOver";
     assert.equal(bridge.publishDisplay(), false);
-    assert.equal(calls, 3);
+    assert.equal(calls, 5);
 });
 
 test("display bridge는 pending garbage가 바뀔 때만 한 번 알린다", async () => {

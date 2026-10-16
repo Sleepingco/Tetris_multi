@@ -2,9 +2,11 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes";
+import { roomPublicSchema } from "../../shared/socketContracts.mjs";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { initLobbySound } from "../game/runtime/sound.ts";
 import {
+    getPlayerSession,
     onChatResult,
     onGlobalMessage,
     onRoomMessage,
@@ -94,6 +96,9 @@ function MultiLobbyPage() {
     const [room, setRoom] = useState<Room | null>(null);
     const [view, setView] = useState<View>("join");
     const [sessionReady, setSessionReady] = useState(false);
+    const [pendingRequest, setPendingRequest] = useState<RequestType>(null);
+    const [needsRoomSync, setNeedsRoomSync] = useState(false);
+    const pendingRequestRef = useRef<RequestType>(null);
     const [chatScope, setChatScope] = useState<"global" | "room">("global");
     const [chatInput, setChatInput] = useState("");
     const [roomCodeInput, setRoomCodeInput] = useState("");
@@ -130,6 +135,22 @@ function MultiLobbyPage() {
         clearRoomSession();
         setRoom(null);
         setView("join");
+        setNeedsRoomSync(false);
+    }, []);
+
+    const sendRoomRequest = useCallback((type: RequestType, send: () => boolean) => {
+        if (pendingRequestRef.current) return false;
+        pendingRequestRef.current = type;
+        setPendingRequest(type);
+        if (send()) return true;
+        pendingRequestRef.current = null;
+        setPendingRequest(null);
+        return false;
+    }, []);
+
+    const releaseRequest = useCallback(() => {
+        pendingRequestRef.current = null;
+        setPendingRequest(null);
     }, []);
 
     useEffect(() => {
@@ -162,22 +183,36 @@ function MultiLobbyPage() {
                 appendMessage("system", message.text || "");
             }),
             onRoomResult((result: RoomResult, requestType: RequestType) => {
+                if (!result.ok || requestType !== "start") releaseRequest();
                 if (!result.ok) {
-                    if (
-                        requestType === "sync"
-                        || (requestType === "join" && result.reason === "ROOM_NOT_FOUND")
-                    ) {
+                    if (result.reason === "ROOM_NOT_FOUND"
+                        || (requestType === "sync" && result.reason === "NOT_AUTHORIZED")) {
                         clearRoom();
                     }
-                    appendMessage("system", result.reason || "ROOM_ERROR");
+                    const currentPlayerId = getPlayerSession()?.playerId;
+                    if (requestType === "start" && result.reason === "GAME_ALREADY_STARTED" && currentPlayerId) {
+                        setNeedsRoomSync(true);
+                        sendRoomRequest("sync", () => requestRoomSync(
+                            sessionStorage.getItem("tetris:roomId") || "", currentPlayerId,
+                        ));
+                    }
+                    appendMessage("system", result.reason === "RATE_LIMITED"
+                        ? "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요."
+                        : result.reason || "ROOM_ERROR");
                     return;
                 }
+                if (requestType === "sync") setNeedsRoomSync(false);
                 if (requestType === "leave") {
                     appendMessage("system", "방에서 퇴장했습니다.");
                     clearRoom();
                     return;
                 }
                 if (!result.room) return;
+                if (requestType === "sync" && result.room.status === "playing") {
+                    saveRoomSession(result.room);
+                    window.location.href = `/pages/tetrisMulti.html?roomId=${result.room.roomId}`;
+                    return;
+                }
                 renderRoom(result.room);
                 if (requestType === "create") {
                     appendMessage("system", `방이 생성되었습니다. 코드: ${result.room.roomId}`);
@@ -199,12 +234,21 @@ function MultiLobbyPage() {
                 setSessionReady(true);
                 // sessionStorage만 믿지 않고 새 active session으로 membership을 다시 확인한다.
                 const savedRoomId = sessionStorage.getItem("tetris:roomId");
-                if (savedRoomId) requestRoomSync(savedRoomId, readyPlayerId);
+                releaseRequest();
+                if (savedRoomId) {
+                    try {
+                        const savedRoom = roomPublicSchema.safeParse(JSON.parse(sessionStorage.getItem("room") || "null"));
+                        if (savedRoom.success && savedRoom.data.roomId === savedRoomId) renderRoom(savedRoom.data);
+                    } catch { /* 손상된 표시 캐시는 서버 응답으로 복구한다. */ }
+                    setNeedsRoomSync(true);
+                    sendRoomRequest("sync", () => requestRoomSync(savedRoomId, readyPlayerId));
+                }
             }),
             onSessionError(({ terminal }: { terminal: boolean }) => {
                 if (terminal) clearRoom();
             }),
             onSessionDisconnected(({ terminal }: { terminal: boolean }) => {
+                releaseRequest();
                 setSessionReady(false);
                 appendMessage("system", terminal
                     ? "세션이 만료되었거나 다른 탭으로 이동했습니다. 새로고침해 주세요."
@@ -229,7 +273,7 @@ function MultiLobbyPage() {
             window.removeEventListener("pageshow", onPageShow);
             dispose();
         };
-    }, [appendMessage, clearRoom, renderRoom]);
+    }, [appendMessage, clearRoom, renderRoom, releaseRequest, sendRoomRequest]);
 
     const submitChat = (event: FormEvent) => {
         event.preventDefault();
@@ -288,6 +332,14 @@ function MultiLobbyPage() {
                 : "두 명이 모였습니다. 게임 시작 준비가 가능합니다.";
             primaryDisabled = false;
         }
+    }
+    if (needsRoomSync) {
+        primaryText = "방 상태 확인 필요";
+        primaryDisabled = true;
+    }
+    if (pendingRequest) {
+        primaryText = pendingRequest === "start" ? "시작 요청 중" : "요청 처리 중";
+        primaryDisabled = true;
     }
 
     return (
@@ -362,9 +414,10 @@ function MultiLobbyPage() {
                             <p id="primaryActionDesc">{primaryDescription}</p>
                             <button id="btnPrimaryAction" className="btn primary btn-match" type="button"
                                 disabled={primaryDisabled} onClick={() => {
-                                    if (!room) return;
-                                    appendMessage("system", "게임 시작을 요청했습니다.");
-                                    requestStartGame(room.roomId, playerId);
+                                    if (!room || needsRoomSync) return;
+                                    if (sendRoomRequest("start", () => requestStartGame(room.roomId, playerId))) {
+                                        appendMessage("system", "게임 시작을 요청했습니다.");
+                                    }
                                 }}>{primaryText}</button>
                         </div>
 
@@ -375,17 +428,17 @@ function MultiLobbyPage() {
                                 <input type="text" id="roomCodeInput" className="input-box input-code"
                                     placeholder="ENTER CODE" maxLength={8} value={roomCodeInput}
                                     disabled={!sessionReady} onChange={event => setRoomCodeInput(event.target.value)} />
-                                <button id="btnJoinCode" className="btn" type="button" disabled={!sessionReady}
+                                <button id="btnJoinCode" className="btn" type="button" disabled={!sessionReady || !!pendingRequest || needsRoomSync}
                                     onClick={() => {
                                         const roomId = roomCodeInput.trim().toUpperCase();
                                         if (!roomId) {
                                             appendMessage("system", "방 코드를 입력해주세요.");
                                             return;
                                         }
-                                        requestJoinRoom(roomId, { playerId, nickname });
+                                        sendRoomRequest("join", () => requestJoinRoom(roomId, { playerId, nickname }));
                                     }}>방 입장</button>
                                 <button id="btnOpenCreateRoom" className="btn ghost" type="button"
-                                    disabled={!sessionReady} onClick={() => setView("create")}>방 생성</button>
+                                    disabled={!sessionReady || !!pendingRequest || needsRoomSync} onClick={() => setView("create")}>방 생성</button>
                             </div>
                             <div id="createRoomControls" className="join-group"
                                 hidden={view !== "create" && view !== "pve"}>
@@ -393,8 +446,8 @@ function MultiLobbyPage() {
                                     aria-label="방 입장으로 돌아가기" title="방 입장으로 돌아가기"
                                     onClick={() => setView("join")}>&larr;</button>
                                 <button id="btnCreateRoom" className="btn ghost" type="button"
-                                    disabled={!sessionReady}
-                                    onClick={() => requestCreateRoom({ playerId, nickname }, "pvp")}>
+                                    disabled={!sessionReady || !!pendingRequest || needsRoomSync}
+                                    onClick={() => sendRoomRequest("create", () => requestCreateRoom({ playerId, nickname }, "pvp"))}>
                                     PVP 방 생성
                                 </button>
                                 <button id="btnOpenPveCreate" className="btn" type="button"
@@ -436,13 +489,13 @@ function MultiLobbyPage() {
                                     </fieldset>
                                     <p role="note">실험 AI는 강한 AI가 아니며, 모델 오류 시 휴리스틱으로 전환됩니다.</p>
                                     <button id="btnCreatePveRoom" className="btn" type="button"
-                                        disabled={!sessionReady}
-                                        onClick={() => requestCreateRoom(
+                                        disabled={!sessionReady || !!pendingRequest || needsRoomSync}
+                                        onClick={() => sendRoomRequest("create", () => requestCreateRoom(
                                             { playerId, nickname },
                                             "pve",
                                             aiDifficulty,
                                             aiPolicy,
-                                        )}>PVE 방 생성</button>
+                                        ))}>PVE 방 생성</button>
                                 </div>
                             </div>
                             <div id="roomStatus" className="room-status" hidden={view !== "room" || !room}>
@@ -462,14 +515,19 @@ function MultiLobbyPage() {
                                     <strong><span id="roomPlayerCountText">{room?.players.length || 0}</span> / 2</strong>
                                 </div>
                                 <button id="btnLeaveRoom" className="btn ghost" type="button"
-                                    disabled={!sessionReady} onClick={() => {
+                                    disabled={!sessionReady || !!pendingRequest || needsRoomSync} onClick={() => {
                                         if (!room) {
                                             appendMessage("system", "존재하지 않는 방입니다.");
                                             return;
                                         }
-                                        requestLeaveRoom(room.roomId, playerId);
+                                        sendRoomRequest("leave", () => requestLeaveRoom(room.roomId, playerId));
                                     }}>방 나가기</button>
                             </div>
+                            {needsRoomSync && <button id="btnRetryRoomSync" className="btn" type="button"
+                                disabled={!sessionReady || !!pendingRequest} onClick={() => {
+                                    const savedRoomId = sessionStorage.getItem("tetris:roomId");
+                                    if (savedRoomId && playerId) sendRoomRequest("sync", () => requestRoomSync(savedRoomId, playerId));
+                                }}>방 상태 다시 확인</button>}
                         </div>
                     </section>
                 </div>

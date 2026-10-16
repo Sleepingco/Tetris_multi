@@ -9,6 +9,10 @@ const assert = require("node:assert/strict")
 
 const { registerSocketHandlers } = require("../dist/server/server/sockets/index.js")
 const { serverToClientSchemas } = require("../dist/server/shared/socketContracts.mjs")
+const { createPlayerSessionService } = require("../dist/server/server/services/playerSessionService.js")
+const { createSocketRateLimitService } = require("../dist/server/server/services/socketRateLimitService.js")
+const { clearRoomsForTest, findRoomByPlayerId } = require("../dist/server/server/services/roomService.js")
+const { getMatchState, deleteMatch } = require("../dist/server/server/services/matchService.js")
 
 class FakeSocketServer {
     constructor() {
@@ -105,6 +109,7 @@ class FakeSocket {
 
 function registerTestHandlers(socketServer, dependencies = {}) {
     return registerSocketHandlers(socketServer, {
+        gameStartCountdownMs: 0,
         authoritativeTickerService: {
             startRoomTicker() {},
             stopRoomTicker() {},
@@ -116,6 +121,127 @@ function registerTestHandlers(socketServer, dependencies = {}) {
         ...dependencies,
     })
 }
+
+test("기본 lifecycle 제한은 인증 실패와 구분되고 제한 이후에도 membership을 유지한다", async t => {
+    clearRoomsForTest();
+    let now = 0;
+    const server = new FakeSocketServer();
+    const sessions = createPlayerSessionService({ now: () => now });
+    const dispose = registerTestHandlers(server, {
+        playerSessionService: sessions,
+        socketRateLimitService: createSocketRateLimitService({ now: () => now }),
+    });
+    t.after(() => { dispose(); clearRoomsForTest(); });
+    const socket = new FakeSocket("limited-player", { nickname: "Host" });
+    assert.equal(server.connect(socket), null);
+    socket.trigger("room:create", { mode: "pve" });
+    const roomId = socket.lastEvent("room:result").room.roomId;
+    t.after(() => deleteMatch(roomId));
+    for (let request = 0; request < 8; request++) socket.trigger("room:sync", { roomId });
+    await socket.triggerAsync("room:start", { roomId });
+    assert.equal(socket.lastEvent("room:result").ok, true);
+    socket.trigger("game:join", { roomId });
+    assert.equal(socket.lastEvent("game:join:result").reason, "RATE_LIMITED");
+    assert.equal(sessions.isActiveSocket(socket.data.playerSession, socket.id), true);
+    socket.trigger("room:sync", { roomId });
+    assert.equal(socket.lastEvent("room:result").reason, "RATE_LIMITED");
+    socket.trigger("room:create", { mode: "pve" });
+    assert.equal(socket.lastEvent("room:result").reason, "RATE_LIMITED");
+    assert.equal(findRoomByPlayerId(socket.data.playerIdentity.playerId).room.roomId, roomId);
+    now = 60_000;
+    socket.trigger("game:join", { roomId });
+    assert.equal(socket.lastEvent("game:join:result").ok, true);
+    socket.trigger("room:create", { mode: "pve" });
+    assert.equal(socket.lastEvent("room:result").reason, "PLAYER_ALREADY_IN_ROOM");
+});
+
+test("PVP countdown은 두 human 참가 후 시작하고 조기 input을 막으며 재접속으로 다시 준비한다", async t => {
+    clearRoomsForTest();
+    let now = 1000;
+    const server = new FakeSocketServer();
+    const dispose = registerTestHandlers(server, {
+        gameStartCountdownMs: 3000,
+        now: () => now,
+        socketRateLimitService: { consume: () => true, cleanupExpired() {} },
+    });
+    t.after(() => { dispose(); clearRoomsForTest(); });
+    const host = new FakeSocket("countdown-host", { nickname: "Host" });
+    const guest = new FakeSocket("countdown-guest", { nickname: "Guest" });
+    assert.equal(server.connect(host), null);
+    assert.equal(server.connect(guest), null);
+    host.trigger("room:create", {});
+    const roomId = host.lastEvent("room:result").room.roomId;
+    t.after(() => deleteMatch(roomId));
+    guest.trigger("room:join", { roomId });
+    await host.triggerAsync("room:start", { roomId });
+    host.trigger("game:join", { roomId });
+    assert.equal(host.lastEvent("game:join:result").match.startsAt, null);
+    const state = getMatchState(roomId).match.players[0].authoritativeState;
+    const before = structuredClone(state);
+    await host.triggerAsync("game:input", { roomId, action: "hold", tick: 0, pieceIndex: 1, clientSequence: 1 });
+    assert.equal(host.lastEvent("game:input:result").reason, "GAME_NOT_STARTED");
+    assert.deepEqual(state, before);
+    guest.trigger("game:join", { roomId });
+    assert.equal(getMatchState(roomId).match.startsAt, 4000);
+    assert.equal(serverToClientSchemas["game:countdown"].safeParse(server.roomEvents.at(-1).payload).success, true);
+    now = 1500;
+    host.trigger("game:join", { roomId });
+    assert.equal(getMatchState(roomId).match.startsAt, 4000);
+    const credential = guest.lastEvent("session:ready");
+    guest.disconnect();
+    assert.equal(getMatchState(roomId).match.startsAt, null);
+    const reconnected = new FakeSocket("countdown-guest-reconnected", {
+        nickname: "Guest", playerId: credential.playerId, token: credential.token,
+    });
+    assert.equal(server.connect(reconnected), null);
+    reconnected.trigger("game:join", { roomId });
+    assert.equal(getMatchState(roomId).match.startsAt, 4500);
+    now = 1600;
+    const currentCredential = reconnected.lastEvent("session:ready");
+    const replacement = new FakeSocket("countdown-guest-replacement", {
+        nickname: "Guest", playerId: currentCredential.playerId, token: currentCredential.token,
+    });
+    assert.equal(server.connect(replacement), null);
+    assert.equal(getMatchState(roomId).match.startsAt, null);
+    replacement.trigger("game:join", { roomId });
+    assert.equal(getMatchState(roomId).match.startsAt, 4600);
+    reconnected.trigger("disconnect");
+    assert.equal(getMatchState(roomId).match.startsAt, 4600);
+    now = 4599;
+    await host.triggerAsync("game:input", { roomId, action: "hold", tick: 0, pieceIndex: 1, clientSequence: 1 });
+    assert.equal(host.lastEvent("game:input:result").reason, "GAME_NOT_STARTED");
+    now = 4600;
+    await host.triggerAsync("game:input", { roomId, action: "hold", tick: 0, pieceIndex: 1, clientSequence: 1 });
+    assert.equal(host.lastEvent("game:input:result").ok, true);
+});
+
+test("PVE countdown은 human 하나로 예약되고 취소 시 match와 ticker를 정리한다", async t => {
+    clearRoomsForTest();
+    const server = new FakeSocketServer();
+    const stopped = [];
+    const dispose = registerTestHandlers(server, {
+        gameStartCountdownMs: 3000,
+        now: () => 1000,
+        authoritativeTickerService: {
+            startRoomTicker() {}, stopRoomTicker(id) { stopped.push(id); },
+            stopAllRoomTickers() {}, resetPlayerGravity() {},
+        },
+    });
+    t.after(() => { dispose(); clearRoomsForTest(); });
+    const host = new FakeSocket("pve-countdown-host", { nickname: "Host" });
+    server.connect(host);
+    host.trigger("room:create", { mode: "pve" });
+    const roomId = host.lastEvent("room:result").room.roomId;
+    t.after(() => deleteMatch(roomId));
+    await host.triggerAsync("room:start", { roomId });
+    host.trigger("game:join", { roomId });
+    assert.equal(getMatchState(roomId).match.startsAt, 4000);
+    host.trigger("game:leave", { roomId });
+    assert.equal(host.lastEvent("game:leave:result").ok, true);
+    assert.equal(getMatchState(roomId).reason, "MATCH_NOT_FOUND");
+    assert.deepEqual(stopped, [roomId]);
+    assert.equal(findRoomByPlayerId(host.data.playerIdentity.playerId), null);
+});
 
 test("socket handler disposer는 grace timer와 ticker를 한 번만 정리한다", () => {
     const socketServer = new FakeSocketServer()

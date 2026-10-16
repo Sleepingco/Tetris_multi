@@ -6,6 +6,7 @@ import type { PieceType } from "../game/state/blocks.ts";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { attachKeyboardInput } from "../game/runtime/input.ts";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.ts";
+import { initEffectToggle } from "../game/runtime/effectPreferences.ts";
 import { createTetrisRuntime } from "../game/runtime/tetris.ts";
 import type { TetrisRuntime } from "../game/runtime/tetris.ts";
 import type { RuntimeDisplayHandle, RuntimeDisplaySnapshot } from "../game/runtime/displayBridge.ts";
@@ -20,25 +21,29 @@ import type { RuntimeDisplayHandle, RuntimeDisplaySnapshot } from "../game/runti
  * 조각의 기본 회전 offset을 4x4 preview 안의 왼쪽 위로 맞춰 표시한다.
  * gameplay queue나 piece 상태를 바꾸지 않는 작은 표시 전용 component다.
  */
-function PiecePreview({ pieceType }: { pieceType: PieceType | null }) {
+function PiecePreview({ pieceType, shapeOnly = false }: { pieceType: PieceType | null; shapeOnly?: boolean }) {
     const offsets = pieceType
         ? BLOCKS[pieceType][0]
         : null;
     const occupied = new Set<string>();
+    let columns = 4;
     if (offsets) {
         const minX = Math.min(...offsets.map(([x]) => x));
         const minY = Math.min(...offsets.map(([, y]) => y));
+        columns = Math.max(...offsets.map(([x]) => x)) - minX + 1;
         offsets.forEach(([x, y]) => occupied.add(`${y - minY}:${x - minX}`));
     }
 
     return (
-        <ul className="next-grid">
+        <ul className={shapeOnly ? "next-grid piece-shape" : "next-grid"}
+            style={shapeOnly ? { gridTemplateColumns: `repeat(${columns}, 20px)` } : undefined}>
             {Array.from({ length: 16 }, (_, index) => {
                 const active = occupied.has(`${Math.floor(index / 4)}:${index % 4}`);
                 const className = active && pieceType
                     ? `next-cell ${pieceType} preview`
                     : "next-cell";
-                return <li className={className} key={index} />;
+                return <li className={className} key={index}
+                    style={shapeOnly ? { gridColumn: index % 4 + 1, gridRow: Math.floor(index / 4) + 1 } : undefined} />;
             })}
         </ul>
     );
@@ -75,8 +80,7 @@ function SingleHud({
             {createPortal(
                 snapshot.nextPieceTypes.map((pieceType, index) => (
                     <div className="next-slot" key={index}>
-                        <span className="slot-label">Next {index + 1}</span>
-                        <PiecePreview pieceType={pieceType} />
+                        <PiecePreview pieceType={pieceType} shapeOnly />
                     </div>
                 )),
                 nextRoot,
@@ -116,6 +120,7 @@ function SingleGamePage() {
     const gameOverRootRef = useRef<HTMLDivElement>(null);
     const soundToggleRef = useRef<HTMLButtonElement>(null);
     const themeToggleRef = useRef<HTMLButtonElement>(null);
+    const effectsToggleRef = useRef<HTMLButtonElement>(null);
     const runtimeRef = useRef<TetrisRuntime | null>(null);
     const [displayHandle, setDisplayHandle] = useState<TetrisRuntime | null>(null);
 
@@ -126,6 +131,7 @@ function SingleGamePage() {
         applySavedTheme(themeToggleRef.current);
         const game = createTetrisRuntime({ boardCanvasEl });
         const cleanupSound = initGameSound(soundToggleRef.current);
+        const cleanupEffects = initEffectToggle(effectsToggleRef.current, game.setReducedEffects);
         game.runtime.detachKeyboard = attachKeyboardInput({
             enqueueAction: game.enqueueInput,
             onUserInteract: tryPlayMusic,
@@ -139,6 +145,7 @@ function SingleGamePage() {
             if (disposed) return;
             disposed = true;
             cleanupSound?.();
+            cleanupEffects();
             game.destroy();
             if (runtimeRef.current === game) runtimeRef.current = null;
             setDisplayHandle(current => current === game ? null : current);
@@ -180,16 +187,16 @@ function SingleGamePage() {
                         type="button" aria-pressed="false">사운드 켜기</button>
                     <button ref={themeToggleRef} id="themeToggle" className="sound-toggle"
                         type="button" aria-pressed="false" onClick={toggleGameTheme}>다크 모드</button>
+                    <button ref={effectsToggleRef} id="effectsToggle" className="sound-toggle"
+                        type="button" aria-pressed="false" title="잔상과 흔들림을 줄입니다">효과 축소</button>
                     <a className="home-btn" href="./index.html">홈으로</a>
                 </div>
             </header>
 
             <main className="single-layout">
-                <aside className="panel panel--left">
-                    <div className="panel-section">
-                        <h2>Next Up</h2>
-                        <div ref={nextRootRef} className="next-preview" />
-                    </div>
+                <aside className="next-strip" aria-label="다음 조각">
+                    <h2>NEXT</h2>
+                    <div ref={nextRootRef} className="next-preview" />
                 </aside>
 
                 <section className="playfield">

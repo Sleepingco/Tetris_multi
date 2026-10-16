@@ -13,6 +13,9 @@ const lineClearSfx = createAudio(new URL("../../assets/sound/tetris_lineclear_sf
 let soundEnabled = loadSoundPref()
 let currentMusic: HTMLAudioElement | null = null
 let musicPlaying = false
+let impactContext: AudioContext | null = null;
+type SynthChannel = "landing" | "combat";
+const synthVoices = new Map<SynthChannel, { oscillator: OscillatorNode; gain: GainNode }>();
 const toggleButtons = new Set<HTMLButtonElement>()
 const toggleButtonHandlers = new WeakMap<HTMLButtonElement, (event: MouseEvent) => void>()
 
@@ -47,6 +50,9 @@ export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
     return () => {
         cleanupAutoplayRetry()
         cleanupToggle()
+        stopSoundEffects();
+        if (impactContext) void impactContext.close().catch(() => {});
+        impactContext = null;
     }
 }
 
@@ -56,6 +62,85 @@ export function initGameSound(toggleBtn: HTMLButtonElement | null): () => void {
   */
 export function tryPlayMusic() {
     void attemptMusicPlayback()
+    if (soundEnabled) unlockImpactAudio();
+}
+
+function unlockImpactAudio(): void {
+    if (typeof AudioContext === "undefined") return;
+    try {
+        impactContext ??= new AudioContext();
+        if (impactContext.state === "suspended") void impactContext.resume().catch(() => {});
+    } catch {
+        impactContext = null;
+    }
+}
+
+/** 새 착지 음원 준비 전 사용하며, 이전 타격음을 끊어 연속 입력의 음량 누적을 막는다. */
+export function playHardDropSfx(): void {
+    playSynthSfx("landing", "triangle", 180, 55, 0.12, 0.12);
+}
+
+/** 전용 공격 음원 준비 전 사용하는 짧은 전송·수신·적용 합성음이다. */
+export function playCombatSfx(kind: "send" | "receive" | "impact"): void {
+    if (kind === "send") playSynthSfx("combat", "triangle", 650, 1600, 0.22, 0.196);
+    if (kind === "receive") playSynthSfx("combat", "triangle", 1000, 420, 0.18, 0.168);
+    if (kind === "impact") playSynthSfx("combat", "triangle", 320, 100, 0.22, 0.224);
+}
+
+function playSynthSfx(
+    channel: SynthChannel,
+    waveform: OscillatorType,
+    startFrequency: number,
+    endFrequency: number,
+    duration: number,
+    volume: number,
+): void {
+    if (!soundEnabled) return;
+    unlockImpactAudio();
+    const context = impactContext;
+    if (!context || context.state !== "running") return;
+    stopSynthVoice(channel);
+    try {
+        const oscillator = context.createOscillator();
+        const gain = context.createGain();
+        const now = context.currentTime;
+        oscillator.type = waveform;
+        oscillator.frequency.setValueAtTime(startFrequency, now);
+        oscillator.frequency.exponentialRampToValueAtTime(endFrequency, now + duration);
+        gain.gain.setValueAtTime(0.001, now);
+        gain.gain.linearRampToValueAtTime(volume, now + 0.005);
+        // 전투음은 짧게 음량을 유지해 BGM과 착지음에 묻히지 않게 한다.
+        if (channel === "combat") gain.gain.setValueAtTime(volume, now + 0.04);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        oscillator.connect(gain);
+        gain.connect(context.destination);
+        const voice = { oscillator, gain };
+        synthVoices.set(channel, voice);
+        oscillator.onended = () => {
+            oscillator.disconnect();
+            gain.disconnect();
+            if (synthVoices.get(channel) === voice) synthVoices.delete(channel);
+        };
+        oscillator.start(now);
+        oscillator.stop(now + duration + 0.01);
+    } catch {
+        stopSynthVoice(channel);
+    }
+}
+
+function stopSynthVoice(channel: SynthChannel): void {
+    const voice = synthVoices.get(channel);
+    if (!voice) return;
+    synthVoices.delete(channel);
+    try { voice.oscillator.stop(); } catch {}
+    voice.oscillator.disconnect();
+    voice.gain.disconnect();
+}
+
+function stopSoundEffects(): void {
+    pause(lineClearSfx);
+    lineClearSfx.currentTime = 0;
+    for (const channel of synthVoices.keys()) stopSynthVoice(channel);
 }
 
 /**
@@ -75,7 +160,8 @@ function registerAutoplayRetry(
         if (includeKeyboard) document.removeEventListener("keydown", retry)
     }
     const retry = (event: Event) => {
-        if (!event.isTrusted) return
+        if (!event.isTrusted || !soundEnabled) return
+        unlockImpactAudio();
         void attemptMusicPlayback().then(playing => {
             if (playing) cleanup()
         })
@@ -117,8 +203,11 @@ async function attemptMusicPlayback(): Promise<boolean> {
   * 라인 삭제 효과음을 처음부터 재생한다.
   * 재생 실패는 gameplay와 무관한 presentation 실패이므로 호출자에게 전파하지 않는다.
   */
-export function playLineClearSfx() {
+export function playLineClearSfx(lines = 1) {
     if (!soundEnabled) return
+    const strength = Math.max(1, Math.min(4, Number.isFinite(lines) ? lines : 1));
+    lineClearSfx.volume = (0.14 + strength * 0.035) * 0.9;
+    lineClearSfx.playbackRate = 1 + (strength - 1) * 0.035;
     lineClearSfx.currentTime = 0
     lineClearSfx.play().catch(() => {})
 }
@@ -203,6 +292,7 @@ function applySoundSetting(
 ): void {
     cleanupDetachedToggleButtons()
     soundEnabled = enabled
+    if (!enabled) stopSoundEffects();
     if (!initial) {
         localStorage.setItem(SOUND_KEY, String(enabled))
     }
