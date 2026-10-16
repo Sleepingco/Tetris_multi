@@ -581,7 +581,12 @@ function MultiplayerGamePage() {
             }
             layer.append(element);
             achievementElements[index] = element;
-            if (!beside) feedback.dataset.achievement = "true";
+            if (!beside) {
+                // 실제 글줄 높이와 진입 애니메이션 여유를 포함해 보드 위에 배치한다.
+                const bottomGap = reducedEffects ? 8 : 16;
+                element.style.top = `${Math.min(y, board.top - element.offsetHeight - bottomGap) - bounds.top}px`;
+                feedback.dataset.achievement = "true";
+            }
             achievementTimers[index] = window.setTimeout(() => clearAchievement(index), 1200);
         }
 

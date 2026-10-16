@@ -2,9 +2,15 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-10-14. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
+- Last update: 2026-10-16. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
+
+### 모바일 성과 알림 배치 보완 (2026-10-16)
+
+- `codex/next-preview-four` 기준 별도 worktree에서 모바일 성과 알림의 실제 높이와 진입 애니메이션 여유를 반영해 보드 위에 배치하도록 보완했다. 게임 규칙·상태·데스크톱 배치는 변경하지 않았다.
+- E2E는 기본 글줄과 확대된 글줄 모두에서 양쪽 보드 위 배치·화면 경계·cleanup을 확인한다. 큰 글줄의 겹침은 수정 전 실패와 수정 후 통과를 확인했고 필수 verify는 675 pass·기존 조건부 1 skip이다.
+- 로컬 전체 Chromium E2E는 47/47 통과했다. CI 실패의 Linux 좌표 trace는 업로드되지 않아 원래 환경의 정확한 원인은 확정하지 않았으며 Linux CI 재실행이 남아 있다. 원래 main에 반영·커밋·push하지 않았다.
 
 ### 디자인 개선 기획 (2026-10-12)
 

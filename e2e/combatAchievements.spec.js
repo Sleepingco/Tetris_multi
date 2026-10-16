@@ -94,15 +94,33 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 축소�
     await deliverAchievement(page, 1, { combo: 0 });
     await expect(own).toHaveCount(0);
     await page.setViewportSize({ width: 390, height: 844 });
-    await deliverAchievement(page, 1, { linesCleared: 4, combo: 4 });
-    await expect(own.locator(".combat-achievement-combo")).toHaveText("COMBO 4");
-    await expect(own.locator(".achievement-spark")).toHaveCount(0);
-    const mobilePlacement = await own.evaluate(node => {
-        const event = node.getBoundingClientRect();
-        const board = document.querySelector('.player-column[data-player="1"] canvas').getBoundingClientRect();
-        return event.bottom <= board.top && event.left >= 0 && event.right <= innerWidth;
-    });
-    expect(mobilePlacement).toBe(true);
+    for (const enlargedLineHeight of [false, true]) {
+        if (enlargedLineHeight) {
+            // 글줄 높이가 커지는 조건에서도 보드와 겹치지 않아야 한다.
+            await page.evaluate(() => document.styleSheets[0].insertRule(
+                ".combat-achievement .combat-achievement-combo { line-height: 2.25; }",
+                document.styleSheets[0].cssRules.length,
+            ));
+        }
+        for (const playerNumber of [1, 2]) {
+            await deliverAchievement(page, playerNumber, { linesCleared: 4, combo: 4 });
+            const achievement = page.locator(`.combat-achievement[data-player="${playerNumber}"]`);
+            await expect(achievement.locator(".combat-achievement-combo")).toHaveText("COMBO 4");
+            await expect(achievement.locator(".achievement-spark")).toHaveCount(0);
+            const mobilePlacement = await achievement.evaluate(node => {
+                const event = node.getBoundingClientRect();
+                const board = document.querySelector(`.player-column[data-player="${node.dataset.player}"] canvas`).getBoundingClientRect();
+                return {
+                    aboveBoard: event.bottom <= board.top,
+                    insideViewport: event.left >= 0 && event.right <= innerWidth,
+                    event: event.toJSON(),
+                    board: board.toJSON(),
+                };
+            });
+            expect(mobilePlacement, JSON.stringify({ playerNumber, enlargedLineHeight, ...mobilePlacement }))
+                .toMatchObject({ aboveBoard: true, insideViewport: true });
+        }
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
     await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
     await expect(page.locator(".combat-achievement")).toHaveCount(0);
