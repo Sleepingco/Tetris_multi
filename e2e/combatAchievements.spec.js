@@ -103,10 +103,21 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 축소�
             ));
         }
         for (const playerNumber of [1, 2]) {
+            if (playerNumber === 2) {
+                await page.evaluate(() => {
+                    document.querySelector('.player-column[data-player="1"] .player-header').style.paddingBottom = "48px";
+                });
+            }
             await deliverAchievement(page, playerNumber, { linesCleared: 4, combo: 4 });
             const achievement = page.locator(`.combat-achievement[data-player="${playerNumber}"]`);
             await expect(achievement.locator(".combat-achievement-combo")).toHaveText("COMBO 4");
             await expect(achievement.locator(".achievement-spark")).toHaveCount(0);
+            if (playerNumber === 2) {
+                // 앞쪽 HUD 높이가 바뀌어도 표시 중인 문구는 대상 보드를 따라가야 한다.
+                await page.evaluate(() => {
+                    document.querySelector('.player-column[data-player="1"] .player-header').style.removeProperty("padding-bottom");
+                });
+            }
             const mobilePlacement = await achievement.evaluate(node => {
                 const event = node.getBoundingClientRect();
                 const board = document.querySelector(`.player-column[data-player="${node.dataset.player}"] canvas`).getBoundingClientRect();

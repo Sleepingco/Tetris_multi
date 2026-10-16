@@ -538,7 +538,8 @@ function MultiplayerGamePage() {
             const other = index === 0 ? player2Canvas! : player1Canvas!;
             const board = canvas.getBoundingClientRect();
             const oppositeBoard = other.getBoundingClientRect();
-            const frame = canvas.closest(".playfield")!.getBoundingClientRect();
+            const playfield = canvas.closest<HTMLElement>(".playfield")!;
+            const frame = playfield.getBoundingClientRect();
             const oppositeFrame = other.closest(".playfield")!.getBoundingClientRect();
             const bounds = layer.getBoundingClientRect();
             const leftBoard = board.left < oppositeBoard.left;
@@ -546,16 +547,18 @@ function MultiplayerGamePage() {
             const gap = leftBoard ? oppositeFrame.left - frame.right : frame.left - oppositeFrame.right;
             const feedback = canvas.closest(".player-column")!.querySelector<HTMLElement>(".combat-feedback")!;
             const width = beside ? Math.min(172, gap - 16) : Math.min(220, board.width);
-            const x = beside ? leftBoard ? frame.right + 8 : frame.left - width - 8 : board.left + (board.width - width) / 2;
-            const y = beside ? board.top + board.height * (leftBoard ? 0.75 : 0.88) : feedback.getBoundingClientRect().top;
             const element = document.createElement("div");
             element.className = `combat-achievement combat-achievement--${event}`;
+            element.setAttribute("aria-hidden", "true");
             element.dataset.player = String(index + 1);
             element.dataset.event = event;
             element.dataset.reduced = String(reducedEffects);
             element.dataset.viewport = `${window.innerWidth}:${window.innerHeight}`;
-            element.style.left = `${x - bounds.left}px`;
-            element.style.top = `${y - bounds.top}px`;
+            if (beside) {
+                const x = leftBoard ? frame.right + 8 : frame.left - width - 8;
+                element.style.left = `${x - bounds.left}px`;
+                element.style.top = `${board.top + board.height * (leftBoard ? 0.75 : 0.88) - bounds.top}px`;
+            }
             element.style.width = `${width}px`;
             element.style.fontSize = `${Math.min(34, width / 4.5)}px`;
             const title = document.createElement("strong");
@@ -579,14 +582,10 @@ function MultiplayerGamePage() {
                     element.append(spark);
                 }
             }
-            layer.append(element);
+            // 세로 배치 문구는 보드에 붙여 앞쪽 레이아웃 변경을 따라간다.
+            (beside ? layer : playfield).append(element);
             achievementElements[index] = element;
-            if (!beside) {
-                // 실제 글줄 높이와 진입 애니메이션 여유를 포함해 보드 위에 배치한다.
-                const bottomGap = reducedEffects ? 8 : 16;
-                element.style.top = `${Math.min(y, board.top - element.offsetHeight - bottomGap) - bounds.top}px`;
-                feedback.dataset.achievement = "true";
-            }
+            if (!beside) feedback.dataset.achievement = "true";
             achievementTimers[index] = window.setTimeout(() => clearAchievement(index), 1200);
         }
 
