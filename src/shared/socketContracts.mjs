@@ -4,6 +4,7 @@
 // strictObject를 사용해 위조된 playerId 같은 선언되지 않은 필드도 신뢰 경계에서 거부한다.
 // =============================
 import * as z from "zod";
+import { LOCK_DELAY_MS, LOCK_RESET_LIMIT } from "../client/game/state/config.ts";
 
 z.config({ jitless: true });
 
@@ -67,6 +68,12 @@ const activePieceSchema = z.strictObject({
     col: z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
 });
 export const snapshotSchema = z.strictObject({
+    lockDelay: z.strictObject({
+        hasTouchedGround: z.boolean(),
+        remainingMs: z.number().finite().min(0).max(LOCK_DELAY_MS),
+        resetCount: z.number().int().min(0).max(LOCK_RESET_LIMIT),
+        lowestRow: z.number().int().min(-4).max(19),
+    }).optional(),
     board: boardSchema,
     activePiece: activePieceSchema.nullable(),
     pieceQueue: z.array(pieceTypeSchema),

@@ -1,4 +1,6 @@
 import { createGameState } from "./stateFactory.ts"
+import { createLockDelay } from "../core/lockDelay.ts";
+import type { LockDelayState } from "../core/lockDelay.ts";
 import type { Board } from "../core/board.ts";
 import type { PieceState } from "../core/piece.ts";
 import type { PieceType } from "./blocks.ts";
@@ -10,6 +12,7 @@ import type {
 } from "./stateFactory.ts";
 
 export type SerializedGameState = {
+        lockDelay: LockDelayState;
         score: number;
         lines: number;
         fallIntervalMs: number;
@@ -64,6 +67,7 @@ function clonePiece(piece: PieceState | null | undefined): PieceState | null {
   */
 export function serializeGameState(gameState: GameState): SerializedGameState {
         return {
+                lockDelay: { ...gameState.lockDelay },
                 score: gameState.score,
                 lines: gameState.lines,
                 fallIntervalMs: gameState.fallIntervalMs,
@@ -103,6 +107,9 @@ export function deserializeGameState(
         gameState.holdPieceType = snapshot.holdPieceType ?? null
         gameState.holdUsedThisDrop = Boolean(snapshot.holdUsedThisDrop)
         gameState.activePiece = clonePiece(snapshot.activePiece) ?? gameState.activePiece
+        gameState.lockDelay = snapshot.lockDelay
+                ? { ...snapshot.lockDelay }
+                : createLockDelay(gameState.activePiece.row);
         gameState.pendingPiece = clonePiece(snapshot.pendingPiece)
         gameState.inputQueue = Array.isArray(snapshot.inputQueue) ? [...snapshot.inputQueue] : []
         gameState.phase = snapshot.phase ?? gameState.phase

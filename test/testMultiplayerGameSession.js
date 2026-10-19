@@ -1091,7 +1091,7 @@ test("Z 입력은 rotate_ccw와 after expectedTransform을 전송한다", async 
     });
 });
 
-test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조각을 사용한다", async (t) => {
+test("막힌 soft_drop은 현재 조각 transform을 보내고 고정 유예를 유지한다", async (t) => {
     const { startMultiplayerGame } = await loadSession();
     const session = startMultiplayerGame(createSessionParams());
     t.after(() => cleanupSession(session));
@@ -1131,7 +1131,7 @@ test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조�
         clientSequence: 1,
         expectedTransform: { pieceType: "tree", rotation: 0, col: 3 },
     });
-    assert.equal(session.myGame.getSnapshot().activePiece.pieceType, "square");
+    assert.equal(session.myGame.getSnapshot().activePiece.pieceType, "tree");
     assert.equal("row" in inputEvent.payload.expectedTransform, false);
     assert.equal(
         sharedFakeSocket.emitted.some(event => event.eventName === "game:log:placement_decision"),
@@ -1142,13 +1142,13 @@ test("soft_drop expectedTransform은 lock 뒤 spawn된 조각 대신 before 조�
         reason: null,
         clientSequence: inputEvent.payload.clientSequence,
         pieceIndex,
-        placementCommitted: true,
+        placementCommitted: false,
     });
     assert.equal(
         sharedFakeSocket.emitted.filter(event => {
             return event.eventName === "game:log:placement_decision";
         }).length,
-        1,
+        0,
     );
 });
 

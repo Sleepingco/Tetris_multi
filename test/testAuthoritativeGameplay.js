@@ -171,16 +171,18 @@ test("gravity lock line clear도 match 경계에서 presentation effect id를 �
     hostPlayer.authoritativeState.pieceQueue = ["tree"];
     hostPlayer.authoritativeState.pieceIndex = 11;
 
+    const groundedAt = Math.ceil(performance.now());
     const groundedResult = applyGravityStepToMatchPlayerState(
         roomId,
         "host-player",
         gameCore,
+        { now: groundedAt },
     );
     const result = applyGravityStepToMatchPlayerState(
         roomId,
         "host-player",
         gameCore,
-        { lockGroundedPiece: true },
+        { now: groundedAt + 500 },
     );
 
     assert.equal(groundedResult.ok, true);
@@ -296,6 +298,7 @@ test("getAuthoritativePlayerSnapshotDto는 client snapshot 후보 필드와 tick
     assert.equal(Object.hasOwn(dto, "pendingGarbageLines"), true);
     assert.equal(Object.hasOwn(dto, "lastActionWasRotation"), false);
     assert.deepEqual(Object.keys(dto), [
+        "lockDelay",
         "board",
         "activePiece",
         "pieceQueue",

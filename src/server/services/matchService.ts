@@ -5,10 +5,13 @@
 // mutation 함수는 내부 원본을 제자리에서 바꾼다. 조회 경계에서는 복제본을,
 // client 전송 경계에서는 server-only 필드를 뺀 축소 DTO를 반환한다.
 // =============================
+import { createLockDelay } from "../../client/game/core/lockDelay.js";
+import type { LockDelayState } from "../../client/game/core/lockDelay.js";
 import { randomUUID } from "node:crypto";
 import {
     applyAuthoritativeInput,
     applyAuthoritativeGravityStep,
+    advanceAuthoritativeLockDelay,
 } from "./playerGameplayStep.js";
 import {
     DEFAULT_AI_DIFFICULTY,
@@ -46,6 +49,7 @@ export type AuthoritativeInput = {
 };
 type AuthoritativeBoard = AuthoritativeSnapshotDto["board"];
 export type AuthoritativePlayerState = {
+    lockDelay: LockDelayState;
     board: AuthoritativeBoard;
     activePiece: PieceState;
     pendingPiece: PieceState | null;
@@ -66,6 +70,7 @@ export type AuthoritativePlayerState = {
 };
 export type AiPolicyRuntime = ServerToClientParsedPayload<"pve:ai-policy">;
 export type MatchPlayer = {
+    lockUpdatedAt?: number;
     playerId: string;
     playerType: PlayerType;
     lastProcessedClientSequence: number;
@@ -626,6 +631,15 @@ export function applyAuthoritativeInputToMatchPlayerState(
         };
     }
 
+    const clockNow = performance.now();
+    const elapsedMs = Math.max(0, clockNow - (player.lockUpdatedAt ?? clockNow));
+    player.lockUpdatedAt = Math.max(clockNow, player.lockUpdatedAt ?? clockNow);
+    const expiry = advanceAuthoritativeLockDelay(player.authoritativeState, gameCore, elapsedMs);
+    if (expiry.placementResult) {
+        markClientInputProcessed(player, clientSequence);
+        attachPresentationEffectId(expiry, playerId);
+        return createSuccess(match, { gameplayResult: expiry });
+    }
     const gameplayResult = applyAuthoritativeInput(player.authoritativeState, input, gameCore);
     if (!gameplayResult.ok) {
         markClientInputProcessed(player, clientSequence);
@@ -785,7 +799,7 @@ export function applyGravityStepToMatchPlayerState(
     roomId: string,
     playerId: string,
     gameCore: GameCore,
-    options: { lockGroundedPiece?: boolean } = {},
+    options: { now?: number; gravityDue?: boolean } = {},
 ): MatchResult {
     const match = matches.get(roomId);
 
@@ -809,10 +823,13 @@ export function applyGravityStepToMatchPlayerState(
         };
     }
 
+    const clockNow = options.now ?? performance.now();
+    const elapsedMs = Math.max(0, clockNow - (player.lockUpdatedAt ?? clockNow));
+    player.lockUpdatedAt = Math.max(clockNow, player.lockUpdatedAt ?? clockNow);
     const gravityStepResult = applyAuthoritativeGravityStep(
         player.authoritativeState,
         gameCore,
-        options,
+        { elapsedMs, gravityDue: options.gravityDue },
     );
     if (!gravityStepResult.ok) {
         return {
@@ -960,6 +977,7 @@ function createInitialPlayerState(bagChunks: PieceType[][] = []): AuthoritativeP
         };
 
     return {
+        lockDelay: createLockDelay(activePiece.row),
         board: createEmptyBoard(),
         activePiece,
         pendingPiece: firstPieceType ? {
@@ -998,6 +1016,7 @@ function cloneAuthoritativeState(
 ): AuthoritativePlayerState {
     // caller가 board/queue/piece를 수정해도 Map 안의 authoritative 원본이 바뀌지 않게 깊이만큼 복사한다.
     return {
+        lockDelay: { ...authoritativeState.lockDelay },
         board: authoritativeState.board.map((row) => [...row]),
         activePiece: { ...authoritativeState.activePiece },
         pendingPiece: authoritativeState.pendingPiece
@@ -1030,6 +1049,7 @@ function createClientSnapshotDto(
 
     // 명시적 whitelist를 만들어 server-only pendingPiece, garbage hole, gameOverReason을 전송하지 않는다.
     return {
+        lockDelay: { ...authoritativeSnapshot.lockDelay },
         board: authoritativeSnapshot.board.map((row) => [...row]),
         activePiece: authoritativeSnapshot.activePiece
             ? { ...authoritativeSnapshot.activePiece }

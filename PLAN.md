@@ -2,9 +2,15 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-10-16. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
+- Last update: 2026-10-19. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
+
+### 게임 규칙: 고정 유예·무한 버티기 방지 구현 (2026-10-19)
+
+- [게임 규칙 계획과 검증 기록](docs/gameplay/lock-delay-anti-stall-plan.md)에 따라 착지 후 500ms·성공한 이동/회전 최대 15회 갱신을 구현했다. 상승·같은 깊이 재낙하로 사용 횟수를 복구하지 않고 새 최저 기준 row에서만 시간·횟수를 복구한다. 공중 만료는 착지 시 고정하며, 막힌 소프트드롭도 같은 유예를 적용하고 하드드롭은 즉시 고정한다.
+- 싱글·멀티 예측·서버가 공용 core를 사용한다. 입력 전후와 중력 사이에도 실제 경과 시간으로 만료를 검사하며 최종 판정은 서버가 소유한다. snapshot·보정·재접속은 예산을 복원하고 PVE도 기존 입력 경로에서 같은 정책을 사용한다. 줄 삭제 연출 중 다음 조각의 예산은 소모하지 않는다.
+- 필수 verify는 typecheck·build·artifact와 Node 682 pass·기존 조건부 1 skip으로 통과했다. 전체 Chromium E2E 50/50에서 새 싱글 벽차기·2탭 PVP 수렴·PVE 접속 복구와 기존 회귀 검사를 확인했다. 직접 플레이한 조작감·Linux CI·운영 배포는 미검증이다. snapshot 계약 변경 시 기존 열린 탭의 새로고침이 필요하며 rollback은 서버·클라이언트를 함께 복구한다. T스핀 분류·점수·디자인·학습 데이터는 변경하지 않았고 커밋·push·배포는 수행하지 않았다.
 
 ### 모바일 성과 알림 배치 보완 (2026-10-16)
 

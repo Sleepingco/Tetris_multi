@@ -358,7 +358,7 @@ test("line clear reset은 presentation 350ms 뒤에 새 500ms gravity interval�
     assert.deepEqual(gravityCalls, ["p1"]);
 });
 
-test("first grounded gravity는 snapshot 없이 grace를 기록하고 다음 gravity에서 한 번 lock한다", async () => {
+test("ticker는 grounded 표시를 생략하고 core의 만료 lock 결과를 한 번 전달한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();
     const gravityOptions = [];
@@ -381,7 +381,7 @@ test("first grounded gravity는 snapshot 없이 grace를 기록하고 다음 gra
         }),
         applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, options) {
             gravityOptions.push(options);
-            if (options.lockGroundedPiece !== true) {
+            if (gravityOptions.length === 1) {
                 return {
                     ok: true,
                     gravityResult: { kind: "grounded" },
@@ -413,21 +413,21 @@ test("first grounded gravity는 snapshot 없이 grace를 기록하고 다음 gra
     tickerService.startRoomTicker("room-grounded-grace", socketServer);
     await tickerService.tickRoom("room-grounded-grace", socketServer, 500);
 
-    assert.deepEqual(gravityOptions, [{ lockGroundedPiece: false }]);
+    assert.deepEqual(gravityOptions, [{ gravityDue: true }]);
     assert.equal(player.authoritativeState.pieceIndex, 7);
     assert.equal(socketServer.roomEvents.length, 0);
 
     await tickerService.tickRoom("room-grounded-grace", socketServer, 500);
 
     assert.deepEqual(gravityOptions, [
-        { lockGroundedPiece: false },
-        { lockGroundedPiece: true },
+        { gravityDue: true },
+        { gravityDue: true },
     ]);
     assert.equal(player.authoritativeState.pieceIndex, 8);
     assert.equal(socketServer.roomEvents.length, 1);
 });
 
-test("successful gravity move는 grounded marker를 해제해 다음 바닥에서 grace를 다시 준다", async () => {
+test("ticker는 접지 기록을 소유하지 않고 core의 gravity 결과를 전달한다", async () => {
     const scheduler = createFakeScheduler();
     const socketServer = createFakeSocketServer();
     const lockOptions = [];
@@ -450,7 +450,7 @@ test("successful gravity move는 grounded marker를 해제해 다음 바닥에�
             },
         }),
         applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, options) {
-            lockOptions.push(options.lockGroundedPiece);
+            lockOptions.push(options.gravityDue);
             const kind = gravityKinds.shift();
             if (kind === "lock") player.authoritativeState.pieceIndex += 1;
             return {
@@ -483,7 +483,7 @@ test("successful gravity move는 grounded marker를 해제해 다음 바닥에�
         await tickerService.tickRoom("room-grounded-release", socketServer, 500);
     }
 
-    assert.deepEqual(lockOptions, [false, true, false, true]);
+    assert.deepEqual(lockOptions, [true, true, true, true]);
     assert.equal(player.authoritativeState.pieceIndex, 5);
 });
 

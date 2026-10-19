@@ -18,6 +18,8 @@ import type { MoveIntent } from "../core/step.ts"
 import { createSpawnedPiece, getHardDropRow } from "../core/piece.ts"
 import type { PieceState, PlaceablePieceState } from "../core/piece.ts"
 import type { Board } from "../core/board.ts"
+import { createLockDelay, updateLockDelay, shouldLockPiece } from "../core/lockDelay.ts";
+import type { LockDelayState } from "../core/lockDelay.ts";
 import { isTSpinLock } from "../core/tSpin.ts"
 import { playHardDropSfx, playLineClearSfx } from "./sound.ts"
 import { loadReducedEffects } from "./effectPreferences.ts";
@@ -67,7 +69,6 @@ type ActionResult = {
     reason: string | null;
 };
 type PendingMove = { intent: MoveIntent; pendingPiece: PieceState };
-type MoveOptions = { automaticGravity?: boolean };
 export type InputOutcomeRecord = {
     input: QueuedInput;
     applied: boolean;
@@ -136,6 +137,7 @@ export type PlacementDecisionLog = Omit<PlacementContext, "scoreBefore" | "schem
     aiComparison?: HumanPlacementLogAnalysis["aiComparison"];
 };
 type TetrisSnapshot = {
+    lockDelay: LockDelayState;
     score: number;
     lines: number;
     fallIntervalMs: number;
@@ -166,8 +168,8 @@ type RuntimeState = {
     serverBagQueue: PieceType[];
     gravityRunning: boolean;
     gravityAccumulatorMs: number;
-    automaticGroundedPieceIndex: number | null;
     lastTickAt: number;
+    lockUpdatedAt: number;
     currentTick: number;
     pieceIndex: number;
     inputLog: AppliedInputLog[];
@@ -198,6 +200,7 @@ export type TetrisRuntimeOptions = {
     inputOutcomeRecorder?: ((record: InputOutcomeRecord) => void) | null;
 };
 export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "subscribeDisplay"> & {
+    syncLockDelay(snapshot: TetrisSnapshotInput): void;
     init: (options?: { autoStart?: boolean; serverBagChunks?: PieceType[][] | null }) => void;
     enqueueInput: (action: InputAction | null, scheduledTick?: number | null, inputPieceIndex?: number | null) => QueuedInput | null;
     render: () => void;
@@ -295,8 +298,8 @@ export function createTetrisRuntime({
         serverBagQueue: [],
         gravityRunning: false,
         gravityAccumulatorMs: 0,
-        automaticGroundedPieceIndex: null,
         lastTickAt: 0,
+        lockUpdatedAt: performance.now(),
         currentTick: 0,
         pieceIndex: 0,
         inputLog: [],
@@ -385,6 +388,7 @@ export function createTetrisRuntime({
       */
     function resetSessionState(): void {
         stopGameLoops()
+        gameState.lockDelay = createLockDelay(SPAWN_ROW);
         gameState.score = 0
         gameState.lines = 0
         ui.renderScore(gameState.score)
@@ -401,7 +405,6 @@ export function createTetrisRuntime({
         runtime.placementDecisionLog = []
         runtime.decisionStartPiece = null
         runtime.pendingLockScoreBefore = null
-        runtime.automaticGroundedPieceIndex = null
         runtime.authoritativePendingGarbageLines = 0
         ui.renderPendingGarbage(0)
     }
@@ -424,7 +427,8 @@ export function createTetrisRuntime({
       * placement log가 "판단을 시작한 조각"과 최종 배치를 비교할 수 있도록 시작 상태도 함께 복사한다.
       */
     function activateSpawnedPiece(piece: PlaceablePieceState): void {
-        runtime.automaticGroundedPieceIndex = null
+        gameState.lockDelay = createLockDelay(piece.row);
+        runtime.lockUpdatedAt = performance.now();
         setActivePiece(piece)
         gameState.pendingPiece = { ...piece }
         captureDecisionStartPiece(piece)
@@ -568,6 +572,7 @@ export function createTetrisRuntime({
                 continue
             }
 
+            if (refreshLockDelay()) return;
             recordAppliedInput(nextInput)
             const actionResult = handleAction(nextInput.action)
             recordInputOutcome(nextInput, actionResult, activePieceBefore)
@@ -681,13 +686,15 @@ export function createTetrisRuntime({
     function handleAction(action: string): ActionResult {
         const moveType = applyInputAction(action)
         if (moveType) {
+            const pieceIndex = runtime.pieceIndex;
             const moveResult = renderBlocks(moveType)
             const intentKind = moveResult?.intent?.kind
             const applied = intentKind === "ok"
                 || (action === INPUT_ACTION.SOFT_DROP && intentKind === "lock")
             return {
                 applied,
-                placementCommitted: action === INPUT_ACTION.SOFT_DROP && intentKind === "lock",
+                placementCommitted: runtime.pieceIndex !== pieceIndex
+                    || gameState.phase === GAME_PHASE.LINE_CLEARING || gameState.phase === GAME_PHASE.GAME_OVER,
                 reason: applied ? null : intentKind === "retry" ? "MOVE_RETRY" : "MOVE_NOT_HANDLED",
             }
         }
@@ -722,27 +729,37 @@ export function createTetrisRuntime({
     /**
       * 한 runtime tick에서 먼저 입력을 처리하고, 남은 playing 상태에만 중력을 진행한다.
       * 실제 timer 오차는 `deltaMs`를 누적해 보정하며, fall interval을 여러 번 넘겼다면 필요한 만큼 반복 하강한다.
-      * 자동 하강이 바닥에 처음 닿은 경우 한 번의 lock grace를 주고, 다음 실패에서 실제 lock한다.
+      * 고정 시간은 중력 주기와 독립적으로 진행하고 입력 전후에 만료를 확인한다.
       */
     function processTick(deltaMs: number): void {
-        if (!canProcessPlayerInput()) return
-        runtime.currentTick++
-        drainInputQueue(runtime.currentTick, 4)
-        if (!canProcessPlayerInput()) return
-        if (!runtime.gravityRunning) return
-
-        runtime.gravityAccumulatorMs += deltaMs
-
+        if (!canProcessPlayerInput()) return;
+        runtime.currentTick++;
+        const pieceIndex = runtime.pieceIndex;
+        if (refreshLockDelay()) return;
+        drainInputQueue(runtime.currentTick, 4);
+        if (!canProcessPlayerInput() || runtime.pieceIndex !== pieceIndex) return;
+        if (!runtime.gravityRunning) return;
+        runtime.gravityAccumulatorMs += deltaMs;
         while (runtime.gravityAccumulatorMs >= gameState.fallIntervalMs) {
-            runtime.gravityAccumulatorMs -= gameState.fallIntervalMs
-            shiftActivePiece(1, 0)
-            const gravityResult = renderBlocks("fall", {
-                automaticGravity: true,
-            })
-
-            if (!canProcessPlayerInput()) return
-            if (gravityResult?.intent?.kind === "lock") return
+            runtime.gravityAccumulatorMs -= gameState.fallIntervalMs;
+            shiftActivePiece(1, 0);
+            renderBlocks("fall");
+            if (!canProcessPlayerInput() || runtime.pieceIndex !== pieceIndex) return;
         }
+    }
+
+    /** 입력과 중력이 같은 고정 예산을 사용하며 만료된 접지 조각만 고정한다. */
+    function refreshLockDelay(reset = false): boolean {
+        const now = performance.now();
+        const elapsedMs = Math.max(0, now - runtime.lockUpdatedAt);
+        runtime.lockUpdatedAt = now;
+        const piece = gameState.activePiece;
+        if (!piece.pieceType || !gameState.board) return false;
+        const grounded = !canPlace({ ...piece, row: piece.row + 1 });
+        gameState.lockDelay = updateLockDelay(gameState.lockDelay, piece.row, grounded, elapsedMs, reset);
+        if (!shouldLockPiece(gameState.lockDelay, grounded)) return false;
+        seizeBlock();
+        return true;
     }
 
     // =============================
@@ -782,18 +799,17 @@ export function createTetrisRuntime({
     /**
       * core intent를 실제 gameState와 화면에 반영한다.
       * - `gameOver`: 입력과 loop를 정리하고 종료 UI를 표시한다.
-      * - `lock`: activePiece를 마지막 유효 위치로 맞춘 뒤 자동 중력이면 1회 grace, 아니면 즉시 고정한다.
+      * - `lock`: 마지막 유효 위치에서 고정 유예를 확인하며 하드드롭은 즉시 고정한다.
       * - `retry`: 실패 후보를 버리고 core가 돌려준 이전 active 위치를 다시 그린다.
       * - `ok`: 후보를 activePiece로 확정하고 회전 여부, 중력, Canvas를 갱신한다.
       */
-    function applyMoveIntent(moveResult: PendingMove | null, options: MoveOptions = {}): void {
+    function applyMoveIntent(moveResult: PendingMove | null): void {
         if (!moveResult) return
 
         gameState.pendingPiece = { ...moveResult.pendingPiece }
         const { intent } = moveResult
 
         if (intent.kind === "gameOver") {
-            runtime.automaticGroundedPieceIndex = null
             gameState.phase = GAME_PHASE.GAME_OVER
             gameState.pendingPiece = null
             gameState.inputQueue = []
@@ -806,18 +822,11 @@ export function createTetrisRuntime({
         }
 
         if (intent.kind === "lock") {
-            setActivePiece(intent.active)
-            if (
-                options.automaticGravity === true &&
-                runtime.automaticGroundedPieceIndex !== runtime.pieceIndex
-            ) {
-                runtime.automaticGroundedPieceIndex = runtime.pieceIndex
-                renderBoard()
-                return
-            }
-            runtime.automaticGroundedPieceIndex = null
-            seizeBlock()
-            return
+            setActivePiece(intent.active);
+            if (intent.moveCause === "hardDrop") seizeBlock();
+            else refreshLockDelay();
+            renderBoard();
+            return;
         }
 
         if (intent.kind === "retry") {
@@ -827,15 +836,13 @@ export function createTetrisRuntime({
         }
 
         if (intent.kind === "ok") {
-            if (options.automaticGravity === true) {
-                runtime.automaticGroundedPieceIndex = null
-            }
             gameState.phase = GAME_PHASE.PLAYING
             if (intent.shouldStartGravity) startGravity()
             setActivePiece(intent.active)
             if (intent.moveCause) {
                 gameState.lastActionWasRotation = intent.moveCause === "rotate"
             }
+            refreshLockDelay(intent.moveCause === "rotate" || intent.moveCause === "horizontal");
             renderBoard()
         }
     }
@@ -845,9 +852,9 @@ export function createTetrisRuntime({
       * `resolvePendingMove → applyMoveIntent → publishDisplay` 순서로 실행하고 입력 recorder가 볼 결과를 반환한다.
       * 실제 규칙 판정은 core, Canvas drawing은 `renderBoard`에 남아 있다.
       */
-    function renderBlocks(moveType = "", options: MoveOptions = {}): PendingMove | null {
+    function renderBlocks(moveType = ""): PendingMove | null {
         const moveResult = resolvePendingMove(moveType)
-        applyMoveIntent(moveResult, options)
+        applyMoveIntent(moveResult)
         displayBridge.publishDisplay()
         return moveResult
     }
@@ -865,7 +872,6 @@ export function createTetrisRuntime({
       * 이 순서를 바꾸면 boardBefore 로그나 T-Spin 코너 판정이 이미 고정된 조각을 포함하게 된다.
       */
     function seizeBlock(): void {
-        runtime.automaticGroundedPieceIndex = null
         const { activePiece, board } = gameState
         const { pieceType, rotation, row, col } = activePiece
         if (!pieceType || !board) return
@@ -1044,7 +1050,6 @@ export function createTetrisRuntime({
         runtime.inputTimer = undefined
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
-        runtime.automaticGroundedPieceIndex = null
         runtime.lastTickAt = 0
         runtime.pieceIndex = 0
     }
@@ -1555,6 +1560,7 @@ export function createTetrisRuntime({
     function getSnapshot(): TetrisSnapshot {
         const serializedState = serializeGameState(gameState)
         return {
+            lockDelay: { ...gameState.lockDelay },
             board: serializedState.board,
             activePiece: serializedState.activePiece ?? { ...gameState.activePiece },
             pieceQueue: [...gameState.pieceQueue],
@@ -1576,7 +1582,7 @@ export function createTetrisRuntime({
       * 외부 snapshot을 새 gameState로 복제한 뒤 현재 runtime과 UI에 한 번에 적용한다.
       * - board, queue, hold, 점수, activePiece와 공격 연속 상태를 authoritative 값으로 맞춘다.
       * - local tick은 되감지 않고 더 큰 값만 채택해 이전 입력이 새 조각에 다시 적용되지 않게 한다.
-      * - 중력 누적값과 grounded grace를 초기화하고, 요청된 경우 stale input과 animation도 버린다.
+      * - 중력 누적값은 초기화하고 고정 예산은 snapshot에서 복원한다. stale input과 animation도 정리할 수 있다.
       * - 모든 상태 적용이 끝난 뒤 Canvas와 HUD를 한 번 발행하고 playing phase에서만 loop를 재개한다.
       */
     function applySnapshot(snapshot: TetrisSnapshotInput | null, {
@@ -1602,6 +1608,8 @@ export function createTetrisRuntime({
 
         })
 
+        gameState.lockDelay = { ...restored.lockDelay };
+        runtime.lockUpdatedAt = performance.now();
         gameState.score = restored.score
         gameState.lines = restored.lines
         gameState.fallIntervalMs = restored.fallIntervalMs
@@ -1621,6 +1629,11 @@ export function createTetrisRuntime({
         if (clearInputQueue) gameState.inputQueue = []
 
         setActivePiece(restored.activePiece)
+        if (gameState.activePiece.pieceType && gameState.board) {
+            const piece = gameState.activePiece;
+            gameState.lockDelay = updateLockDelay(gameState.lockDelay, piece.row,
+                !canPlace({ ...piece, row: piece.row + 1 }));
+        }
         if (gameState.phase === GAME_PHASE.GAME_OVER) {
             runtime.decisionStartPiece = null
         } else {
@@ -1634,7 +1647,6 @@ export function createTetrisRuntime({
         runtime.currentTick = Math.max(runtime.currentTick, snapshotTick)
         runtime.gravityRunning = false
         runtime.gravityAccumulatorMs = 0
-        runtime.automaticGroundedPieceIndex = null
         runtime.pieceIndex = typeof snapshot.pieceIndex === "number"
             ? snapshot.pieceIndex
             : runtime.pieceIndex
@@ -1679,6 +1691,22 @@ export function createTetrisRuntime({
         refillSpawnQueue()
         ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         displayBridge.publishDisplay()
+    }
+
+    /** 위치 보정 없이 서버의 유예 상태만 복원하며 같은 상태의 지연 전송은 시간을 늘리지 않는다. */
+    function syncLockDelay(snapshot: TetrisSnapshotInput): void {
+        if (!snapshot.lockDelay || snapshot.pieceIndex !== runtime.pieceIndex) return;
+        const piece = snapshot.activePiece;
+        const active = gameState.activePiece;
+        if (!piece || piece.pieceType !== active.pieceType || piece.rotation !== active.rotation
+            || piece.row !== active.row || piece.col !== active.col) return;
+        const previous = gameState.lockDelay;
+        const incoming = { ...snapshot.lockDelay };
+        if (incoming.lowestRow === previous.lowestRow && incoming.resetCount === previous.resetCount
+            && incoming.hasTouchedGround === previous.hasTouchedGround) {
+            incoming.remainingMs = Math.min(incoming.remainingMs, previous.remainingMs);
+        }
+        gameState.lockDelay = incoming;
     }
 
     // server mode의 숨은 queue와 화면 queue를 합친 잔량이며 local mode는 공급 제한이 없어 Infinity다.
@@ -1727,6 +1755,7 @@ export function createTetrisRuntime({
         getDisplaySnapshot: displayBridge.getDisplaySnapshot,
         subscribeDisplay: displayBridge.subscribeDisplay,
         applySnapshot,
+        syncLockDelay,
         playLineClearPresentation,
         setReducedEffects,
         getPendingInputCount,

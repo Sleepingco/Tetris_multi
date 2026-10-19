@@ -716,6 +716,7 @@ test("terminal soft_drop이 예상보다 일찍 lock되면 divergence로 처리�
     });
 
     await service.processAiStep("PVE-AI-DIVERGED", "ai", gameCore);
+    aiPlayer.authoritativeState.lockDelay = { hasTouchedGround: true, remainingMs: 0, resetCount: 15, lowestRow: 18 };
     const result = await service.processAiStep("PVE-AI-DIVERGED", "ai", gameCore);
 
     assert.equal(result.ok, false);

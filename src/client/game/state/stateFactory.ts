@@ -1,6 +1,8 @@
 import type { Board } from "../core/board.ts";
 import type { PieceState } from "../core/piece.ts";
 import type { PieceType } from "./blocks.ts";
+import { createLockDelay } from "../core/lockDelay.ts";
+import type { LockDelayState } from "../core/lockDelay.ts";
 
 export type GamePhase = "playing" | "lineClearing" | "gameOver";
 
@@ -27,6 +29,7 @@ export type CreateGameStateOptions = {
 };
 
 export type GameState = {
+    lockDelay: LockDelayState;
     score: number;
     lines: number;
     fallIntervalMs: number;
@@ -62,6 +65,7 @@ export function createGameState({
     initialPhase,
 }: CreateGameStateOptions): GameState {
     return {
+        lockDelay: createLockDelay(spawnRow),
         score: 0,
         lines: 0,
         fallIntervalMs: fallIntervalMs,

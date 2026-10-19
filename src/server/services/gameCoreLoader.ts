@@ -10,6 +10,7 @@ function createGameCore() {
         import("../../client/game/core/attackState.ts"),
         import("../../client/game/core/garbage.ts"),
         import("../../client/game/core/tSpin.ts"),
+        import("../../client/game/core/lockDelay.ts"),
         import("../../client/game/state/blocks.ts"),
         import("../../client/game/state/config.ts"),
     ]).then(([
@@ -19,6 +20,7 @@ function createGameCore() {
         attackStateCore,
         garbageCore,
         tSpinCore,
+        lockDelayCore,
         blocksModule,
         configModule,
     ]) => ({
@@ -37,6 +39,7 @@ function createGameCore() {
         resolveGarbageCancel: garbageCore.resolveGarbageCancel,
         applyGarbageLines: garbageCore.applyGarbageLines,
         isTSpinLock: tSpinCore.isTSpinLock,
+        ...lockDelayCore,
         BLOCKS: blocksModule.default,
         BOARD_ROWS: configModule.BOARD_ROWS,
         BOARD_COLS: configModule.BOARD_COLS,

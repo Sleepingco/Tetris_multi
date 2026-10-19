@@ -29,6 +29,7 @@ function createPlayerState(gameCore, overrides = {}) {
         : { ...activePiece };
 
     return {
+        lockDelay: overrides.lockDelay ?? gameCore.createLockDelay(activePiece.row),
         board: overrides.board ?? gameCore.createEmptyBoard(
             gameCore.BOARD_ROWS,
             gameCore.BOARD_COLS,
@@ -107,7 +108,7 @@ test("applyAuthoritativeGravityStep은 조각을 아래로 1칸 내리고 curren
     assert.equal(playerState.pieceIndex, 1);
 });
 
-test("applyAuthoritativeGravityStep은 첫 blocked gravity에서 state를 변경하지 않고 grounded를 반환한다", async () => {
+test("applyAuthoritativeGravityStep은 첫 blocked gravity에서 보드는 유지하고 착지 예산을 기록한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
         pieceType: "square",
@@ -128,11 +129,12 @@ test("applyAuthoritativeGravityStep은 첫 blocked gravity에서 state를 변경
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
     assert.equal(result.gravityResult.kind, "grounded");
-    assert.deepEqual(playerState, beforeState);
+    assert.deepEqual(playerState.board, beforeState.board);
+    assert.equal(playerState.lockDelay.hasTouchedGround, true);
     assert.equal(result.placementResult, undefined);
 });
 
-test("applyAuthoritativeGravityStep은 같은 piece의 다음 blocked gravity에서 lock한다", async () => {
+test("applyAuthoritativeGravityStep은 고정 시간 만료 후 같은 piece를 lock한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
         pieceType: "square",
@@ -147,9 +149,8 @@ test("applyAuthoritativeGravityStep은 같은 piece의 다음 blocked gravity에
         pieceIndex: 1,
     });
 
-    const result = applyAuthoritativeGravityStep(playerState, gameCore, {
-        lockGroundedPiece: true,
-    });
+    applyAuthoritativeGravityStep(playerState, gameCore);
+    const result = applyAuthoritativeGravityStep(playerState, gameCore, { elapsedMs: 500 });
 
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
@@ -190,9 +191,8 @@ test("applyAuthoritativeGravityStep은 gravity lock의 line clear와 score를 �
         pieceIndex: 1,
     });
 
-    const result = applyAuthoritativeGravityStep(playerState, gameCore, {
-        lockGroundedPiece: true,
-    });
+    applyAuthoritativeGravityStep(playerState, gameCore);
+    const result = applyAuthoritativeGravityStep(playerState, gameCore, { elapsedMs: 500 });
 
     assert.equal(result.ok, true);
     assert.equal(result.gravityResult.kind, "lock");
@@ -533,7 +533,7 @@ test("applyAuthoritativeInput은 T-Spin Single placementResult scalar를 반영�
     });
 
     const result = applyAuthoritativeInput(playerState, {
-        action: "soft_drop",
+        action: "hard_drop",
     }, gameCore);
 
     assert.equal(result.ok, true);
@@ -564,7 +564,7 @@ test("applyAuthoritativeInput은 top-out lock에서 line clear와 attack을 만�
     });
 
     const result = applyAuthoritativeInput(playerState, {
-        action: "soft_drop",
+        action: "hard_drop",
     }, gameCore);
 
     assert.equal(result.ok, true);
@@ -822,7 +822,7 @@ test("applyAuthoritativeInput은 soft_drop 이동 성공을 처리한다", async
     assert.deepEqual(playerState.pendingPiece, playerState.activePiece);
 });
 
-test("applyAuthoritativeInput은 soft_drop이 바닥에서 막히면 lock과 next spawn을 처리한다", async () => {
+test("applyAuthoritativeInput은 hard_drop은 착지 상태에서도 즉시 lock과 next spawn을 처리한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
         pieceType: "square",
@@ -838,7 +838,7 @@ test("applyAuthoritativeInput은 soft_drop이 바닥에서 막히면 lock과 nex
     });
 
     const result = applyAuthoritativeInput(playerState, {
-        action: "soft_drop",
+        action: "hard_drop",
     }, gameCore);
 
     assert.equal(result.ok, true);
@@ -1040,7 +1040,7 @@ test("applyAuthoritativeInput은 다음 T 조각이 회전하지 않았으면 �
     playerState.pendingPiece = { ...activePiece };
 
     const result = applyAuthoritativeInput(playerState, {
-        action: "soft_drop",
+        action: "hard_drop",
     }, gameCore);
 
     assert.equal(result.ok, true);

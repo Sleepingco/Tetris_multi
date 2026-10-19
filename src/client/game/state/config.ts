@@ -16,6 +16,8 @@ export const INITIAL_FALL_INTERVAL_MS = 500;
 export const NEXT_PREVIEW_DIMENSION = 4;
 
 export const INPUT_TICK_MS = 16;
+export const LOCK_DELAY_MS = 500;
+export const LOCK_RESET_LIMIT = 15;
 
 export type WallKickOffset = [number, number];
 export type WallKickTable = {

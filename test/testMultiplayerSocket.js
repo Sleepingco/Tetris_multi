@@ -326,6 +326,7 @@ async function createStartedPvpSocketFixture(prefix, dependencies = {}) {
 }
 
 function setAuthoritativePieceFixture(gameCore, player, piece) {
+    player.authoritativeState.lockDelay = gameCore.createLockDelay(piece.row);
     player.authoritativeState.board = gameCore.createEmptyBoard(
         gameCore.BOARD_ROWS,
         gameCore.BOARD_COLS,
@@ -1277,7 +1278,7 @@ test("높은 jagged board의 한 칸 row 차이는 이전 col 자동 lock 전에
     ), [])
 })
 
-test("grounded piece가 턱을 벗어나 gravity move하면 새 바닥에서 grace를 다시 받는다", async () => {
+test("grounded piece가 새 최저 깊이로 내려가면 새 고정 예산을 받는다", async () => {
     const gameCore = await loadGameCore()
     const mutationQueue = createAuthoritativePlayerMutationQueue()
     const tickerService = createAuthoritativeTickerService({
@@ -1330,6 +1331,7 @@ test("grounded piece가 턱을 벗어나 gravity move하면 새 바닥에서 gra
         "square",
     ), [])
 
+    fixture.hostPlayer.lockUpdatedAt -= 500
     await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
     assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 2)
     assert.deepEqual(

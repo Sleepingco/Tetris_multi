@@ -200,6 +200,8 @@ export function startMultiplayerGame({
         ? initialSequence
         : 0
     let nextClientSequence = initialClientSequence + 1
+    let lastOwnSnapshotTick = -1;
+    let lastOwnSnapshotSequence = -1;
     let lastAcknowledgedClientSequence = initialClientSequence
     const pendingServerInputs = new Map<number, PendingServerInput>()
     let deferredOwnSnapshot: MatchSnapshot | null = null
@@ -537,6 +539,7 @@ export function startMultiplayerGame({
             myGame.applySnapshot(snapshot, { resumeGravity: gameplayStarted })
             return true
         }
+        myGame.syncLockDelay(snapshot);
         return false
     }
 
@@ -627,7 +630,11 @@ export function startMultiplayerGame({
             return
         }
 
-        if (snapshotClientSequence < lastAcknowledgedClientSequence) return
+        if (snapshotClientSequence < lastAcknowledgedClientSequence) return;
+        if (snapshotClientSequence < lastOwnSnapshotSequence
+            || (snapshotClientSequence === lastOwnSnapshotSequence && snapshot.tick < lastOwnSnapshotTick)) return;
+        lastOwnSnapshotSequence = snapshotClientSequence;
+        lastOwnSnapshotTick = snapshot.tick;
 
         acknowledgeServerInputs(snapshotClientSequence)
 

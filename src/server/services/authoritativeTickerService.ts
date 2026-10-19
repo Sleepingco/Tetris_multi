@@ -1,6 +1,6 @@
 // =============================
 // 방 단위 타이머 조율
-// room별 timer와 gravity/AI 주기, grounded 유예를 위한 실행 상태를 소유한다.
+// room별 timer와 gravity/AI 주기를 소유하며 고정 예산은 authoritative state에서 진행한다.
 // board 원본은 matchService가 소유한다.
 // human gravity, AI action, snapshot, garbage, match finish의 실행 순서를 연결한다.
 // =============================
@@ -43,7 +43,6 @@ type AuthoritativeSocketServer = Server<ClientToServerEvents, ServerToClientEven
 type GravityTiming = {
     accumulatorMs: number;
     generation: number;
-    groundedPieceIndex: number | null;
 };
 type TickerState = {
     intervalId: ReturnType<typeof setInterval>;
@@ -265,7 +264,11 @@ export function createAuthoritativeTickerService(
             ? -LINE_CLEAR_PRESENTATION_DELAY_MS
             : 0;
         timing.generation += 1;
-        timing.groundedPieceIndex = null;
+        if (options.lineClear === true) {
+            // 줄 삭제 표시 동안 다음 조각의 고정 예산도 소모하지 않는다.
+            const player = getMatchState(roomId).match?.players.find(candidate => candidate.playerId === playerId);
+            if (player) player.lockUpdatedAt = performance.now() + LINE_CLEAR_PRESENTATION_DELAY_MS;
+        }
 
         return {
             ok: true,
@@ -321,34 +324,38 @@ export function createAuthoritativeTickerService(
             const duePlayers: Array<{
                 player: MatchPlayer;
                 gravityGeneration: number | null;
+                gravityDue: boolean;
             }> = [];
             players.forEach(player => {
                 if (player.playerType === "heuristic_ai") {
                     if (shouldProcessAi) {
-                        duePlayers.push({ player, gravityGeneration: null });
+                        duePlayers.push({ player, gravityGeneration: null, gravityDue: false });
                     }
                     return;
                 }
 
                 const timing = getOrCreatePlayerGravityTiming(ticker, player.playerId);
                 timing.accumulatorMs += elapsedMs;
-                if (timing.accumulatorMs < gravityIntervalMs) return;
-
-                timing.accumulatorMs -= gravityIntervalMs;
+                const gravityDue = timing.accumulatorMs >= gravityIntervalMs;
+                if (timing.accumulatorMs < 0) return;
+                if (!gravityDue && !player.authoritativeState?.lockDelay?.hasTouchedGround) return;
+                if (gravityDue) timing.accumulatorMs -= gravityIntervalMs;
                 duePlayers.push({
                     player,
                     gravityGeneration: timing.generation,
+                    gravityDue,
                 });
             });
             if (duePlayers.length === 0) return;
 
             const gameCore = await loadGameCore();
 
-            const playerTasks = duePlayers.map(({ player, gravityGeneration }) => {
+            const playerTasks = duePlayers.map(({ player, gravityGeneration, gravityDue }) => {
                 const processPlayer = () => processDuePlayer({
                     roomId,
                     player,
                     gravityGeneration,
+                    gravityDue,
                     gameCore,
                     socketServer,
                     match: matchResult.match,
@@ -376,12 +383,13 @@ export function createAuthoritativeTickerService(
 
     /**
      * due player 한 명의 state 변화와 그 후속 효과를 순서대로 처리한다.
-     * gravity/AI 적용 → grounded grace 또는 reset → garbage → snapshot → game finish 순서다.
+     * 고정 시간·gravity/AI 적용 → garbage → snapshot → game finish 순서다.
      */
     async function processDuePlayer({
         roomId,
         player,
         gravityGeneration,
+        gravityDue,
         gameCore,
         socketServer,
         match,
@@ -390,6 +398,7 @@ export function createAuthoritativeTickerService(
         roomId: string;
         player: MatchPlayer;
         gravityGeneration: number | null;
+        gravityDue: boolean;
         gameCore: GameCore;
         socketServer: AuthoritativeSocketServer;
         match: MatchState;
@@ -410,15 +419,13 @@ export function createAuthoritativeTickerService(
             return;
         }
 
-        const pieceIndex = player.authoritativeState?.pieceIndex;
         let stepResult: DuePlayerStepResult;
         if (isAiPlayer) {
             stepResult = await pveAiPlayerService.processAiStep(roomId, playerId, gameCore);
         } else {
             if (!gravityTiming) return;
             stepResult = applyGravityStepToMatchPlayerState(roomId, playerId, gameCore, {
-                lockGroundedPiece: typeof pieceIndex === "number" && Number.isInteger(pieceIndex)
-                    && gravityTiming.groundedPieceIndex === pieceIndex,
+                gravityDue,
             });
         }
 
@@ -445,14 +452,7 @@ export function createAuthoritativeTickerService(
             const policyRuntime = updateAiPolicyRuntime(match, playerId, stepResult.decision);
             socketServer.to(roomId).emit("pve:ai-policy", policyRuntime);
         }
-        if (!isAiPlayer && gravityTiming && stepResult.gravityResult?.kind === "grounded") {
-            // 첫 blocked gravity에서는 같은 pieceIndex만 기록하고 다음 interval까지 lock을 유예한다.
-            gravityTiming.groundedPieceIndex = pieceIndex;
-            return;
-        }
-        if (!isAiPlayer && gravityTiming && stepResult.gravityResult?.kind === "move") {
-            gravityTiming.groundedPieceIndex = null;
-        }
+        if (stepResult.gravityResult?.kind === "grounded" || stepResult.gravityResult?.kind === "skipped") return;
         if (stepResult.skipped) return;
 
         if (!isAiPlayer && stepResult.gravityResult?.kind === "lock") {
@@ -567,7 +567,6 @@ function getOrCreatePlayerGravityTiming(
     timing = {
         accumulatorMs: 0,
         generation: 0,
-        groundedPieceIndex: null,
     };
     ticker.playerGravityTimings.set(playerId, timing);
     return timing;

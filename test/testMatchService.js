@@ -273,6 +273,7 @@ test("createMatch는 player별 최소 authoritative state를 만든다", () => {
 
     assert.equal(result.ok, true);
     assert.deepEqual(hostPlayer.authoritativeState, {
+        lockDelay: { hasTouchedGround: false, remainingMs: 500, resetCount: 0, lowestRow: -1 },
         board: Array.from({ length: 20 }, () => Array(10).fill(null)),
         activePiece: expectedSpawnedPiece,
         pendingPiece: expectedSpawnedPiece,

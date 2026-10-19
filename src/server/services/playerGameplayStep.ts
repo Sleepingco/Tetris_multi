@@ -109,40 +109,55 @@ export function applyAuthoritativeInput(
         return createFailure("INVALID_GAME_CORE");
     }
 
+    const expired = advanceAuthoritativeLockDelay(authoritativeState, gameCore, 0);
+    if (expired.placementResult) return expired;
     const action = input?.action;
-    if (
-        action === "move_left" ||
-        action === "move_right" ||
-        action === "rotate" ||
-        action === "rotate_ccw"
-    ) {
-        return applyServerInputToPlayerState(authoritativeState, input, gameCore);
-    }
-
-    if (action === "soft_drop") {
-        return applySoftDrop(authoritativeState, input, gameCore);
-    }
-
-    if (action === "hard_drop") {
+    let result: GameplayResult;
+    if (action === "move_left" || action === "move_right" || action === "rotate" || action === "rotate_ccw") {
+        result = applyServerInputToPlayerState(authoritativeState, input, gameCore);
+    } else if (action === "soft_drop") {
+        result = applySoftDrop(authoritativeState, input, gameCore);
+    } else if (action === "hard_drop") {
         return applyHardDropInput(authoritativeState, input, gameCore);
-    }
-
-    if (action === "hold") {
+    } else if (action === "hold") {
         return applyHold(authoritativeState, gameCore);
+    } else {
+        return createFailure("UNSUPPORTED_ACTION");
     }
+    if (result.ok) {
+        const lockResult = advanceAuthoritativeLockDelay(authoritativeState, gameCore, 0,
+            action !== "soft_drop" && result.moveIntent?.kind === "ok");
+        if (lockResult.placementResult) return lockResult;
+    }
+    return result;
+}
 
-    return createFailure("UNSUPPORTED_ACTION");
+/** 서버 시간으로 고정 예산을 진행하고 만료 시 기존 placement 경로를 한 번만 실행한다. */
+export function advanceAuthoritativeLockDelay(
+    state: AuthoritativePlayerState,
+    core: GameCore,
+    elapsedMs: number,
+    reset = false,
+): GameplayResult {
+    const piece = state.activePiece;
+    if (state.phase !== "playing" || !isPlaceablePiece(piece)) return { ok: true, reason: null };
+    const grounded = !core.canPlacePiece(state.board, { ...piece, row: piece.row + 1 }, core.BLOCKS);
+    state.lockDelay = core.updateLockDelay(state.lockDelay ?? core.createLockDelay(piece.row),
+        piece.row, grounded, elapsedMs, reset);
+    if (!core.shouldLockPiece(state.lockDelay, grounded)) return { ok: true, reason: null };
+    const result = lockPieceAndSpawnNext(state, core, { lockedPiece: { ...piece }, droppedRows: 0, useHardDropScore: false });
+    if (result.ok) incrementCurrentTick(state);
+    return result;
 }
 
 /**
  * server timer의 gravity 한 단계를 처리한다.
- * 조각이 내려가면 즉시 state를 갱신하고, 처음 바닥에 닿으면 `grounded`만 반환한다.
- * 상위 ticker가 같은 piece의 다음 gravity에 `lockGroundedPiece`를 주어야 실제 lock된다.
+ * 중력 이동과 독립적인 고정 시간을 먼저 진행하고, 만료된 접지 조각을 고정한다.
  */
 export function applyAuthoritativeGravityStep(
     authoritativeState: AuthoritativePlayerState,
     gameCore: GameCore,
-    options: { lockGroundedPiece?: boolean } = {},
+    options: { elapsedMs?: number; gravityDue?: boolean } = {},
 ): GravityStepResult {
     if (!authoritativeState) {
         return createFailure("INVALID_AUTHORITATIVE_STATE");
@@ -161,6 +176,10 @@ export function applyAuthoritativeGravityStep(
             },
         };
     }
+
+    const expiry = advanceAuthoritativeLockDelay(authoritativeState, gameCore, options.elapsedMs ?? 0);
+    if (expiry.placementResult) return { ...expiry, gravityResult: { kind: "lock" } };
+    if (options.gravityDue === false) return { ok: true, reason: null, gravityResult: { kind: "skipped" } };
 
     const activePiece = authoritativeState.activePiece;
     if (!activePiece?.pieceType) {
@@ -188,6 +207,8 @@ export function applyAuthoritativeGravityStep(
         authoritativeState.activePiece = { ...moveIntent.active };
         authoritativeState.pendingPiece = { ...moveIntent.active };
         authoritativeState.lastActionWasRotation = false;
+        const landed = advanceAuthoritativeLockDelay(authoritativeState, gameCore, 0);
+        if (landed.placementResult) return { ...landed, gravityResult: { kind: "lock" } };
         incrementCurrentTick(authoritativeState);
 
         return {
@@ -201,32 +222,7 @@ export function applyAuthoritativeGravityStep(
     }
 
     if (moveIntent.kind === "lock" && isPlaceablePiece(moveIntent.active)) {
-        if (options.lockGroundedPiece !== true) {
-            return {
-                ok: true,
-                reason: null,
-                gravityResult: {
-                    kind: "grounded",
-                    moveIntent,
-                },
-            };
-        }
-
-        const lockResult = lockPieceAndSpawnNext(authoritativeState, gameCore, {
-            lockedPiece: { ...moveIntent.active },
-            droppedRows: 0,
-            useHardDropScore: false,
-        });
-        if (!lockResult.ok) return lockResult;
-
-        incrementCurrentTick(authoritativeState);
-
-        return {
-            ...lockResult,
-            gravityResult: {
-                kind: "lock",
-            },
-        };
+        return { ok: true, reason: null, gravityResult: { kind: "grounded", moveIntent } };
     }
 
     return {
@@ -294,11 +290,9 @@ function applySoftDrop(
         return moveResult;
     }
 
-    return lockPieceAndSpawnNext(authoritativeState, gameCore, {
-        lockedPiece: { ...moveResult.moveIntent.active },
-        droppedRows: 0,
-        useHardDropScore: false,
-    });
+    authoritativeState.pendingPiece = { ...authoritativeState.activePiece };
+    return { ok: true, reason: null, moveIntent: moveResult.moveIntent };
+
 }
 
 function applyHold(
@@ -551,10 +545,15 @@ function spawnPiece(
         return null;
     }
 
+    authoritativeState.lockDelay = gameCore.createLockDelay(spawnedPiece.row);
     authoritativeState.activePiece = { ...spawnedPiece };
     authoritativeState.pendingPiece = { ...spawnedPiece };
     authoritativeState.phase = "playing";
     authoritativeState.gameOver = false;
+    const grounded = !gameCore.canPlacePiece(authoritativeState.board,
+        { ...spawnedPiece, row: spawnedPiece.row + 1 }, gameCore.BLOCKS);
+    authoritativeState.lockDelay = gameCore.updateLockDelay(authoritativeState.lockDelay,
+        spawnedPiece.row, grounded);
     return spawnedPiece;
 }
 

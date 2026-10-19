@@ -53,6 +53,22 @@ function createHuman(playerId = HUMAN_ID, nickname = "Host") {
     return { playerId, nickname, playerType: "human" }
 }
 
+test("고정 유예 snapshot은 공통 상한을 검증하고 client의 유예 변경 요청은 거부한다", () => {
+    const lockDelay = { hasTouchedGround: true, remainingMs: 42, resetCount: 15, lowestRow: 18 };
+    const envelope = { roomId: ROOM_ID, playerId: HUMAN_ID, snapshot: createSnapshot({ lockDelay }) };
+    const schema = serverToClientSchemas["game:authoritative:snapshot"];
+    assert.equal(schema.safeParse(envelope).success, true);
+    for (const invalid of [{ remainingMs: 501 }, { remainingMs: -1 }, { resetCount: 16 },
+        { resetCount: 1.5 }, { lowestRow: 20 }, { hasTouchedGround: "true" }]) {
+        assert.equal(schema.safeParse({ ...envelope,
+            snapshot: createSnapshot({ lockDelay: { ...lockDelay, ...invalid } }) }).success, false);
+    }
+    const input = { roomId: ROOM_ID, action: "rotate", tick: 1, pieceIndex: 1, clientSequence: 1,
+        expectedTransform: { pieceType: "tree", rotation: 1, col: 3 } };
+    assert.equal(clientToServerSchemas["game:input"].safeParse(input).success, true);
+    assert.equal(clientToServerSchemas["game:input"].safeParse({ ...input, lockDelay }).success, false);
+});
+
 function createRoom(mode = "pvp") {
     const pve = mode === "pve"
     return {
