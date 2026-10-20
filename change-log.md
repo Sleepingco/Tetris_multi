@@ -2769,3 +2769,13 @@ client input
 - [DB 전체 흐름 안내](docs/operations/database/database-flow-guide.md)에 DB의 분석 로그 역할, 환경별 단일 sink, Compose·pg·TLS 연결, startup·권한·migration, 로그 생성·검증·projection·테이블, 여러 룸의 공용 pool과 event identity, 멱등성·원자성·실패·종료, 기존 로그 import와 분석 export를 연결해 설명했다. 기존 Blueprint에는 안내 링크를 추가하고 PLAN에는 문서 위치와 검증 범위를 기록했다.
 - DB 조사에서 Node 24.18.0 server build와 관련 단위 테스트 38개 통과를 확인했다. 실제 PostgreSQL 동시 저장 통합 테스트는 로컬 Docker daemon 미실행으로 재실행하지 못했고 운영 DB에는 접속하지 않았다. 테스트 정의와 실제 실행 결과를 구분했다.
 - 이번 변경은 문서만 추가·보완하며 기존 gameplay 작업의 dirty 변경을 보존했다. 문서 링크·코드 블록·공백을 검사하고 전체 실행 검증은 반복하지 않는다. 저장 정책·schema·runtime·데이터·운영 환경은 변경하지 않았으며 문서 rollback은 이번 안내와 추가 링크·기록만 제거하면 된다.
+
+---
+
+# 2026년 10월 20일
+
+## 누적 변경의 항목별 로컬 커밋
+
+- 기존 고정 유예 구현 커밋 `9a0e529`는 유지한다. 남은 모바일/Git 문제 해결 기록, DB 연결·이벤트 저장 설명, 게임 효과 축소 제거, Tetra Arena favicon 에셋을 각각 별도 로컬 커밋으로 정리한다. favicon은 기존 파일을 보관하는 범위이며 페이지 참조는 추가하지 않는다.
+- 현재 상태로 필수 verify를 다시 실행해 typecheck·build·artifact와 Node 681 pass·기존 조건부 1 skip·실패 0을 확인했다. 문서 로컬 링크·코드 블록·diff 공백과 SVG XML 구문도 확인했다. Chromium E2E 50/50은 앞선 구현 완료 때의 결과이며 이번에는 다시 실행하지 않았다.
+- 원본 작업 파일을 보존한 채 공유 문서의 index만 항목별로 나눈다. 새 기능·데이터 변경은 추가하지 않으며 push·원격 병합·배포·DB 접속·실기기 성능 검사는 수행하지 않는다. 되돌릴 때도 관련 문서·설정 호출부·렌더 변경을 각 항목 단위로 함께 복구한다.

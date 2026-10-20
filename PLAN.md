@@ -2,9 +2,14 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-10-19. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
+- Last update: 2026-10-20. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
+
+### 로컬 커밋 정리 (2026-10-20)
+
+- 고정 유예 구현은 기존 `9a0e529`에 보존하고, 누적 변경을 모바일/Git 트러블슈팅 문서·DB 흐름 문서·효과 축소 제거·favicon 에셋으로 나눠 현재 `main`에 로컬 커밋한다. favicon은 에셋만 보관하며 페이지 연결은 추가하지 않는다. 원격 push·병합·배포는 수행하지 않는다.
+- 현재 상태로 필수 verify를 다시 실행해 typecheck·build·artifact와 Node 681 pass·기존 조건부 1 skip을 확인했다. Chromium E2E 50/50은 앞선 효과 축소 제거 완료 때의 결과이며 이번 커밋 정리에서 반복하지 않았다. 실제 PostgreSQL·Linux CI·실기기 성능은 이번에 확인하지 않았다.
 
 - DB 설명 문서: [연결과 전체 처리 흐름](docs/operations/database/database-flow-guide.md)에 local/production sink, 연결·권한·startup, 이벤트 검증·저장, 여러 룸의 공용 pool, 멱등성·원자성, 실패·종료와 import/export를 정리했다(2026-10-19). DB 조사에서 server build와 관련 단위 테스트 38개 통과를 확인했으며, Docker daemon 미실행으로 실제 DB 통합 검증·운영 상태 조회는 수행하지 못했다. 문서 추가이며 저장 정책·runtime은 변경하지 않았다.
 

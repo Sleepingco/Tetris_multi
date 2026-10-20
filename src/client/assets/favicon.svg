@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <!-- 차콜 배경 그라데이션 -->
+    <linearGradient id="bg-charcoal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22252A" />
+      <stop offset="100%" stop-color="#121316" />
+    </linearGradient>
+    <!-- 메인 골드 블록 그라데이션 -->
+    <linearGradient id="gold-main" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFE066" />
+      <stop offset="50%" stop-color="#F5B700" />
+      <stop offset="100%" stop-color="#C28800" />
+    </linearGradient>
+    <!-- 하이라이트 골드 (중앙 코어 블록) -->
+    <linearGradient id="gold-bright" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFF3B0" />
+      <stop offset="100%" stop-color="#F5B700" />
+    </linearGradient>
+  </defs>
+
+  <!-- 1. 아레나 엠블럼 베이스 (둥근 차콜 사각형 + 골드 보더) -->
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="url(#bg-charcoal)" stroke="#D4AF37" stroke-width="2.5" stroke-opacity="0.7" />
+
+  <!-- 2. 상단 3개 블록 (T자의 가로줄) -->
+  <!-- 왼쪽 블록 -->
+  <rect x="8" y="13" width="14" height="14" rx="2.5" fill="url(#gold-main)" />
+  <path d="M9.5 14.5 H20.5" stroke="#FFF8D6" stroke-width="1.5" stroke-linecap="round" opacity="0.6" />
+
+  <!-- 중앙 블록 (강조) -->
+  <rect x="25" y="13" width="14" height="14" rx="2.5" fill="url(#gold-bright)" />
+  <path d="M26.5 14.5 H37.5" stroke="#FFFFFF" stroke-width="1.5" stroke-linecap="round" opacity="0.8" />
+
+  <!-- 오른쪽 블록 -->
+  <rect x="42" y="13" width="14" height="14" rx="2.5" fill="url(#gold-main)" />
+  <path d="M43.5 14.5 H54.5" stroke="#FFF8D6" stroke-width="1.5" stroke-linecap="round" opacity="0.6" />
+
+  <!-- 3. 하단 1개 블록 (T자의 기둥) -->
+  <rect x="25" y="30" width="14" height="14" rx="2.5" fill="url(#gold-main)" />
+  <path d="M26.5 31.5 H37.5" stroke="#FFF8D6" stroke-width="1.5" stroke-linecap="round" opacity="0.6" />
+
+  <!-- 4. 하드 드롭 착지선 / 전투 충격파 포인트 (하단 골드 라인) -->
+  <rect x="18" y="50" width="28" height="3" rx="1.5" fill="#F5B700" opacity="0.85" />
+</svg>
