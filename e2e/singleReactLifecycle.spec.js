@@ -106,19 +106,25 @@ test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 �
     expect(errors).toEqual([]);
 });
 
-test("효과 축소는 OS 기본값을 따르고 명시적 선택은 reload 뒤에도 유지한다", async ({ page }) => {
+test("효과 축소 버튼은 없고 이전 저장값과 무관하게 착지 효과를 재생한다", async ({ page }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
+    await page.addInitScript(() => {
+        localStorage.setItem("tetrisReducedEffects", "true");
+        window.__landingAnimations = 0;
+        const animate = Element.prototype.animate;
+        Element.prototype.animate = function (...args) {
+            if (this.id === "tetrisBoardCanvas") window.__landingAnimations++;
+            return animate.apply(this, args);
+        };
+    });
     await page.goto("/pages/tetrisSingle.html");
-    const button = page.locator("#effectsToggle");
-    await expect(button).toHaveAttribute("aria-pressed", "true");
-    await button.click();
-    await expect(button).toHaveAttribute("aria-pressed", "false");
-    expect(await page.evaluate(() => localStorage.getItem("tetrisReducedEffects"))).toBe("false");
-    await page.reload();
-    await expect(button).toHaveAttribute("aria-pressed", "false");
-    await page.emulateMedia({ reducedMotion: "no-preference" });
-    await button.click();
-    await expect(button).toHaveAttribute("aria-pressed", "true");
+    for (let attempt = 0; attempt < 2; attempt++) {
+        await expect(page.locator(".next-preview .next-cell")).toHaveCount(64);
+        await expect(page.locator("#effectsToggle")).toHaveCount(0);
+        await pressGameKey(page, "Space");
+        await expect.poll(() => page.evaluate(() => window.__landingAnimations)).toBeGreaterThan(0);
+        if (attempt === 0) await page.reload();
+    }
 });
 
 test("single 첫 키 입력은 차단된 BGM을 중복 없이 한 번 재시도한다", async ({ page }) => {

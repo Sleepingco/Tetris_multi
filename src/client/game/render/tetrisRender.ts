@@ -213,7 +213,6 @@ export function renderBoardCanvas({
         blocks,
         flashRows,
         hardDropEffect = null,
-        reducedEffects = false,
 }: {
         ctx: CanvasRenderingContext2D | null;
         board: Board;
@@ -223,7 +222,6 @@ export function renderBoardCanvas({
         blocks: BlockDefinitions;
         flashRows: FlashRow[];
         hardDropEffect?: HardDropEffect | null;
-        reducedEffects?: boolean;
         isFlash?: boolean;
 }): void {
         if (!ctx) return;
@@ -253,19 +251,6 @@ export function renderBoardCanvas({
                 if (isFlashing) {
                         const flashData = flashRows.find(fr => typeof fr === 'object' ? fr.row === row : fr === row);
                         const progress = typeof flashData === "object" ? flashData.progress : 0;
-
-                        if (reducedEffects) {
-                                for (let col = 0; col < cols; col++) {
-                                        const pieceType = board[row][col];
-                                        if (pieceType) drawBlock(ctx, col, row, BLOCK_COLORS[pieceType]);
-                                }
-                                ctx.save();
-                                ctx.globalAlpha = 0.18 * (1 - progress);
-                                ctx.fillStyle = "#ffffff";
-                                ctx.fillRect(0, row * CELL_SIZE, width, CELL_SIZE);
-                                ctx.restore();
-                                continue;
-                        }
 
                         const strength = Math.min(4, flashRows.length);
 
@@ -329,7 +314,7 @@ export function renderBoardCanvas({
         }
         ctx.restore();
 
-        if (hardDropEffect && !reducedEffects) {
+        if (hardDropEffect) {
                 const { piece, fromRow, progress } = hardDropEffect;
                 const fade = 1 - Math.max(0, Math.min(1, progress));
                 const trailHeight = Math.min(120, Math.max(0, piece.row - fromRow) * CELL_SIZE);

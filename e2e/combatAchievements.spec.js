@@ -3,7 +3,6 @@ const { createPveRoom, startPveMatch } = require("./helpers/pve.js");
 
 async function prepareAchievementFixtures(page) {
     await page.addInitScript(() => {
-        localStorage.setItem("tetrisReducedEffects", "false");
         let ioFactory;
         Object.defineProperty(window, "io", {
             configurable: true,
@@ -55,7 +54,7 @@ async function deliverAchievement(page, playerNumber, values) {
     }, { playerNumber, values });
 }
 
-test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 축소·모바일·cleanup을 따른다", async ({ page }) => {
+test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 모바일·cleanup을 따른다", async ({ page }) => {
     const errors = [];
     page.on("pageerror", error => errors.push(error.message));
     await prepareAchievementFixtures(page);
@@ -86,9 +85,7 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 축소�
     await deliverAchievement(page, 1, { combo: 2 });
     await expect(own.locator(".combat-achievement-title")).toHaveText("COMBO 2");
     await expect(page.locator('.achievement-spark')).toHaveCount(8);
-    await page.locator("#effectsToggle").click();
-    await expect(own).toHaveAttribute("data-reduced", "true");
-    expect(await own.evaluate(node => node.getAnimations({ subtree: true }).length)).toBe(0);
+    await expect(page.locator("#effectsToggle")).toHaveCount(0);
     await expect(page.locator(".combat-achievement")).toHaveCount(0);
 
     await deliverAchievement(page, 1, { combo: 0 });
@@ -111,25 +108,33 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 축소�
             await deliverAchievement(page, playerNumber, { linesCleared: 4, combo: 4 });
             const achievement = page.locator(`.combat-achievement[data-player="${playerNumber}"]`);
             await expect(achievement.locator(".combat-achievement-combo")).toHaveText("COMBO 4");
-            await expect(achievement.locator(".achievement-spark")).toHaveCount(0);
+            await expect(achievement.locator(".achievement-spark")).toHaveCount(4);
             if (playerNumber === 2) {
                 // 앞쪽 HUD 높이가 바뀌어도 표시 중인 문구는 대상 보드를 따라가야 한다.
                 await page.evaluate(() => {
                     document.querySelector('.player-column[data-player="1"] .player-header').style.removeProperty("padding-bottom");
                 });
             }
-            const mobilePlacement = await achievement.evaluate(node => {
-                const event = node.getBoundingClientRect();
-                const board = document.querySelector(`.player-column[data-player="${node.dataset.player}"] canvas`).getBoundingClientRect();
-                return {
-                    aboveBoard: event.bottom <= board.top,
-                    insideViewport: event.left >= 0 && event.right <= innerWidth,
-                    event: event.toJSON(),
-                    board: board.toJSON(),
-                };
+            const placements = await achievement.evaluate(node => {
+                const animation = node.getAnimations()[0];
+                animation.pause();
+                return [0, 132, 350, 800, 1099].map(time => {
+                    animation.currentTime = time;
+                    const event = node.getBoundingClientRect();
+                    const board = document.querySelector(`.player-column[data-player="${node.dataset.player}"] canvas`).getBoundingClientRect();
+                    return {
+                        time,
+                        aboveBoard: event.bottom <= board.top,
+                        insideViewport: event.left >= 0 && event.right <= innerWidth,
+                        event: event.toJSON(),
+                        board: board.toJSON(),
+                    };
+                });
             });
-            expect(mobilePlacement, JSON.stringify({ playerNumber, enlargedLineHeight, ...mobilePlacement }))
-                .toMatchObject({ aboveBoard: true, insideViewport: true });
+            for (const placement of placements) {
+                expect(placement, JSON.stringify({ playerNumber, enlargedLineHeight, ...placement }))
+                    .toMatchObject({ aboveBoard: true, insideViewport: true });
+            }
         }
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);

@@ -2756,6 +2756,14 @@ client input
 - 새 core·통합 검사는 499/500ms, 15/16번째 갱신, 새 깊이, 실패 입력, 공중 만료, snapshot 복사·복원과 드롭 동작을 검증한다. 기존 60.5초 버티기 재현은 서버 ticker·싱글·멀티 예측에서 4초 이내 고정되는 회귀 검사로 추가했다. 필수 verify는 typecheck·build·artifact와 Node 682 pass·기존 조건부 1 skip·실패 0으로 통과했다. 새 Chromium E2E 3/3은 싱글 벽차기, 실제 2탭 PVP 수렴, PVE 접속 복구 뒤 예산 보존을 확인했다. 최종 전체 Chromium E2E도 기존 공격·상쇄·종료·재시작·네트워크 복구 검사를 포함해 50/50 통과했다.
 - 직접 플레이한 조작감·실기기 프레임·Linux CI·운영 배포는 미검증이다. snapshot 계약 변경으로 배포 시 기존 열린 탭은 새로고침이 필요하며 서버·클라이언트를 함께 배포·rollback한다. T스핀 분류·점수·공격표·디자인·사운드·모델·데이터셋·운영 DB는 변경하지 않았다. 다른 작업의 dirty 파일을 보존했고 커밋·push·배포는 수행하지 않았다.
 
+## 게임 효과 축소 버튼·설정·분기 제거
+
+- 사용자 요청에 따라 싱글·멀티의 효과 축소 버튼과 preference 모듈을 삭제했다. 저장값·게임의 OS 모션 연동·runtime 옵션/전환 API·Canvas 축소 분기·멀티 축소 속성/CSS를 제거해 기존 일반 효과를 사용한다. 이전 `tetrisReducedEffects` 저장값은 읽지 않으며 홈 화면의 독립적인 OS 모션 접근성 CSS는 유지한다.
+- 착지 잔상·줄 삭제 파편·공격 궤적·피격 반응·성과 문구와 기존 수명 종료/보정/페이지 종료 cleanup을 유지한다. 모바일 성과 문구는 진입 중에도 보드를 덮지 않도록 위쪽 12px 여유를 뒀다. [실제 기기 측정 가이드](docs/design/real-device-performance-guide.md)는 일반 효과 기준의 반복·버전 비교로 수정했다.
+- 삭제한 preference 단위 검사는 제거하고 렌더·runtime·브라우저 검사는 일반 효과 경로로 갱신했다. 이전 저장값과 OS 모션 설정에도 버튼이 없고 착지 효과가 재생되는지, 모바일 기본/확대 글줄의 애니메이션 여러 시점이 경계 안인지 검사한다. rollback 픽셀 비교는 120ms 착지 연출 종료 후 시작하며 좌표·수렴·후속 snapshot 불변 검사는 유지한다. 고정 유예 테스트 하나는 가상 시각을 정수로 지정해 정확한 500ms 검사의 소수점 오차를 제거했다.
+- 최종 필수 `bash scripts/verify.sh`는 typecheck·build·artifact와 Node 681 pass·기존 조건부 1 skip·실패 0으로 통과했다. 효과 설정 단위 검사 1개를 삭제해 앞선 682 pass보다 1개 줄었다. 새 싱글 검사는 공통 가상 시계를 16ms 진행하도록 기존 입력 helper를 사용한 뒤 3회 연속 통과했고, 최종 전체 Chromium E2E도 50/50 통과했다. 모바일 성과 문구·공격 파편·페이지 종료 cleanup·양방향 rollback·기존 고정 유예 검사를 포함한다.
+- 게임 규칙·음량·서버 계약·모델·데이터셋·운영 DB는 이번 제거에서 변경하지 않았다. 실기기 성능·Linux CI·운영 배포는 미검증이며 커밋·push·배포는 수행하지 않았다. rollback 시 제거한 설정 모듈과 page/runtime/render 호출부를 함께 복구한다.
+
 ## DB 연결·이벤트 저장 전체 흐름 문서화
 
 - [DB 전체 흐름 안내](docs/operations/database/database-flow-guide.md)에 DB의 분석 로그 역할, 환경별 단일 sink, Compose·pg·TLS 연결, startup·권한·migration, 로그 생성·검증·projection·테이블, 여러 룸의 공용 pool과 event identity, 멱등성·원자성·실패·종료, 기존 로그 import와 분석 export를 연결해 설명했다. 기존 Blueprint에는 안내 링크를 추가하고 PLAN에는 문서 위치와 검증 범위를 기록했다.

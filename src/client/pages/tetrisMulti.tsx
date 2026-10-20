@@ -18,7 +18,6 @@ import type {
     RuntimeDisplaySnapshot,
 } from "../game/runtime/displayBridge.ts";
 import { initGameSound, playCombatSfx, tryPlayMusic } from "../game/runtime/sound.ts";
-import { initEffectToggle, loadReducedEffects } from "../game/runtime/effectPreferences.ts";
 import BLOCKS from "../game/state/blocks.ts";
 import type { PieceType } from "../game/state/blocks.ts";
 import { onPlacementDecisionLogResult } from "../net/logClient.ts";
@@ -405,7 +404,6 @@ function MultiplayerGamePage() {
     const player2CanvasRef = useRef<HTMLCanvasElement>(null);
     const soundToggleRef = useRef<HTMLButtonElement>(null);
     const themeToggleRef = useRef<HTMLButtonElement>(null);
-    const effectsToggleRef = useRef<HTMLButtonElement>(null);
     const homeButtonRef = useRef<HTMLAnchorElement>(null);
     const combatLayerRef = useRef<HTMLDivElement>(null);
     const [pageInfo, setPageInfo] = useState<PageInfo>(EMPTY_PAGE_INFO);
@@ -487,23 +485,13 @@ function MultiplayerGamePage() {
         const achievementTimers: [number | null, number | null] = [null, null];
         const projectiles = new Map<HTMLElement, Animation>();
         const pulses = new Map<HTMLElement, Animation>();
-        let reducedEffects = loadReducedEffects();
         const cleanupSound = initGameSound(soundToggle);
-        const cleanupEffects = initEffectToggle(effectsToggleRef.current, reduced => {
-            reducedEffects = reduced;
-            if (reduced) clearCombatMotion();
-            activeGameSession?.myGame.setReducedEffects(reduced);
-            activeGameSession?.opponentGame.setReducedEffects(reduced);
-        });
 
         function clearCombatMotion(): void {
             projectiles.forEach((animation, element) => { animation.cancel(); element.remove(); });
             projectiles.clear();
             pulses.forEach(animation => animation.cancel());
             pulses.clear();
-            achievementElements.forEach(element => {
-                if (element) element.dataset.reduced = "true";
-            });
         }
 
         function clearAchievement(index: 0 | 1): void {
@@ -552,7 +540,6 @@ function MultiplayerGamePage() {
             element.setAttribute("aria-hidden", "true");
             element.dataset.player = String(index + 1);
             element.dataset.event = event;
-            element.dataset.reduced = String(reducedEffects);
             element.dataset.viewport = `${window.innerWidth}:${window.innerHeight}`;
             if (beside) {
                 const x = leftBoard ? frame.right + 8 : frame.left - width - 8;
@@ -571,16 +558,14 @@ function MultiplayerGamePage() {
                 combo.textContent = `COMBO ${effect.combo}`;
                 element.append(combo);
             }
-            if (!reducedEffects) {
-                for (let i = 0; i < 4; i++) {
-                    const spark = document.createElement("span");
-                    spark.className = "achievement-spark";
-                    spark.style.left = `${i % 2 === 0 ? 10 : width - 14}px`;
-                    spark.style.top = `${i < 2 ? -4 : 28}px`;
-                    spark.style.setProperty("--spark-x", `${i % 2 === 0 ? -6 : 6}px`);
-                    spark.style.setProperty("--spark-y", `${i < 2 ? -14 : 14}px`);
-                    element.append(spark);
-                }
+            for (let i = 0; i < 4; i++) {
+                const spark = document.createElement("span");
+                spark.className = "achievement-spark";
+                spark.style.left = `${i % 2 === 0 ? 10 : width - 14}px`;
+                spark.style.top = `${i < 2 ? -4 : 28}px`;
+                spark.style.setProperty("--spark-x", `${i % 2 === 0 ? -6 : 6}px`);
+                spark.style.setProperty("--spark-y", `${i < 2 ? -14 : 14}px`);
+                element.append(spark);
             }
             // 세로 배치 문구는 보드에 붙여 앞쪽 레이아웃 변경을 따라간다.
             (beside ? layer : playfield).append(element);
@@ -599,7 +584,6 @@ function MultiplayerGamePage() {
         }
 
         function pulseBoard(canvas: HTMLCanvasElement, danger: boolean, impact = false): void {
-            if (reducedEffects) return;
             const frame = canvas.closest<HTMLElement>(".playfield");
             if (!frame?.animate) return;
             pulses.get(frame)?.cancel();
@@ -615,7 +599,7 @@ function MultiplayerGamePage() {
 
         function launchAttack(source: HTMLCanvasElement, target: HTMLCanvasElement, lines: number): void {
             const layer = combatLayerRef.current;
-            if (reducedEffects || !layer || window.innerWidth < 900) return;
+            if (!layer || window.innerWidth < 900) return;
             const from = source.getBoundingClientRect();
             const to = target.getBoundingClientRect();
             if (Math.abs(from.top - to.top) > 30) return;
@@ -652,7 +636,7 @@ function MultiplayerGamePage() {
 
         function burstAttack(x: number, y: number, direction: number): void {
             const layer = combatLayerRef.current;
-            if (disposed || terminal || matchFinished || reducedEffects || !layer) return;
+            if (disposed || terminal || matchFinished || !layer) return;
             for (let i = 0; i < 6 && projectiles.size < 40; i++) {
                 const size = 4 + i % 3 * 2;
                 const element = document.createElement("span");
@@ -783,7 +767,6 @@ function MultiplayerGamePage() {
             themeToggle?.removeEventListener("click", handleThemeToggle);
             homeButton?.removeEventListener("click", handleHomeClick);
             cleanupSound?.();
-            cleanupEffects();
             destroyGameSession();
         };
         const redirectToLobby = () => {
@@ -1021,10 +1004,6 @@ function MultiplayerGamePage() {
                         aria-pressed="false"
                     >
                         다크 모드
-                    </button>
-                    <button ref={effectsToggleRef} id="effectsToggle" className="sound-toggle"
-                        type="button" aria-pressed="false" title="잔상과 흔들림을 줄입니다">
-                        효과 축소
                     </button>
                     <a
                         ref={homeButtonRef}

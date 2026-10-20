@@ -32,7 +32,7 @@ test("createLineClearFragments는 line clear 후반부에 블록 파편 좌표�
     assert.ok(fragments.some(fragment => fragment.y > 10 * 30 + 15));
 });
 
-test("효과 축소 렌더는 파편 이동과 착지 잔상을 생략하며 입력 board를 보존한다", async (t) => {
+test("줄 삭제 파편과 착지 잔상을 그려도 입력 board를 보존한다", async (t) => {
     const { renderBoardCanvas } = await import("../src/client/game/render/tetrisRender.ts");
     const { default: blocks } = await import("../src/client/game/state/blocks.ts");
     const originalStyle = globalThis.getComputedStyle;
@@ -55,9 +55,6 @@ test("효과 축소 렌더는 파편 이동과 착지 잔상을 생략하며 입
         flashRows: [{ row: 19, progress: 0.8 }],
         hardDropEffect: { piece: { pieceType: "square", row: 18, col: 4, rotation: 0 }, fromRow: 0, progress: 0.2 },
     };
-    renderBoardCanvas({ ...options, reducedEffects: true });
-    assert.equal(transforms.length, 0);
-    assert.ok(rectangles.every(([, , , height]) => height <= 30));
     renderBoardCanvas(options);
     assert.ok(transforms.length > 0);
     assert.ok(rectangles.some(([, , , height]) => height === 120));

@@ -1856,19 +1856,17 @@ test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playin
     };
     globalThis.cancelAnimationFrame = frameId => animationCallbacks.delete(frameId);
     globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({
+        boardCanvasEl: createFakeCanvas(),
+        rng: () => 0,
+    });
     t.after(() => {
+        game.destroy();
         globalThis.requestAnimationFrame = originalRequestAnimationFrame;
         globalThis.cancelAnimationFrame = originalCancelAnimationFrame;
         globalThis.getComputedStyle = originalGetComputedStyle;
     });
-
-    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({
-        boardCanvasEl: createFakeCanvas(),
-        reducedEffects: true,
-        rng: () => 0,
-    });
-    t.after(() => game.destroy());
 
     const board = createEmptyBoard();
     board[19] = Array(10).fill("bar");
@@ -1905,14 +1903,14 @@ test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playin
     await waitForTick(game, targetTick);
 
     assert.deepEqual(phases, ["lineClearing"]);
-    const animationCallback = [...animationCallbacks.values()][0];
+    const animationCallback = animationCallbacks.get(game.runtime.animationFrameId);
     assert.equal(typeof animationCallback, "function");
     animationCallback(performance.now() + 400);
     assert.deepEqual(phases, ["lineClearing", "playing"]);
     assert.equal(game.getDisplaySnapshot().lines, 1);
 });
 
-test("착지 효과 종료·설정 전환·보정·destroy는 gameplay를 다시 실행하지 않는다", async (t) => {
+test("착지 효과 종료·보정·destroy는 gameplay를 다시 실행하지 않는다", async (t) => {
     const originalRaf = globalThis.requestAnimationFrame;
     const originalCancel = globalThis.cancelAnimationFrame;
     const originalStyle = globalThis.getComputedStyle;
@@ -1923,7 +1921,7 @@ test("착지 효과 종료·설정 전환·보정·destroy는 gameplay를 다시
     globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
     t.mock.method(performance, "now", () => 0);
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ boardCanvasEl: createFakeCanvas(), rng: () => 0, reducedEffects: false });
+    const game = createTetrisRuntime({ boardCanvasEl: createFakeCanvas(), rng: () => 0 });
     t.after(() => {
         game.destroy();
         globalThis.requestAnimationFrame = originalRaf;
@@ -1956,13 +1954,7 @@ test("착지 효과 종료·설정 전환·보정·destroy는 gameplay를 다시
     assert.deepEqual(game.getSnapshot(), corrected);
 
     await drop();
-    game.setReducedEffects(true);
-    assert.equal(frames.size, 0);
-    await drop();
-    assert.equal(frames.size, 0);
-    assert.equal(game.getPlacementDecisionLog().length, 4);
-    game.setReducedEffects(false);
-    await drop();
+    assert.equal(game.getPlacementDecisionLog().length, 3);
     const destroyedFrame = [...frames.values()][0];
     game.destroy();
     const destroyed = game.getSnapshot();
@@ -1971,17 +1963,18 @@ test("착지 효과 종료·설정 전환·보정·destroy는 gameplay를 다시
     assert.deepEqual(game.getSnapshot(), destroyed);
 });
 
-test("효과 축소 중 줄 삭제와 설정 전환은 기존 350ms 완료 시점을 유지한다", async (t) => {
+test("줄 삭제 효과는 350ms 뒤 한 번만 gameplay를 완료한다", async (t) => {
     const originalRaf = globalThis.requestAnimationFrame;
     const originalCancel = globalThis.cancelAnimationFrame;
     const originalStyle = globalThis.getComputedStyle;
-    let callback;
-    globalThis.requestAnimationFrame = next => { callback = next; return 1; };
-    globalThis.cancelAnimationFrame = () => {};
+    const frames = new Map();
+    let frameId = 0;
+    globalThis.requestAnimationFrame = next => { frames.set(++frameId, next); return frameId; };
+    globalThis.cancelAnimationFrame = id => frames.delete(id);
     globalThis.getComputedStyle = () => ({ getPropertyValue: () => "" });
     t.mock.method(performance, "now", () => 0);
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const game = createTetrisRuntime({ boardCanvasEl: createFakeCanvas(), reducedEffects: true });
+    const game = createTetrisRuntime({ boardCanvasEl: createFakeCanvas() });
     t.after(() => {
         game.destroy();
         globalThis.requestAnimationFrame = originalRaf;
@@ -2003,10 +1996,9 @@ test("효과 축소 중 줄 삭제와 설정 전환은 기존 350ms 완료 시�
     await waitForTick(game, tick);
     assert.equal(game.getSnapshot().phase, "lineClearing");
     const locked = game.getSnapshot();
-    callback(349);
+    frames.get(game.runtime.animationFrameId)(349);
     assert.deepEqual(game.getSnapshot(), locked);
-    game.setReducedEffects(false);
-    callback(350);
+    frames.get(game.runtime.animationFrameId)(350);
     assert.equal(game.getSnapshot().lines, 2);
     assert.equal(game.getSnapshot().score, locked.score + 20);
     assert.equal(game.getSnapshot().phase, "playing");

@@ -312,10 +312,9 @@ test("PVE server gameOver 후 결과를 표시하고 같은 방을 재시작한�
     }
 });
 
-test("PVE 공격은 여러 조각과 도착 파편을 표시하고 효과 축소 시 정리한다", async ({ page }) => {
+test("PVE 공격은 여러 조각과 도착 파편을 표시하고 페이지 종료 시 정리한다", async ({ page }) => {
     test.setTimeout(45_000);
     await page.addInitScript(() => {
-        localStorage.setItem("tetrisReducedEffects", "false");
         window.__combatMotion = { maximum: 0, impacts: 0, added: 0, sizes: [] };
         document.addEventListener("DOMContentLoaded", () => {
             new MutationObserver(records => {
@@ -342,16 +341,12 @@ test("PVE 공격은 여러 조각과 도착 파편을 표시하고 효과 축소
         expect(motion.maximum).toBeLessThanOrEqual(40);
         expect(motion.sizes.length).toBeGreaterThanOrEqual(3);
         expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(1600);
-        await page.locator("#effectsToggle").click();
-        await expect(page.locator("#effectsToggle")).toHaveAttribute("aria-pressed", "true");
+        await expect(page.locator("#effectsToggle")).toHaveCount(0);
+        await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent("pagehide")));
         await expect(page.locator(".combat-projectile")).toHaveCount(0);
-        const addedAfterReduction = await page.evaluate(() => window.__combatMotion.added);
-        const aiId = monitor.getObservedPlayerIds().find(id => id.startsWith("heuristic-ai-"));
-        const attackCount = () => monitor.getSnapshots(aiId).filter(snapshot => snapshot.combatEffect?.sentLines > 0).length;
-        const countBeforeReduction = attackCount();
-        await expect.poll(attackCount, { timeout: 20_000 }).toBeGreaterThan(countBeforeReduction);
-        expect(await page.evaluate(() => window.__combatMotion.added)).toBe(addedAfterReduction);
-        await expect(page.locator('.player-column[data-player="1"] .combat-feedback')).toContainText("줄 대기");
+        const addedAfterCleanup = await page.evaluate(() => window.__combatMotion.added);
+        await page.waitForTimeout(700);
+        expect(await page.evaluate(() => window.__combatMotion.added)).toBe(addedAfterCleanup);
     } finally {
         monitor.dispose();
     }

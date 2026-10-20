@@ -146,10 +146,7 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
         const themePressed = await themeToggle.getAttribute("aria-pressed");
         await themeToggle.click();
         await expect(themeToggle).not.toHaveAttribute("aria-pressed", themePressed);
-        const effectsToggle = hostPage.locator("#effectsToggle");
-        const effectsPressed = await effectsToggle.getAttribute("aria-pressed");
-        await effectsToggle.click();
-        await expect(effectsToggle).not.toHaveAttribute("aria-pressed", effectsPressed);
+        await expect(hostPage.locator("#effectsToggle")).toHaveCount(0);
 
         const guestPlayerId = (await readPlayerSession(guestPage)).playerId;
         const inputCount = guestMonitor.getSentGameInputCount();
