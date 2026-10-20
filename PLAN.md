@@ -6,6 +6,8 @@
 
 ## Current Project Status
 
+- DB 설명 문서: [연결과 전체 처리 흐름](docs/operations/database/database-flow-guide.md)에 local/production sink, 연결·권한·startup, 이벤트 검증·저장, 여러 룸의 공용 pool, 멱등성·원자성, 실패·종료와 import/export를 정리했다(2026-10-19). DB 조사에서 server build와 관련 단위 테스트 38개 통과를 확인했으며, Docker daemon 미실행으로 실제 DB 통합 검증·운영 상태 조회는 수행하지 못했다. 문서 추가이며 저장 정책·runtime은 변경하지 않았다.
+
 ### 게임 규칙: 고정 유예·무한 버티기 방지 구현 (2026-10-19)
 
 - [게임 규칙 계획과 검증 기록](docs/gameplay/lock-delay-anti-stall-plan.md)에 따라 착지 후 500ms·성공한 이동/회전 최대 15회 갱신을 구현했다. 상승·같은 깊이 재낙하로 사용 횟수를 복구하지 않고 새 최저 기준 row에서만 시간·횟수를 복구한다. 공중 만료는 착지 시 고정하며, 막힌 소프트드롭도 같은 유예를 적용하고 하드드롭은 즉시 고정한다.

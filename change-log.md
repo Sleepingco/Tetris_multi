@@ -2755,3 +2755,9 @@ client input
 - snapshot·DTO·schema·보정·재join에 유예 상태를 연결했다. 중복 상태와 오래된 snapshot으로 예산을 늘리지 않으며 클라이언트는 서버 예산을 변경하는 payload를 보낼 수 없다. PVE는 기존 AI 입력 경로에 동일 정책을 적용하고 중도 고정 시 기존 계획 폐기·학습 로그 제외 규칙을 유지한다.
 - 새 core·통합 검사는 499/500ms, 15/16번째 갱신, 새 깊이, 실패 입력, 공중 만료, snapshot 복사·복원과 드롭 동작을 검증한다. 기존 60.5초 버티기 재현은 서버 ticker·싱글·멀티 예측에서 4초 이내 고정되는 회귀 검사로 추가했다. 필수 verify는 typecheck·build·artifact와 Node 682 pass·기존 조건부 1 skip·실패 0으로 통과했다. 새 Chromium E2E 3/3은 싱글 벽차기, 실제 2탭 PVP 수렴, PVE 접속 복구 뒤 예산 보존을 확인했다. 최종 전체 Chromium E2E도 기존 공격·상쇄·종료·재시작·네트워크 복구 검사를 포함해 50/50 통과했다.
 - 직접 플레이한 조작감·실기기 프레임·Linux CI·운영 배포는 미검증이다. snapshot 계약 변경으로 배포 시 기존 열린 탭은 새로고침이 필요하며 서버·클라이언트를 함께 배포·rollback한다. T스핀 분류·점수·공격표·디자인·사운드·모델·데이터셋·운영 DB는 변경하지 않았다. 다른 작업의 dirty 파일을 보존했고 커밋·push·배포는 수행하지 않았다.
+
+## DB 연결·이벤트 저장 전체 흐름 문서화
+
+- [DB 전체 흐름 안내](docs/operations/database/database-flow-guide.md)에 DB의 분석 로그 역할, 환경별 단일 sink, Compose·pg·TLS 연결, startup·권한·migration, 로그 생성·검증·projection·테이블, 여러 룸의 공용 pool과 event identity, 멱등성·원자성·실패·종료, 기존 로그 import와 분석 export를 연결해 설명했다. 기존 Blueprint에는 안내 링크를 추가하고 PLAN에는 문서 위치와 검증 범위를 기록했다.
+- DB 조사에서 Node 24.18.0 server build와 관련 단위 테스트 38개 통과를 확인했다. 실제 PostgreSQL 동시 저장 통합 테스트는 로컬 Docker daemon 미실행으로 재실행하지 못했고 운영 DB에는 접속하지 않았다. 테스트 정의와 실제 실행 결과를 구분했다.
+- 이번 변경은 문서만 추가·보완하며 기존 gameplay 작업의 dirty 변경을 보존했다. 문서 링크·코드 블록·공백을 검사하고 전체 실행 검증은 반복하지 않는다. 저장 정책·schema·runtime·데이터·운영 환경은 변경하지 않았으며 문서 rollback은 이번 안내와 추가 링크·기록만 제거하면 된다.
