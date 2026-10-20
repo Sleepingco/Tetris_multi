@@ -2740,6 +2740,14 @@ client input
 - [고정 유예 수정안](docs/gameplay/lock-delay-anti-stall-plan.md)에 현행 방어, 500ms·15회 갱신 제안, 같은 깊이 예산 복구 차단, 공용 규칙·서버 권위·snapshot 복원과 PVE 연결, 단계별 영향 파일·회귀 기준·조작감 위험·rollback을 기록했다. 시각 디자인 계획과 혼동하지 않도록 `docs/gameplay/`에 별도 보관한다.
 - 이번 변경은 문서만 수정한다. 조사 결과를 새 구현 검증으로 표시하지 않으며 구현·커밋·push·배포는 수행하지 않았다. 문서 변경 후 전체 실행 테스트는 재실행하지 않는다.
 
+## 모바일 성과 알림과 Git 작업 복구 과정 기록
+
+- [트러블슈팅](docs/quality/troubleshooting.md)에 10월 16일의 모바일 알림 CI 실패를 정리했다. 1차 글줄 높이 보완의 로컬 통과 뒤 두 번째 보드에서 약 37.5px 겹친 재실패, 앞쪽 HUD 48px 변화의 RED 재현, 공용 좌표 대신 `.playfield`에 CSS로 고정한 최종 수정과 유지한 cleanup·접근성·게임 상태 경계를 구분했다.
+- 당시 전용 E2E 5/5·전체 로컬 Chromium 47/47·필수 verify 675 pass 및 기존 조건부 1 skip을 과거 실행 결과로 기록했다. 이번 문서 작업의 새 테스트 결과나 최종 Linux CI 통과로 표시하지 않는다.
+- detached HEAD의 `d8092c4`가 브랜치 로그에 보이지 않은 이유, 변경을 next-preview에 다시 적용한 과정, 로컬·원격 분기와 main에서 잘못 실행한 pull, main 복구와 올바른 worktree에서의 rebase를 정리했다. `main → next-preview`의 `c896e0f`와 이후 `next-preview → main`의 PR #6 병합을 구분한다.
+- 최종 수정은 `8bc3199`이며 현재 main에는 `b0f6f0a`로 병합돼 있다. 고정된 채팅 보호를 해제·복원하며 추가 worktree를 archive했고 브랜치·커밋은 보존했다. 10월 19일 `git worktree list`에서 기본 폴더만 남은 것을 확인했다.
+- 기존 고정 유예 계획 관련 dirty 변경은 보존하고 이번에는 트러블슈팅과 이력 문서만 추가했다. 런타임·테스트·Git 이력은 변경하지 않으며 전체 실행 검증·커밋·push·배포는 수행하지 않는다.
+
 ## 공용 고정 유예·버티기 방지 구현
 
 - [게임 규칙 계획](docs/gameplay/lock-delay-anti-stall-plan.md)을 구현했다. 최초 착지부터 중력과 독립적인 500ms 예산을 진행하고 성공한 이동·회전은 최대 15회 갱신한다. 위로 벽차기·같은 깊이 재낙하는 사용 횟수를 복구하지 않고 새 최저 기준 row에서만 시간·횟수를 복구한다. 공중에서 만료되면 착지 시 고정한다.

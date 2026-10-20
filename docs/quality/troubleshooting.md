@@ -774,3 +774,109 @@ Client 표시만 늦추고 서버를 바로 실행하면 첫 조각·AI가 먼�
 2. 같은 pieceIndex의 authoritative board fingerprint가 실제로 변경됐는지 확인한다.
 3. 착지/line-clear effect 진행 중인 Canvas를 고정 board의 원본으로 오인하지 않았는지 확인한다.
 4. 연출이 끝나면 다시 같아졌다는 이유만으로 실제 rollback을 통과시키지는 않는다. 이번에는 trace에서 좌표·authoritative state 불변을 확인한 뒤 테스트 준비 조건만 변경했다.
+
+---
+
+## 2026-10-16 — 모바일 성과 알림 배치가 로컬에서는 통과하고 CI에서 실패
+
+### 증상과 검사 범위
+
+- `e2e/combatAchievements.spec.js`에서 TETRIS·T-SPIN·COMBO의 중복 방지·효과 축소·cleanup은 유지됐지만, 모바일 배치 검사 때문에 전체 Chromium E2E가 46/47로 실패했다.
+- 이 검사는 실제 휴대폰 조작이 아니라 데스크톱 Chromium의 viewport를 `390×844`로 줄여 반응형 배치를 확인한다. 알림은 대상 보드 위에 있어야 하고 가로로 화면을 벗어나지 않아야 한다.
+- 최초 오류는 boolean `false`만 남겨 높이·가로 넘침·측정 시점 중 어느 조건이 실패했는지 알 수 없었다. 같은 기존 테스트는 macOS에서 3/3 통과했다.
+
+### 1차 보완과 다시 실패한 이유
+
+기존 코드는 높이 40px인 `.combat-feedback` 상단을 알림의 시작 위치로 사용했다. 큰 글줄에서 문구가 보드를 덮는 조건을 재현하고, DOM에 추가한 알림의 실제 높이와 애니메이션 여유를 계산해 `top`을 보정했다.
+
+- 기본·확대 글줄의 양쪽 보드 검사와 실제 사각형 좌표를 실패 메시지에 추가했다.
+- 큰 글줄의 겹침을 RED로 확인했고 수정 후 전용 검사 5/5, 로컬 전체 E2E 47/47이 통과했다.
+- 그러나 이후 Linux CI에서는 **두 번째 보드의 기본 글줄**에서도 실패했다. 알림 bottom은 `936.40625px`, board top은 `898.90625px`로 약 37.5px 겹쳤다. `insideViewport`는 true였다.
+
+따라서 글줄 높이 보완만으로 해결됐다고 볼 수 없었다. 당시 Linux trace가 artifact로 제공되지 않아 최초 실패를 글꼴 차이로 확정하지 않았으며, 로컬 통과도 CI 통과로 대체하지 않았다.
+
+### 확인한 좌표 기준의 결함
+
+알림은 대상 보드가 아니라 공용 `.combat-layer`에 붙어 있었고, 표시 시점의 `getBoundingClientRect()` 값으로 좌표를 한 번만 계산했다. 앞쪽 보드나 HUD 높이가 나중에 바뀌면 아래쪽 보드는 이동하지만 공용 레이어의 알림 좌표는 그대로 남는다.
+
+```text
+두 번째 보드 위치 측정 → 공용 레이어에 알림 배치
+→ 첫 번째 HUD 높이 감소 → 두 번째 보드가 위로 이동
+→ 알림은 이전 좌표에 남음 → 보드와 겹침
+```
+
+표시 전 첫 번째 HUD에 48px 여유를 두고, 두 번째 알림 표시 후 그 여유를 제거하는 회귀 입력으로 같은 종류의 실패를 재현했다. viewport 자체는 바뀌지 않으므로 기존 resize cleanup만으로는 해결되지 않는다.
+
+**공용 좌표가 레이아웃 변화를 따라가지 못하는 결함은 확인했다. 다만 실제 Linux CI에서 어떤 UI 변화가 그 이동을 유발했는지까지 확정한 것은 아니다.**
+
+### 최종 수정
+
+- [페이지의 `showAchievement()`](../../src/client/pages/tetrisMulti.tsx)는 보드가 세로로 쌓인 경우 알림을 해당 `.playfield`에 직접 붙인다. 데스크톱의 옆 배치는 기존 공용 레이어를 유지한다.
+- [성과 알림 CSS](../../src/client/styles/tetris.css)는 보드 자식 알림에 `bottom: 100%`, `left: 50%`, `translate: -50% 0`을 사용한다. 문구 높이나 보드 위치가 바뀌어도 브라우저 레이아웃이 상대 위치를 유지한다.
+- 이전 `offsetHeight`·픽셀 `top` 보정은 제거했다. 새로운 polling·resize observer·타이머를 추가하지 않았다.
+- 공용 `aria-hidden` 레이어 밖으로 이동한 문구에도 `aria-hidden`을 명시했다. 클릭을 가로채지 않는 CSS와 기존 중복 방지·1.2초 정리·resize·pagehide cleanup을 유지했다.
+- 점수·공격·입력·authoritative state·socket 계약은 변경하지 않았다. 테스트를 제외하거나 허용 오차·재시도를 늘려 통과시키지 않았다.
+
+### 검증과 반영 범위
+
+- [전용 E2E](../../e2e/combatAchievements.spec.js)는 기본·확대 글줄, 양쪽 보드, 표시 도중 앞쪽 HUD 높이 변경, 가로 경계와 cleanup을 검사한다. 변경 전 RED, 변경 후 5/5 반복 통과를 확인했다.
+- 10월 16일 최종 로컬 전체 Chromium E2E는 47/47, `bash scripts/verify.sh`는 typecheck·build·artifact와 Node 675 pass·기존 조건부 1 skip으로 통과했다.
+- 1차 높이 보완은 `427c15a`, 최종 보드 기준 배치는 `8bc3199`다. 10월 19일 기록 정리 시점에는 두 커밋이 PR #6의 merge commit `b0f6f0a`를 통해 main에 포함된 것을 확인했다.
+- 이번 문서 정리에서는 테스트나 hosted CI를 다시 실행·조회하지 않았다. main 병합 사실만으로 최종 Linux CI·배포 성공까지 추정하지 않는다.
+
+### 재발 방지
+
+1. 모바일에서 실패했다는 사실과 해상도·글꼴이 직접 원인이라는 판단을 구분한다.
+2. boolean 하나 대신 알림과 대상 보드의 실제 좌표·viewport·효과 모드를 남긴다.
+3. 일회성 전역 좌표를 보정하기 전에 대상 요소와 같은 레이아웃 기준에 고정할 수 있는지 확인한다.
+4. 최초 배치뿐 아니라 표시 중 앞쪽 콘텐츠 크기가 바뀌는 조건도 검사한다.
+
+---
+
+## 2026-10-16 — 별도 worktree의 커밋 누락처럼 보인 현상과 잘못된 브랜치에서의 pull
+
+### 증상과 원인
+
+모바일 수정 당시 기본 폴더의 main에는 실패한 테스트가 없어서 `codex/next-preview-four` 기준의 별도 worktree를 만들었다. 처음 worktree가 브랜치에 연결되지 않은 detached HEAD 상태였고, 그곳에서 생성한 `d8092c4`는 이후 다른 브랜치로 전환했을 때 일반 브랜치 로그에서 보이지 않았다.
+
+이것은 커밋 내용 유실이 아니라 **어느 브랜치도 그 커밋을 가리키지 않는 상태**였다. reflog와 `git show`로 네 파일의 변경을 확인했다. 별도 worktree는 같은 Git 저장소의 이력·브랜치를 공유하는 작업 폴더이지, 별도의 원격 저장소가 아니다.
+
+### 변경 복구와 원격 이력 분기
+
+1. 깨끗한 next-preview worktree에서 `d8092c4`를 `cherry-pick --no-commit`으로 적용하고 stage만 해제했다. 내용이 원래 커밋과 동일한지 확인했으며 main에는 적용하지 않았다.
+2. 이후 사용자가 변경을 `2cc304f`로 커밋했다. 원격에는 그사이 main 문서 변경을 next-preview로 가져온 `c896e0f`가 있었다.
+3. `codex/next-preview-four`와 `origin/codex/next-preview-four`는 로컬 브랜치와 마지막으로 확인한 원격 위치다. 중복 생성된 작업 브랜치 두 개가 아니었다.
+
+```text
+공통 next-preview 기록
+├─ 로컬: 모바일 수정 1개 커밋
+└─ 원격: main 문서 커밋 2개 + main을 가져온 merge 커밋
+```
+
+`Merge branch 'main' into codex/next-preview-four`는 **main → next-preview** 방향이다. 이 시점에 디자인 변경을 main으로 보냈다는 뜻은 아니다. 로컬 1개·원격 3개로 갈라진 뒤 pull이 중단된 것은 병합 전략 미설정 때문이며, 그 메시지 자체가 파일 내용 충돌이나 수정 유실을 의미하지 않는다.
+
+### 잘못된 폴더에서의 pull과 복구
+
+작업 폴더를 명시하지 않은 `git pull --rebase origin codex/next-preview-four`가 main에서 실행됐다. 이 명령의 마지막 브랜치명은 **가져올 대상**이지, 먼저 이동할 로컬 브랜치명이 아니다. 그 결과 로컬 main이 원격 next-preview의 `c896e0f`까지 fast-forward됐고 next-preview의 로컬 수정은 그대로 남았다. 원격 main은 변경되지 않았다.
+
+복구는 당시 working tree가 clean이고 되돌릴 로컬 main의 고유 작업이 없음을 확인한 뒤 사용자 승인으로 진행했다.
+
+- 기본 폴더의 main은 `reset --keep origin/main`으로 원래 위치에 복구했다. 이 명령을 미커밋 변경·독자 커밋 확인 없이 일반적인 pull 해결법으로 사용해서는 안 된다.
+- next-preview가 체크아웃된 worktree를 `git -C`로 명시하고 `rebase origin/codex/next-preview-four`를 실행했다.
+- Git은 원격 최신 기록 위에 로컬 수정 커밋을 다시 적용했다. 변경은 보존되고 커밋 해시는 `2cc304f`에서 `427c15a`로 바뀌었다. 수정 코드를 수동 복사할 필요는 없었다.
+- rebase 뒤 clean·ahead 1 상태를 확인했다. 그 뒤 로컬·원격 next-preview에는 최종 수정 `8bc3199`가 함께 존재했고, 이후 main 반영은 별도의 PR #6에서 이루어졌다.
+
+### worktree 정리
+
+- 최종 next-preview가 원격과 같고 미커밋 변경이 없으며 별도 data 파일도 없음을 확인했다.
+- Codex의 archive 기능은 고정된 작업 또는 workspace 보호 때문에 처음 정리를 거부했다. 이 채팅이 Pinned에 있음을 확인했으며 Git의 branch protection과는 다른 앱 보호였다.
+- 사용자의 정리 요청 뒤 채팅 고정을 잠시 해제하고 worktree를 복구 가능한 archive로 정리한 다음 원래 고정 위치를 복원했다. 보호를 우회한 강제 삭제는 하지 않았다.
+- `git worktree list`에는 기본 폴더만 남았고 next-preview 브랜치·`8bc3199`는 보존됐다. 10월 19일에도 추가 worktree가 없음을 확인했다.
+
+### 재발 방지
+
+1. 커밋할 worktree는 시작할 때 명명된 브랜치에 연결하고 `git status --short --branch`와 `git worktree list`로 위치를 확인한다.
+2. 여러 작업 폴더를 사용할 때 Git 명령은 `git -C`로 대상을 명시한다. 정리된 과거 worktree 경로를 현재 실행 경로로 다시 안내하지 않는다.
+3. 브랜치 divergence, 실제 파일 충돌, detached HEAD, 미커밋 변경을 구분한 뒤 복구 방식을 선택한다.
+4. rebase는 이번처럼 원격에 없는 로컬 커밋을 다시 적용하는 경우와 이미 공유한 이력을 바꾸는 경우를 구분한다. 해결 명목의 무조건적인 hard reset·강제 push는 하지 않는다.
+5. GitHub main 보호 규칙은 원격 삭제·강제 push·병합을 제한하는 장치이지, 로컬에서 잘못된 브랜치에 pull하는 것을 막는 장치는 아니다.
