@@ -24,7 +24,7 @@ function createPlayerState(gameCore, overrides = {}) {
         board: overrides.board ?? gameCore.createEmptyBoard(20, 10),
         activePiece: { ...activePiece },
         pendingPiece: overrides.pendingPiece ?? null,
-        lastActionWasRotation: false,
+        spinRotation: null,
     };
 }
 
@@ -46,7 +46,7 @@ test("applyServerInputToPlayerState는 move_left가 가능하면 activePiece col
         col: 3,
     });
     assert.deepEqual(playerState.pendingPiece, playerState.activePiece);
-    assert.equal(playerState.lastActionWasRotation, false);
+    assert.equal(playerState.spinRotation, null);
 });
 
 test("applyServerInputToPlayerState는 벽에 막힌 move_left면 activePiece를 유지한다", async () => {
@@ -92,7 +92,7 @@ test("applyServerInputToPlayerState는 soft_drop이 가능하면 activePiece row
         row: 1,
         col: 4,
     });
-    assert.equal(playerState.lastActionWasRotation, false);
+    assert.equal(playerState.spinRotation, null);
 });
 
 test("applyServerInputToPlayerState는 pendingPiece가 있을 때 가능한 rotate를 적용한다", async () => {
@@ -121,7 +121,7 @@ test("applyServerInputToPlayerState는 pendingPiece가 있을 때 가능한 rota
         row: 0,
         col: 4,
     });
-    assert.equal(playerState.lastActionWasRotation, true);
+    assert.deepEqual(playerState.spinRotation, { lastKickIndex: 0, usedKick5: false });
 });
 
 test("applyServerInputToPlayerState는 hard_drop과 hold를 처리하지 않는다", async () => {

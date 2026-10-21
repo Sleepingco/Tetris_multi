@@ -826,7 +826,7 @@ test("AI hard_drop은 기존 attack과 line clear presentation 경로를 유지�
                     stateChanged: true,
                     action: "hard_drop",
                     placementResult: { attackLines: 2, gameOver: false, pieceIndex: 4,
-                        linesCleared: 2, isTSpin: false, combo: 0, backToBack: false,
+                        linesCleared: 2, isTSpin: false, tSpinType: "none", combo: 0, backToBack: false,
                         canceledGarbageLines: 0, appliedGarbageLines: 0 },
                     presentationEffect: {
                         id: "ai:4:line_clear",
@@ -910,7 +910,7 @@ test("ticker callback은 server lock attackLines를 상대 pending garbage로 �
                     attackLines: playerId === "p1" ? 2 : 0,
                     gameOver: false,
                     pieceIndex: 3, linesCleared: playerId === "p1" ? 2 : 0,
-                    isTSpin: false, combo: 0, backToBack: false,
+                    isTSpin: false, tSpinType: "none", combo: 0, backToBack: false,
                     canceledGarbageLines: 0, appliedGarbageLines: playerId === "p2" ? 2 : 0,
                 },
                 presentationEffect: playerId === "p1"

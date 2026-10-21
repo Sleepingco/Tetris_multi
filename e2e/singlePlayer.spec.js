@@ -112,3 +112,31 @@ test("싱글 입력 결과가 Canvas 이동·회전·하강·고정 상태에 �
         .toBeGreaterThan(scoreBeforeHardDrop);
     await expect(page.locator(".game-text")).not.toBeVisible();
 });
+
+test("싱글에서 직접 만든 Mini 슬롯은 실제 벽차기 후 일반 T-Spin 점수를 주지 않는다", async ({ page }) => {
+    await page.addInitScript(() => {
+        Math.random = () => 0;
+    });
+    const time = new Date("2026-10-21T00:00:00Z");
+    await page.clock.install({ time });
+    await page.clock.pauseAt(time);
+    await page.goto("/pages/tetrisSingle.html");
+    await expect(page.locator(".next-preview .next-cell")).toHaveCount(64);
+    // T를 보관하고 S·J·Z는 왼끝에, L은 2열에 세우고 I는 5열 바닥에 둔다.
+    for (const key of ["KeyC", "ArrowLeft", "ArrowLeft", "ArrowLeft", "Space",
+        "ArrowLeft", "KeyZ", "Space",
+        "ArrowLeft", "ArrowLeft", "ArrowLeft", "Space",
+        "ArrowLeft", "ArrowLeft", "ArrowLeft", "Space",
+        "ArrowRight", "ArrowRight", "Space", "KeyC", "ArrowRight"]) {
+        await applyKeyboardAction(page, key);
+    }
+    for (let row = 0; row < 18; row++) await applyKeyboardAction(page, "ArrowDown");
+    await applyKeyboardAction(page, "ArrowUp");
+    const expected = [{ row: 17, col: 4 }, { row: 18, col: 4 }, { row: 18, col: 5 }, { row: 19, col: 4 }];
+    expect(sortCells(await readOpaqueTreeCells(page, { minRow: 14 }))).toEqual(expected);
+    const scoreBeforeMini = await page.locator(".score").textContent();
+    await applyKeyboardAction(page, "Space");
+    expect(sortCells(await readOpaqueTreeCells(page, { minRow: 14 }))).toEqual(expected);
+    await expect(page.locator(".score")).toHaveText(scoreBeforeMini);
+    await expect(page.locator(".game-text")).not.toBeVisible();
+});

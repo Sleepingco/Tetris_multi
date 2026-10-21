@@ -99,6 +99,7 @@ function createServerWirePayload(eventName, payload) {
 
 function createWireSnapshot(snapshot) {
     return {
+        spinRotation: snapshot.spinRotation ? { ...snapshot.spinRotation } : null,
         board: snapshot.board,
         activePiece: snapshot.activePiece ?? null,
         pieceQueue: snapshot.pieceQueue ?? [],
@@ -348,6 +349,7 @@ function installMonotonicClock(t, initialNowMs = 0) {
 
 function createAuthoritativeSnapshot(overrides = {}) {
     return {
+        spinRotation: null,
         board: Array.from({ length: 20 }, () => Array(10).fill(null)),
         activePiece: {
             pieceType: "tree",
@@ -493,6 +495,42 @@ test("game join 초기 authoritative snapshot으로 내 보드와 상대 보드�
     assert.equal(session.opponentGame.getSnapshot().pieceIndex, 2);
     assert.equal(session.opponentGame.runtime.gravityRunning, false);
     assert.equal(session.myGame.getServerBagRemainingCount(), 3);
+});
+
+test("재join·동일 좌표 보정은 회전 이력을 복원하고 미확정 입력·늦은 ack는 덮어쓰지 않는다", async (t) => {
+    const { startMultiplayerGame } = await loadSession();
+    const params = createSessionParams();
+    params.match.players[0].snapshot = createAuthoritativeSnapshot({
+        activePiece: { pieceType: "tree", rotation: 0, row: 4, col: 3 },
+        spinRotation: { lastKickIndex: 0, usedKick5: true },
+    });
+    const session = startMultiplayerGame(params);
+    t.after(() => cleanupSession(session));
+    const actor = params.playerId;
+    assert.deepEqual(session.myGame.getSnapshot().spinRotation, { lastKickIndex: 0, usedKick5: true });
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", { key: "ArrowUp", code: "ArrowUp", repeat: false, preventDefault() {} });
+    await waitForLocalInputTick();
+    const input = sharedFakeSocket.emitted.find(event => event.eventName === "game:input").payload;
+    const predicted = session.myGame.getSnapshot();
+    assert.deepEqual(predicted.spinRotation, { lastKickIndex: 0, usedKick5: true });
+    const deliver = (lastProcessedClientSequence, spinRotation, tick = predicted.tick) => {
+        sharedFakeSocket.emitServer("game:authoritative:snapshot", {
+            playerId: actor,
+            snapshot: { ...predicted, spinRotation, tick, lastProcessedClientSequence },
+        });
+    };
+    deliver(input.clientSequence - 1, null);
+    assert.deepEqual(session.myGame.getSnapshot().spinRotation, predicted.spinRotation);
+    deliver(input.clientSequence, null);
+    assert.equal(session.myGame.getSnapshot().spinRotation, null);
+    const restored = { lastKickIndex: 4, usedKick5: true };
+    deliver(input.clientSequence, restored, predicted.tick + 1);
+    restored.usedKick5 = false;
+    assert.deepEqual(session.myGame.getSnapshot().spinRotation, { lastKickIndex: 4, usedKick5: true });
+    deliver(input.clientSequence - 1, null, predicted.tick + 2);
+    deliver(input.clientSequence, null, predicted.tick);
+    assert.deepEqual(session.myGame.getSnapshot().spinRotation, { lastKickIndex: 4, usedKick5: true });
 });
 
 test("countdown session은 초기 보드만 표시하고 start 후 입력과 중력을 한 번 시작한다", async t => {
@@ -2164,7 +2202,7 @@ test("전투 표시는 현재 match 결과만 한 번 소비하며 이전·잘�
                 id: `${gameId}:${actor}:${index}:combat`, gameId, pieceIndex: index,
                 targetPlayerId: actor === params.playerId ? params.opponentPlayerId : params.playerId,
                 sentLines: 2, canceledLines: 0, appliedLines: 0,
-                linesCleared: 2, isTSpin: false, combo: 0, backToBackBonus: false,
+                linesCleared: 2, isTSpin: false, tSpinType: "none", combo: 0, backToBackBonus: false,
                 ...overrides,
             },
         });

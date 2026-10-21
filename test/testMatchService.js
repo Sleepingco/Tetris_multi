@@ -289,7 +289,7 @@ test("createMatch는 player별 최소 authoritative state를 만든다", () => {
         currentTick: 0,
         pieceIndex: 1,
         pendingGarbageQueue: [],
-        lastActionWasRotation: false,
+        spinRotation: null,
     });
     assert.notEqual(hostPlayer.authoritativeState, guestPlayer.authoritativeState);
     assert.notEqual(hostPlayer.authoritativeState.board, guestPlayer.authoritativeState.board);

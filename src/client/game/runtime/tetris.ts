@@ -20,7 +20,8 @@ import type { PieceState, PlaceablePieceState } from "../core/piece.ts"
 import type { Board } from "../core/board.ts"
 import { createLockDelay, updateLockDelay, shouldLockPiece } from "../core/lockDelay.ts";
 import type { LockDelayState } from "../core/lockDelay.ts";
-import { isTSpinLock } from "../core/tSpin.ts"
+import { classifyTSpin, nextSpinRotation, calculatePlacementScore } from "../core/tSpin.ts";
+import type { SpinRotation, TSpinType } from "../core/tSpin.ts";
 import { playHardDropSfx, playLineClearSfx } from "./sound.ts"
 import type { HardDropEffect } from "../render/tetrisRender.ts";
 import { createRuntimeDisplayBridge } from "./displayBridge.ts"
@@ -93,6 +94,7 @@ type PieceLog = {
 };
 type PlacementResult = {
     linesCleared: number;
+    tSpinType: TSpinType;
     isTSpin: boolean;
     combo: number;
     backToBack: boolean;
@@ -136,6 +138,7 @@ export type PlacementDecisionLog = Omit<PlacementContext, "scoreBefore" | "schem
     aiComparison?: HumanPlacementLogAnalysis["aiComparison"];
 };
 type TetrisSnapshot = {
+    spinRotation: SpinRotation | null;
     lockDelay: LockDelayState;
     score: number;
     lines: number;
@@ -198,7 +201,7 @@ export type TetrisRuntimeOptions = {
     inputOutcomeRecorder?: ((record: InputOutcomeRecord) => void) | null;
 };
 export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "subscribeDisplay"> & {
-    syncLockDelay(snapshot: TetrisSnapshotInput): void;
+    syncActivePieceState(snapshot: TetrisSnapshotInput): void;
     init: (options?: { autoStart?: boolean; serverBagChunks?: PieceType[][] | null }) => void;
     enqueueInput: (action: InputAction | null, scheduledTick?: number | null, inputPieceIndex?: number | null) => QueuedInput | null;
     render: () => void;
@@ -393,6 +396,8 @@ export function createTetrisRuntime({
         gameState.pieceQueue = []
         gameState.holdPieceType = null
         gameState.holdUsedThisDrop = false
+        gameState.spinRotation = null;
+        gameState.tSpinType = "none";
         gameState.inputQueue = []
         gameState.phase = GAME_PHASE.PLAYING
         gameState.board = createEngineBoard(ROWS, COLS)
@@ -424,6 +429,7 @@ export function createTetrisRuntime({
       */
     function activateSpawnedPiece(piece: PlaceablePieceState): void {
         gameState.lockDelay = createLockDelay(piece.row);
+        gameState.spinRotation = null;
         runtime.lockUpdatedAt = performance.now();
         setActivePiece(piece)
         gameState.pendingPiece = { ...piece }
@@ -636,6 +642,7 @@ export function createTetrisRuntime({
         const dropped = nextRow - row
         runtime.pendingLockScoreBefore = gameState.score
         if (dropped > 0) {
+            gameState.spinRotation = null;
             gameState.score += dropped * 2
             ui.renderScore(gameState.score)
         }
@@ -836,7 +843,9 @@ export function createTetrisRuntime({
             if (intent.shouldStartGravity) startGravity()
             setActivePiece(intent.active)
             if (intent.moveCause) {
-                gameState.lastActionWasRotation = intent.moveCause === "rotate"
+                gameState.spinRotation = intent.moveCause === "rotate" && intent.active.pieceType === "tree"
+                    ? nextSpinRotation(gameState.spinRotation, intent.kickIndex ?? 0)
+                    : null;
             }
             refreshLockDelay(intent.moveCause === "rotate" || intent.moveCause === "horizontal");
             renderBoard()
@@ -876,10 +885,10 @@ export function createTetrisRuntime({
         const placementContext = createPlacementDecisionContext(lockedPiece)
         runtime.decisionStartPiece = null
         const touchesAboveTop = isPieceAboveTop(activePiece, BLOCKS)
-        gameState.isTSpin = isTSpinLock({
+        gameState.tSpinType = classifyTSpin({
             board,
             piece: activePiece,
-            lastActionWasRotation: gameState.lastActionWasRotation,
+            spinRotation: gameState.spinRotation,
         })
 
         commitLockedPiece({ board, piece: activePiece, rotation, row, col })
@@ -922,7 +931,7 @@ export function createTetrisRuntime({
             ui.showGameOver()
             finalizePlacementDecision(placementContext, {
                 linesCleared: 0,
-                isTSpin: gameState.isTSpin,
+                tSpinType: gameState.tSpinType,
                 gameOver: true,
             })
             return
@@ -946,16 +955,17 @@ export function createTetrisRuntime({
         if (!board) return
         const { fullRows } = findFullRows(board)
         if (fullRows.length === 0) {
-            const isTSpin = gameState.isTSpin
-            if (gameState.isTSpin) {
-                gameState.score += 15
-                ui.renderScore(gameState.score)
+            const tSpinType = gameState.tSpinType
+            const points = calculatePlacementScore(0, tSpinType);
+            if (points > 0) {
+                gameState.score += points;
+                ui.renderScore(gameState.score);
             }
-            gameState.isTSpin = false
+            gameState.tSpinType = "none"
             renderBoard()
             const finalizeResult = finalizePlacementDecision(placementContext, {
                 linesCleared: 0,
-                isTSpin,
+                tSpinType,
                 gameOver: false,
             })
             if (finalizeResult?.gameOver) return
@@ -970,25 +980,23 @@ export function createTetrisRuntime({
 
         addLineClearEffect(fullRows, () => {
             const clearedLines = clearFilledLines(board)
+            const points = calculatePlacementScore(clearedLines, gameState.tSpinType);
+            if (points > 0) {
+                gameState.score += points;
+                ui.renderScore(gameState.score);
+            }
             if (clearedLines > 0) {
-                let points = clearedLines * 10
-                if (gameState.isTSpin) points *= 5
-                gameState.score += points
                 gameState.lines += clearedLines
-                ui.renderScore(gameState.score)
                 ui.renderLines(gameState.lines)
-            } else if (gameState.isTSpin) {
-                gameState.score += 15
-                ui.renderScore(gameState.score)
             }
 
-            const isTSpin = gameState.isTSpin
+            const tSpinType = gameState.tSpinType
             const finalizeResult = finalizePlacementDecision(placementContext, {
                 linesCleared: clearedLines,
-                isTSpin,
+                tSpinType,
                 gameOver: false,
             })
-            gameState.isTSpin = false
+            gameState.tSpinType = "none"
             renderBoard()
             if (finalizeResult?.gameOver) return
             startNextTurn()
@@ -1336,7 +1344,7 @@ export function createTetrisRuntime({
       */
     function finalizePlacementDecision(
         placementContext: PlacementContext | null,
-        result: { linesCleared: number; isTSpin: boolean; gameOver: boolean },
+        result: { linesCleared: number; tSpinType: TSpinType; gameOver: boolean },
     ): { gameOver: boolean } {
         if (!placementContext) return { gameOver: false }
 
@@ -1344,7 +1352,7 @@ export function createTetrisRuntime({
         const scoreAfter = gameState.score
         const attackState = updateAttackState({
             linesCleared: result.linesCleared,
-            isTSpin: result.isTSpin,
+            tSpinType: result.tSpinType,
         })
         const rawAttackLines = calculateGarbageAttack(attackState)
         const boardAfter = serializeGameState(gameState).board
@@ -1354,7 +1362,8 @@ export function createTetrisRuntime({
             boardAfter,
             placementResult: {
                 linesCleared: result.linesCleared,
-                isTSpin: attackState.isTSpin,
+                tSpinType: attackState.tSpinType,
+                isTSpin: attackState.tSpinType !== "none",
                 combo: attackState.combo,
                 backToBack: attackState.backToBack,
                 rawAttackLines,
@@ -1420,15 +1429,15 @@ export function createTetrisRuntime({
       * 이전 combo/back-to-back과 이번 line clear 결과를 core 규칙으로 계산한다.
       * 반환값은 이번 공격량에 사용하고 `nextCombo`/`nextBackToBack`만 다음 턴의 gameState에 저장한다.
       */
-    function updateAttackState({ linesCleared, isTSpin }: {
+    function updateAttackState({ linesCleared, tSpinType }: {
         linesCleared: number;
-        isTSpin: boolean;
-    }): Pick<AttackStateResult, "linesCleared" | "isTSpin" | "combo" | "backToBack"> {
+        tSpinType: TSpinType;
+    }): Pick<AttackStateResult, "linesCleared" | "tSpinType" | "combo" | "backToBack"> {
         const attackState = resolveAttackState({
             combo: gameState.combo,
             backToBack: gameState.backToBack,
             linesCleared,
-            isTSpin,
+            tSpinType,
         })
 
         gameState.combo = attackState.nextCombo
@@ -1436,7 +1445,7 @@ export function createTetrisRuntime({
 
         return {
             linesCleared: attackState.linesCleared,
-            isTSpin: attackState.isTSpin,
+            tSpinType: attackState.tSpinType,
             combo: attackState.combo,
             backToBack: attackState.backToBack,
         }
@@ -1549,6 +1558,7 @@ export function createTetrisRuntime({
         const serializedState = serializeGameState(gameState)
         return {
             lockDelay: { ...gameState.lockDelay },
+            spinRotation: serializedState.spinRotation,
             board: serializedState.board,
             activePiece: serializedState.activePiece ?? { ...gameState.activePiece },
             pieceQueue: [...gameState.pieceQueue],
@@ -1610,8 +1620,8 @@ export function createTetrisRuntime({
         gameState.holdUsedThisDrop = restored.holdUsedThisDrop
         gameState.pendingPiece = restored.pendingPiece ?? clonePendingPiece(restored.activePiece)
         gameState.phase = restored.phase
-        gameState.lastActionWasRotation = restored.lastActionWasRotation
-        gameState.isTSpin = restored.isTSpin
+        gameState.spinRotation = restored.spinRotation
+        gameState.tSpinType = restored.tSpinType
         gameState.combo = restored.combo
         gameState.backToBack = restored.backToBack
         if (clearInputQueue) gameState.inputQueue = []
@@ -1681,13 +1691,15 @@ export function createTetrisRuntime({
         displayBridge.publishDisplay()
     }
 
-    /** 위치 보정 없이 서버의 유예 상태만 복원하며 같은 상태의 지연 전송은 시간을 늘리지 않는다. */
-    function syncLockDelay(snapshot: TetrisSnapshotInput): void {
-        if (!snapshot.lockDelay || snapshot.pieceIndex !== runtime.pieceIndex) return;
+    /** 같은 활성 조각의 서버 회전 이력과 유예를 복원하되 지연 전송으로 시간을 늘리지 않는다. */
+    function syncActivePieceState(snapshot: TetrisSnapshotInput): void {
+        if (snapshot.pieceIndex !== runtime.pieceIndex) return;
         const piece = snapshot.activePiece;
         const active = gameState.activePiece;
         if (!piece || piece.pieceType !== active.pieceType || piece.rotation !== active.rotation
             || piece.row !== active.row || piece.col !== active.col) return;
+        gameState.spinRotation = snapshot.spinRotation ? { ...snapshot.spinRotation } : null;
+        if (!snapshot.lockDelay) return;
         const previous = gameState.lockDelay;
         const incoming = { ...snapshot.lockDelay };
         if (incoming.lowestRow === previous.lowestRow && incoming.resetCount === previous.resetCount
@@ -1743,7 +1755,7 @@ export function createTetrisRuntime({
         getDisplaySnapshot: displayBridge.getDisplaySnapshot,
         subscribeDisplay: displayBridge.subscribeDisplay,
         applySnapshot,
-        syncLockDelay,
+        syncActivePieceState,
         playLineClearPresentation,
         getPendingInputCount,
         setAuthoritativePendingGarbageLines,

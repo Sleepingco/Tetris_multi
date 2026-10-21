@@ -1,4 +1,5 @@
 import { isBackToBackEligible } from "./garbage.ts";
+import type { TSpinType } from "./tSpin.ts";
 
 // =============================
 // 공격 연속 상태 계산
@@ -10,12 +11,12 @@ export type AttackStateOptions = {
     combo?: number;
     backToBack?: boolean;
     linesCleared?: number;
-    isTSpin?: boolean;
+    tSpinType?: TSpinType;
 };
 
 export type AttackStateResult = {
     linesCleared: number;
-    isTSpin: boolean;
+    tSpinType: TSpinType;
     combo: number;
     backToBack: boolean;
     nextCombo: number;
@@ -35,7 +36,7 @@ export function resolveAttackState({
     combo = -1,
     backToBack = false,
     linesCleared = 0,
-    isTSpin = false,
+    tSpinType = "none",
 }: AttackStateOptions = {}): AttackStateResult {
     const nextCombo = linesCleared > 0
         ? combo + 1
@@ -44,12 +45,12 @@ export function resolveAttackState({
         ? nextCombo
         : 0;
     const nextBackToBack = linesCleared > 0
-        ? isBackToBackEligible({ linesCleared, isTSpin })
+        ? isBackToBackEligible({ linesCleared, tSpinType })
         : backToBack;
 
     return {
         linesCleared,
-        isTSpin,
+        tSpinType,
         combo: attackCombo,
         backToBack,
         nextCombo,

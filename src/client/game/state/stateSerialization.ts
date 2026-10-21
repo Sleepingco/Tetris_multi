@@ -1,6 +1,7 @@
 import { createGameState } from "./stateFactory.ts"
 import { createLockDelay } from "../core/lockDelay.ts";
 import type { LockDelayState } from "../core/lockDelay.ts";
+import type { SpinRotation, TSpinType } from "../core/tSpin.ts";
 import type { Board } from "../core/board.ts";
 import type { PieceState } from "../core/piece.ts";
 import type { PieceType } from "./blocks.ts";
@@ -25,8 +26,8 @@ export type SerializedGameState = {
         pendingPiece: PieceState | null;
         inputQueue: QueuedInput[];
         phase: GamePhase;
-        lastActionWasRotation: boolean;
-        isTSpin: boolean;
+        spinRotation: SpinRotation | null;
+        tSpinType: TSpinType;
         combo: number;
         backToBack: boolean;
 };
@@ -80,8 +81,8 @@ export function serializeGameState(gameState: GameState): SerializedGameState {
                 pendingPiece: clonePiece(gameState.pendingPiece),
                 inputQueue: [...gameState.inputQueue],
                 phase: gameState.phase,
-                lastActionWasRotation: gameState.lastActionWasRotation,
-                isTSpin: gameState.isTSpin,
+                spinRotation: gameState.spinRotation ? { ...gameState.spinRotation } : null,
+                tSpinType: gameState.tSpinType,
                 combo: gameState.combo,
                 backToBack: gameState.backToBack,
         }
@@ -113,8 +114,8 @@ export function deserializeGameState(
         gameState.pendingPiece = clonePiece(snapshot.pendingPiece)
         gameState.inputQueue = Array.isArray(snapshot.inputQueue) ? [...snapshot.inputQueue] : []
         gameState.phase = snapshot.phase ?? gameState.phase
-        gameState.lastActionWasRotation = Boolean(snapshot.lastActionWasRotation)
-        gameState.isTSpin = Boolean(snapshot.isTSpin)
+        gameState.spinRotation = snapshot.spinRotation ? { ...snapshot.spinRotation } : null;
+        gameState.tSpinType = snapshot.tSpinType ?? gameState.tSpinType;
         gameState.combo = typeof snapshot.combo === "number" && Number.isInteger(snapshot.combo)
                 ? snapshot.combo
                 : gameState.combo

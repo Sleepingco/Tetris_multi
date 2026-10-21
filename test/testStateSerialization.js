@@ -28,6 +28,8 @@ test("serializeGameState는 현재 snapshot 복제 범위를 유지한다", asyn
     gameState.activePiece = { pieceType: "tree", rotation: 1, row: 4, col: 3 };
     gameState.pendingPiece = { pieceType: "tree", rotation: 1, row: 5, col: 3 };
     gameState.inputQueue = [queuedInput];
+    gameState.spinRotation = { lastKickIndex: 0, usedKick5: true };
+    gameState.tSpinType = "full";
 
     const snapshot = serializeGameState(gameState);
 
@@ -39,6 +41,14 @@ test("serializeGameState는 현재 snapshot 복제 범위를 유지한다", asyn
     assert.notStrictEqual(snapshot.bag, gameState.bag);
     assert.notStrictEqual(snapshot.inputQueue, gameState.inputQueue);
     assert.strictEqual(snapshot.inputQueue[0], queuedInput);
+    assert.deepEqual(snapshot.spinRotation, gameState.spinRotation);
+    snapshot.spinRotation.usedKick5 = false;
+    assert.equal(gameState.spinRotation.usedKick5, true);
+    const { deserializeGameState } = await import("../src/client/game/state/stateSerialization.ts");
+    const restored = deserializeGameState(snapshot, DEFAULTS);
+    assert.deepEqual(restored.spinRotation, snapshot.spinRotation);
+    assert.notStrictEqual(restored.spinRotation, snapshot.spinRotation);
+    assert.equal(restored.tSpinType, "full");
 });
 
 test("deserializeGameState는 partial snapshot fallback과 현재 복제 범위를 유지한다", async () => {

@@ -2,34 +2,48 @@ import type { Board } from "./board.ts";
 import type { PieceState } from "./piece.ts";
 
 // =============================
-// T-Spin 판정
-// 조각을 board에 쓰기 직전 상태를 읽어 T 조각 중심의 네 모서리 점유 수를 검사한다.
-// 점수나 공격 상태는 바꾸지 않고 판정 결과만 반환한다.
+// T-Spin 판정과 고정 점수
+// 조각을 board에 쓰기 직전 상태와 성공한 회전 이력으로 Mini/일반을 구분한다.
+// 보드·이력·점수 상태를 직접 변경하지 않는다.
 // =============================
 
 const T_SPIN_PIECE_TYPE = "tree";
+const FRONT_CORNERS = [[0, 1], [1, 3], [2, 3], [0, 2]];
+const FULL_SCORES = [15, 50, 100, 150];
+const MINI_SCORES = [0, 10, 20];
+
+export type TSpinType = "none" | "mini" | "full";
+
+export type SpinRotation = {
+    lastKickIndex: number;
+    usedKick5: boolean;
+};
 
 export type TSpinLockOptions = {
     board?: Board;
     piece?: PieceState | null;
-    lastActionWasRotation?: boolean;
+    spinRotation?: SpinRotation | null;
 };
 
 /**
- * 현재 고정이 T-Spin 조건을 만족하는지 검사한다.
- * - T 조각(`tree`)이 아니면 false다.
- * - 마지막 액션이 회전이 아니면 false다.
- * - 중심 4코너 중 3개 이상이 막혀 있으면 T-Spin으로 본다.
- *
- * 이 결과는 lock 뒤 점수와 garbage 공격 계산에 사용되며 board를 직접 변경하지 않는다.
+ * 이동·하강 없이 이어지는 T 회전에서는 5번째 킥 승격 이력을 유지한다.
  */
-export function isTSpinLock({
+export function nextSpinRotation(previous: SpinRotation | null, kickIndex: number): SpinRotation {
+    return {
+        lastKickIndex: kickIndex,
+        usedKick5: previous?.usedKick5 === true || kickIndex === 4,
+    };
+}
+
+/**
+ * 고정 전 T의 3코너를 확인하고 전면 2코너 또는 5번째 킥 이력이 있으면 일반으로 분류한다.
+ */
+export function classifyTSpin({
     board,
     piece,
-    lastActionWasRotation,
-}: TSpinLockOptions = {}): boolean {
-    if (!piece || piece.pieceType !== T_SPIN_PIECE_TYPE) return false;
-    if (!lastActionWasRotation) return false;
+    spinRotation,
+}: TSpinLockOptions = {}): TSpinType {
+    if (!piece || piece.pieceType !== T_SPIN_PIECE_TYPE || !spinRotation) return "none";
 
     const boardRows = Array.isArray(board) ? board : [];
     const rows = boardRows.length;
@@ -43,12 +57,22 @@ export function isTSpinLock({
         [centerCol + 1, centerRow + 1],
     ];
 
-    let filledCorners = 0;
-    for (const [cx, cy] of corners) {
-        if (cx < 0 || cx >= cols || cy >= rows || (cy >= 0 && boardRows[cy]?.[cx])) {
-            filledCorners++;
-        }
-    }
+    const occupied = corners.map(([cx, cy]) => (
+        cx < 0 || cx >= cols || cy >= rows || (cy >= 0 && Boolean(boardRows[cy]?.[cx]))
+    ));
+    if (occupied.filter(Boolean).length < 3) return "none";
 
-    return filledCorners >= 3;
+    const [frontA, frontB] = FRONT_CORNERS[piece.rotation];
+    return (occupied[frontA] && occupied[frontB]) || spinRotation.usedKick5
+        ? "full"
+        : "mini";
+}
+
+/**
+ * 줄 삭제와 T-Spin 분류의 점수를 반환한다. 드롭 거리 점수는 실행 계층에서 별도로 합산한다.
+ */
+export function calculatePlacementScore(linesCleared: number, tSpinType: TSpinType): number {
+    if (tSpinType === "full") return FULL_SCORES[linesCleared] ?? 0;
+    if (tSpinType === "mini") return MINI_SCORES[linesCleared] ?? 0;
+    return linesCleared * 10;
 }

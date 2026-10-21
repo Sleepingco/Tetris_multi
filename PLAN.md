@@ -2,9 +2,15 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-10-20. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
+- Last update: 2026-10-21. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
+
+### T-Spin 기록·Mini 분류 구현 (2026-10-21)
+
+- [게임 규칙 계획과 구현 기록](docs/gameplay/tspin-classification-plan.md)에 따라 1·2단계를 구현했다. 낙하한 하드드롭은 회전 자격을 해제하고 제자리 확정은 보존한다. 공용 core가 none/mini/full·전면 코너·5번째 킥과 연속 회전 이력을 판정하며 싱글·멀티 예측·서버가 같은 점수·공격표를 사용한다. Mini는 0/10/20점·기본 공격 0/1/2줄이고 기존 Full 보상을 유지한다.
+- snapshot·ack/보정·재join에 회전 이력을 복원하고 성과는 `T-SPIN MINI`로 구분한다. 새 human/PVE 로그는 분류를 검증·저장하며 과거 v1/v2 누락은 미분류로 보존한다. 모델·feature·원본 로그·DB 행을 재작성하지 않았다. 게임 오버·버퍼 존 변경은 사용자 요청대로 보류한다.
+- 1단계 checkpoint는 필수 verify 697 pass·1 skip과 Chromium 4/4를 통과했다. 2단계 최종 필수 verify는 Node 709 pass·기존 조건부 1 skip·실패 0, 전체 Chromium E2E는 53/53 통과했다. TETRIS/Mini/Full의 양쪽 보드·기본/확대 글줄 조합을 확대한 성과 E2E도 이후 1/1 통과했다. Linux CI·실기기 성능·실제 PostgreSQL 통합은 미검증이다. 서버와 클라이언트를 함께 갱신하고 열린 탭을 새로고침해야 하며, rollback 시 새 로그 reader 호환성을 보존한다. 사용자 요청에 따라 구현·테스트·문서를 현재 `main`에서 로컬 커밋으로 정리한다. 원격 push·배포는 수행하지 않는다.
 
 ### 로컬 커밋 정리 (2026-10-20)
 

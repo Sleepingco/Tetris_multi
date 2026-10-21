@@ -73,6 +73,7 @@ function createPveSocketMonitor(page) {
                     tick: snapshot.tick,
                     pieceIndex: snapshot.pieceIndex,
                     lockDelay: snapshot.lockDelay ? { ...snapshot.lockDelay } : null,
+                    spinRotation: snapshot.spinRotation ? { ...snapshot.spinRotation } : null,
                     board: snapshot.board.map(row => [...row]),
                     activePiece: snapshot.activePiece
                         ? { ...snapshot.activePiece }

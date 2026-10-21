@@ -17,10 +17,10 @@ test("line clear가 없으면 combo를 reset한다", async () => {
         combo: 2,
         backToBack: true,
         linesCleared: 0,
-        isTSpin: false,
+        tSpinType: "none",
     }), {
         linesCleared: 0,
-        isTSpin: false,
+        tSpinType: "none",
         combo: 0,
         backToBack: true,
         nextCombo: -1,
@@ -35,10 +35,10 @@ test("첫 line clear는 combo 0으로 시작한다", async () => {
         combo: -1,
         backToBack: false,
         linesCleared: 1,
-        isTSpin: false,
+        tSpinType: "none",
     }), {
         linesCleared: 1,
-        isTSpin: false,
+        tSpinType: "none",
         combo: 0,
         backToBack: false,
         nextCombo: 0,
@@ -53,10 +53,10 @@ test("연속 line clear는 combo를 증가시킨다", async () => {
         combo: 0,
         backToBack: false,
         linesCleared: 2,
-        isTSpin: false,
+        tSpinType: "none",
     }), {
         linesCleared: 2,
-        isTSpin: false,
+        tSpinType: "none",
         combo: 1,
         backToBack: false,
         nextCombo: 1,
@@ -71,13 +71,13 @@ test("Tetris clear는 back-to-back을 시작하고 유지한다", async () => {
         combo: -1,
         backToBack: false,
         linesCleared: 4,
-        isTSpin: false,
+        tSpinType: "none",
     }).nextBackToBack, true);
     assert.equal(resolveAttackState({
         combo: 0,
         backToBack: true,
         linesCleared: 4,
-        isTSpin: false,
+        tSpinType: "none",
     }).nextBackToBack, true);
 });
 
@@ -88,13 +88,13 @@ test("T-Spin line clear는 back-to-back을 시작하고 유지한다", async () 
         combo: -1,
         backToBack: false,
         linesCleared: 2,
-        isTSpin: true,
+        tSpinType: "full",
     }).nextBackToBack, true);
     assert.equal(resolveAttackState({
         combo: 0,
         backToBack: true,
         linesCleared: 1,
-        isTSpin: true,
+        tSpinType: "full",
     }).nextBackToBack, true);
 });
 
@@ -105,10 +105,10 @@ test("일반 line clear는 back-to-back을 끊는다", async () => {
         combo: 0,
         backToBack: true,
         linesCleared: 2,
-        isTSpin: false,
+        tSpinType: "none",
     }), {
         linesCleared: 2,
-        isTSpin: false,
+        tSpinType: "none",
         combo: 1,
         backToBack: true,
         nextCombo: 1,

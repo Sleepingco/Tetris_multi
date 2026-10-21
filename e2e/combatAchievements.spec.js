@@ -45,7 +45,7 @@ async function deliverAchievement(page, playerNumber, values) {
                 id: `${join.match.gameId}:${player.playerId}:${pieceIndex}:combat`,
                 gameId: join.match.gameId, pieceIndex,
                 targetPlayerId: null, sentLines: 0, canceledLines: 0, appliedLines: 0,
-                linesCleared: 1, isTSpin: false, combo: 0, backToBackBonus: false,
+                linesCleared: 1, isTSpin: false, tSpinType: "none", combo: 0, backToBackBonus: false,
                 ...values,
             },
         };
@@ -63,9 +63,11 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 모바�
     await deliverAchievement(page, 1, { linesCleared: 4, combo: 1 });
     await expect(own.locator(".combat-achievement-title")).toHaveText("TETRIS");
     await expect(own.locator(".combat-achievement-combo")).toHaveText("COMBO 1");
-    await deliverAchievement(page, 2, { isTSpin: true, combo: 3 });
+    await deliverAchievement(page, 2, { isTSpin: true, tSpinType: "full", combo: 3 });
     await expect(opponent.locator(".combat-achievement-title")).toHaveText("T-SPIN");
     await expect(opponent.locator(".combat-achievement-combo")).toHaveText("COMBO 3");
+    await deliverAchievement(page, 2, { isTSpin: true, tSpinType: "mini", combo: 3 });
+    await expect(opponent.locator(".combat-achievement-title")).toHaveText("T-SPIN MINI");
     const noOverlap = await page.evaluate(() => {
         const overlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
         const events = [...document.querySelectorAll(".combat-achievement")].map(node => node.getBoundingClientRect());
@@ -79,7 +81,7 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 모바�
     });
     expect(await page.evaluate(() => window.__firstAchievement === document.querySelector('.combat-achievement[data-player="2"]'))).toBe(true);
 
-    await deliverAchievement(page, 1, { isTSpin: true, linesCleared: 0 });
+    await deliverAchievement(page, 1, { isTSpin: true, tSpinType: "full", linesCleared: 0 });
     await expect(own.locator(".combat-achievement-title")).toHaveText("T-SPIN");
     await expect(own.locator(".combat-achievement-combo")).toHaveCount(0);
     await deliverAchievement(page, 1, { combo: 2 });
@@ -99,14 +101,19 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 모바�
                 document.styleSheets[0].cssRules.length,
             ));
         }
-        for (const playerNumber of [1, 2]) {
+        for (const [playerNumber, tSpinType] of [
+            [1, "none"], [2, "none"], [1, "mini"], [2, "mini"], [1, "full"], [2, "full"],
+        ]) {
             if (playerNumber === 2) {
                 await page.evaluate(() => {
                     document.querySelector('.player-column[data-player="1"] .player-header').style.paddingBottom = "48px";
                 });
             }
-            await deliverAchievement(page, playerNumber, { linesCleared: 4, combo: 4 });
+            await deliverAchievement(page, playerNumber, { linesCleared: tSpinType === "none" ? 4 : 1,
+                combo: 4, isTSpin: tSpinType !== "none", tSpinType });
             const achievement = page.locator(`.combat-achievement[data-player="${playerNumber}"]`);
+            await expect(achievement.locator(".combat-achievement-title"))
+                .toHaveText(tSpinType === "none" ? "TETRIS" : tSpinType === "mini" ? "T-SPIN MINI" : "T-SPIN");
             await expect(achievement.locator(".combat-achievement-combo")).toHaveText("COMBO 4");
             await expect(achievement.locator(".achievement-spark")).toHaveCount(4);
             if (playerNumber === 2) {
@@ -132,7 +139,7 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 모바�
                 });
             });
             for (const placement of placements) {
-                expect(placement, JSON.stringify({ playerNumber, enlargedLineHeight, ...placement }))
+                expect(placement, JSON.stringify({ playerNumber, tSpinType, enlargedLineHeight, ...placement }))
                     .toMatchObject({ aboveBoard: true, insideViewport: true });
             }
         }

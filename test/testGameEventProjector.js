@@ -145,6 +145,28 @@ test("human placement projector는 server identity와 nested allowlist만 보존
     assert.doesNotMatch(JSON.stringify(event), /private|nickname|socketId|userAgent/);
 });
 
+test("신규 T-Spin 분류를 canonical payload에 보존하고 과거 로그에는 분류를 추정하지 않는다", () => {
+    const legacy = placement();
+    legacy.placementResult.isTSpin = true;
+    assert.equal(Object.hasOwn(projectGameEventLog(legacy).payload.placementResult, "tSpinType"), false);
+    for (const schemaVersion of [1, 2]) {
+        for (const tSpinType of ["none", "mini", "full"]) {
+            const log = placement({ schemaVersion });
+            log.placementResult.tSpinType = tSpinType;
+            log.placementResult.isTSpin = tSpinType !== "none";
+            assert.equal(projectGameEventLog(log).payload.placementResult.tSpinType, tSpinType);
+        }
+        for (const invalid of [{ tSpinType: "unknown" },
+            { tSpinType: "mini", isTSpin: false }, { tSpinType: "none", isTSpin: true },
+            { tSpinType: "mini", isTSpin: true, linesCleared: 3 },
+            { tSpinType: "full", isTSpin: true, linesCleared: 4 }]) {
+            const log = placement({ schemaVersion });
+            Object.assign(log.placementResult, invalid);
+            assert.throws(() => projectGameEventLog(log));
+        }
+    }
+});
+
 test("placement projector는 rotate_ccw inputSequence를 canonical event로 보존한다", () => {
     const event = projectGameEventLog(placement({
         inputSequence: [{

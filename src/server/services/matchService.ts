@@ -7,6 +7,7 @@
 // =============================
 import { createLockDelay } from "../../client/game/core/lockDelay.js";
 import type { LockDelayState } from "../../client/game/core/lockDelay.js";
+import type { SpinRotation } from "../../client/game/core/tSpin.js";
 import { randomUUID } from "node:crypto";
 import {
     applyAuthoritativeInput,
@@ -66,7 +67,7 @@ export type AuthoritativePlayerState = {
     currentTick: number;
     pieceIndex: number;
     pendingGarbageQueue: GarbageEntry[];
-    lastActionWasRotation: boolean;
+    spinRotation: SpinRotation | null;
 };
 export type AiPolicyRuntime = ServerToClientParsedPayload<"pve:ai-policy">;
 export type MatchPlayer = {
@@ -998,7 +999,7 @@ function createInitialPlayerState(bagChunks: PieceType[][] = []): AuthoritativeP
         currentTick: 0,
         pieceIndex: firstPieceType ? 1 : 0,
         pendingGarbageQueue: [],
-        lastActionWasRotation: false,
+        spinRotation: null,
     };
 }
 
@@ -1036,7 +1037,7 @@ function cloneAuthoritativeState(
         pendingGarbageQueue: authoritativeState.pendingGarbageQueue.map((garbage) => {
             return { ...garbage };
         }),
-        lastActionWasRotation: authoritativeState.lastActionWasRotation,
+        spinRotation: authoritativeState.spinRotation ? { ...authoritativeState.spinRotation } : null,
     };
 }
 
@@ -1050,6 +1051,7 @@ function createClientSnapshotDto(
     // 명시적 whitelist를 만들어 server-only pendingPiece, garbage hole, gameOverReason을 전송하지 않는다.
     return {
         lockDelay: { ...authoritativeSnapshot.lockDelay },
+        spinRotation: authoritativeSnapshot.spinRotation ? { ...authoritativeSnapshot.spinRotation } : null,
         board: authoritativeSnapshot.board.map((row) => [...row]),
         activePiece: authoritativeSnapshot.activePiece
             ? { ...authoritativeSnapshot.activePiece }

@@ -30,6 +30,7 @@ function createBoard() {
 
 function createSnapshot(overrides = {}) {
     return {
+        spinRotation: null,
         board: createBoard(),
         activePiece: { pieceType: "bar", rotation: 0, row: -1, col: 3 },
         pieceQueue: ["square", "tree"],
@@ -67,6 +68,32 @@ test("고정 유예 snapshot은 공통 상한을 검증하고 client의 유예 �
         expectedTransform: { pieceType: "tree", rotation: 1, col: 3 } };
     assert.equal(clientToServerSchemas["game:input"].safeParse(input).success, true);
     assert.equal(clientToServerSchemas["game:input"].safeParse({ ...input, lockDelay }).success, false);
+});
+
+test("회전 이력은 서버 snapshot에서만 전달하고 잘못된 승격·분류 조합을 거부한다", () => {
+    const schema = serverToClientSchemas["game:authoritative:snapshot"];
+    const base = { roomId: ROOM_ID, playerId: HUMAN_ID, snapshot: createSnapshot() };
+    const spinRotation = { lastKickIndex: 0, usedKick5: true };
+    assert.equal(schema.safeParse({ ...base, snapshot: createSnapshot({ spinRotation }) }).success, true);
+    for (const invalid of [{ lastKickIndex: -1, usedKick5: false },
+        { lastKickIndex: 5, usedKick5: true }, { lastKickIndex: 1.5, usedKick5: false },
+        { lastKickIndex: 4, usedKick5: false }, { lastKickIndex: 0, usedKick5: "true" },
+        { ...spinRotation, extra: true }]) {
+        assert.equal(schema.safeParse({ ...base, snapshot: createSnapshot({ spinRotation: invalid }) }).success, false);
+    }
+    const input = { roomId: ROOM_ID, action: "rotate", tick: 1, pieceIndex: 1, clientSequence: 1,
+        expectedTransform: { pieceType: "tree", rotation: 1, col: 3 } };
+    for (const metadata of [{ spinRotation }, { tSpinType: "full" }, { usedKick5: true }]) {
+        assert.equal(clientToServerSchemas["game:input"].safeParse({ ...input, ...metadata }).success, false);
+    }
+    const effect = { id: "spin", gameId: "00000000-0000-4000-8000-000000000003", pieceIndex: 1,
+        targetPlayerId: null, sentLines: 0, canceledLines: 0, appliedLines: 0,
+        linesCleared: 1, isTSpin: true, tSpinType: "mini", combo: 0, backToBackBonus: false };
+    assert.equal(schema.safeParse({ ...base, combatEffect: effect }).success, true);
+    for (const invalid of [{ tSpinType: "unknown" }, { isTSpin: false }, { linesCleared: 3 },
+        { tSpinType: "full", linesCleared: 4 }]) {
+        assert.equal(schema.safeParse({ ...base, combatEffect: { ...effect, ...invalid } }).success, false);
+    }
 });
 
 function createRoom(mode = "pvp") {
@@ -410,7 +437,7 @@ test("combatEffect는 line clear 없이도 허용하고 누락·잘못된 양·�
     const effect = {
         id: `${gameId}:${HUMAN_ID}:0:combat`, gameId, pieceIndex: 0,
         targetPlayerId: GUEST_ID, sentLines: 2, canceledLines: 1, appliedLines: 0,
-        linesCleared: 2, isTSpin: false, combo: 0, backToBackBonus: false,
+        linesCleared: 2, isTSpin: false, tSpinType: "none", combo: 0, backToBackBonus: false,
     };
     const schema = serverToClientSchemas["game:authoritative:snapshot"];
     const payload = { roomId: ROOM_ID, playerId: HUMAN_ID, snapshot: createSnapshot() };

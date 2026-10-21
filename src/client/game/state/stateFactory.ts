@@ -3,6 +3,7 @@ import type { PieceState } from "../core/piece.ts";
 import type { PieceType } from "./blocks.ts";
 import { createLockDelay } from "../core/lockDelay.ts";
 import type { LockDelayState } from "../core/lockDelay.ts";
+import type { SpinRotation, TSpinType } from "../core/tSpin.ts";
 
 export type GamePhase = "playing" | "lineClearing" | "gameOver";
 
@@ -42,8 +43,8 @@ export type GameState = {
     pendingPiece: PieceState | null;
     inputQueue: QueuedInput[];
     phase: GamePhase;
-    lastActionWasRotation: boolean;
-    isTSpin: boolean;
+    spinRotation: SpinRotation | null;
+    tSpinType: TSpinType;
     combo: number;
     backToBack: boolean;
 };
@@ -83,8 +84,8 @@ export function createGameState({
         pendingPiece: null,
         inputQueue: [],
         phase: initialPhase,
-        lastActionWasRotation: false,
-        isTSpin: false,
+        spinRotation: null,
+        tSpinType: "none",
         combo: -1,
         backToBack: false,
     }

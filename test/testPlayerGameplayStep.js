@@ -47,7 +47,7 @@ function createPlayerState(gameCore, overrides = {}) {
         currentTick: 0,
         pieceIndex: overrides.pieceIndex ?? 1,
         pendingGarbageQueue: [...(overrides.pendingGarbageQueue ?? [])],
-        lastActionWasRotation: overrides.lastActionWasRotation ?? false,
+        spinRotation: overrides.spinRotation ?? null,
     };
 }
 
@@ -529,7 +529,7 @@ test("applyAuthoritativeInput은 T-Spin Single placementResult scalar를 반영�
         activePiece,
         pendingPiece: { ...activePiece },
         pieceQueue: ["square"],
-        lastActionWasRotation: true,
+        spinRotation: { lastKickIndex: 0, usedKick5: false },
     });
 
     const result = applyAuthoritativeInput(playerState, {
@@ -543,6 +543,127 @@ test("applyAuthoritativeInput은 T-Spin Single placementResult scalar를 반영�
     assert.equal(result.placementResult.attackLines, 2);
     assert.equal(result.placementResult.scoreDelta, 50);
     assert.equal(playerState.backToBack, true);
+});
+
+test("회전 후 하드드롭으로 낙하하면 소프트드롭·중력과 같은 비회전 고정으로 판정한다", async () => {
+    const gameCore = await loadGameCore();
+    const outcomes = [];
+    for (const dropMethod of ["hard_drop", "soft_drop", "gravity"]) {
+        const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS);
+        for (const [row, col] of [[17, 3], [19, 3], [19, 5]]) board[row][col] = "stack";
+        const playerState = createPlayerState(gameCore, {
+            board,
+            activePiece: { pieceType: "tree", rotation: 0, row: 4, col: 3 },
+        });
+        const rotated = applyAuthoritativeInput(playerState, { action: "rotate" }, gameCore);
+        assert.equal(rotated.ok, true);
+        assert.deepEqual(playerState.spinRotation, { lastKickIndex: 0, usedKick5: false });
+        if (dropMethod !== "hard_drop") {
+            for (let row = 0; row < 13; row += 1) {
+                const moved = dropMethod === "gravity"
+                    ? applyAuthoritativeGravityStep(playerState, gameCore)
+                    : applyAuthoritativeInput(playerState, { action: "soft_drop" }, gameCore);
+                assert.equal(moved.ok, true);
+            }
+        }
+        const result = applyAuthoritativeInput(playerState, { action: "hard_drop" }, gameCore);
+        const placement = result.placementResult;
+        assert.equal(placement.isTSpin, false, dropMethod);
+        assert.equal(placement.scoreDelta, dropMethod === "hard_drop" ? 26 : 0);
+        assert.equal(placement.rawAttackLines, 0);
+        outcomes.push({ board: playerState.board, piece: placement.lockedPiece });
+    }
+    assert.deepEqual(outcomes[0], outcomes[1]);
+    assert.deepEqual(outcomes[0], outcomes[2]);
+});
+
+test("바닥에서 실제 회전한 뒤 0칸 하드드롭하면 회전 자격을 유지한다", async () => {
+    const gameCore = await loadGameCore();
+    const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS);
+    for (const [row, col] of [[17, 3], [19, 3], [19, 5]]) board[row][col] = "stack";
+    const playerState = createPlayerState(gameCore, {
+        board,
+        activePiece: { pieceType: "tree", rotation: 0, row: 17, col: 3 },
+    });
+    assert.equal(applyAuthoritativeInput(playerState, { action: "rotate" }, gameCore).ok, true);
+    assert.deepEqual(playerState.spinRotation, { lastKickIndex: 0, usedKick5: false });
+    const result = applyAuthoritativeInput(playerState, { action: "hard_drop" }, gameCore);
+    assert.equal(result.placementResult.droppedRows, 0);
+    assert.equal(result.placementResult.isTSpin, true);
+    assert.equal(result.placementResult.tSpinType, "mini");
+    assert.equal(result.placementResult.scoreDelta, 0);
+});
+
+test("서버의 5번째 킥 승격은 연속 회전·실패 입력을 지나 고정까지 유지한다", async () => {
+    const core = await loadGameCore();
+    const board = core.createEmptyBoard(20, 10);
+    for (const [col, row] of [[4, 6], [3, 4], [2, 6], [2, 8]]) board[row][col] = "stack";
+    const state = createPlayerState(core, { board,
+        activePiece: { pieceType: "tree", rotation: 0, row: 4, col: 3 } });
+    applyAuthoritativeInput(state, { action: "rotate" }, core);
+    assert.deepEqual(state.spinRotation, { lastKickIndex: 4, usedKick5: true });
+    const atKick5 = structuredClone(state);
+    applyAuthoritativeInput(state, { action: "rotate" }, core);
+    assert.deepEqual(state.spinRotation, { lastKickIndex: 0, usedKick5: true });
+    assert.equal(applyAuthoritativeInput(state, { action: "move_left" }, core).ok, false);
+    const result = applyAuthoritativeInput(state, { action: "hard_drop" }, core);
+    assert.equal(result.placementResult.tSpinType, "full");
+    assert.equal(result.placementResult.scoreDelta, 15);
+    assert.equal(state.spinRotation, null);
+    for (const action of ["soft_drop", "hold"]) {
+        const other = structuredClone(atKick5);
+        assert.equal(applyAuthoritativeInput(other, { action }, core).ok, true);
+        assert.equal(other.spinRotation, null);
+    }
+    const shifted = structuredClone(atKick5);
+    shifted.board = core.createEmptyBoard(20, 10);
+    assert.equal(applyAuthoritativeInput(shifted, { action: "move_right" }, core).ok, true);
+    assert.equal(shifted.spinRotation, null);
+});
+
+test("Mini Single은 낮아진 공격량으로 대기를 상쇄하고 잔여 가비지를 한 번 적용한다", async () => {
+    const core = await loadGameCore();
+    const board = core.createEmptyBoard(20, 10);
+    board[18] = Array(10).fill("stack");
+    for (const col of [3, 4, 5]) board[18][col] = null;
+    board[17][3] = board[19][3] = board[19][5] = "stack";
+    const state = createPlayerState(core, { board,
+        activePiece: { pieceType: "tree", rotation: 3, row: 17, col: 3 },
+        pendingGarbageQueue: [{ lines: 2, holeCol: 9 }] });
+    applyAuthoritativeInput(state, { action: "rotate" }, core);
+    const { placementResult: result } = applyAuthoritativeInput(state, { action: "hard_drop" }, core);
+    assert.equal(result.tSpinType, "mini");
+    assert.equal(result.scoreDelta, 10);
+    assert.equal(result.rawAttackLines, 1);
+    assert.equal(result.canceledGarbageLines, 1);
+    assert.equal(result.attackLines, 0);
+    assert.equal(result.incomingGarbageLines, 2);
+    assert.equal(result.appliedGarbageLines, 1);
+    assert.equal(result.gameOver, false);
+    assert.deepEqual(state.pendingGarbageQueue, []);
+    assert.equal(state.board[19][9], null);
+    assert.equal(state.board[19].filter(cell => cell === "garbage").length, 9);
+});
+
+test("회전 후 한 칸 하드드롭도 회전 기록을 지운 뒤 고정하고 드롭 점수를 보존한다", async () => {
+    const gameCore = await loadGameCore();
+    const playerState = createPlayerState(gameCore, {
+        activePiece: { pieceType: "tree", rotation: 0, row: 16, col: 3 },
+    });
+    assert.equal(applyAuthoritativeInput(playerState, { action: "rotate" }, gameCore).ok, true);
+    let rotationAtLock;
+    const recordingCore = {
+        ...gameCore,
+        classifyTSpin(options) {
+            rotationAtLock = options.spinRotation;
+            return gameCore.classifyTSpin(options);
+        },
+    };
+    const result = applyAuthoritativeInput(playerState, { action: "hard_drop" }, recordingCore);
+    assert.equal(result.placementResult.droppedRows, 1);
+    assert.equal(rotationAtLock, null);
+    assert.equal(result.placementResult.isTSpin, false);
+    assert.equal(result.placementResult.scoreDelta, 2);
 });
 
 test("applyAuthoritativeInput은 top-out lock에서 line clear와 attack을 만들지 않는다", async () => {
@@ -686,7 +807,7 @@ test("applyAuthoritativeInput은 rotate_ccw를 처리한다", async () => {
     assert.equal(result.reason, null);
     assert.equal(result.moveIntent.kind, "ok");
     assert.equal(playerState.activePiece.rotation, 3);
-    assert.equal(playerState.lastActionWasRotation, true);
+    assert.deepEqual(playerState.spinRotation, { lastKickIndex: 0, usedKick5: false });
 });
 
 test("applyAuthoritativeInput은 hard_drop으로 lock, score, next spawn을 처리한다", async () => {
@@ -751,11 +872,11 @@ test("applyAuthoritativeInput은 막힌 next spawn에서 즉시 block-out 처리
     assert.deepEqual(playerState.pieceQueue, []);
 });
 
-test("applyAuthoritativeInput은 hard_drop 후 next spawn에서 lastActionWasRotation을 reset한다", async () => {
+test("applyAuthoritativeInput은 hard_drop 후 next spawn에서 spinRotation을 reset한다", async () => {
     const gameCore = await loadGameCore();
     const playerState = createPlayerState(gameCore, {
         pieceQueue: ["tree"],
-        lastActionWasRotation: true,
+        spinRotation: { lastKickIndex: 0, usedKick5: false },
     });
 
     const result = applyAuthoritativeInput(playerState, {
@@ -764,7 +885,7 @@ test("applyAuthoritativeInput은 hard_drop 후 next spawn에서 lastActionWasRot
 
     assert.equal(result.ok, true);
     assert.equal(result.placementResult.nextPiece.pieceType, "tree");
-    assert.equal(playerState.lastActionWasRotation, false);
+    assert.equal(playerState.spinRotation, null);
 });
 
 test("applyAuthoritativeInput은 activePiece가 비어 있는 hard_drop에서 pieceQueue를 소비하지 않는다", async () => {
@@ -928,7 +1049,7 @@ test("applyAuthoritativeInput은 hold spawn이 막히면 즉시 block-out 처리
     assert.deepEqual(playerState.pieceQueue, []);
 });
 
-test("applyAuthoritativeInput은 hold 후 lastActionWasRotation을 reset한다", async () => {
+test("applyAuthoritativeInput은 hold 후 spinRotation을 reset한다", async () => {
     const gameCore = await loadGameCore();
     const activePiece = {
         pieceType: "square",
@@ -941,7 +1062,7 @@ test("applyAuthoritativeInput은 hold 후 lastActionWasRotation을 reset한다",
         pendingPiece: { ...activePiece },
         pieceQueue: ["tree"],
         pieceIndex: 1,
-        lastActionWasRotation: true,
+        spinRotation: { lastKickIndex: 0, usedKick5: false },
     });
 
     const result = applyAuthoritativeInput(playerState, {
@@ -949,7 +1070,7 @@ test("applyAuthoritativeInput은 hold 후 lastActionWasRotation을 reset한다",
     }, gameCore);
 
     assert.equal(result.ok, true);
-    assert.equal(playerState.lastActionWasRotation, false);
+    assert.equal(playerState.spinRotation, null);
 });
 
 test("applyAuthoritativeInput은 hold piece가 있을 때 swap한다", async () => {
@@ -1017,7 +1138,7 @@ test("applyAuthoritativeInput은 다음 T 조각이 회전하지 않았으면 �
     const gameCore = await loadGameCore();
     const playerState = createPlayerState(gameCore, {
         pieceQueue: ["tree"],
-        lastActionWasRotation: true,
+        spinRotation: { lastKickIndex: 0, usedKick5: false },
     });
 
     const spawnResult = applyAuthoritativeInput(playerState, {

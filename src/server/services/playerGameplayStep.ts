@@ -7,6 +7,7 @@ import {
     applyServerInputToPlayerState,
 } from "./playerStateInput.js";
 import type { Board } from "../../client/game/core/board.js";
+import type { TSpinType } from "../../client/game/core/tSpin.js";
 import type { PieceState, PlaceablePieceState } from "../../client/game/core/piece.js";
 import type { PieceType } from "../../client/game/state/blocks.js";
 import type { GameCore } from "./gameCoreLoader.js";
@@ -27,10 +28,11 @@ export function createCombatEffect(
     const sentLines = transfer?.ok && transfer.targetPlayerId && transfer.garbage
         ? transfer.garbage.lines
         : 0;
+    const isTSpin = result.tSpinType !== "none";
     const backToBackBonus = Boolean(result.backToBack &&
-        (result.linesCleared === 4 || (result.isTSpin && result.linesCleared > 0)));
+        (result.linesCleared === 4 || (isTSpin && result.linesCleared > 0)));
     if (!(sentLines > 0 || result.canceledGarbageLines > 0 || result.appliedGarbageLines > 0 ||
-        (result.linesCleared === 4 || result.isTSpin) || result.combo > 0 || backToBackBonus)) return null;
+        (result.linesCleared === 4 || isTSpin) || result.combo > 0 || backToBackBonus)) return null;
     return {
         id: `${gameId}:${playerId}:${result.pieceIndex}:combat`,
         gameId,
@@ -40,7 +42,8 @@ export function createCombatEffect(
         canceledLines: result.canceledGarbageLines,
         appliedLines: result.appliedGarbageLines,
         linesCleared: result.linesCleared,
-        isTSpin: result.isTSpin,
+        tSpinType: result.tSpinType,
+        isTSpin,
         combo: result.combo,
         backToBackBonus,
     };
@@ -57,6 +60,7 @@ export type PlacementResult = {
     lockedPiece: PlaceablePieceState;
     droppedRows: number;
     linesCleared: number;
+    tSpinType: TSpinType;
     isTSpin: boolean;
     combo: number;
     backToBack: boolean;
@@ -206,7 +210,7 @@ export function applyAuthoritativeGravityStep(
     if (moveIntent.kind === "ok" && isPlaceablePiece(moveIntent.active)) {
         authoritativeState.activePiece = { ...moveIntent.active };
         authoritativeState.pendingPiece = { ...moveIntent.active };
-        authoritativeState.lastActionWasRotation = false;
+        authoritativeState.spinRotation = null;
         const landed = advanceAuthoritativeLockDelay(authoritativeState, gameCore, 0);
         if (landed.placementResult) return { ...landed, gravityResult: { kind: "lock" } };
         incrementCurrentTick(authoritativeState);
@@ -264,6 +268,7 @@ function applyHardDropInput(
         }, gameCore.BLOCKS);
     });
     const droppedRows = Math.max(0, droppedRow - activePiece.row);
+    if (droppedRows > 0) authoritativeState.spinRotation = null;
     const lockedPiece = {
         ...activePiece,
         row: droppedRow,
@@ -317,7 +322,7 @@ function applyHold(
     authoritativeState.holdPieceType = activePieceType;
     const spawnedPiece = spawnPiece(authoritativeState, incomingType, gameCore);
     authoritativeState.holdUsedThisDrop = true;
-    authoritativeState.lastActionWasRotation = false;
+    authoritativeState.spinRotation = null;
 
     return {
         ok: true,
@@ -361,10 +366,10 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
     authoritativeState.lines = linesBefore;
 
     const lockedPieceIndex = normalizeInteger(authoritativeState.pieceIndex);
-    const isTSpin = gameCore.isTSpinLock({
+    const tSpinType = gameCore.classifyTSpin({
         board: authoritativeState.board,
         piece: lockedPiece,
-        lastActionWasRotation: authoritativeState.lastActionWasRotation,
+        spinRotation: authoritativeState.spinRotation,
     });
     const topOut = gameCore.isPieceAboveTop(lockedPiece, gameCore.BLOCKS);
     if (useHardDropScore) {
@@ -387,14 +392,9 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
     const linesCleared = topOut
         ? 0
         : gameCore.clearFilledLines(authoritativeState.board);
-    if (!topOut && linesCleared > 0) {
-        const lineClearScore = isTSpin
-            ? linesCleared * 10 * 5
-            : linesCleared * 10;
-        authoritativeState.score += lineClearScore;
+    if (!topOut) {
+        authoritativeState.score += gameCore.calculatePlacementScore(linesCleared, tSpinType);
         authoritativeState.lines += linesCleared;
-    } else if (!topOut && isTSpin) {
-        authoritativeState.score += 15;
     }
 
     const scoreAfter = authoritativeState.score;
@@ -402,7 +402,7 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
         combo: authoritativeState.combo,
         backToBack: authoritativeState.backToBack,
         linesCleared,
-        isTSpin,
+        tSpinType,
     });
     authoritativeState.combo = attackState.nextCombo;
     authoritativeState.backToBack = attackState.nextBackToBack;
@@ -444,7 +444,8 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
             lockedPiece,
             droppedRows,
             linesCleared,
-            isTSpin: attackState.isTSpin,
+            tSpinType: attackState.tSpinType,
+            isTSpin: attackState.tSpinType !== "none",
             combo: attackState.combo,
             backToBack: attackState.backToBack,
             rawAttackLines,
@@ -515,7 +516,7 @@ function spawnNextPiece(
 
     authoritativeState.pieceIndex = normalizeInteger(authoritativeState.pieceIndex) + 1;
     authoritativeState.holdUsedThisDrop = false;
-    authoritativeState.lastActionWasRotation = false;
+    authoritativeState.spinRotation = null;
 
     return spawnPiece(authoritativeState, pieceType, gameCore);
 }

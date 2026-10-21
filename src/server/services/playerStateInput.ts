@@ -74,7 +74,9 @@ export function applyServerInputToPlayerState(
 
     if (moveIntent.kind === "ok") {
         authoritativeState.activePiece = { ...moveIntent.active };
-        authoritativeState.lastActionWasRotation = moveIntent.moveCause === "rotate";
+        authoritativeState.spinRotation = moveIntent.moveCause === "rotate" && moveIntent.active.pieceType === "tree"
+            ? gameCore.nextSpinRotation(authoritativeState.spinRotation, moveIntent.kickIndex ?? 0)
+            : null;
         return {
             ok: true,
             reason: null,

@@ -68,6 +68,12 @@ const activePieceSchema = z.strictObject({
     col: z.number().int().min(Number.MIN_SAFE_INTEGER).max(Number.MAX_SAFE_INTEGER),
 });
 export const snapshotSchema = z.strictObject({
+    spinRotation: z.strictObject({
+        lastKickIndex: z.number().int().min(0).max(4),
+        usedKick5: z.boolean(),
+    }).refine(rotation => rotation.lastKickIndex !== 4 || rotation.usedKick5, {
+        message: "The fifth kick must preserve promotion history",
+    }).nullable(),
     lockDelay: z.strictObject({
         hasTouchedGround: z.boolean(),
         remainingMs: z.number().finite().min(0).max(LOCK_DELAY_MS),
@@ -108,10 +114,15 @@ const combatEffectSchema = z.strictObject({
     appliedLines: safeNonNegativeIntegerSchema,
     linesCleared: z.number().int().min(0).max(4),
     isTSpin: z.boolean(),
+    tSpinType: z.enum(["none", "mini", "full"]),
     combo: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER),
     backToBackBonus: z.boolean(),
 }).refine(effect => (effect.sentLines > 0) === (effect.targetPlayerId !== null), {
     message: "Sent garbage requires a target player",
+}).refine(effect => effect.isTSpin === (effect.tSpinType !== "none")
+    && (effect.tSpinType !== "mini" || effect.linesCleared <= 2)
+    && (effect.tSpinType !== "full" || effect.linesCleared <= 3), {
+    message: "Spin classification must match the flag and cleared lines",
 });
 const aiPolicyRuntimeSchema = z.strictObject({
     roomId: roomIdSchema,

@@ -23,6 +23,7 @@ const PIECE_TYPES = new Set([
     "zee",
 ]);
 const BOARD_CELL_TYPES = new Set([...PIECE_TYPES, "garbage"]);
+const T_SPIN_TYPES = new Set(["none", "mini", "full"]);
 const INPUT_ACTIONS = new Set([
     "move_left",
     "move_right",
@@ -163,6 +164,9 @@ function projectPlacementResult(value: unknown): CanonicalJsonValue {
         if (result[name] !== undefined) {
             projected[name] = typeof result[name] === "boolean" ? result[name] : fail();
         }
+    }
+    if (result.tSpinType !== undefined) {
+        projected.tSpinType = enumString(result.tSpinType, T_SPIN_TYPES);
     }
     return projected;
 }

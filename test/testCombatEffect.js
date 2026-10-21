@@ -4,7 +4,7 @@ const { createCombatEffect } = require("../dist/server/server/services/playerGam
 
 const gameId = "00000000-0000-4000-8000-000000000003";
 const result = {
-    pieceIndex: 4, linesCleared: 4, isTSpin: false, combo: 0, backToBack: false,
+    pieceIndex: 4, linesCleared: 4, isTSpin: false, tSpinType: "none", combo: 0, backToBack: false,
     rawAttackLines: 4, attackLines: 4, canceledGarbageLines: 0, appliedGarbageLines: 0,
 };
 
@@ -40,7 +40,7 @@ test("B2B는 대상 clear에서만 표시하고 의미 없는 placement는 생�
         ...result, linesCleared: 1, backToBack: true,
     }, null), null);
     assert.equal(createCombatEffect(gameId, "actor", {
-        ...result, linesCleared: 1, isTSpin: true, backToBack: true,
+        ...result, linesCleared: 1, isTSpin: true, tSpinType: "full", backToBack: true,
     }, null).backToBackBonus, true);
     assert.equal(createCombatEffect(gameId, "actor", { ...result, pieceIndex: -1 }, null), null);
 });
@@ -51,7 +51,7 @@ test("전송량이 없어도 TETRIS·줄 삭제 없는 T-SPIN·콤보 성과를 
     assert.equal(tetris.linesCleared, 4);
     assert.equal(tetris.targetPlayerId, null);
     const spin = createCombatEffect(gameId, "actor", {
-        ...result, attackLines: 0, linesCleared: 0, isTSpin: true,
+        ...result, attackLines: 0, linesCleared: 0, isTSpin: true, tSpinType: "full",
     }, null);
     assert.equal(spin.isTSpin, true);
     assert.equal(spin.linesCleared, 0);

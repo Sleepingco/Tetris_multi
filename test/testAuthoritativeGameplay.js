@@ -299,6 +299,7 @@ test("getAuthoritativePlayerSnapshotDto는 client snapshot 후보 필드와 tick
     assert.equal(Object.hasOwn(dto, "lastActionWasRotation"), false);
     assert.deepEqual(Object.keys(dto), [
         "lockDelay",
+        "spinRotation",
         "board",
         "activePiece",
         "pieceQueue",

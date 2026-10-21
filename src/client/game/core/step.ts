@@ -22,6 +22,7 @@ export type MoveOutcome = {
     moveCause: string;
     active: PieceState;
     pending: PieceState;
+    kickIndex?: number;
 };
 
 export type MoveIntent = {
@@ -29,6 +30,7 @@ export type MoveIntent = {
     moveCause: string;
     active: PieceState;
     shouldStartGravity?: boolean;
+    kickIndex?: number;
 };
 
 export type ResolveMoveAttemptOptions = {
@@ -154,6 +156,7 @@ export function resolveMoveAttempt({
                             moveCause,
                             active: testPiece,
                             pending: testPiece,
+                            kickIndex: i,
                         };
                     }
                 }
@@ -198,6 +201,7 @@ export function resolveMoveAttempt({
         moveCause,
         active: committed,
         pending: committed,
+        ...(moveCause === "rotate" ? { kickIndex: 0 } : {}),
     }
 }
 
@@ -228,6 +232,7 @@ export function resolveMoveIntent({
             moveCause: outcome.moveCause,
             active: { ...outcome.active },
             shouldStartGravity: !hasFallTimer,
+            ...(outcome.moveCause === "rotate" ? { kickIndex: outcome.kickIndex } : {}),
         }
     }
     return { kind: "idle", moveCause: outcome.moveCause, active: { ...outcome.active } }

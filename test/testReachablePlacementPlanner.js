@@ -33,7 +33,7 @@ function createPlayerState(board, activePiece) {
         currentTick: 0,
         pieceIndex: 1,
         pendingGarbageQueue: [],
-        lastActionWasRotation: false,
+        spinRotation: null,
     };
 }
 

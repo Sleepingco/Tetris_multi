@@ -37,9 +37,9 @@ test("tetris line clear는 garbage 4줄을 보낸다", async () => {
 test("T-Spin line clear는 일반 line clear보다 강한 garbage를 보낸다", async () => {
     const { calculateGarbageAttack } = await import("../src/client/game/core/garbage.ts");
 
-    assert.equal(calculateGarbageAttack({ linesCleared: 1, isTSpin: true }), 2);
-    assert.equal(calculateGarbageAttack({ linesCleared: 2, isTSpin: true }), 4);
-    assert.equal(calculateGarbageAttack({ linesCleared: 3, isTSpin: true }), 6);
+    assert.equal(calculateGarbageAttack({ linesCleared: 1, tSpinType: "full" }), 2);
+    assert.equal(calculateGarbageAttack({ linesCleared: 2, tSpinType: "full" }), 4);
+    assert.equal(calculateGarbageAttack({ linesCleared: 3, tSpinType: "full" }), 6);
 });
 
 test("combo는 연속 line clear 수에 따라 garbage 보너스를 더한다", async () => {
@@ -54,15 +54,15 @@ test("back-to-back은 Tetris나 T-Spin clear에 garbage 1줄을 더한다", asyn
     const { calculateGarbageAttack } = await import("../src/client/game/core/garbage.ts");
 
     assert.equal(calculateGarbageAttack({ linesCleared: 4, backToBack: true }), 5);
-    assert.equal(calculateGarbageAttack({ linesCleared: 2, isTSpin: true, backToBack: true }), 5);
+    assert.equal(calculateGarbageAttack({ linesCleared: 2, tSpinType: "full", backToBack: true }), 5);
     assert.equal(calculateGarbageAttack({ linesCleared: 2, backToBack: true }), 1);
 });
 
 test("B2B eligibility는 기존 invalid input 숫자 coercion을 유지한다", async () => {
     const { isBackToBackEligible } = await import("../src/client/game/core/garbage.ts");
 
-    assert.equal(isBackToBackEligible({ linesCleared: "2", isTSpin: true }), true);
-    assert.equal(isBackToBackEligible({ linesCleared: "0", isTSpin: true }), false);
+    assert.equal(isBackToBackEligible({ linesCleared: "2", tSpinType: "full" }), true);
+    assert.equal(isBackToBackEligible({ linesCleared: "0", tSpinType: "full" }), false);
 });
 
 test("pending garbage가 없으면 raw attack을 그대로 보낸다", async () => {

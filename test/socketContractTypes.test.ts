@@ -74,7 +74,7 @@ type CombatEffectContract = NonNullable<ServerToClientParsedPayload<"game:author
 const combatEffectContract: CombatEffectContract = {
     id: "event", gameId: "00000000-0000-4000-8000-000000000003", pieceIndex: 1,
     targetPlayerId: null, sentLines: 0, canceledLines: 2, appliedLines: 0,
-    linesCleared: 2, isTSpin: false, combo: 0, backToBackBonus: false,
+    linesCleared: 2, isTSpin: false, tSpinType: "none", combo: 0, backToBackBonus: false,
 };
 // @ts-expect-error 전송량은 숫자 계약이다.
 const invalidCombatAmount: CombatEffectContract = { ...combatEffectContract, sentLines: "2" };

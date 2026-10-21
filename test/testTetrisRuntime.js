@@ -1342,6 +1342,47 @@ test("placement_decision은 line clear 결과로 garbage attackLines를 기록�
     assert.equal(log.placementResult.appliedGarbageLines, 0);
 });
 
+test("실제 회전 뒤 낙하한 hard drop은 T-Spin 자격을 해제하고 제자리 확정은 유지한다", async (t) => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    for (const mode of ["single", "multiplayer"]) {
+        for (const distance of [0, 1, 13]) {
+            for (const drop of ["hard", "soft"]) {
+                await t.test(`${mode} ${drop} ${distance}칸`, async () => {
+                    const game = createTetrisRuntime({ mode, rng: () => 0 });
+                    try {
+                        game.init({ autoStart: true });
+                        const board = createEmptyBoard();
+                        board[17][3] = board[19][3] = board[19][5] = "square";
+                        const piece = { pieceType: "tree", rotation: 0, row: 17 - distance, col: 3 };
+                        game.applySnapshot({
+                            ...game.getSnapshot(), board, activePiece: piece, pendingPiece: piece,
+                            score: 0, phase: "playing",
+                        });
+                        const press = async action => {
+                            const tick = game.runtime.currentTick + 1;
+                            game.enqueueInput(action, tick, game.getSnapshot().pieceIndex);
+                            await waitForTick(game, tick);
+                        };
+                        await press(INPUT_ACTION.ROTATE);
+                        assert.equal(game.getSnapshot().activePiece.rotation, 1);
+                        if (drop === "soft") {
+                            for (let row = 0; row < distance; row++) await press(INPUT_ACTION.SOFT_DROP);
+                        }
+                        await press(INPUT_ACTION.HARD_DROP);
+                        const [log] = game.getPlacementDecisionLog();
+                        assert.equal(log.selectedPlacement.row, 17);
+                        assert.equal(log.placementResult.isTSpin, distance === 0);
+                        assert.equal(log.placementResult.scoreDelta,
+                            drop === "hard" ? distance * 2 : 0);
+                    } finally {
+                        game.destroy();
+                    }
+                });
+            }
+        }
+    }
+});
+
 test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기록한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const game = createTetrisRuntime({ rng: () => 0 });
@@ -1349,6 +1390,7 @@ test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기�
 
     const board = createEmptyBoard();
     board[18][4] = "square";
+    board[18][6] = "square";
     board[19] = Array(10).fill("square");
     board[19][4] = null;
     board[19][5] = null;
@@ -1370,7 +1412,7 @@ test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기�
             row: 18,
             col: 4,
         },
-        lastActionWasRotation: true,
+        spinRotation: { lastKickIndex: 0, usedKick5: false },
         tick: 55,
         pieceIndex: 10,
         score: 0,
@@ -1389,6 +1431,105 @@ test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기�
     assert.equal(log.placementResult.rawAttackLines, 2);
     assert.equal(log.placementResult.attackLines, 2);
     assert.equal(log.placementResult.scoreDelta, 50);
+});
+
+test("실제 T 회전의 Mini·Full 결과와 보상은 싱글·멀티 예측·서버가 일치한다", async () => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
+    const { applyAuthoritativeInput } = require("../dist/server/server/services/playerGameplayStep.js");
+    const core = await loadGameCore();
+    for (const mode of ["single", "multiplayer"]) {
+        for (const fixture of [
+            { type: "mini", lines: 0, score: 0, attack: 0 },
+            { type: "mini", lines: 1, score: 10, attack: 1 },
+            { type: "full", lines: 1, score: 50, attack: 2 },
+            { type: "mini", lines: 2, score: 20, attack: 2 },
+        ]) {
+            const game = createTetrisRuntime({ mode, rng: () => 0 });
+            try {
+                game.init({ autoStart: true });
+                const board = createEmptyBoard();
+                let piece = { pieceType: "tree", rotation: 0, row: 17, col: 3 };
+                if (fixture.lines === 0) {
+                    board[17][3] = board[19][3] = board[19][5] = "square";
+                } else if (fixture.lines === 1) {
+                    piece.rotation = 3;
+                    board[18] = Array(10).fill("square");
+                    for (const col of [3, 4, 5]) board[18][col] = null;
+                    board[17][3] = board[19][3] = board[19][5] = "square";
+                    if (fixture.type === "full") board[17][5] = "square";
+                } else {
+                    piece = { pieceType: "tree", rotation: 0, row: 18, col: 4 };
+                    board[17] = Array(10).fill("square");
+                    board[17][4] = null;
+                    board[18] = Array(10).fill("square");
+                    board[18][4] = board[18][5] = null;
+                    board[19][3] = "square";
+                }
+                game.applySnapshot({ ...game.getSnapshot(), board, activePiece: piece, pendingPiece: piece,
+                    score: 0, combo: -1, backToBack: false });
+                const server = { ...game.getSnapshot(), board: board.map(row => [...row]),
+                    activePiece: { ...piece }, pendingPiece: { ...piece }, pendingGarbageQueue: [], currentTick: 0 };
+                let expected;
+                for (const [action, serverAction] of [[INPUT_ACTION.ROTATE, "rotate"], [INPUT_ACTION.HARD_DROP, "hard_drop"]]) {
+                    expected = applyAuthoritativeInput(server, { action: serverAction }, core);
+                    const tick = game.runtime.currentTick + 1;
+                    game.enqueueInput(action, tick, game.getSnapshot().pieceIndex);
+                    await waitForTick(game, tick);
+                }
+                const [log] = game.getPlacementDecisionLog();
+                for (const result of [log.placementResult, expected.placementResult]) {
+                    assert.equal(result.tSpinType, fixture.type, `${mode} ${fixture.lines}줄`);
+                    assert.equal(result.isTSpin, true);
+                    assert.equal(result.linesCleared, fixture.lines);
+                    assert.equal(result.scoreDelta, fixture.score);
+                    assert.equal(result.rawAttackLines, fixture.attack);
+                }
+                assert.deepEqual(log.boardAfter, server.board);
+            } finally { game.destroy(); }
+        }
+    }
+});
+
+test("5번째 킥 승격은 연속 회전·실패 입력에 유지되고 이동·hold·재시작에 해제된다", async () => {
+    const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    try {
+        game.init({ autoStart: true });
+        const board = createEmptyBoard();
+        for (const [col, row] of [[4, 6], [3, 4], [2, 6], [2, 8]]) board[row][col] = "square";
+        const piece = { pieceType: "tree", rotation: 0, row: 4, col: 3 };
+        game.applySnapshot({ ...game.getSnapshot(), board, activePiece: piece, pendingPiece: piece });
+        const press = async action => {
+            const tick = game.runtime.currentTick + 1;
+            game.enqueueInput(action, tick, game.getSnapshot().pieceIndex);
+            await waitForTick(game, tick);
+        };
+        await press(INPUT_ACTION.ROTATE);
+        assert.deepEqual(game.getSnapshot().spinRotation, { lastKickIndex: 4, usedKick5: true });
+        const saved = game.getSnapshot();
+        await press(INPUT_ACTION.ROTATE);
+        assert.deepEqual(game.getSnapshot().spinRotation, { lastKickIndex: 0, usedKick5: true });
+        await press(INPUT_ACTION.MOVE_LEFT);
+        assert.deepEqual(game.getSnapshot().spinRotation, { lastKickIndex: 0, usedKick5: true });
+        await press(INPUT_ACTION.HARD_DROP);
+        assert.equal(game.getPlacementDecisionLog()[0].placementResult.tSpinType, "full");
+        assert.equal(game.getSnapshot().spinRotation, null);
+        game.applySnapshot(saved);
+        saved.spinRotation.usedKick5 = false;
+        assert.equal(game.getSnapshot().spinRotation.usedKick5, true);
+        await press(INPUT_ACTION.SOFT_DROP);
+        assert.equal(game.getSnapshot().spinRotation, null);
+        game.applySnapshot({ ...saved, board: createEmptyBoard(),
+            spinRotation: { lastKickIndex: 4, usedKick5: true } });
+        await press(INPUT_ACTION.MOVE_RIGHT);
+        assert.equal(game.getSnapshot().spinRotation, null);
+        game.applySnapshot({ ...saved, spinRotation: { lastKickIndex: 4, usedKick5: true } });
+        await press(INPUT_ACTION.HOLD);
+        assert.equal(game.getSnapshot().spinRotation, null);
+        game.init({ autoStart: false });
+        assert.equal(game.getSnapshot().spinRotation, null);
+    } finally { game.destroy(); }
 });
 
 test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", async (t) => {

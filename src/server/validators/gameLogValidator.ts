@@ -90,6 +90,10 @@ export function validatePlacementDecisionLog(
     if (!isValidAuthoritativeLineage(log)) {
         return createFailure("INVALID_AUTHORITATIVE_LINEAGE");
     }
+    if (isPlainObject(log.placementResult) && log.placementResult.tSpinType !== undefined
+        && !isValidPlacementResult(log.placementResult)) {
+        return createFailure("INVALID_PLACEMENT_RESULT");
+    }
 
     if (log.schemaVersion === 1) {
         return validateLegacyPlacementDecisionLog(log);
@@ -432,10 +436,15 @@ function isValidPlacement(placement: unknown): boolean {
 }
 
 function isValidPlacementResult(result: unknown): boolean {
-    return isPlainObject(result) &&
+    if (!(isPlainObject(result) &&
         isNonNegativeInteger(result.linesCleared) &&
         isFiniteNumber(result.scoreDelta) &&
-        typeof result.gameOver === "boolean";
+        typeof result.gameOver === "boolean")) return false;
+    if (result.tSpinType === undefined) return true;
+    return (result.tSpinType === "none" || result.tSpinType === "mini" || result.tSpinType === "full")
+        && result.isTSpin === (result.tSpinType !== "none")
+        && (result.tSpinType !== "mini" || result.linesCleared <= 2)
+        && (result.tSpinType !== "full" || result.linesCleared <= 3);
 }
 
 function isValidMetrics(metrics: unknown, columnCount: number): boolean {

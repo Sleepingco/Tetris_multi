@@ -1,4 +1,5 @@
 import type { Board, BoardCell } from "./board.ts";
+import type { TSpinType } from "./tSpin.ts";
 
 // =============================
 // 멀티플레이 garbage 규칙
@@ -21,7 +22,7 @@ export type GarbageEntry = {
 
 export type GarbageAttackOptions = {
     linesCleared?: number;
-    isTSpin?: boolean;
+    tSpinType?: TSpinType;
     combo?: number;
     backToBack?: boolean;
 };
@@ -54,6 +55,10 @@ const T_SPIN_GARBAGE_ATTACK_BY_LINES: Record<number, number> = {
     2: 4,
     3: 6,
 };
+const MINI_GARBAGE_ATTACK_BY_LINES: Record<number, number> = {
+    1: 1,
+    2: 2,
+};
 
 /**
  * 이번 lock의 line clear, T-Spin, combo, back-to-back을 최종 공격 줄 수로 바꾼다.
@@ -61,7 +66,7 @@ const T_SPIN_GARBAGE_ATTACK_BY_LINES: Record<number, number> = {
  */
 export function calculateGarbageAttack({
     linesCleared,
-    isTSpin = false,
+    tSpinType = "none",
     combo = 0,
     backToBack = false,
 }: GarbageAttackOptions = {}): number {
@@ -69,10 +74,12 @@ export function calculateGarbageAttack({
         return 0;
     }
 
-    const baseAttack = isTSpin
+    const baseAttack = tSpinType === "full"
         ? T_SPIN_GARBAGE_ATTACK_BY_LINES[linesCleared] ?? 0
-        : BASIC_GARBAGE_ATTACK_BY_LINES[linesCleared] ?? 0;
-    const b2bBonus = backToBack && isBackToBackEligible({ linesCleared, isTSpin })
+        : tSpinType === "mini"
+            ? MINI_GARBAGE_ATTACK_BY_LINES[linesCleared] ?? 0
+            : BASIC_GARBAGE_ATTACK_BY_LINES[linesCleared] ?? 0;
+    const b2bBonus = backToBack && isBackToBackEligible({ linesCleared, tSpinType })
         ? 1
         : 0;
 
@@ -175,10 +182,10 @@ function createGarbageLine(cols: number, holeCol: number, cellType: string): Boa
  */
 export function isBackToBackEligible({
     linesCleared,
-    isTSpin = false,
-}: Pick<GarbageAttackOptions, "linesCleared" | "isTSpin"> = {}): boolean {
+    tSpinType = "none",
+}: Pick<GarbageAttackOptions, "linesCleared" | "tSpinType"> = {}): boolean {
     return linesCleared === 4
-        || (isTSpin && linesCleared !== undefined && linesCleared > 0);
+        || (tSpinType !== "none" && linesCleared !== undefined && linesCleared > 0);
 }
 
 function getComboBonus(combo: number): number {

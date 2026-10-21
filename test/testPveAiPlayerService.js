@@ -405,6 +405,37 @@ test("AI action executor는 기존 authoritative line clear와 score 규칙을 �
     assert.equal(result.log.placementResult.scoreAfter, 38);
 });
 
+test("PVE의 실제 회전·고정은 Mini Single 보상과 신규 분류를 로그에 보존한다", async () => {
+    resetMatches();
+    const core = await loadGameCore();
+    const match = createPveMatch("PVESPIN1", "hard");
+    const player = setActivePiece(match, { pieceType: "tree", rotation: 3, row: 17, col: 3 });
+    const state = player.authoritativeState;
+    state.lockDelay = core.createLockDelay(17);
+    state.board[18] = Array(10).fill("square");
+    for (const col of [3, 4, 5]) state.board[18][col] = null;
+    state.board[17][3] = state.board[19][3] = state.board[19][5] = "square";
+    const saved = [];
+    const decision = createDecision({
+        selectedPlacement: { pieceType: "tree", rotation: 0, row: 17, col: 3 },
+        plannedActions: ["rotate", "hard_drop"],
+    });
+    const service = createPveAiPlayerService({
+        loadHeuristicAi: createStubAi(decision),
+        savePlacementDecisionLog(log) { saved.push(log); return { ok: true, log }; },
+    });
+    const { result } = await processUntilPlacement(service, "PVESPIN1", core);
+    assert.equal(result.placementResult.tSpinType, "mini");
+    assert.equal(result.placementResult.scoreDelta, 10);
+    assert.equal(result.placementResult.rawAttackLines, 1);
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].placementResult.tSpinType, "mini");
+    assert.equal(saved[0].placementResult.isTSpin, true);
+    assert.equal(validatePlacementDecisionLog(saved[0]).ok, true);
+    const { projectGameEventLog } = require("../dist/server/server/services/gameEventProjector.js");
+    assert.equal(projectGameEventLog(saved[0]).payload.placementResult.tSpinType, "mini");
+});
+
 test("AI queue가 부족하면 서버가 bag을 보충하고 다음 piece를 spawn한다", async () => {
     resetMatches();
     const gameCore = await loadGameCore();

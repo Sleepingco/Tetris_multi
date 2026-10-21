@@ -37,6 +37,36 @@ async function loadMoveStep() {
     };
 }
 
+test("실제 SRS 후보 0~4의 번호를 intent까지 전달하고 실패·이동에는 남기지 않는다", async () => {
+    const core = await loadMoveStep();
+    const fixtures = [
+        { rotation: 0, cells: [], row: 4, col: 3 },
+        { rotation: 0, cells: [[4, 6]], row: 4, col: 2 },
+        { rotation: 0, cells: [[4, 6], [3, 6]], row: 3, col: 2 },
+        { rotation: 2, cells: [[4, 4], [5, 6]], row: 6, col: 3 },
+        { rotation: 0, cells: [[4, 6], [3, 4]], row: 6, col: 2 },
+    ];
+    fixtures.forEach((fixture, kickIndex) => {
+        const board = core.createEmptyBoard(20, 10);
+        fixture.cells.forEach(([col, row]) => { board[row][col] = "garbage"; });
+        const activePiece = { pieceType: "tree", rotation: fixture.rotation, row: 4, col: 3 };
+        const options = { board, activePiece,
+            pendingPiece: { ...activePiece, rotation: (activePiece.rotation + 1) % 4 },
+            moveCause: "rotate", blocks: core.blocks, wallKicks: core.wallKicks };
+        const outcome = core.resolveMoveAttempt(options);
+        assert.equal(outcome.status, "ok");
+        assert.equal(outcome.kickIndex, kickIndex);
+        const intent = core.resolveMoveIntent({ outcome, hasFallTimer: true });
+        assert.equal(intent.kickIndex, kickIndex);
+        assert.deepEqual(intent.active, { ...options.pendingPiece, row: fixture.row, col: fixture.col });
+        const blocked = core.resolveMoveAttempt({ ...options,
+            board: Array.from({ length: 20 }, () => Array(10).fill("garbage")) });
+        assert.equal(blocked.status, "retry");
+        assert.equal(blocked.kickIndex, undefined);
+        assert.equal(core.resolveMoveIntent({ outcome: blocked, hasFallTimer: true }).kickIndex, undefined);
+    });
+});
+
 test("resolveMoveAttempt는 이동 결과와 다음 pendingPiece를 반환한다", async () => {
     const {
         resolveMoveAttempt,

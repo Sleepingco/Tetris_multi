@@ -21,7 +21,7 @@ test("loadGameCore는 server에서 재사용할 client game core를 로딩한다
     assert.equal(typeof gameCore.createEmptyBoard, "function");
     assert.equal(typeof gameCore.lockPieceOnBoard, "function");
     assert.equal(typeof gameCore.clearFilledLines, "function");
-    assert.equal(typeof gameCore.isTSpinLock, "function");
+    assert.equal(typeof gameCore.classifyTSpin, "function");
     assert.equal(typeof gameCore.resolveAttackState, "function");
     assert.equal(typeof gameCore.calculateGarbageAttack, "function");
     assert.equal(typeof gameCore.resolveGarbageCancel, "function");

@@ -539,7 +539,7 @@ export function startMultiplayerGame({
             myGame.applySnapshot(snapshot, { resumeGravity: gameplayStarted })
             return true
         }
-        myGame.syncLockDelay(snapshot);
+        myGame.syncActivePieceState(snapshot);
         return false
     }
 

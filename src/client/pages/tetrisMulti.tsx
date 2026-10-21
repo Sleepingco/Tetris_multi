@@ -550,7 +550,8 @@ function MultiplayerGamePage() {
             element.style.fontSize = `${Math.min(34, width / 4.5)}px`;
             const title = document.createElement("strong");
             title.className = "combat-achievement-title";
-            title.textContent = event === "tspin" ? "T-SPIN" : event === "tetris" ? "TETRIS" : `COMBO ${effect.combo}`;
+            title.textContent = event === "tspin" ? (effect.tSpinType === "mini" ? "T-SPIN MINI" : "T-SPIN")
+                : event === "tetris" ? "TETRIS" : `COMBO ${effect.combo}`;
             element.append(title);
             if (event !== "combo" && effect.combo > 0) {
                 const combo = document.createElement("span");
@@ -661,7 +662,7 @@ function MultiplayerGamePage() {
             const target = index === 0 ? player2Canvas! : player1Canvas!;
             showAchievement(index, effect);
             const parts: string[] = [];
-            if (effect.isTSpin) parts.push("T-SPIN");
+            if (effect.isTSpin) parts.push(effect.tSpinType === "mini" ? "T-SPIN MINI" : "T-SPIN");
             else if (effect.linesCleared === 4) parts.push("TETRIS");
             if (effect.combo > 0) parts.push(`COMBO ${effect.combo}`);
             if (effect.backToBackBonus) parts.push("B2B");
