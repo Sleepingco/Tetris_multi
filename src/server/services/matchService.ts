@@ -5,6 +5,8 @@
 // mutation 함수는 내부 원본을 제자리에서 바꾼다. 조회 경계에서는 복제본을,
 // client 전송 경계에서는 server-only 필드를 뺀 축소 DTO를 반환한다.
 // =============================
+import { BOARD_ROWS, BOARD_COLS, SPAWN_POSITION } from "../../client/game/state/config.js";
+import { getSpawnedPiece } from "../../client/game/core/piece.js";
 import { createLockDelay } from "../../client/game/core/lockDelay.js";
 import type { LockDelayState } from "../../client/game/core/lockDelay.js";
 import type { SpinRotation } from "../../client/game/core/tSpin.js";
@@ -35,6 +37,8 @@ import type {
 } from "./playerGameplayStep.js";
 import type { PveAiPlan } from "./pveAiPlayerService.js";
 import type { PlayerType, RoomState, RoomStatus } from "./roomService.js";
+import { BUFFER_GAMEPLAY_RULES_VERSION } from "../../shared/gameplayLogContext.js";
+import type { GameplayRulesVersion } from "../../shared/gameplayLogContext.js";
 
 type ParsedGameInput = ClientToServerParsedPayload<"game:input">;
 export type AuthoritativeInput = {
@@ -83,6 +87,7 @@ export type MatchPlayer = {
 };
 export type MatchState = {
     gameId: string;
+    gameplayRulesVersion: GameplayRulesVersion;
     roomId: string;
     mode: RoomState["mode"];
     aiDifficulty: AiDifficulty | null;
@@ -96,6 +101,7 @@ export type MatchState = {
 };
 export type HumanPlacementReceipt = Readonly<{
     gameId: string;
+    gameplayRulesVersion: GameplayRulesVersion;
     roomId: string;
     playerId: string;
     clientSequence: number;
@@ -161,10 +167,8 @@ const matches = new Map<string, MatchState>();
 const recentHumanPlacementReceipts = new Map<string, HumanPlacementReceipt[]>();
 const BAG_PIECES: PieceType[] = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"];
 const INITIAL_BAG_CHUNK_COUNT = 3;
-const BOARD_ROWS = 20;
-const BOARD_COLS = 10;
-const SPAWN_ROW = -1;
-const SPAWN_COL = 3;
+const SPAWN_ROW = SPAWN_POSITION.row;
+const SPAWN_COL = SPAWN_POSITION.col;
 const POSITION_TRANSFORM_ACTIONS = new Set<AuthoritativeInput["action"]>([
     "move_left", "move_right", "rotate", "rotate_ccw"
 ]);
@@ -230,8 +234,9 @@ export function createMatch(
             return createFailure("INVALID_AI_POLICY");
         }
     }
-    const match = {
+    const match: MatchState = {
         gameId: randomUUID(),
+        gameplayRulesVersion: BUFFER_GAMEPLAY_RULES_VERSION,
         roomId: room.roomId,
         mode,
         aiDifficulty,
@@ -386,6 +391,7 @@ export function recordHumanPlacementReceipt(
 
     const receipt = Object.freeze({
         gameId: match.gameId,
+        gameplayRulesVersion: match.gameplayRulesVersion,
         roomId,
         playerId,
         clientSequence,
@@ -407,6 +413,7 @@ export function authenticateHumanPlacementReceipt(
     clientSequence: number,
     pieceIndex: number,
     now = Date.now(),
+    expectedRulesVersion?: GameplayRulesVersion,
 ): HumanPlacementReceiptResult {
     const key = receiptKey(roomId, playerId);
     const receipts = purgeExpiredReceipts(key, now);
@@ -420,6 +427,9 @@ export function authenticateHumanPlacementReceipt(
             receipt: null,
             reason: "PLACEMENT_RECEIPT_NOT_FOUND",
         };
+    }
+    if (expectedRulesVersion !== undefined && receipts[receiptIndex]?.gameplayRulesVersion !== expectedRulesVersion) {
+        return { ok: false, receipt: null, reason: "GAMEPLAY_RULES_VERSION_MISMATCH" };
     }
 
     const receipt = receipts.splice(receiptIndex, 1)[0];
@@ -963,30 +973,16 @@ function createInitialBagChunks(count = INITIAL_BAG_CHUNK_COUNT): PieceType[][] 
 function createInitialPlayerState(bagChunks: PieceType[][] = []): AuthoritativePlayerState {
     const pieceQueue = flattenBagChunks(bagChunks);
     const firstPieceType = pieceQueue.shift();
+    const board = createEmptyBoard();
     const activePiece: PieceState = firstPieceType
-        ? {
-            pieceType: firstPieceType,
-            rotation: 0,
-            row: SPAWN_ROW,
-            col: SPAWN_COL,
-        }
-        : {
-            pieceType: "",
-            rotation: 0,
-            row: SPAWN_ROW,
-            col: SPAWN_COL,
-        };
+        ? getSpawnedPiece(board, firstPieceType)!
+        : { pieceType: "", rotation: 0, row: SPAWN_ROW, col: SPAWN_COL };
 
     return {
         lockDelay: createLockDelay(activePiece.row),
-        board: createEmptyBoard(),
+        board,
         activePiece,
-        pendingPiece: firstPieceType ? {
-            pieceType: firstPieceType,
-            rotation: 0,
-            row: SPAWN_ROW,
-            col: SPAWN_COL,
-        } : null,
+        pendingPiece: firstPieceType ? { ...activePiece } : null,
         pieceQueue,
         holdPieceType: null,
         holdUsedThisDrop: false,

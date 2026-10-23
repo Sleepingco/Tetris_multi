@@ -2802,3 +2802,79 @@ client input
 - 3단계 게임 오버·버퍼 존은 후속으로 보류한다. 적용·rollback은 서버와 클라이언트를 함께 맞추고 열린 탭을 새로고침하며, 새 분류 로그를 읽는 호환성은 보존한다.
 
 - 사용자 요청에 따라 이번 1·2단계 구현·회귀 테스트·계획 및 검증 문서를 현재 `main`에서 하나의 로컬 커밋으로 정리한다. 마지막 검증 이후 실행 코드 변경은 없으므로 테스트는 반복하지 않고 Git diff 공백과 문서 링크를 확인한다. 원격 push·병합·배포는 수행하지 않는다.
+
+---
+
+# 2026년 10월 22일
+
+## 게임 오버·버퍼 존 차이와 변경 위험 조사
+
+- [조사 및 수정 계획](docs/gameplay/top-out-buffer-zone-plan.md)에 사용자 지정 2009 설계 문서와 TetrisWiki의 게임 오버 분류, 현재 partial lock-out·garbage overflow·spawn 차이를 정리했다. 40행 단일 보드와 20행 표시 영역, 초기/next/hold 생성, 서버 판정·클라이언트 보정·PVE 후보·통신·로그의 변경 범위를 연결했다. 모든 상용 게임의 공통 규칙이나 최신 공식 규정으로 단정하지 않는다.
+- 상단 일부 고정+줄 완성에서도 즉시 종료하고 숨은 cell이 사라지는 입력, visible 천장의 garbage overflow, 40행 socket 거부, AI 부분 배치 제외를 assert로 재현했다. 새 `lock_out` 사유의 canonical projector 거부와 같은 board/index의 local gameOver만으로 보정되지 않는 경계도 확인했다.
+- 사람 로그의 `client_reported` 성격과 서버/PVE 관찰 시점 차이, v3 validator·canonical·SQL 계약, event identity/hash 보존, 과거 dataset·Python parity·기존 모델 호환성 위험을 기록했다. 현재 DB readiness가 migration 버전 2와 정확한 일치를 요구하므로 확장 migration 후 사용할 호환 rollback 빌드를 먼저 준비하도록 계획했다. 운영 DB row·volume·원본 로그·모델·canonical 산출물은 변경하지 않는다.
+- Node 24.18.0 server build와 관련 기존 테스트 260개 통과·실패/skip 0을 확인했다. 이번 변경은 계획·PLAN·변경 이력뿐이며 공백·문서 링크 49개·계획의 코드 경로 64개·코드 fence 검사도 통과했다. 전체 verify·브라우저·실제 PostgreSQL·성능·ML full 평가는 미실행이다. 구현·커밋·push·배포·자동 학습은 수행하지 않았으며 문서 rollback은 이번 계획과 연결된 상태/이력 항목만 되돌리면 된다.
+
+## 게임 오버 계획의 피드백·열린 천장 반영
+
+- 계획 §5·§7·§9·§11에 전체 상단 고정 시 줄 삭제/상쇄/garbage 없는 Lock Out, 버퍼 천장 밖 코너 막힘, 열린 천장과 위로 확장된 Canvas, V4의 추론 전 RULESET_INCOMPATIBLE fallback과 배지 사유 표시를 반영했다. 가시 게임판은 20행을 유지하고 전체 렌더/효과 좌표를 통일하며 상단 표시 범위를 넘는 조각의 위치도 보완한다.
+- AI의 다음 spawn 검사는 실제 조각과 서버 후처리 문맥을 사용하고 생존 후보 우선 정책까지 연결하도록 보강했다. 중앙 사각 영역 점유만으로 종료시키거나 문맥이 부족한 예측을 확정 label로 저장하지 않는다. BFS는 활성 조각에서 출발하는 현재 구조를 유지하고 측정·후보 동등성 근거 없이 행을 제한하지 않는다.
+- 이전 작은 fixture 검사에서 I/J별 spawn 차이·빈 20/40행 T 후보 각각 34개·고스트가 버퍼에 숨는 사례를 확인했다. 이번에는 문서만 수정하고 공백·링크·경로·코드 fence 검사를 통과했다. 앞선 260개 테스트 결과는 초기 조사 기록이며 이번에 재실행한 결과가 아니다. 코드·DB·모델 변경이나 배포는 수행하지 않았고 브라우저·성능은 구현 후 검증한다.
+
+## 게임 오버 계획 1단계: 규칙·fixture 고정 완료
+
+- [공용 JSON fixture](test/fixtures/top-out-buffer-zone.json)와 [계약·재현 테스트](test/testTopOutBufferContract.js)를 추가했다. 전체 상단 고정의 후처리 중단, 부분 고정+줄 삭제, 7종 초기 생성, 하강 실패와 block-out 구분, 천장 코너, 실제 다음 조각·생존 후보 우선, garbage의 Skyline/천장 경계, BFS 후보 동등성, 열린 천장 좌표·숨은 ghost, V4 fallback 및 v3 관찰 단계를 고정했다.
+- 테스트는 현재 서버/코어의 차이를 명시적으로 관찰하며 새 40행 gameplay가 구현됐다고 주장하지 않는다. `src`·실제 wire·DB·모델은 변경하지 않았다. 3단계에서 같은 fixture를 목표 결과 assertion에 연결하고 현재 차이를 확인하는 assertion을 교체하도록 기록했다. 상단 2행/60px은 좌표 검증 fixture이며 최종 디자인 높이로 확정하지 않았다.
+- 새 검사 23개 통과. Node 24.18.0 최종 필수 verify는 공백·typecheck·build·artifact와 **732 pass·기존 조건부 1 skip·실패/todo 0**으로 통과했다. 첫 sandbox 실행의 기존 HTTP 통합 2개는 로컬 포트 EPERM 실패였으며, 로컬 포트 허용 후 전체 verify를 재실행해 통과했다. JSON·새 파일 공백·문서 링크·fence도 확인했다.
+- 브라우저·실제 PostgreSQL·BFS 성능·ML 평가는 미실행이다. 다음 2단계 저장 호환 기반은 시작하지 않았으며 커밋·push·배포·학습은 수행하지 않았다. 되돌릴 때는 새 fixture/계약 테스트와 1단계 문서 항목만 복구하고 앞선 계획·데이터·사용자 변경은 보존한다.
+
+## 게임 오버 계획 2단계: v3 저장 호환 기반 완료
+
+- `gameplayLogContext`와 v3 전용 검증을 추가해 buffer20-v1·40×10·좌표계·조각 cell·관찰 단계·terminal 사유를 raw/canonical 경계에서 검증한다. v3 projector만 새 metadata와 lock_out 사유를 보존하며 legacy 투영·identity/hash는 유지한다. human/heuristic의 trust level과 현재 20행 gameplay·v1/v2 로그 생성은 유지한다.
+- 기존 001/002를 수정하지 않고 003 SQL migration에 v3 shape/context CHECK를 추가했다. runtime readiness는 정확히 migration 3을 요구하며 기존 bounded write·timeout·retry·single-sink는 유지한다. match/receipt에 서버 규칙 식별자를 보존하고 종료 뒤 late log에도 적용한다. v3 규칙 불일치는 receipt 소비 없이 거부하며 client identity/geometry를 서버 문맥으로 설정한다.
+- JSONL importer는 v3 저장·완결성 판별과 혼합 규칙 검출을 지원한다. 현재 ML exporter는 v3가 섞인 경기를 UNSUPPORTED_GAMEPLAY_RULESET으로 제외해 20행 후보 재생성·과거 데이터 혼합을 막는다. 새 모델 학습·dataset·canonical 원본 재작성은 하지 않았다.
+- 최종 필수 verify는 Node 24.18.0의 typecheck·build·artifact와 **741 pass·기존 조건부 1 skip·실패/todo 0**. 격리 PostgreSQL 17.10은 **9/9**, migration 2→3/재실행/row·hash 보존/v3 insert·duplicate·conflict/rollback runtime을 확인했다. migration 개수의 기존 concurrency 기대값 2가 한 번 실패해 3으로 갱신한 뒤 통과했다.
+- Docker production boundary에서 read-only/non-root·TLS 앱의 PVP/PVE 종료·재시작 **2/2**, DB 중단 중 PVE **1/1**, v3 저장 후 재기동·backup/restore snapshot 일치·privacy 0·duplicate 0·exit 0·pool 연결 0을 확인했다. 테스트 전 로컬 Docker Desktop을 기동했고 테스트용 자원은 스크립트가 정리했다. 운영 DB·배포·실기기·BFS 성능·ML full 평가는 수행하지 않았다.
+- 검증한 dist·package/lockfile·Node 버전·manifest를 로컬 `release-artifacts/top-out-stage2-rollback-2026-10-22.tar.gz`로 보존했다(SHA-256 `6be7d05a859f2e8c49602e4111c19ec1fc488601780463836fe3c129e82fac8d`). 생성물은 Git/Docker context에서 제외하며 [계획 §13](docs/gameplay/top-out-buffer-zone-plan.md#13-2단계-저장-호환-기반-완료-2026-10-22)·운영 runbook에 복구 기준을 기록했다. DB를 축소하지 않고 migration 3 호환 reader/기존 gameplay 빌드를 사용한다. 3단계·커밋·push는 시작하지 않았다.
+
+
+# 2026년 10월 23일
+
+## 버퍼 존 3단계: 40행 gameplay 통합
+
+- 보이는 20행 위에 숨은 20행을 같은 board에 저장하도록 싱글·멀티 예측·서버를 연결했다. 공용 spawn의 최초 충돌/한 행 하강과 O 중심 위치를 통일하고, 전체 상단 고정의 즉시 Lock Out·부분 고정 생존·실제 버퍼 천장 overflow·T-Spin 천장 경계를 적용했다.
+- 20행 필드 위에 2행 Canvas 표시 영역과 열린 윗테두리를 추가했다. 셀·고스트·착지·줄 효과를 같은 내부 좌표로 표시하고 더 높은 조각의 열 위치를 보인다. 40행 wire/protocol 2·경기 UUID·잘못된 local gameOver 복구를 연결했다.
+- heuristic은 다음 조각·회전 이력·공격/상쇄·garbage 문맥으로 생존을 평가한다. 40행의 V4는 추론 전 명시적으로 heuristic으로 전환하며 사유를 본문에 표시한다. 새 v3 생성과 receipt 버전 낮추기 차단을 연결하고 기존 ML builder/exporter에서 새 규칙을 분리했다. frozen model·dataset은 보존했다.
+- Lock Out의 게임 combo/B2B 상태를 바꾸지 않으면서 공격 결과 combo를 0으로 기록해 첫 종료 로그의 투영 실패와 성과 연출을 막았다. 실제 core·runtime·서버·로그 fixture, hidden 보정·늦은 다른 경기 응답·V4 미호출·렌더 좌표 회귀를 추가했다.
+- 최종 필수 verify는 Node 764 pass·기존 조건부 1 skip·0 fail, 전체 Chromium 55/55·최종 빌드 2/2, 격리 PostgreSQL 9/9 통과했다. 브라우저 v3 590건의 검증/투영과 기존 ML exporter의 540개 배치 제외·원본 불변을 확인했다. 상세는 [계획 §14](docs/gameplay/top-out-buffer-zone-plan.md#14-3단계-40행-gameplay-통합-2026-10-23)를 따른다. 기존 Python 문서 계약 테스트 두 곳의 옛 경로를 바로잡은 뒤 ML Node 35/35·Python 115/115 통과했다. 운영 DB·배포·실기기·ML full 실행은 하지 않았으며 4/5단계는 자동 시작하지 않는다. 커밋·push하지 않았다.
+
+## 싱글 상단 자동 고정의 게임 오버 표시 복구
+
+- 가시 보드 맨 위의 블록에 막혀 새 조각이 한 행도 내려가지 못하면, 500ms 유예 뒤 내부 상태와 로그는 `lock_out`으로 종료됐지만 React HUD는 `playing`으로 남았다. 입력 timer가 중단되고 재시작 UI도 보이지 않아 멈춘 것처럼 보였다.
+- 공용 runtime의 `refreshLockDelay`에서 자동 고정 직후 표시 상태를 발행하도록 한 줄을 추가했다. 기존 스폰·고정 유예·종료 규칙, 서버 계약·DB·ML 데이터 형식은 변경하지 않았다.
+- next/hold로 생성된 하강 불가 조각의 자동 종료·HUD 통지·입력 정리·재시작과 유예 중 좌우 탈출을 검사했다. 수정 전 HUD assertion 2개가 실패하는 것을 확인했고 수정 후 새 회귀 3개가 통과했다. 실제 Chromium에서도 고정된 bag의 중앙 stack을 쌓아 자동 종료 화면과 재시작 후 입력을 확인했다.
+- 필수 `bash scripts/verify.sh`는 typecheck·build·artifact와 Node **767 pass·기존 조건부 1 skip·0 fail**, 관련 Chromium **14/14** 통과했다. 실제 DB·ML 검증은 표시 통지 변경 범위가 아니므로 반복하지 않았으며 운영 배포·실기기 검증은 하지 않았다. 이 버그 수정만 되돌릴 경우 runtime의 표시 발행과 대응 회귀 검사·기록을 함께 복구하면 되고 DB rollback은 필요 없다. 커밋·push·다음 단계는 시작하지 않았다.
+
+## 가이드라인 스폰 확인과 상단 표시 여백 확대
+
+- 2009 Guideline §3.4·Appendix A1.2.1과 현재 공용 spawn을 대조했다. 바닥 기준 21·22행(I는 21행)에서 생성 충돌을 먼저 검사하고 가능할 때 즉시 한 행 내리는 기존 구현이 일치해 규칙 좌표는 유지했다. 7종 실제 반환 cell과 바닥 기준 행 번호를 fixture에서 검증하고 좌표 설명을 코드에 추가했다.
+- 상단 여백을 2행/60px에서 4행/120px로 늘려 Canvas·반응형 비율을 300×720으로 맞췄다. 가시 필드는 20행/300×600이다. 여백을 감싼 외곽 frame을 제거하고 가시 필드의 옆면·바닥에만 CSS frame을 배치했다. 내부 board·예측·socket·DB/v3·ML 형식은 변경하지 않았다.
+- 표시 여백을 넘어간 cell도 실제 40행 board에 보존한다. 가비지로 row 16→15가 돼 표시 범위를 벗어나도 다음 spawn이 비어 있으면 생존하는 경계를 서버/AI와 검증했다. renderer는 표시 밖 고정 cell을 그리지 않으면서 원본을 보존하고 더 높은 활성 조각에는 기존 열 위치 표시를 유지한다. fixtureVersion 2는 표시 계약 변경이며 gameplay/log 버전과 별개다.
+- 관련 Node 47/47, 최종 필수 verify는 **769 pass·기존 조건부 1 skip·0 fail**이다. 전체 Chromium 55/56 후 새 frame 검사의 CSS content/border 높이 해석을 정정했고 최종 빌드 관련 3/3 재실행으로 56개 항목의 통과를 확인했다. 1600px·390px 실제 화면도 확인했다. [계획 §14](docs/gameplay/top-out-buffer-zone-plan.md#14-3단계-40행-gameplay-통합-2026-10-23)에 좌표 표·여백 초과와 종료 조건·검증을 기록했다.
+- 운영 배포·실기기·DB/ML 검증은 수행하지 않았다. rollback은 표시 행 수·Canvas/CSS·대응 fixture/회귀 검사를 함께 되돌리며 DB 변경이 필요 없다. 커밋·push·다음 단계는 시작하지 않았다.
+
+## 버퍼 존 4단계: 경계·운영 검증 완료
+
+- 구버전 protocol 누락/1/3 탭의 실제 session 거부, 현재 탭 연결 유지, 최신 ack의 hidden cell 보정·오래된 ack 폐기를 검사했다. 사람 hard drop의 server commit·전송·저장 응답을 세는 브라우저 관찰기를 추가하고 기존 PVP/PVE 종료·재시작 검사에 연결했다. 관찰 산출물에는 board·credential을 남기지 않는다.
+- 격리 Docker DB의 완료 cohort와 브라우저 수락/명시적 거부를 모드·human/AI별로 대조했다. 최종 2경기·4명의 예상 25건/저장 21건 차이는 사람 로그의 RATE_LIMITED 4건과 일치했고 설명되지 않는 누락·예상 밖 저장은 0이다. 기존 10초당 사람 로그 10건 제한을 유지한다. 빠른 정상 플레이의 기록도 거부될 수 있어 완전한 행동 모방 데이터로 사용할 수 없음을 명시했다.
+- 실제 PostgreSQL 검사에 lock_commit/lock_out 배치와 여섯 종료 사유 v3 저장을 추가했다. migration·legacy row/hash 보존·duplicate/conflict·현재 gameplay 재기동을 확인했다. Docker의 DB 중단·bounded 실패·gameplay 진행·단일 sink·정상 종료·재시작·backup/restore·privacy/중복 검사를 통과했고 테스트 자원을 정리했다.
+- 실제 20행 rollback 빌드와 현재 40행 빌드의 유한 로컬 측정 스크립트와 [원시 결과](docs/gameplay/verification/top-out-buffer-zone-stage4-measurement-2026-10-23.json)를 추가했다. 방문 수는 별도 V8 coverage로 계수하고 시간 측정에서는 중지한다. 40행 후보 150개를 서버 입력으로 재생했다. 후보 평가 p95 최대 약 1.395ms, 8 PVP room/16명 ticker batch p95 0.172ms, snapshot 평균 약 1.65배다. 구조상 두 board를 채운 canonical 10,106 bytes·wire 8,970 bytes는 기존 상한 안이며 임의 BFS pruning·production instrumentation은 추가하지 않았다.
+- 전체 브라우저 raw v3 601건(start 29/placement 549/over 23)의 검증·투영, identity 중복/conflict 0과 원본 불변을 확인했다. import는 19경기 완결/10경기 불완전으로 분리하고 기존 ML exporter는 배치 549건을 UNSUPPORTED_GAMEPLAY_RULESET으로 제외했다. [로그 감사 산출물](docs/gameplay/verification/top-out-buffer-zone-stage4-log-audit-2026-10-23.json)에 checksum·단계·제외 결과를 남겼다.
+- 최종 필수 verify는 **769 pass·기존 조건부 1 skip·0 fail**, 전체 Chromium **58/58**, 실제 PostgreSQL **9/9**, Docker 정상 **2/2**·DB 중단 **1/1**, ML parity Node **35/35**·Python **115/115** 통과했다. 검증 중 fixture helper 인자 오류와 공유 dist 동시 재빌드 실패를 보완하고 DB 검사는 최종 빌드 뒤 단독으로 통과시켰다. 상세 조건·재현·한계는 [계획 §15](docs/gameplay/top-out-buffer-zone-plan.md)에 기록했다.
+- 이번 단계는 검사·측정·기록 변경이며 게임 규칙·socket/DB/log 형식·기존 빈도 제한·모델은 그대로다. V4/rollback 산출물 checksum을 보존했다. 운영 접속·배포·실기기·장시간 운영 부하·ML full 실행·새 학습 파이프라인은 수행하지 않았다. 5단계·커밋·push는 시작하지 않았다. 검증 추가분의 rollback에는 runtime/DB 변경이 필요 없다.
+
+
+## 버퍼 존 5단계: 운영 배포 준비 (2026-10-23)
+
+- 사용자 요청으로 실제 OCI 운영 배포를 시작했다. 현재 842b744/migration 2와 app/PostgreSQL healthy·HTTPS 200을 확인했다.
+- 배포 전용 source-less 검사의 과거 V4 기대값을 수정했다. 실제 40행 PVP/PVE·명시적 heuristic fallback과 패키지에 보존된 V4 artifact checksum을 함께 검사한다.
+- 배포 workflow는 실행 중 app과 후보의 DB 기대 버전이 다르면 migration 전에 중단한다. 2→3 전환은 검증한 stage2 rollback 이미지·접속 종료·유입 차단·backup을 갖춘 수동 절차를 사용한다. 실제 전환 결과는 후속 실행 기록에 남긴다.

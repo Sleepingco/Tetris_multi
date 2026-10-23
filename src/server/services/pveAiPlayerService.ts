@@ -1,3 +1,4 @@
+import { BUFFER_GAMEPLAY_RULES_VERSION, getGameplayLogContext } from "../../shared/gameplayLogContext.js";
 /**
  * PVE AI의 "판단"을 서버 권위 gameplay input으로 실행한다.
  *
@@ -312,6 +313,9 @@ export function createPveAiPlayerService(
             return ai.getHeuristicDecision(decisionState);
         }
 
+        if (decisionState.board.length === 40) {
+            return getHeuristicFallbackDecision(ai, decisionState, "RULESET_INCOMPATIBLE", null);
+        }
         let v4Ai;
         try {
             v4Ai = await loadV4Ai();
@@ -703,6 +707,10 @@ function createDecisionState(state: AuthoritativePlayerState) {
         board: state.board,
         activePiece: state.activePiece,
         nextQueue: [...state.pieceQueue],
+        pendingGarbageQueue: state.pendingGarbageQueue.map(entry => ({ ...entry })),
+        combo: state.combo,
+        backToBack: state.backToBack,
+        spinRotation: state.spinRotation,
         holdPiece: state.holdPieceType,
         score: state.score,
         lines: state.lines,
@@ -761,7 +769,16 @@ function createPlacementDecisionLog({
     }
     return {
         eventType: "placement_decision",
-        schemaVersion: 2,
+        schemaVersion: match.gameplayRulesVersion === BUFFER_GAMEPLAY_RULES_VERSION ? 3 : 2,
+        ...(match.gameplayRulesVersion === BUFFER_GAMEPLAY_RULES_VERSION ? {
+            ...getGameplayLogContext(match.gameplayRulesVersion),
+            observation: {
+                stage: placementResult.gameOverReason === "lock_out" ? "lock_commit" : "post_garbage_spawn",
+                nextSpawnOutcome: placementResult.gameOverReason === "lock_out" || placementResult.gameOverReason === "top_out"
+                    ? "not_evaluated" : placementResult.gameOverReason === "block_out" ? "blocked" : "clear",
+                terminalOutcome: placementResult.gameOverReason ?? null,
+            },
+        } : {}),
         mode: "pve",
         gameId: match.gameId,
         roomId: match.roomId,

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isValidGameplayLogV3 } from "../validators/gameplayLogV3.js";
 
 export const MAX_CANONICAL_EVENT_BYTES = 256 * 1024;
 export const MAX_GAME_ID_BYTES = 64;
@@ -326,19 +327,26 @@ function createSnapshot(input: unknown): CanonicalGameEvent {
     if (!isRecord(value.payload)) {
         return fail("CANONICAL_EVENT_INVALID");
     }
+    if (value.schemaVersion === 3 && !isValidGameplayLogV3(value.payload, String(value.eventType))) {
+        return fail("CANONICAL_EVENT_INVALID");
+    }
+    if (value.schemaVersion === 3 && value.eventType === "placement_decision"
+        && value.trustLevel !== (value.payload.source === "human" ? "client_reported" : "server_authoritative")) {
+        return fail("CANONICAL_EVENT_INVALID");
+    }
 
     const occurredAt = normalizeOccurredAt(value.occurredAt);
     if (value.eventType === "placement_decision") {
         if (
-            (value.schemaVersion !== 1 && value.schemaVersion !== 2)
+            (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3)
             || !isBoundedIdentity(value.playerId, MAX_PLAYER_ID_BYTES)
             || !isPostgresInteger(value.pieceIndex)
-            || (value.schemaVersion === 2 && occurredAt === null)
+            || (value.schemaVersion >= 2 && occurredAt === null)
         ) {
             return fail("CANONICAL_EVENT_INVALID");
         }
     } else if (
-        (value.schemaVersion !== 1 && value.schemaVersion !== 2)
+        (value.schemaVersion !== 1 && value.schemaVersion !== 2 && value.schemaVersion !== 3)
         || value.playerId !== null
         || value.pieceIndex !== null
         || occurredAt === null

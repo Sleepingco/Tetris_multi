@@ -4,6 +4,7 @@ node_modules/
 
 coverage/
 dist/
+/release-artifacts/
 
 data/logs/*.jsonl
 data/datasets/

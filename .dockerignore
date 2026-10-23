@@ -4,6 +4,7 @@
 
 node_modules
 dist
+release-artifacts
 coverage
 
 test

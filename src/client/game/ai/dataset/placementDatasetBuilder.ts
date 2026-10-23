@@ -85,6 +85,7 @@ export const PLACEMENT_DATASET_SCHEMA_VERSION = 2;
 export const DATASET_REJECTION_REASONS = Object.freeze({
     LOG_REQUIRED: "LOG_REQUIRED",
     INVALID_EVENT_TYPE: "INVALID_EVENT_TYPE",
+    UNSUPPORTED_GAMEPLAY_RULESET: "UNSUPPORTED_GAMEPLAY_RULESET",
     UNSUPPORTED_SCHEMA_VERSION: "UNSUPPORTED_SCHEMA_VERSION",
     INVALID_SOURCE: "INVALID_SOURCE",
     INVALID_MODEL_TYPE: "INVALID_MODEL_TYPE",
@@ -287,6 +288,10 @@ function validateDecisionLog(log: unknown): DecisionLogValidation {
     }
     if (log.schemaVersion !== 2) {
         return { ok: false, reason: DATASET_REJECTION_REASONS.UNSUPPORTED_SCHEMA_VERSION };
+    }
+    if ((Array.isArray(log.boardBefore) && log.boardBefore.length === 40)
+        || (log.gameplayRulesVersion !== undefined && log.gameplayRulesVersion !== "legacy20-v1")) {
+        return { ok: false, reason: DATASET_REJECTION_REASONS.UNSUPPORTED_GAMEPLAY_RULESET };
     }
     if (!isPlacementSource(log.source)) {
         return { ok: false, reason: DATASET_REJECTION_REASONS.INVALID_SOURCE };

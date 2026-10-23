@@ -196,7 +196,7 @@ function SingleGamePage() {
                 <section className="playfield">
                     <div ref={gameOverRootRef} />
                     <div className="playground">
-                        <canvas ref={boardCanvasRef} id="tetrisBoardCanvas" width="300" height="600" />
+                        <canvas ref={boardCanvasRef} id="tetrisBoardCanvas" width="300" height="720" />
                     </div>
                 </section>
 

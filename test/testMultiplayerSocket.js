@@ -266,11 +266,11 @@ function prepareTopOutState(gameCore, match, playerId) {
     })
 
     player.authoritativeState.board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS)
-    player.authoritativeState.board[0] = Array(gameCore.BOARD_COLS).fill("stack")
+    player.authoritativeState.board[20] = Array(gameCore.BOARD_COLS).fill("stack")
     player.authoritativeState.activePiece = {
         pieceType: "tree",
         rotation: 1,
-        row: -1,
+        row: 17,
         col: 4,
     }
     player.authoritativeState.pendingPiece = { ...player.authoritativeState.activePiece }
@@ -393,6 +393,11 @@ function createPlacementResult(overrides = {}) {
     }
 }
 
+function recordLegacyHumanPlacementReceipt(roomId, ...args) {
+    getMatchState(roomId).match.gameplayRulesVersion = "legacy20-v1";
+    return recordHumanPlacementReceipt(roomId, ...args);
+}
+
 function createHumanPlacementLogV1(roomId, overrides = {}) {
     return {
         eventType: "placement_decision",
@@ -406,7 +411,7 @@ function createHumanPlacementLogV1(roomId, overrides = {}) {
         selectedPlacement: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         placementResult: createPlacementResult(),
@@ -416,16 +421,16 @@ function createHumanPlacementLogV1(roomId, overrides = {}) {
 
 function createHumanPlacementLogV2(roomId, overrides = {}) {
     const cells = [
-        { row: 0, col: 0, x: 0, y: 0 },
-        { row: 0, col: 1, x: 1, y: 0 },
-        { row: 1, col: 0, x: 0, y: 1 },
-        { row: 1, col: 1, x: 1, y: 1 },
+        { row: 20, col: 0, x: 0, y: 0 },
+        { row: 20, col: 1, x: 1, y: 0 },
+        { row: 21, col: 0, x: 0, y: 1 },
+        { row: 21, col: 1, x: 1, y: 1 },
     ]
     const placement = {
         type: "square",
         pieceType: "square",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 0,
         x: 0,
         y: 0,
@@ -501,7 +506,7 @@ test("malformed expectedTransform은 state 변경 전에 거부된다", async ()
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, {
         pieceType: "tree",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 3,
     })
     const stateBefore = structuredClone(fixture.hostPlayer.authoritativeState)
@@ -534,6 +539,7 @@ test("malformed expectedTransform은 state 변경 전에 거부된다", async ()
     })
 
     assert.deepEqual(fixture.hostSocket.lastClientEvent("game:input:result")?.payload, {
+
         ok: false,
         reason: "INVALID_PAYLOAD",
         clientSequence: 1,
@@ -549,7 +555,7 @@ test("soft_drop의 malformed expectedTransform은 state 변경 전에 거부된�
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 4,
     })
     const stateBefore = structuredClone(fixture.hostPlayer.authoritativeState)
@@ -564,6 +570,7 @@ test("soft_drop의 malformed expectedTransform은 state 변경 전에 거부된�
     })
 
     assert.deepEqual(fixture.hostSocket.lastClientEvent("game:input:result")?.payload, {
+
         ok: false,
         reason: "INVALID_PAYLOAD",
         clientSequence: 1,
@@ -579,11 +586,11 @@ test("local 성공 transform이 server에서 MOVE_RETRY면 snapshot을 포함한
     const activePiece = {
         pieceType: "tree",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 3,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
-    fixture.hostPlayer.authoritativeState.board[1][2] = "stack"
+    fixture.hostPlayer.authoritativeState.board[21][2] = "stack"
 
     await fixture.hostSocket.triggerAsync("game:input", {
         roomId: fixture.roomId,
@@ -602,7 +609,7 @@ test("local 성공 transform이 server에서 MOVE_RETRY면 snapshot을 포함한
     assert.equal(result.snapshot.lastProcessedClientSequence, 1)
     assert.deepEqual(result.snapshot.activePiece, activePiece)
     assert.equal(fixture.hostPlayer.lastProcessedClientSequence, 1)
-    assert.equal(fixture.hostPlayer.authoritativeState.board[1][2], "stack")
+    assert.equal(fixture.hostPlayer.authoritativeState.board[21][2], "stack")
 })
 
 test("server move 결과가 expectedTransform과 다르면 계산 결과를 유지하고 divergence를 반환한다", async () => {
@@ -611,7 +618,7 @@ test("server move 결과가 expectedTransform과 다르면 계산 결과를 유�
     const activePiece = {
         pieceType: "tree",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 3,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
@@ -641,7 +648,7 @@ test("server rotate 결과가 expectedTransform과 다르면 계산 결과를 �
     const activePiece = {
         pieceType: "tree",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 3,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
@@ -670,7 +677,7 @@ test("hard_drop transform mismatch는 board와 pieceIndex를 변경하지 않고
     const activePiece = {
         pieceType: "tree",
         rotation: 1,
-        row: 4,
+        row: 24,
         col: 3,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
@@ -715,7 +722,7 @@ test("soft_drop transform mismatch는 lock 전에 state를 보존하고 ack한�
     const activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 4,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
@@ -745,7 +752,7 @@ test("soft_drop expectedTransform의 unknown row는 lock 전에 거부한다", a
     const activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 4,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
@@ -773,7 +780,7 @@ test("hard_drop expectedTransform의 unknown row는 lock 전에 거부한다", a
     const activePiece = {
         pieceType: "tree",
         rotation: 1,
-        row: 4,
+        row: 24,
         col: 2,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
@@ -829,11 +836,11 @@ test("queued move divergence 뒤 soft_drop과 hard_drop은 stale transform에서
             const activePiece = {
                 pieceType: "tree",
                 rotation: 0,
-                row: 0,
+                row: 20,
                 col: 3,
             }
             setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
-            fixture.hostPlayer.authoritativeState.board[1][2] = "stack"
+            fixture.hostPlayer.authoritativeState.board[21][2] = "stack"
             const stateBefore = structuredClone(fixture.hostPlayer.authoritativeState)
             const expectedTransform = createExpectedTransform(activePiece, { col: 2 })
 
@@ -866,7 +873,7 @@ test("queued move divergence 뒤 soft_drop과 hard_drop은 stale transform에서
                 expectedTransform: createExpectedTransform(activePiece),
             })
             assert.equal(fixture.hostSocket.lastClientEvent("game:input:result")?.payload.ok, true)
-            assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, 1)
+            assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, 21)
             assert.equal(fixture.hostPlayer.lastProcessedClientSequence, 3)
         })
     }
@@ -981,6 +988,7 @@ test("pending socket input 뒤의 같은 player gravity는 shared mutation queue
     assert.equal(hostSnapshots.at(-1).payload.snapshot.activePiece.row, stateBeforeInput.activePiece.row + 1)
     assert.equal(hostSnapshots.at(-1).payload.snapshot.activePiece.col, stateBeforeInput.activePiece.col - 1)
     assert.deepEqual(hostSocket.lastClientEvent("game:input:result")?.payload, {
+        gameId: hostSocket.lastClientEvent("game:input:result")?.payload.gameId,
         ok: true,
         reason: null,
         clientSequence: 1,
@@ -1010,7 +1018,7 @@ test("hard_drop과 hold spawn은 해당 player의 gravity 500ms를 다시 시작
             const activePiece = {
                 pieceType: "tree",
                 rotation: 0,
-                row: 0,
+                row: 20,
                 col: 3,
             }
             setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, activePiece)
@@ -1053,7 +1061,7 @@ test("응답 대기 없는 move/rotate 후 hard_drop은 마지막 성공 위치�
                 { pieceType: "tree", rotation: 0, col: 2 },
                 { pieceType: "tree", rotation: 0, col: 2 },
             ],
-            expectedPiece: { pieceType: "tree", rotation: 0, row: 0, col: 2 },
+            expectedPiece: { pieceType: "tree", rotation: 0, row: 20, col: 2 },
         },
         {
             name: "move_right -> hard_drop",
@@ -1062,7 +1070,7 @@ test("응답 대기 없는 move/rotate 후 hard_drop은 마지막 성공 위치�
                 { pieceType: "tree", rotation: 0, col: 4 },
                 { pieceType: "tree", rotation: 0, col: 4 },
             ],
-            expectedPiece: { pieceType: "tree", rotation: 0, row: 0, col: 4 },
+            expectedPiece: { pieceType: "tree", rotation: 0, row: 20, col: 4 },
         },
         {
             name: "rotate -> hard_drop",
@@ -1071,7 +1079,7 @@ test("응답 대기 없는 move/rotate 후 hard_drop은 마지막 성공 위치�
                 { pieceType: "tree", rotation: 1, col: 3 },
                 { pieceType: "tree", rotation: 1, col: 3 },
             ],
-            expectedPiece: { pieceType: "tree", rotation: 1, row: 0, col: 3 },
+            expectedPiece: { pieceType: "tree", rotation: 1, row: 20, col: 3 },
         },
         {
             name: "move_left -> move_left -> rotate -> hard_drop",
@@ -1082,7 +1090,7 @@ test("응답 대기 없는 move/rotate 후 hard_drop은 마지막 성공 위치�
                 { pieceType: "tree", rotation: 1, col: 1 },
                 { pieceType: "tree", rotation: 1, col: 1 },
             ],
-            expectedPiece: { pieceType: "tree", rotation: 1, row: 0, col: 1 },
+            expectedPiece: { pieceType: "tree", rotation: 1, row: 20, col: 1 },
         },
     ]
 
@@ -1092,7 +1100,7 @@ test("응답 대기 없는 move/rotate 후 hard_drop은 마지막 성공 위치�
             setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, {
                 pieceType: "tree",
                 rotation: 0,
-                row: 0,
+                row: 20,
                 col: 3,
             })
             const initialPieceIndex = fixture.hostPlayer.authoritativeState.pieceIndex
@@ -1156,7 +1164,7 @@ test("첫 blocked gravity가 먼저 등록되어도 grace 중 move/hard_drop은 
     const groundedPiece = {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 4,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, groundedPiece)
@@ -1240,14 +1248,14 @@ test("높은 jagged board의 한 칸 row 차이는 이전 col 자동 lock 전에
     const clientVisiblePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 17,
+        row: 37,
         col: 4,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, clientVisiblePiece)
-    fixture.hostPlayer.authoritativeState.board[19][3] = "stack"
+    fixture.hostPlayer.authoritativeState.board[39][3] = "stack"
 
     await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
-    assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, 18)
+    assert.equal(fixture.hostPlayer.authoritativeState.activePiece.row, 38)
 
     await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
     assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 1)
@@ -1270,7 +1278,7 @@ test("높은 jagged board의 한 칸 row 차이는 이전 col 자동 lock 전에
     assert.equal(inputResult.ok, false)
     assert.equal(inputResult.reason, "PREDICTION_DIVERGED")
     assert.equal(inputResult.snapshot.activePiece.col, 4)
-    assert.equal(inputResult.snapshot.activePiece.row, 18)
+    assert.equal(inputResult.snapshot.activePiece.row, 38)
     assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 1)
     assert.deepEqual(getBoardCells(
         fixture.hostPlayer.authoritativeState.board,
@@ -1297,11 +1305,11 @@ test("grounded piece가 새 최저 깊이로 내려가면 새 고정 예산을 �
     const ledgePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 17,
+        row: 37,
         col: 4,
     }
     setAuthoritativePieceFixture(gameCore, fixture.hostPlayer, ledgePiece)
-    fixture.hostPlayer.authoritativeState.board[19][5] = "stack"
+    fixture.hostPlayer.authoritativeState.board[39][5] = "stack"
 
     await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
     assert.equal(fixture.hostPlayer.authoritativeState.pieceIndex, 1)
@@ -1320,7 +1328,7 @@ test("grounded piece가 새 최저 깊이로 내려가면 새 고정 예산을 �
     await tickerService.tickRoom(fixture.roomId, fixture.socketServer, 500)
     assert.deepEqual(fixture.hostPlayer.authoritativeState.activePiece, {
         ...ledgePiece,
-        row: 18,
+        row: 38,
         col: 3,
     })
 
@@ -1338,7 +1346,7 @@ test("grounded piece가 새 최저 깊이로 내려가면 새 고정 예산을 �
         getBoardCells(fixture.hostPlayer.authoritativeState.board, "square"),
         getPieceCells(gameCore, {
             ...ledgePiece,
-            row: 18,
+            row: 38,
             col: 3,
         }),
     )
@@ -2109,7 +2117,7 @@ test("game:input은 authoritativeState에 input을 적용한다", async () => {
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     }
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece }
@@ -2131,16 +2139,17 @@ test("game:input은 authoritativeState에 input을 적용한다", async () => {
     assert.equal(hostPlayer.authoritativeState.pieceIndex, 2)
     const inputResult = hostSocket.lastClientEvent("game:input:result")?.payload
     assert.deepEqual(inputResult, {
+        gameId: fixture.match.gameId,
         ok: true,
         reason: null,
         clientSequence: 1,
         pieceIndex: 1,
         placementCommitted: true,
     })
-    assert.equal(hostPlayer.authoritativeState.board[18][3], "square")
-    assert.equal(hostPlayer.authoritativeState.board[18][4], "square")
-    assert.equal(hostPlayer.authoritativeState.board[19][3], "square")
-    assert.equal(hostPlayer.authoritativeState.board[19][4], "square")
+    assert.equal(hostPlayer.authoritativeState.board[38][3], "square")
+    assert.equal(hostPlayer.authoritativeState.board[38][4], "square")
+    assert.equal(hostPlayer.authoritativeState.board[39][3], "square")
+    assert.equal(hostPlayer.authoritativeState.board[39][4], "square")
 })
 
 test("game:input server lock attackLines는 상대 authoritative pendingGarbageQueue에 추가된다", async () => {
@@ -2152,14 +2161,14 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "bar",
         rotation: 1,
-        row: 0,
+        row: 20,
         col: 3,
     }
     const lockedPiece = {
         ...hostPlayer.authoritativeState.activePiece,
-        row: 16,
+        row: 36,
     }
-    hostPlayer.authoritativeState.board = createLineClearBoard(gameCore, lockedPiece, [16, 17, 18, 19])
+    hostPlayer.authoritativeState.board = createLineClearBoard(gameCore, lockedPiece, [36, 37, 38, 39])
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece }
     hostPlayer.authoritativeState.pieceQueue = ["square"]
     hostPlayer.authoritativeState.pieceIndex = 1
@@ -2196,7 +2205,7 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
         hostSnapshotEvent.payload.presentationEffect.id,
         "server-garbage-host-player:1:line_clear",
     )
-    assert.deepEqual(hostSnapshotEvent.payload.presentationEffect.rows, [16, 17, 18, 19])
+    assert.deepEqual(hostSnapshotEvent.payload.presentationEffect.rows, [36, 37, 38, 39])
     assert.equal(hostSnapshotEvent.payload.combatEffect.sentLines, 4)
     assert.equal(hostSnapshotEvent.payload.combatEffect.targetPlayerId, "server-garbage-guest-player")
     assert.equal(hostSnapshotEvent.payload.combatEffect.gameId, getMatchState(roomId).match.gameId)
@@ -2211,9 +2220,9 @@ test("game:input server lock attackLines는 상대 authoritative pendingGarbageQ
 
 
 function prepareTetrisAttack(gameCore, player) {
-    const piece = { pieceType: "bar", rotation: 1, row: 0, col: 3 };
+    const piece = { pieceType: "bar", rotation: 1, row: 20, col: 3 };
     const state = player.authoritativeState;
-    state.board = createLineClearBoard(gameCore, { ...piece, row: 16 }, [16, 17, 18, 19]);
+    state.board = createLineClearBoard(gameCore, { ...piece, row: 36 }, [16, 17, 18, 19]);
     state.activePiece = { ...piece };
     state.pendingPiece = { ...piece };
     state.pieceQueue = ["square"];
@@ -2373,13 +2382,13 @@ test("game:input server lock gameOver는 match finish와 ticker 정리를 처리
     assert.equal(finishEvent.payload.room.status, "finished")
     assert.equal(finishEvent.payload.winnerPlayerId, "server-gameover-guest-player")
     assert.equal(finishEvent.payload.loserPlayerId, "server-gameover-host-player")
-    assert.equal(finishEvent.payload.reason, "top_out")
+    assert.equal(finishEvent.payload.reason, "lock_out")
     assert.deepEqual(stoppedRoomIds, [roomId])
     const overLog = savedLogs.find(log => log.eventType === "game_over")
     assert.equal(overLog.roomId, roomId)
     assert.equal(overLog.winnerPlayerId, "server-gameover-guest-player")
     assert.equal(overLog.loserPlayerId, "server-gameover-host-player")
-    assert.equal(overLog.reason, "top_out")
+    assert.equal(overLog.reason, "lock_out")
     assert.equal(overLog.finishType, "normal")
     assert.deepEqual(getMatchState(roomId), {
         ok: false,
@@ -2410,11 +2419,11 @@ test("game:input hold block-out은 snapshot과 match finish를 한 번만 전송
     const { socketServer, hostSocket, roomId, hostPlayer, hostPlayerId } = fixture
     const gameCore = await loadGameCore()
     const board = gameCore.createEmptyBoard(gameCore.BOARD_ROWS, gameCore.BOARD_COLS)
-    board[0][3] = "stack"
+    board[19][3] = "stack"
     const activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 5,
+        row: 25,
         col: 0,
     }
     hostPlayer.authoritativeState.board = board
@@ -2570,9 +2579,9 @@ test("game:input은 연속 authoritativeState와 clientSequence를 갱신한다"
     assert.equal(hasLockedPieceCell, true)
 
     snapshot.activePiece.pieceType = "mutated"
-    snapshot.board[19][0] = "mutated"
+    snapshot.board[39][0] = "mutated"
     assert.notEqual(hostPlayer.authoritativeState.activePiece.pieceType, "mutated")
-    assert.notEqual(hostPlayer.authoritativeState.board[19][0], "mutated")
+    assert.notEqual(hostPlayer.authoritativeState.board[39][0], "mutated")
 
     const stateBeforeStaleInput = structuredClone(hostPlayer.authoritativeState)
     const snapshotEventCountBeforeStaleInput = socketServer.roomEvents.filter((event) => {
@@ -2611,6 +2620,7 @@ test("game:input은 연속 authoritativeState와 clientSequence를 갱신한다"
 
     assert.deepEqual(hostPlayer.authoritativeState, stateBeforeStaleInput)
     assert.deepEqual(hostSocket.lastClientEvent("game:input:result")?.payload, {
+        gameId: hostSocket.lastClientEvent("game:input:result")?.payload.gameId,
         ok: false,
         reason: "CLIENT_SEQUENCE_OUT_OF_ORDER",
         clientSequence: 2,
@@ -2759,6 +2769,7 @@ test("game:input은 authoritative apply 실패를 ack한다", async () => {
     })
 
     assert.deepEqual(hostSocket.lastClientEvent("game:input:result")?.payload, {
+        gameId: hostSocket.lastClientEvent("game:input:result")?.payload.gameId,
         ok: false,
         reason: "HOLD_NOT_AVAILABLE",
         clientSequence: 1,
@@ -2823,6 +2834,7 @@ test("game:input authoritative 예외는 sequence를 ack하고 현재 snapshot�
     assert.deepEqual(hostPlayer.authoritativeState, stateBeforeInput)
     assert.equal(snapshotEvent.payload.snapshot.lastProcessedClientSequence, 1)
     assert.deepEqual(hostSocket.lastClientEvent("game:input:result")?.payload, {
+        gameId: hostSocket.lastClientEvent("game:input:result")?.payload.gameId,
         ok: false,
         reason: "AUTHORITATIVE_INPUT_FAILED",
         clientSequence: 1,
@@ -2876,7 +2888,7 @@ test("game:log:placement_decision은 유효한 로그를 한 번만 저장하고
         playerId: "log-host-player",
     })
     assert.equal(
-        recordHumanPlacementReceipt(roomId, "log-host-player", 1, 2).ok,
+        recordLegacyHumanPlacementReceipt(roomId, "log-host-player", 1, 2).ok,
         true,
     )
 
@@ -2912,7 +2924,7 @@ test("game:log:placement_decision은 유효한 로그를 한 번만 저장하고
             selectedPlacement: {
                 pieceType: "square",
                 rotation: 0,
-                row: 18,
+                row: 38,
                 col: 4,
             },
         },
@@ -3182,7 +3194,7 @@ test("game:log:placement_decision은 finished 상태의 늦은 로그 저장을 
         playerId: "log-finished-host",
     })
     assert.equal(
-        recordHumanPlacementReceipt(roomId, "log-finished-host", 2, 2).ok,
+        recordLegacyHumanPlacementReceipt(roomId, "log-finished-host", 2, 2).ok,
         true,
     )
     const gameCore = await loadGameCore()
@@ -3216,7 +3228,7 @@ test("game:log:placement_decision은 finished 상태의 늦은 로그 저장을 
             selectedPlacement: {
                 pieceType: "square",
                 rotation: 0,
-                row: 18,
+                row: 38,
                 col: 4,
             },
             placementResult: {
@@ -3263,7 +3275,7 @@ test("human v2 placement log는 확장 좌표를 보존하고 private field를 �
     const roomId = hostSocket.lastClientEvent("room:result").payload.room.roomId
     hostSocket.trigger("room:start", { roomId })
     assert.equal(
-        recordHumanPlacementReceipt(roomId, "log-v2-host", 1, 3).ok,
+        recordLegacyHumanPlacementReceipt(roomId, "log-v2-host", 1, 3).ok,
         true,
     )
 
@@ -3325,7 +3337,7 @@ test("game:log:placement_decision은 room 참가자가 아닌 playerId면 저장
             selectedPlacement: {
                 pieceType: "square",
                 rotation: 0,
-                row: 18,
+                row: 38,
                 col: 4,
             },
         },
@@ -3337,6 +3349,47 @@ test("game:log:placement_decision은 room 참가자가 아닌 playerId면 저장
     assert.equal(logResult.ok, false)
     assert.equal(logResult.reason, "NOT_AUTHORIZED")
 })
+
+test("human v3 log는 서버 receipt의 규칙과 경기 identity를 사용하고 종료 뒤에도 저장한다", async () => {
+    const saved = [];
+    const fixture = await createStartedPvpSocketFixture("log-v3-context", {
+        savePlacementDecisionLog(log) {
+            saved.push(log);
+            return Promise.resolve({ ok: true, log, reason: null });
+        },
+    });
+    fixture.match.gameplayRulesVersion = "buffer20-v1";
+    recordHumanPlacementReceipt(fixture.roomId, fixture.hostPlayerId, 7, 5);
+    finishGame(fixture.roomId, fixture.hostPlayerId);
+    require("../dist/server/server/services/matchService.js").deleteMatch(fixture.roomId);
+    const log = structuredClone(require("./fixtures/gameplay-log-v3.json"));
+    log.authoritativeClientSequence = 7;
+    log.authoritativePieceIndex = 5;
+    await fixture.hostSocket.triggerAsync("game:log:placement_decision", { roomId: fixture.roomId, log });
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].gameId, fixture.match.gameId);
+    assert.equal(saved[0].playerId, fixture.hostPlayerId);
+    assert.equal(saved[0].gameplayRulesVersion, "buffer20-v1");
+    assert.deepEqual(saved[0].geometry, { rows: 40, cols: 10, hiddenRows: 20, visibleRows: 20 });
+});
+
+test("기존 20행 경기 receipt로는 client가 주장한 v3 규칙을 저장하지 못한다", async () => {
+    const saved = [];
+    const fixture = await createStartedPvpSocketFixture("log-v3-mismatch", {
+        savePlacementDecisionLog(log) {
+            saved.push(log);
+            return Promise.resolve({ ok: true, log, reason: null });
+        },
+    });
+    fixture.match.gameplayRulesVersion = "legacy20-v1";
+    recordHumanPlacementReceipt(fixture.roomId, fixture.hostPlayerId, 7, 5);
+    const log = structuredClone(require("./fixtures/gameplay-log-v3.json"));
+    log.authoritativeClientSequence = 7;
+    log.authoritativePieceIndex = 5;
+    await fixture.hostSocket.triggerAsync("game:log:placement_decision", { roomId: fixture.roomId, log });
+    assert.equal(saved.length, 0);
+    assert.equal(fixture.hostSocket.lastClientEvent("game:log:result").payload.reason, "GAMEPLAY_RULES_VERSION_MISMATCH");
+});
 
 test("room:start는 game_start 로그를 저장한다", async () => {
     const socketServer = new FakeSocketServer()
@@ -3469,7 +3522,7 @@ test("server authoritative gameOver는 game_over 로그를 저장한다", async 
     assert.equal(overLog.mode, "multi")
     assert.equal(overLog.winnerPlayerId, "over-log-host")
     assert.equal(overLog.loserPlayerId, "over-log-guest")
-    assert.equal(overLog.reason, "top_out")
+    assert.equal(overLog.reason, "lock_out")
     assert.equal(overLog.finishType, "normal")
     assert.equal(typeof overLog.endedAt, "number")
     assert.deepEqual(getMatchState(roomId), {
@@ -3846,8 +3899,8 @@ test("game:join은 진행된 server state의 player별 client snapshot과 bag ch
         return player.playerId === "game-join-bag-host"
     })
     hostMatchPlayer.authoritativeState.currentTick = 5
-    hostMatchPlayer.authoritativeState.activePiece.row = 4
-    hostMatchPlayer.authoritativeState.board[19][0] = "square"
+    hostMatchPlayer.authoritativeState.activePiece.row = 24
+    hostMatchPlayer.authoritativeState.board[39][0] = "square"
 
     gameSocket.trigger("game:join", {
         roomId,
@@ -3875,8 +3928,8 @@ test("game:join은 진행된 server state의 player별 client snapshot과 bag ch
         return player.playerId === "game-join-bag-host"
     })
     assert.equal(hostJoinPlayer.snapshot.tick, 5)
-    assert.equal(hostJoinPlayer.snapshot.activePiece.row, 4)
-    assert.equal(hostJoinPlayer.snapshot.board[19][0], "square")
+    assert.equal(hostJoinPlayer.snapshot.activePiece.row, 24)
+    assert.equal(hostJoinPlayer.snapshot.board[39][0], "square")
     assert.equal(hostJoinPlayer.snapshot.lastProcessedClientSequence, 0)
 })
 
@@ -4706,3 +4759,20 @@ test("stale socket은 validation과 rate bucket보다 먼저 NOT_AUTHORIZED로 �
     assert.equal(rateConsumeCount, 0)
     assert.equal(findRoomByPlayerId("stale-player"), null)
 })
+
+test("40행 경기의 v3 로그를 v2로 낮추면 receipt를 소비하지 않고 거부한다", async () => {
+    const saved = [];
+    const fixture = await createStartedPvpSocketFixture("log-rules-downgrade", {
+        savePlacementDecisionLog(log) { saved.push(log); return Promise.resolve({ ok: true, log, reason: null }); },
+    });
+    recordHumanPlacementReceipt(fixture.roomId, fixture.hostPlayerId, 7, 5);
+    const log = structuredClone(require("./fixtures/gameplay-log-v3.json"));
+    Object.assign(log, { authoritativeClientSequence: 7, authoritativePieceIndex: 5, schemaVersion: 2 });
+    await fixture.hostSocket.triggerAsync("game:log:placement_decision", { roomId: fixture.roomId, log });
+    assert.equal(saved.length, 0);
+    assert.equal(fixture.hostSocket.lastClientEvent("game:log:result").payload.reason, "GAMEPLAY_RULES_VERSION_MISMATCH");
+    log.schemaVersion = 3;
+    await fixture.hostSocket.triggerAsync("game:log:placement_decision", { roomId: fixture.roomId, log });
+    assert.equal(saved.length, 1);
+    assert.equal(saved[0].schemaVersion, 3);
+});

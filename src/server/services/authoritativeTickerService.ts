@@ -509,6 +509,7 @@ export function createAuthoritativeTickerService(
         const payload: ServerToClientParsedPayload<"game:authoritative:snapshot"> = {
             roomId,
             playerId,
+            gameId: snapshotResult.match?.gameId,
             snapshot: snapshotResult.snapshot,
         };
         if (presentationEffect?.id) {

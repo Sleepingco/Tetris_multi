@@ -330,6 +330,18 @@ jobs:
           esac
           test "${#RELEASE_SHA}" -eq 7
 
+          active_app=$(sudo docker compose \
+              --env-file /srv/tetris/secrets/production.env \
+              -f /srv/tetris/repository/compose.production.yml ps -q app)
+          test -n "$active_app"
+          version_probe='require("./dist/server/server/services/runtimeEventStorage.js").EXPECTED_POSTGRES_MIGRATION_VERSION'
+          active_version=$(sudo docker exec "$active_app" node -p "$version_probe")
+          candidate_version=$(sudo docker run --rm "tetris-app:${RELEASE_SHA}" node -p "$version_probe")
+          if test "$active_version" != "$candidate_version"; then
+              echo "SCHEMA_TRANSITION_REQUIRES_MANUAL_CUTOVER: prepare a compatible rollback and drain traffic before migration" >&2
+              exit 1
+          fi
+
           runMigration() {
               sudo docker run --rm \
                   --network tetris_database \

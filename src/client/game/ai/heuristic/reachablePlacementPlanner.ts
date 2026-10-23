@@ -1,3 +1,6 @@
+import { classifyTSpin, nextSpinRotation } from "../../core/tSpin.ts";
+import type { SpinRotation, TSpinType } from "../../core/tSpin.ts";
+import { BOARD_ROWS } from "../../state/config.ts";
 import { canPlacePiece } from "../../core/board.ts";
 import { getHardDropRow } from "../../core/piece.ts";
 import {
@@ -27,6 +30,7 @@ export type ReachableAction = "move_left" | "move_right" | "rotate" | "rotate_cc
 export type ReachablePlacement = {
     placement: Placement;
     plannedActions: ReachableAction[];
+    tSpinType?: TSpinType;
 };
 
 export const REACHABLE_ACTION_ORDER: ReadonlyArray<Exclude<ReachableAction, "hard_drop">> = Object.freeze([
@@ -126,7 +130,8 @@ function resolveReachableState(
     board: Board,
     piece: PlaceablePieceState,
     action: Exclude<ReachableAction, "hard_drop">,
-): PlaceablePieceState | null {
+    spinRotation: SpinRotation | null,
+): { piece: PlaceablePieceState; spinRotation: SpinRotation | null } | null {
     const inputIntent = resolveInputMoveIntent(action);
     const pendingPiece = createPendingPiece(piece, action);
     if (!inputIntent || !pendingPiece) return null;
@@ -141,7 +146,8 @@ function resolveReachableState(
     });
 
     return outcome.status === "ok" && outcome.active.pieceType
-        ? { ...outcome.active }
+        ? { piece: { ...outcome.active }, spinRotation: action === "rotate" || action === "rotate_ccw"
+            ? nextSpinRotation(spinRotation, outcome.kickIndex ?? 0) : null }
         : null;
 }
 
@@ -175,14 +181,16 @@ function createHardDropPlacement(board: Board, piece: PlaceablePieceState): Plac
 export function generateReachablePlacements(
     board: Board,
     activePiece: unknown,
+    spinRotation: SpinRotation | null = null,
 ): ReachablePlacement[] {
     if (!isRectangularBoard(board)) return [];
 
     const initialState = normalizeActivePiece(activePiece);
     if (!initialState || !canPlacePiece(board, initialState, BLOCKS)) return [];
 
-    const queue: Array<{ piece: PlaceablePieceState; actions: ReachableAction[] }> = [{
+    const queue: Array<{ piece: PlaceablePieceState; actions: ReachableAction[]; spinRotation: SpinRotation | null }> = [{
         piece: initialState,
+        spinRotation,
         actions: [],
     }];
     const visited = new Set([createStateKey(initialState)]);
@@ -199,20 +207,24 @@ export function generateReachablePlacements(
                 candidates.push({
                     placement,
                     plannedActions: [...current.actions, "hard_drop"],
+                    ...(board.length === BOARD_ROWS ? { tSpinType: classifyTSpin({
+                        board, piece: placement, spinRotation: placement.row === current.piece.row ? current.spinRotation : null,
+                    }) } : {}),
                 });
             }
         }
 
         REACHABLE_ACTION_ORDER.forEach(action => {
-            const nextPiece = resolveReachableState(board, current.piece, action);
+            const nextPiece = resolveReachableState(board, current.piece, action, current.spinRotation);
             if (!nextPiece) return;
 
-            const stateKey = createStateKey(nextPiece);
+            const stateKey = createStateKey(nextPiece.piece);
             if (visited.has(stateKey)) return;
 
             visited.add(stateKey);
             queue.push({
-                piece: nextPiece,
+                piece: nextPiece.piece,
+                spinRotation: nextPiece.spinRotation,
                 actions: [...current.actions, action],
             });
         });

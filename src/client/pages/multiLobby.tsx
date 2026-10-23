@@ -244,8 +244,11 @@ function MultiLobbyPage() {
                     sendRoomRequest("sync", () => requestRoomSync(savedRoomId, readyPlayerId));
                 }
             }),
-            onSessionError(({ terminal }: { terminal: boolean }) => {
+            onSessionError(({ code, terminal }) => {
                 if (terminal) clearRoom();
+                if (code === "GAMEPLAY_PROTOCOL_INCOMPATIBLE") {
+                    appendMessage("system", "게임 규칙이 업데이트되었습니다. 페이지를 새로고침해 주세요.");
+                }
             }),
             onSessionDisconnected(({ terminal }: { terminal: boolean }) => {
                 releaseRequest();

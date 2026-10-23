@@ -304,6 +304,7 @@ function PlayerColumn({
                         aria-live={playerNumber === 2 ? "polite" : undefined}
                     >
                         {badge.text}
+                        {badge.title && <span className="ai-fallback-reason">{badge.title}</span>}
                     </span>
                 </div>
                 <div className="player-stats" ref={statsRootRef}>
@@ -372,7 +373,7 @@ function PlayerColumn({
                                 ref={canvasRef}
                                 className="tetrisBoardCanvas"
                                 width="300"
-                                height="600"
+                                height="720"
                             />
                         </div>
                     </section>
@@ -698,7 +699,9 @@ function MultiplayerGamePage() {
                         ? "실험 AI · 휴리스틱 전환"
                         : "AI 상대 · 휴리스틱",
                     ...(policy.fallbackReason
-                        ? { title: `모델 전환 사유: ${policy.fallbackReason}` }
+                        ? { title: policy.fallbackReason === "RULESET_INCOMPATIBLE"
+                            ? "새 규칙 미지원 · 휴리스틱 사용"
+                            : `모델 전환 사유: ${policy.fallbackReason}` }
                         : {}),
                 };
             setPageInfo(current => ({ ...current, player2Badge: badge }));

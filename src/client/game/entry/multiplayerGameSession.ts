@@ -153,9 +153,9 @@ export function startMultiplayerGame({
 }: MultiplayerGameOptions): MultiplayerGameSession {
     const myBagChunks = getPlayerBagChunks(match, playerId)
     const opponentBagChunks = getPlayerBagChunks(match, opponentPlayerId)
-    const gameId = match?.createdAt
+    const gameId = match.gameId ?? (match?.createdAt
         ? `${roomId}-${match.createdAt}`
-        : roomId
+        : roomId)
 
     // =============================
     // 서버 확정 배치 로그 게이트
@@ -681,6 +681,7 @@ export function startMultiplayerGame({
     // =============================
 
     const detachAuthoritativeSnapshot = receiveAuthoritativeSnapshot(({
+        gameId: snapshotGameId,
         roomId: snapshotRoomId,
         playerId: remotePlayerId,
         snapshot,
@@ -689,6 +690,7 @@ export function startMultiplayerGame({
     }) => {
         if (destroyed) return
         if (snapshotRoomId !== roomId) return;
+        if (match.gameId && snapshotGameId !== match.gameId) return;
         if (!snapshot || !Array.isArray(snapshot.board)) return
         if (remotePlayerId !== playerId && remotePlayerId !== opponentPlayerId) return;
         lastAuthoritativeSnapshotAt = performance.now();
@@ -755,6 +757,7 @@ export function startMultiplayerGame({
     }
     const detachGameInputResultListener = onGameInputResult((result) => {
         if (destroyed) return
+        if (result.gameId && match.gameId && result.gameId !== match.gameId) return;
         handlePlacementInputResult(result)
         if (Number.isInteger(result?.clientSequence)) {
             acknowledgeServerInputs(result.clientSequence)

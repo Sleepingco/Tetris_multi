@@ -4,11 +4,20 @@
 // 화면 전용 스타일 값이 아니라 core와 runtime이 같은 규칙을 쓰기 위한 고정 계약이다.
 // =============================
 
-export const BOARD_ROWS = 20;
+export const VISIBLE_ROWS = 20;
+export const HIDDEN_ROWS = 20;
+export const BOARD_ROWS = VISIBLE_ROWS + HIDDEN_ROWS;
 export const BOARD_COLS = 10;
 
+export const BUFFER_GAMEPLAY_LOG_CONTEXT = Object.freeze({
+        gameplayRulesVersion: "buffer20-v1" as const,
+        coordinateSystem: "internal_top_origin" as const,
+        geometry: Object.freeze({ rows: BOARD_ROWS, cols: BOARD_COLS, hiddenRows: HIDDEN_ROWS, visibleRows: VISIBLE_ROWS }),
+});
+
+// 바닥부터 21·22행(내부 row 19·18)에서 생성한다. I의 실제 cell은 padding 때문에 21행에 놓인다.
 export const SPAWN_POSITION = {
-        row: -1,
+        row: HIDDEN_ROWS - 2,
         col: 3,
 };
 

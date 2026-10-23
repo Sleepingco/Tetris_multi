@@ -6,6 +6,7 @@
  * 만들고 finally에서 dispose해 다음 경기의 frame이 이전 관찰 배열에 섞이지 않게 한다.
  */
 const { test, expect } = require("@playwright/test");
+const { monitorPlacementLogs } = require("./helpers/placementLogs.js");
 const {
     readBottomBoardFingerprint,
 } = require("./helpers/multiplayer.js");
@@ -286,8 +287,9 @@ test("PVE AI attack은 human pending 표시 후 다음 lock에 적용된다", as
     }
 });
 
-test("PVE server gameOver 후 결과를 표시하고 같은 방을 재시작한다", async ({ page }) => {
+test("PVE server gameOver 후 결과를 표시하고 같은 방을 재시작한다", async ({ page }, testInfo) => {
     const monitor = createPveSocketMonitor(page);
+    const logs = monitorPlacementLogs(page);
 
     try {
         const roomId = await createPveRoom(page, "normal");
@@ -297,6 +299,7 @@ test("PVE server gameOver 후 결과를 표시하고 같은 방을 재시작한�
         await expect(page.locator('.game-text[data-player="1"] > span')).toHaveText("패배");
         await expect(page.locator('.game-text[data-player="2"] > span')).toHaveText("승리");
         await expect.poll(() => monitor.getMatchFinishes().length).toBeGreaterThan(0);
+        await logs.verifyAndWrite(testInfo, "pve");
 
         await returnPveMatchToLobby(page);
         await Promise.all([
@@ -308,6 +311,7 @@ test("PVE server gameOver 후 결과를 표시하고 같은 방을 재시작한�
         await expect(page.locator("#player2Name")).toHaveText("Heuristic AI");
         await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
     } finally {
+        logs.dispose();
         monitor.dispose();
     }
 });

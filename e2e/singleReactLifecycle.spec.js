@@ -24,7 +24,8 @@ async function readTopTreeCells(page) {
     return page.locator("#tetrisBoardCanvas").evaluate((canvas, treeColor) => {
         const context = canvas.getContext("2d");
         const cells = [];
-        for (let row = 0; row < 4; row += 1) {
+        const upperRows = canvas.height / (canvas.width / 10) - 20;
+        for (let row = 0; row < upperRows + 2; row += 1) {
             for (let col = 0; col < 10; col += 1) {
                 const [red, green, blue, alpha] = context.getImageData(
                     col * 30 + 15,

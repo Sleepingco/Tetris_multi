@@ -1,0 +1,133 @@
+{
+    "fixtureVersion": 2,
+    "gameplayRulesVersion": "buffer20-v1",
+    "geometry": { "rows": 40, "cols": 10, "hiddenRows": 20, "visibleRows": 20 },
+    "spawnEntrypoints": ["first", "next", "hold"],
+    "terminalPolicy": {
+        "priority": ["lock_out", "top_out", "block_out"],
+        "lockOut": {
+            "stage": "lock_commit",
+            "recordLockedCells": true,
+            "preserveDropDistanceScore": true,
+            "linesCleared": 0,
+            "canceledGarbageLines": 0,
+            "appliedGarbageLines": 0,
+            "spawnNext": false,
+            "terminalPlacementCount": 1
+        }
+    },
+    "locks": [
+        {
+            "id": "partial-clear",
+            "piece": { "pieceType": "square", "rotation": 0, "row": 19, "col": 0 },
+            "filledRows": [{ "row": 20, "exceptCols": [0, 1] }],
+            "filledCells": [[21, 0], [21, 1]],
+            "expected": { "lockOut": false, "linesCleared": 1, "remainingPieceCells": [[20, 0], [20, 1]] },
+            "legacy": { "gameOver": true, "linesCleared": 0 }
+        },
+        {
+            "id": "whole-hidden-before-clear",
+            "piece": { "pieceType": "square", "rotation": 0, "row": 18, "col": 0 },
+            "filledRows": [{ "row": 19, "exceptCols": [0, 1] }],
+            "filledCells": [[20, 0], [20, 1]],
+            "pendingGarbageLines": 1,
+            "expected": { "lockOut": true, "linesCleared": 0, "appliedGarbageLines": 0, "gameOverReason": "lock_out" },
+            "current40RowProbe": { "gameOver": false, "linesCleared": 1, "appliedGarbageLines": 1 }
+        },
+        {
+            "id": "visible-lock",
+            "piece": { "pieceType": "square", "rotation": 0, "row": 38, "col": 0 },
+            "filledCells": [],
+            "expected": { "lockOut": false, "linesCleared": 0 }
+        }
+    ],
+    "spawnPieces": [
+        { "pieceType": "tree", "row": 18, "col": 3, "cells": [[18, 4], [19, 3], [19, 4], [19, 5]] },
+        { "pieceType": "eleft", "row": 18, "col": 3, "cells": [[18, 3], [19, 3], [19, 4], [19, 5]] },
+        { "pieceType": "eright", "row": 18, "col": 3, "cells": [[18, 5], [19, 3], [19, 4], [19, 5]] },
+        { "pieceType": "ess", "row": 18, "col": 3, "cells": [[18, 4], [18, 5], [19, 3], [19, 4]] },
+        { "pieceType": "zee", "row": 18, "col": 3, "cells": [[18, 3], [18, 4], [19, 4], [19, 5]] },
+        { "pieceType": "square", "row": 18, "col": 4, "cells": [[18, 4], [18, 5], [19, 4], [19, 5]] },
+        { "pieceType": "bar", "row": 18, "col": 3, "cells": [[19, 3], [19, 4], [19, 5], [19, 6]] }
+    ],
+    "spawnCases": [
+        { "id": "descent-blocked-is-not-block-out", "pieceType": "tree", "filledCells": [[20, 4]], "expected": { "canSpawn": true, "canDescend": false, "gameOver": false } },
+        { "id": "same-cell-blocks-j", "pieceType": "eleft", "filledCells": [[18, 3]], "expected": { "canSpawn": false, "gameOver": true, "reason": "block_out" } },
+        { "id": "same-cell-does-not-block-i", "pieceType": "bar", "filledCells": [[18, 3]], "expected": { "canSpawn": true, "canDescend": true, "gameOver": false } }
+    ],
+    "ceilingCases": [
+        { "id": "cell-outside-ceiling", "piece": { "pieceType": "bar", "rotation": 1, "row": -1, "col": 1 }, "expectedCanPlace": false, "currentCanPlace": true },
+        { "id": "negative-origin-with-valid-cells", "piece": { "pieceType": "bar", "rotation": 0, "row": -1, "col": 1 }, "expectedCanPlace": true, "currentCanPlace": true }
+    ],
+    "spinCases": [
+        { "id": "ceiling-corners-count-as-walls", "piece": { "pieceType": "tree", "rotation": 2, "row": -1, "col": 3 }, "filledCells": [[1, 3]], "expected": "mini", "current": "none" },
+        { "id": "empty-buffer-corners-stay-empty", "piece": { "pieceType": "tree", "rotation": 0, "row": 17, "col": 3 }, "filledCells": [[19, 3]], "expected": "none", "current": "none" },
+        { "id": "occupied-buffer-corners-count", "piece": { "pieceType": "tree", "rotation": 0, "row": 17, "col": 3 }, "filledCells": [[17, 3], [17, 5], [19, 3]], "expected": "full", "current": "full" }
+    ],
+    "nextSpawnCases": [
+        { "id": "partial-lock-blocks-next", "clearRow": false, "expected": { "linesCleared": 0, "canSpawnNext": false, "gameOver": true, "reason": "block_out" } },
+        { "id": "line-clear-reopens-next", "clearRow": true, "expected": { "linesCleared": 1, "canSpawnNext": true, "gameOver": false, "reason": null } }
+    ],
+    "garbageCases": [
+        { "id": "skyline-crossing-survives", "filledCells": [[20, 0]], "lines": 1, "expectedOverflow": false, "trackedCell": [19, 0] },
+        { "id": "display-margin-crossing-survives", "filledCells": [[16, 0]], "lines": 1, "expectedOverflow": false, "trackedCell": [15, 0] },
+        { "id": "buffer-ceiling-overflow", "filledCells": [[0, 0]], "lines": 1, "expectedOverflow": true, "trackedCell": null },
+        { "id": "overflow-on-second-line", "filledCells": [[1, 0]], "lines": 2, "expectedOverflow": true, "trackedCell": null }
+    ],
+    "ranking": {
+        "observationStage": "post_garbage_spawn",
+        "candidates": [
+            { "id": "terminal-high-score", "score": 100, "gameOver": true },
+            { "id": "survivor-low-score", "score": -100, "gameOver": false }
+        ],
+        "currentFirst": "terminal-high-score",
+        "expectedFirst": "survivor-low-score",
+        "allTerminalPolicy": "retain_existing_score_order"
+    },
+    "bfs": {
+        "legacyStart": { "pieceType": "tree", "rotation": 0, "row": -1, "col": 3 },
+        "targetStart": { "pieceType": "tree", "rotation": 0, "row": 19, "col": 3 },
+        "expectedEmptyBoardCandidateCount": 34,
+        "rowPruningAllowedWithoutEquivalenceEvidence": false
+    },
+    "visibility": {
+        "cellSize": 30,
+        "upperDisplayRowsForFixture": 4,
+        "expectedWidth": 300,
+        "expectedHeight": 720,
+        "expectedVisibleBoardTop": 120,
+        "rowCoordinates": [[16, 0], [18, 60], [19, 90], [20, 120], [39, 690]],
+        "sharedCoordinates": ["settled", "active", "ghost", "hard_drop_from", "hard_drop_to", "line_clear"],
+        "hiddenGhostCases": [
+            { "pieceRow": 18, "supportRow": 20, "expectedGhostRow": 18, "expectedVisibleGhostCells": 0, "needsPositionIndicator": false },
+            { "pieceRow": 16, "supportRow": 18, "expectedGhostRow": 16, "expectedVisibleGhostCells": 0, "needsPositionIndicator": false },
+            { "pieceRow": 14, "supportRow": 16, "expectedGhostRow": 14, "expectedVisibleGhostCells": 0, "needsPositionIndicator": true }
+        ]
+    },
+    "logging": {
+        "schemaVersion": 3,
+        "coordinateSystem": "internal_top_origin",
+        "observationCases": [
+            { "id": "missing-next", "stage": "post_line_clear", "nextPieceType": null, "garbageResolved": true, "nextSpawnOutcome": "not_evaluated", "terminalOutcome": null },
+            { "id": "before-garbage", "stage": "post_line_clear", "nextPieceType": "tree", "garbageResolved": false, "nextSpawnOutcome": "not_evaluated", "terminalOutcome": null },
+            { "id": "confirmed-block-out", "stage": "post_garbage_spawn", "nextPieceType": "tree", "garbageResolved": true, "nextSpawnOutcome": "blocked", "terminalOutcome": "block_out" }
+        ],
+        "trustLevels": { "human": "client_reported", "heuristic_ai": "server_authoritative" },
+        "legacyPolicy": "preserve_bytes_and_do_not_infer_hidden_cells"
+    },
+    "compatibility": {
+        "missingOrMismatchedRulesVersion": "reject_before_match",
+        "v4Policy": {
+            "roomId": "ABCD1234",
+            "playerId": "heuristic-ai-ABCD1234",
+            "policyRequested": "placement_v4",
+            "policyUsed": "heuristic",
+            "fallbackReason": "RULESET_INCOMPATIBLE",
+            "modelSha256": null,
+            "fallbackCount": 1,
+            "lastFallbackReason": "RULESET_INCOMPATIBLE"
+        },
+        "v4InferenceAllowed": false,
+        "badgeText": "새 규칙 미지원 · 휴리스틱 사용"
+    }
+}

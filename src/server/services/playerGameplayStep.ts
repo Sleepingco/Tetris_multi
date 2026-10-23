@@ -342,10 +342,10 @@ function applyHold(
  * 한 조각의 lock부터 다음 조각 spawn까지를 끊기지 않는 한 transaction으로 처리한다.
  *
  * 순서가 중요한 이유:
- * 1. lock 전 board로 T-Spin/top-out을 판정한다.
+ * 1. lock 전 board로 T-Spin/Lock Out을 판정하고 전체 상단 고정이면 즉시 종료한다.
  * 2. 조각을 board에 고정하고 line clear 및 점수를 확정한다.
  * 3. 공격으로 incoming garbage를 먼저 상쇄하고, 남은 garbage만 자신의 board에 적용한다.
- * 4. top-out/garbage overflow를 확인한 뒤 살아 있으면 다음 queue 조각을 spawn한다.
+ * 4. garbage overflow를 확인한 뒤 살아 있으면 다음 queue 조각을 spawn한다.
  */
 function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gameCore: GameCore, {
     lockedPiece,
@@ -371,15 +371,34 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
         piece: lockedPiece,
         spinRotation: authoritativeState.spinRotation,
     });
-    const topOut = gameCore.isPieceAboveTop(lockedPiece, gameCore.BLOCKS);
+    const topOut = authoritativeState.board.length === gameCore.BOARD_ROWS
+        ? gameCore.isLockOut(lockedPiece, gameCore.BLOCKS)
+        : gameCore.isPieceAboveTop(lockedPiece, gameCore.BLOCKS);
     if (useHardDropScore) {
         authoritativeState.score += droppedRows * 2;
     }
     gameCore.lockPieceOnBoard(authoritativeState.board, lockedPiece, gameCore.BLOCKS);
 
-    const clearedRows = topOut
-        ? []
-        : findFilledRows(authoritativeState.board);
+    if (topOut) {
+        authoritativeState.phase = "gameOver";
+        authoritativeState.gameOver = true;
+        authoritativeState.gameOverReason = authoritativeState.board.length === gameCore.BOARD_ROWS ? "lock_out" : "top_out";
+        authoritativeState.activePiece = { ...lockedPiece, pieceType: "" };
+        authoritativeState.pendingPiece = null;
+        return {
+            ok: true, reason: null,
+            placementResult: {
+                pieceIndex: lockedPieceIndex, lockedPiece, droppedRows, linesCleared: 0,
+                tSpinType: "none", isTSpin: false, combo: 0,
+                backToBack: authoritativeState.backToBack, rawAttackLines: 0, attackLines: 0,
+                canceledGarbageLines: 0, incomingGarbageLines: authoritativeState.pendingGarbageQueue.reduce((n, entry) => n + entry.lines, 0),
+                appliedGarbageLines: 0, scoreBefore, scoreAfter: authoritativeState.score,
+                scoreDelta: authoritativeState.score - scoreBefore, gameOver: true,
+                gameOverReason: authoritativeState.gameOverReason, nextPiece: null,
+            },
+        };
+    }
+    const clearedRows = findFilledRows(authoritativeState.board);
     // line clear가 원본 board를 바꾸기 전에 animation용 모습을 복사해 둔다.
     const presentationEffect: PresentationEffect | null = clearedRows.length > 0
         ? {
@@ -389,13 +408,9 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
             boardBeforeClear: cloneBoard(authoritativeState.board),
         }
         : null;
-    const linesCleared = topOut
-        ? 0
-        : gameCore.clearFilledLines(authoritativeState.board);
-    if (!topOut) {
-        authoritativeState.score += gameCore.calculatePlacementScore(linesCleared, tSpinType);
-        authoritativeState.lines += linesCleared;
-    }
+    const linesCleared = gameCore.clearFilledLines(authoritativeState.board);
+    authoritativeState.score += gameCore.calculatePlacementScore(linesCleared, tSpinType);
+    authoritativeState.lines += linesCleared;
 
     const scoreAfter = authoritativeState.score;
     const attackState = gameCore.resolveAttackState({
@@ -416,8 +431,9 @@ function lockPieceAndSpawnNext(authoritativeState: AuthoritativePlayerState, gam
     authoritativeState.pendingGarbageQueue = garbageResolution.pendingGarbageQueue;
     // 상쇄 뒤에도 남은 incoming garbage는 이 lock 직후 자신의 board에 모두 반영한다.
     const appliedGarbage = applyPendingGarbageQueue(authoritativeState, gameCore);
-    const gameOver = topOut || appliedGarbage.overflow;
+    const gameOver = appliedGarbage.overflow;
     authoritativeState.gameOver = gameOver;
+    if (appliedGarbage.overflow) authoritativeState.gameOverReason = "top_out";
 
     authoritativeState.activePiece = {
         pieceType: "",
@@ -526,17 +542,19 @@ function spawnPiece(
     pieceType: PieceType,
     gameCore: GameCore,
 ): PlaceablePieceState | null {
-    const spawnedPiece = createSpawnedPiece(pieceType, gameCore);
-    const canSpawn = gameCore.canPlacePiece(
+    const spawnedPiece = authoritativeState.board.length === gameCore.BOARD_ROWS
+        ? gameCore.getSpawnedPiece(authoritativeState.board, pieceType)
+        : gameCore.createSpawnedPiece(pieceType, -1, 3);
+    const canSpawn = spawnedPiece && gameCore.canPlacePiece(
         authoritativeState.board,
         spawnedPiece,
         gameCore.BLOCKS,
     );
 
-    if (!canSpawn) {
+    if (!spawnedPiece || !canSpawn) {
         // spawn 위치가 막힌 block-out은 active piece를 비우고 즉시 종료 상태로 남긴다.
         authoritativeState.activePiece = {
-            ...spawnedPiece,
+            ...(spawnedPiece ?? gameCore.createSpawnedPiece(pieceType, gameCore.SPAWN_POSITION.row, pieceType === "square" ? 4 : 3)),
             pieceType: "",
         };
         authoritativeState.pendingPiece = null;
@@ -556,18 +574,6 @@ function spawnPiece(
     authoritativeState.lockDelay = gameCore.updateLockDelay(authoritativeState.lockDelay,
         spawnedPiece.row, grounded);
     return spawnedPiece;
-}
-
-function createSpawnedPiece(pieceType: PieceType, gameCore: GameCore): PlaceablePieceState {
-    const spawnPosition = gameCore.SPAWN_POSITION ?? {
-        row: -1,
-        col: 3,
-    };
-    return gameCore.createSpawnedPiece(
-        pieceType,
-        spawnPosition.row,
-        spawnPosition.col,
-    );
 }
 
 function createFailure(reason: string): GameplayResult {

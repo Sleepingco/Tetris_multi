@@ -60,7 +60,7 @@ class FakeSocketServer {
 class FakeSocket {
     constructor(id, auth) {
         this.id = id
-        this.handshake = { auth, address: "127.0.0.1" }
+        this.handshake = { auth: { protocolVersion: 2, ...auth }, address: "127.0.0.1" }
         this.data = {}
         this.handlers = new Map()
         this.events = []
@@ -428,3 +428,17 @@ test("실제 socket handlers의 PVP emit payload가 S2C 계약을 통과한다",
         assert.equal(names.has(eventName), true, eventName)
     }
 })
+
+test("40행 protocol 2가 아닌 탭은 session 발급 전에 거부한다", () => {
+    for (const protocolVersion of [undefined, 1, 3]) {
+        const server = new FakeSocketServer();
+        const dispose = registerTestHandlers(server);
+        try {
+            const socket = new FakeSocket(`old-${protocolVersion}`, { nickname: "Old", protocolVersion });
+            const error = server.connect(socket);
+            assert.equal(error.data.code, "GAMEPLAY_PROTOCOL_INCOMPATIBLE");
+            assert.equal(error.data.terminal, true);
+            assert.equal(socket.lastEvent("session:ready"), undefined);
+        } finally { dispose(); }
+    }
+});

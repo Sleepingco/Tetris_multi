@@ -1,0 +1,258 @@
+{
+    "eventType": "placement_decision",
+    "schemaVersion": 3,
+    "gameId": "buffer-v3-test",
+    "roomId": "ABCD1234",
+    "mode": "multi",
+    "playerId": "v3-human",
+    "source": "human",
+    "modelType": null,
+    "tick": 10,
+    "pieceIndex": 5,
+    "createdAt": 1784800000123,
+    "gameplayRulesVersion": "buffer20-v1",
+    "coordinateSystem": "internal_top_origin",
+    "geometry": {
+        "rows": 40,
+        "cols": 10,
+        "hiddenRows": 20,
+        "visibleRows": 20
+    },
+    "boardBefore": [
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null]
+    ],
+    "boardAfter": [
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        [null,null,null,null,null,null,null,null,null,null],
+        ["square","square",null,null,null,null,null,null,null,null],
+        ["square","square",null,null,null,null,null,null,null,null]
+    ],
+    "activePiece": {
+        "pieceType": "square",
+        "rotation": 0,
+        "row": 18,
+        "col": 4,
+        "cells": [
+            {
+                "row": 18,
+                "col": 4
+            },
+            {
+                "row": 18,
+                "col": 5
+            },
+            {
+                "row": 19,
+                "col": 4
+            },
+            {
+                "row": 19,
+                "col": 5
+            }
+        ]
+    },
+    "selectedPlacement": {
+        "pieceType": "square",
+        "rotation": 0,
+        "row": 38,
+        "col": 0,
+        "cells": [
+            {
+                "row": 38,
+                "col": 0
+            },
+            {
+                "row": 38,
+                "col": 1
+            },
+            {
+                "row": 39,
+                "col": 0
+            },
+            {
+                "row": 39,
+                "col": 1
+            }
+        ]
+    },
+    "nextQueue": [
+        "tree"
+    ],
+    "holdPiece": null,
+    "inputSequence": [],
+    "placementResult": {
+        "linesCleared": 0,
+        "tSpinType": "none",
+        "isTSpin": false,
+        "combo": 0,
+        "backToBack": false,
+        "rawAttackLines": 0,
+        "attackLines": 0,
+        "canceledGarbageLines": 0,
+        "incomingGarbageLines": 0,
+        "appliedGarbageLines": 0,
+        "scoreBefore": 0,
+        "scoreAfter": 40,
+        "scoreDelta": 40,
+        "gameOver": false
+    },
+    "observation": {
+        "stage": "post_line_clear",
+        "nextSpawnOutcome": "not_evaluated",
+        "terminalOutcome": null
+    },
+    "metricsBefore": {
+        "columnHeights": [
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "aggregateHeight": 0,
+        "maxHeight": 0,
+        "holes": 0,
+        "bumpiness": 0,
+        "completeLines": 0
+    },
+    "metricsAfter": {
+        "columnHeights": [
+            2,
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "aggregateHeight": 4,
+        "maxHeight": 2,
+        "holes": 0,
+        "bumpiness": 2,
+        "completeLines": 0
+    },
+    "evaluation": {
+        "score": -5.6,
+        "candidateCount": 1,
+        "reason": {
+            "linesCleared": 0,
+            "holesDelta": 0,
+            "bumpinessDelta": 2,
+            "aggregateHeightDelta": 4,
+            "maxHeightDelta": 2
+        }
+    },
+    "aiComparison": {
+        "heuristicPlacement": {
+            "pieceType": "square",
+            "rotation": 0,
+            "row": 38,
+            "col": 0,
+            "cells": [
+                {
+                    "row": 38,
+                    "col": 0
+                },
+                {
+                    "row": 38,
+                    "col": 1
+                },
+                {
+                    "row": 39,
+                    "col": 0
+                },
+                {
+                    "row": 39,
+                    "col": 1
+                }
+            ]
+        },
+        "heuristicScore": -5.6,
+        "userScore": -5.6,
+        "betterBy": 0,
+        "samePlacement": true
+    }
+}

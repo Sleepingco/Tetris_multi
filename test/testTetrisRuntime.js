@@ -143,7 +143,7 @@ function countPreviewCells(element) {
 }
 
 function createEmptyBoard() {
-    return Array.from({ length: 20 }, () => Array(10).fill(null));
+    return Array.from({ length: 40 }, () => Array(10).fill(null));
 }
 
 async function advanceAutomaticGravity(game, elapsedMs = 500) {
@@ -256,7 +256,7 @@ test("벽에 막힌 move_left는 applied false outcome을 남긴다", async (t) 
     const activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 0,
     };
     game.applySnapshot({
@@ -331,7 +331,7 @@ test("automatic gravity는 착지 후 500ms 고정 예산을 소비한다", asyn
     const groundedPiece = {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 4,
     };
     game.applySnapshot({
@@ -358,7 +358,7 @@ test("automatic gravity는 착지 후 500ms 고정 예산을 소비한다", asyn
     assert.equal(afterSecondBlocked.activePiece.pieceType, "bar");
     assert.equal(game.getSnapshot().lockDelay.resetCount, 0);
     assert.deepEqual(
-        afterSecondBlocked.board.slice(18).map(row => row.slice(4, 6)),
+        afterSecondBlocked.board.slice(38).map(row => row.slice(4, 6)),
         [["square", "square"], ["square", "square"]],
     );
 });
@@ -370,11 +370,11 @@ test("새 최저 row로 하강하면 고정 예산을 갱신한다", async (t) =
 
     game.init({ autoStart: true });
     const ledgeBoard = createEmptyBoard();
-    ledgeBoard[19][5] = "stack";
+    ledgeBoard[39][5] = "stack";
     const ledgePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 17,
+        row: 37,
         col: 4,
     };
     game.applySnapshot({
@@ -396,7 +396,7 @@ test("새 최저 row로 하강하면 고정 예산을 갱신한다", async (t) =
     assert.equal(game.getSnapshot().activePiece.col, 3);
 
     await advanceAutomaticGravity(game);
-    assert.equal(game.getSnapshot().activePiece.row, 18);
+    assert.equal(game.getSnapshot().activePiece.row, 38);
     assert.equal(game.getSnapshot().lockDelay.resetCount, 0);
 
     await advanceAutomaticGravity(game, 100);
@@ -470,7 +470,7 @@ test("wall kick 회전 성공은 applied true outcome을 남긴다", async (t) =
         activePiece: {
             pieceType: "tree",
             rotation: 1,
-            row: 0,
+            row: 20,
             col: -1,
         },
         pieceQueue: ["bar", "square"],
@@ -502,11 +502,11 @@ test("모든 wall kick이 막힌 rotate는 applied false outcome을 남긴다", 
     const activePiece = {
         pieceType: "tree",
         rotation: 0,
-        row: 4,
+        row: 24,
         col: 3,
     };
-    const blockedBoard = Array.from({ length: 20 }, () => Array(10).fill("garbage"));
-    for (const [row, col] of [[4, 4], [5, 3], [5, 4], [5, 5]]) {
+    const blockedBoard = Array.from({ length: 40 }, () => Array(10).fill("garbage"));
+    for (const [row, col] of [[24, 4], [25, 3], [25, 4], [25, 5]]) {
         blockedBoard[row][col] = null;
     }
     game.applySnapshot({
@@ -545,7 +545,7 @@ test("막힌 soft_drop은 유예를 유지하고 hard_drop은 고정 outcome을 
                 activePiece: {
                     pieceType: "square",
                     rotation: 0,
-                    row: 18,
+                    row: 38,
                     col: 4,
                 },
                 pieceQueue: ["bar", "tree"],
@@ -725,11 +725,11 @@ test("line clear presentation은 gameplay state와 중력을 바꾸지 않고 �
     const stateBefore = game.getSnapshot();
     const pendingInputCountBefore = game.getPendingInputCount();
     const boardBeforeClear = createEmptyBoard();
-    boardBeforeClear[19] = Array(10).fill("bar");
+    boardBeforeClear[39] = Array(10).fill("bar");
     const audioCallCountBefore = globalThis.__audioPlayCalls.length;
 
     const didPlay = game.playLineClearPresentation({
-        rows: [19],
+        rows: [39],
         board: boardBeforeClear,
     });
 
@@ -759,7 +759,7 @@ test("authoritative correction은 local tick을 되감거나 이전 입력으로
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 0,
+            row: 20,
             col: 4,
         },
         pieceQueue: ["bar", "tree"],
@@ -778,7 +778,7 @@ test("authoritative correction은 local tick을 되감거나 이전 입력으로
 
     assert.ok(hardDropInput.tick > 100);
     await waitForTick(game, hardDropInput.tick);
-    assert.equal(game.getSnapshot().board[18][3], "square");
+    assert.equal(game.getSnapshot().board[38][3], "square");
 });
 
 test("playing authoritative correction은 중단된 local input loop를 복구한다", async (t) => {
@@ -794,7 +794,7 @@ test("playing authoritative correction은 중단된 local input loop를 복구�
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 0,
+            row: 20,
             col: 4,
         },
         pieceQueue: ["bar", "tree"],
@@ -857,9 +857,9 @@ test("forced snapshot은 stale inputQueue와 진행 중 line clear callback을 �
     t.after(() => game.destroy());
 
     const board = createEmptyBoard();
-    board[19] = Array(10).fill("bar");
-    board[19][4] = null;
-    board[19][5] = null;
+    board[39] = Array(10).fill("bar");
+    board[39][4] = null;
+    board[39][5] = null;
     game.init({ autoStart: true });
     game.applySnapshot({
         ...game.getSnapshot(),
@@ -867,7 +867,7 @@ test("forced snapshot은 stale inputQueue와 진행 중 line clear callback을 �
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pieceQueue: ["bar", "tree"],
@@ -884,14 +884,14 @@ test("forced snapshot은 stale inputQueue와 진행 중 line clear callback을 �
     assert.equal(typeof staleAnimationCallback, "function");
 
     const authoritativeBoard = createEmptyBoard();
-    authoritativeBoard[19][9] = "garbage";
+    authoritativeBoard[39][9] = "garbage";
     game.applySnapshot({
         ...game.getSnapshot(),
         board: authoritativeBoard,
         activePiece: {
             pieceType: "tree",
             rotation: 0,
-            row: 2,
+            row: 22,
             col: 3,
         },
         inputQueue: [{ action: "move_left", tick: 999, pieceIndex: 8 }],
@@ -981,13 +981,13 @@ test("authoritative snapshot 이후 placement_decision은 시작 조각과 최�
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 10,
+            row: 30,
             col: 4,
         },
         pendingPiece: {
             pieceType: "square",
             rotation: 0,
-            row: 10,
+            row: 30,
             col: 4,
         },
         pieceQueue: ["bar", "tree"],
@@ -1006,7 +1006,7 @@ test("authoritative snapshot 이후 placement_decision은 시작 조각과 최�
     const [log] = placementLogs;
     assert.equal(placementLogs.length, 1);
     assert.equal(log.eventType, "placement_decision");
-    assert.equal(log.schemaVersion, 2);
+    assert.equal(log.schemaVersion, 3);
     assert.equal(log.mode, "multi");
     assert.equal(log.gameId, "game-001");
     assert.equal(log.roomId, "room-001");
@@ -1015,18 +1015,18 @@ test("authoritative snapshot 이후 placement_decision은 시작 조각과 최�
     assert.equal(log.modelType, null);
     assert.equal(log.tick, targetTick);
     assert.equal(log.pieceIndex, 7);
-    assert.equal(log.boardBefore[18][4], null);
-    assert.equal(log.boardAfter[18][4], "square");
-    assert.equal(log.boardAfter[19][5], "square");
+    assert.equal(log.boardBefore[38][4], null);
+    assert.equal(log.boardAfter[38][4], "square");
+    assert.equal(log.boardAfter[39][5], "square");
     assert.equal(log.activePiece.pieceType, "square");
-    assert.equal(log.activePiece.row, 10);
+    assert.equal(log.activePiece.row, 30);
     assert.equal(log.activePiece.col, 4);
     assert.deepEqual(log.nextQueue, ["bar", "tree"]);
     assert.equal(log.holdPiece, "zee");
     assert.deepEqual(log.inputSequence.map(input => input.action), [INPUT_ACTION.HARD_DROP]);
     assert.equal(log.inputSequence[0].pieceIndex, 7);
     assert.equal(log.selectedPlacement.pieceType, "square");
-    assert.equal(log.selectedPlacement.row, 18);
+    assert.equal(log.selectedPlacement.row, 38);
     assert.equal(log.selectedPlacement.col, 4);
     assert.equal(log.placementResult.linesCleared, 0);
     assert.equal(log.placementResult.scoreBefore, 100);
@@ -1068,7 +1068,7 @@ test("일반 spawn 후 hard drop 로그는 spawn 상태와 최종 locked 위치�
     await waitForTick(game, targetTick);
 
     const [log] = game.getPlacementDecisionLog();
-    assert.equal(log.schemaVersion, 2);
+    assert.equal(log.schemaVersion, 3);
     assert.deepEqual(
         {
             pieceType: log.activePiece.pieceType,
@@ -1078,7 +1078,7 @@ test("일반 spawn 후 hard drop 로그는 spawn 상태와 최종 locked 위치�
         },
         spawnedPiece,
     );
-    assert.equal(log.activePiece.row, -1);
+    assert.equal(log.activePiece.row, 19);
     assert.equal(log.activePiece.col, 3);
     assert.equal(log.selectedPlacement.pieceType, spawnedPiece.pieceType);
     assert.notEqual(log.selectedPlacement.row, log.activePiece.row);
@@ -1109,7 +1109,7 @@ test("hold 후 로그는 incoming piece의 spawn 상태를 판단 시작 상태�
     const [log] = game.getPlacementDecisionLog();
     assert.equal(log.activePiece.pieceType, "bar");
     assert.equal(log.activePiece.rotation, 0);
-    assert.equal(log.activePiece.row, -1);
+    assert.equal(log.activePiece.row, 19);
     assert.equal(log.activePiece.col, 3);
     assert.equal(log.selectedPlacement.pieceType, "bar");
     assert.notEqual(log.selectedPlacement.row, log.activePiece.row);
@@ -1173,12 +1173,12 @@ test("init reset과 gameOver snapshot은 판단 시작 메타데이터를 정리
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 4,
+            row: 24,
             col: 3,
         },
         phase: "playing",
     });
-    assert.equal(game.runtime.decisionStartPiece.row, 4);
+    assert.equal(game.runtime.decisionStartPiece.row, 24);
 
     game.applySnapshot({
         ...game.getSnapshot(),
@@ -1187,7 +1187,7 @@ test("init reset과 gameOver snapshot은 판단 시작 메타데이터를 정리
     assert.equal(game.runtime.decisionStartPiece, null);
 });
 
-test("판단 시작 상태가 없으면 human 로그는 schemaVersion 1로 fallback한다", async (t) => {
+test("판단 시작 상태가 없어도 40행 로그를 구버전으로 낮추지 않는다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const game = createTetrisRuntime({
         mode: "multi",
@@ -1206,13 +1206,13 @@ test("판단 시작 상태가 없으면 human 로그는 schemaVersion 1로 fallb
     await waitForTick(game, targetTick);
 
     const [log] = game.getPlacementDecisionLog();
-    assert.equal(log.schemaVersion, 1);
+    assert.equal(log.schemaVersion, 3);
     assert.equal(log.activePiece, undefined);
     assert.ok(log.selectedPlacement);
-    assert.equal(log.source, undefined);
+    assert.equal(log.source, "human");
     assert.equal(log.evaluation, undefined);
     assert.equal(log.aiComparison, undefined);
-    assert.equal(validatePlacementDecisionLog(log).ok, true);
+    assert.equal(validatePlacementDecisionLog(log).ok, false);
 });
 
 test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한다", async (t) => {
@@ -1227,9 +1227,9 @@ test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한
     t.after(() => game.destroy());
 
     const board = createEmptyBoard();
-    board[19] = Array(10).fill("bar");
-    board[19][4] = null;
-    board[19][5] = null;
+    board[39] = Array(10).fill("bar");
+    board[39][4] = null;
+    board[39][5] = null;
 
     game.init({ autoStart: true });
     game.applySnapshot({
@@ -1238,13 +1238,13 @@ test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pendingPiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         tick: 40,
@@ -1259,8 +1259,8 @@ test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한
     await waitForTick(game, targetTick);
 
     const [log] = game.getPlacementDecisionLog();
-    assert.equal(log.boardBefore[19][0], "bar");
-    assert.equal(log.boardBefore[19][4], null);
+    assert.equal(log.boardBefore[39][0], "bar");
+    assert.equal(log.boardBefore[39][4], null);
     assert.equal(log.placementResult.linesCleared, 1);
     assert.equal(log.placementResult.scoreBefore, 0);
     assert.equal(log.placementResult.scoreAfter, 10);
@@ -1268,8 +1268,8 @@ test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한
     assert.equal(scoreEl.innerText, 10);
     assert.equal(linesEl.innerText, 1);
     assert.equal(game.getSnapshot().lines, 1);
-    assert.equal(log.boardAfter[19][4], "square");
-    assert.equal(log.boardAfter[19][5], "square");
+    assert.equal(log.boardAfter[39][4], "square");
+    assert.equal(log.boardAfter[39][5], "square");
 });
 
 test("authoritative pending garbage는 incoming 수와 위험 상태를 갱신한다", async (t) => {
@@ -1301,7 +1301,7 @@ test("placement_decision은 line clear 결과로 garbage attackLines를 기록�
     t.after(() => game.destroy());
 
     const board = createEmptyBoard();
-    for (let row = 16; row <= 19; row++) {
+    for (let row = 36; row <= 39; row++) {
         board[row] = Array(10).fill("square");
         board[row][4] = null;
     }
@@ -1313,13 +1313,13 @@ test("placement_decision은 line clear 결과로 garbage attackLines를 기록�
         activePiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         pendingPiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         tick: 50,
@@ -1352,8 +1352,8 @@ test("실제 회전 뒤 낙하한 hard drop은 T-Spin 자격을 해제하고 제
                     try {
                         game.init({ autoStart: true });
                         const board = createEmptyBoard();
-                        board[17][3] = board[19][3] = board[19][5] = "square";
-                        const piece = { pieceType: "tree", rotation: 0, row: 17 - distance, col: 3 };
+                        board[37][3] = board[39][3] = board[39][5] = "square";
+                        const piece = { pieceType: "tree", rotation: 0, row: 37 - distance, col: 3 };
                         game.applySnapshot({
                             ...game.getSnapshot(), board, activePiece: piece, pendingPiece: piece,
                             score: 0, phase: "playing",
@@ -1370,7 +1370,7 @@ test("실제 회전 뒤 낙하한 hard drop은 T-Spin 자격을 해제하고 제
                         }
                         await press(INPUT_ACTION.HARD_DROP);
                         const [log] = game.getPlacementDecisionLog();
-                        assert.equal(log.selectedPlacement.row, 17);
+                        assert.equal(log.selectedPlacement.row, 37);
                         assert.equal(log.placementResult.isTSpin, distance === 0);
                         assert.equal(log.placementResult.scoreDelta,
                             drop === "hard" ? distance * 2 : 0);
@@ -1389,12 +1389,12 @@ test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기�
     t.after(() => game.destroy());
 
     const board = createEmptyBoard();
-    board[18][4] = "square";
-    board[18][6] = "square";
-    board[19] = Array(10).fill("square");
-    board[19][4] = null;
-    board[19][5] = null;
-    board[19][6] = null;
+    board[38][4] = "square";
+    board[38][6] = "square";
+    board[39] = Array(10).fill("square");
+    board[39][4] = null;
+    board[39][5] = null;
+    board[39][6] = null;
 
     game.init({ autoStart: true });
     game.applySnapshot({
@@ -1403,13 +1403,13 @@ test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기�
         activePiece: {
             pieceType: "tree",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pendingPiece: {
             pieceType: "tree",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         spinRotation: { lastKickIndex: 0, usedKick5: false },
@@ -1449,22 +1449,22 @@ test("실제 T 회전의 Mini·Full 결과와 보상은 싱글·멀티 예측·�
             try {
                 game.init({ autoStart: true });
                 const board = createEmptyBoard();
-                let piece = { pieceType: "tree", rotation: 0, row: 17, col: 3 };
+                let piece = { pieceType: "tree", rotation: 0, row: 37, col: 3 };
                 if (fixture.lines === 0) {
-                    board[17][3] = board[19][3] = board[19][5] = "square";
+                    board[37][3] = board[39][3] = board[39][5] = "square";
                 } else if (fixture.lines === 1) {
                     piece.rotation = 3;
-                    board[18] = Array(10).fill("square");
-                    for (const col of [3, 4, 5]) board[18][col] = null;
-                    board[17][3] = board[19][3] = board[19][5] = "square";
-                    if (fixture.type === "full") board[17][5] = "square";
+                    board[38] = Array(10).fill("square");
+                    for (const col of [3, 4, 5]) board[38][col] = null;
+                    board[37][3] = board[39][3] = board[39][5] = "square";
+                    if (fixture.type === "full") board[37][5] = "square";
                 } else {
-                    piece = { pieceType: "tree", rotation: 0, row: 18, col: 4 };
-                    board[17] = Array(10).fill("square");
-                    board[17][4] = null;
-                    board[18] = Array(10).fill("square");
-                    board[18][4] = board[18][5] = null;
-                    board[19][3] = "square";
+                    piece = { pieceType: "tree", rotation: 0, row: 38, col: 4 };
+                    board[37] = Array(10).fill("square");
+                    board[37][4] = null;
+                    board[38] = Array(10).fill("square");
+                    board[38][4] = board[38][5] = null;
+                    board[39][3] = "square";
                 }
                 game.applySnapshot({ ...game.getSnapshot(), board, activePiece: piece, pendingPiece: piece,
                     score: 0, combo: -1, backToBack: false });
@@ -1497,8 +1497,8 @@ test("5번째 킥 승격은 연속 회전·실패 입력에 유지되고 이동�
     try {
         game.init({ autoStart: true });
         const board = createEmptyBoard();
-        for (const [col, row] of [[4, 6], [3, 4], [2, 6], [2, 8]]) board[row][col] = "square";
-        const piece = { pieceType: "tree", rotation: 0, row: 4, col: 3 };
+        for (const [col, row] of [[4, 26], [3, 24], [2, 26], [2, 28]]) board[row][col] = "square";
+        const piece = { pieceType: "tree", rotation: 0, row: 24, col: 3 };
         game.applySnapshot({ ...game.getSnapshot(), board, activePiece: piece, pendingPiece: piece });
         const press = async action => {
             const tick = game.runtime.currentTick + 1;
@@ -1538,7 +1538,7 @@ test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", 
     t.after(() => game.destroy());
 
     const firstTetrisBoard = createEmptyBoard();
-    for (let row = 16; row <= 19; row++) {
+    for (let row = 36; row <= 39; row++) {
         firstTetrisBoard[row] = Array(10).fill("square");
         firstTetrisBoard[row][4] = null;
     }
@@ -1550,13 +1550,13 @@ test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", 
         activePiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         pendingPiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         tick: 75,
@@ -1575,13 +1575,13 @@ test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", 
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pendingPiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         tick: game.runtime.currentTick,
@@ -1595,7 +1595,7 @@ test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", 
     await waitForTick(game, noClearTick);
 
     const secondTetrisBoard = createEmptyBoard();
-    for (let row = 16; row <= 19; row++) {
+    for (let row = 36; row <= 39; row++) {
         secondTetrisBoard[row] = Array(10).fill("square");
         secondTetrisBoard[row][4] = null;
     }
@@ -1606,13 +1606,13 @@ test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", 
         activePiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         pendingPiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         tick: game.runtime.currentTick,
@@ -1641,7 +1641,7 @@ test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris�
 
     function createTetrisBoard() {
         const board = createEmptyBoard();
-        for (let row = 16; row <= 19; row++) {
+        for (let row = 36; row <= 39; row++) {
             board[row] = Array(10).fill("square");
             board[row][4] = null;
         }
@@ -1650,12 +1650,12 @@ test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris�
 
     function createDoubleClearBoard() {
         const board = createEmptyBoard();
-        board[18] = Array(10).fill("square");
-        board[19] = Array(10).fill("square");
-        board[18][4] = null;
-        board[18][5] = null;
-        board[19][4] = null;
-        board[19][5] = null;
+        board[38] = Array(10).fill("square");
+        board[39] = Array(10).fill("square");
+        board[38][4] = null;
+        board[38][5] = null;
+        board[39][4] = null;
+        board[39][5] = null;
         return board;
     }
 
@@ -1683,7 +1683,7 @@ test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris�
         activePiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         pieceIndex: 17,
@@ -1694,7 +1694,7 @@ test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris�
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pieceIndex: 18,
@@ -1705,7 +1705,7 @@ test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris�
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pieceIndex: 19,
@@ -1716,7 +1716,7 @@ test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris�
         activePiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         pieceIndex: 20,
@@ -1741,12 +1741,12 @@ test("runtime은 combo bonus를 placementResult rawAttackLines에 반영한다",
 
     function createDoubleClearBoard() {
         const board = createEmptyBoard();
-        board[18] = Array(10).fill("square");
-        board[19] = Array(10).fill("square");
-        board[18][4] = null;
-        board[18][5] = null;
-        board[19][4] = null;
-        board[19][5] = null;
+        board[38] = Array(10).fill("square");
+        board[39] = Array(10).fill("square");
+        board[38][4] = null;
+        board[38][5] = null;
+        board[39][4] = null;
+        board[39][5] = null;
         return board;
     }
 
@@ -1757,13 +1757,13 @@ test("runtime은 combo bonus를 placementResult rawAttackLines에 반영한다",
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pendingPiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         tick: 76,
@@ -1782,13 +1782,13 @@ test("runtime은 combo bonus를 placementResult rawAttackLines에 반영한다",
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pendingPiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         tick: game.runtime.currentTick,
@@ -1820,7 +1820,7 @@ test("runtime은 연속 Tetris에 combo와 back-to-back 보너스를 적용한�
 
     function createTetrisSetupBoard() {
         const board = createEmptyBoard();
-        for (let row = 16; row <= 19; row++) {
+        for (let row = 36; row <= 39; row++) {
             board[row] = Array(10).fill("square");
             board[row][4] = null;
         }
@@ -1834,13 +1834,13 @@ test("runtime은 연속 Tetris에 combo와 back-to-back 보너스를 적용한�
         activePiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         pendingPiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         tick: 80,
@@ -1859,13 +1859,13 @@ test("runtime은 연속 Tetris에 combo와 back-to-back 보너스를 적용한�
         activePiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         pendingPiece: {
             pieceType: "bar",
             rotation: 1,
-            row: 16,
+            row: 36,
             col: 2,
         },
         tick: game.runtime.currentTick,
@@ -2010,9 +2010,9 @@ test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playin
     });
 
     const board = createEmptyBoard();
-    board[19] = Array(10).fill("bar");
-    board[19][4] = null;
-    board[19][5] = null;
+    board[39] = Array(10).fill("bar");
+    board[39][4] = null;
+    board[39][5] = null;
     game.init({ autoStart: true, serverBagChunks: [["square"]] });
     game.applySnapshot({
         ...game.getSnapshot(),
@@ -2020,13 +2020,13 @@ test("비동기 line clear와 server bag 고갈은 lineClearing과 최종 playin
         activePiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pendingPiece: {
             pieceType: "square",
             rotation: 0,
-            row: 18,
+            row: 38,
             col: 4,
         },
         pieceQueue: [],
@@ -2124,13 +2124,13 @@ test("줄 삭제 효과는 350ms 뒤 한 번만 gameplay를 완료한다", async
     });
     game.init();
     const board = createEmptyBoard();
-    for (const row of [18, 19]) {
+    for (const row of [38, 39]) {
         board[row].fill("bar");
         board[row][4] = board[row][5] = null;
     }
     game.applySnapshot({
         ...game.getSnapshot(), board,
-        activePiece: { pieceType: "square", rotation: 0, row: 0, col: 4 },
+        activePiece: { pieceType: "square", rotation: 0, row: 20, col: 4 },
     }, { resumeGravity: true });
     const tick = game.runtime.currentTick + 1;
     game.enqueueInput(INPUT_ACTION.HARD_DROP, tick);

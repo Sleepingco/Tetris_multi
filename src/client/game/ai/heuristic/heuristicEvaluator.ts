@@ -1,3 +1,7 @@
+import { BOARD_ROWS } from "../../state/config.ts";
+import BLOCKS from "../../state/blocks.ts";
+import type { PieceType } from "../../state/blocks.ts";
+import type { PlacementSimulationContext } from "./simulatePlacement.ts";
 import { getBoardMetrics } from "../../core/boardMetrics.ts";
 import { generateReachablePlacements } from "./reachablePlacementPlanner.ts";
 import { simulatePlacement } from "./simulatePlacement.ts";
@@ -26,6 +30,7 @@ export type HeuristicEvaluation = {
     boardAfter: Board;
     linesCleared: number;
     gameOver: boolean;
+    nextSpawnOutcome?: "not_evaluated" | "clear" | "blocked";
     score: number;
     metricsBefore: BoardMetrics;
     metricsAfter: BoardMetrics;
@@ -34,7 +39,7 @@ export type HeuristicEvaluation = {
 export type HeuristicComparable = Pick<
     HeuristicEvaluation,
     "score" | "linesCleared" | "metricsAfter" | "placement"
->;
+> & { gameOver?: boolean };
 export type RankedHeuristicEvaluation = HeuristicEvaluation & {
     plannedActions: ReachableAction[];
 };
@@ -95,6 +100,9 @@ export function compareHeuristicEvaluations(
     left: HeuristicComparable,
     right: HeuristicComparable,
 ): number {
+    if (left.gameOver !== undefined && right.gameOver !== undefined && left.gameOver !== right.gameOver) {
+        return Number(left.gameOver) - Number(right.gameOver);
+    }
     // 점수가 같아도 항상 같은 후보가 먼저 오도록 게임 지표와 좌표 순서까지 비교한다.
     if (left.score !== right.score) return right.score - left.score;
     if (left.linesCleared !== right.linesCleared) {
@@ -157,8 +165,8 @@ function createFailure(errorCode: string, message: string, candidateCount = 0): 
  *   reason: Object
  * }|null}
  */
-export function evaluatePlacement(board: Board, placement: unknown): HeuristicEvaluation | null {
-    const simulation = simulatePlacement(board, placement);
+export function evaluatePlacement(board: Board, placement: unknown, context: PlacementSimulationContext = {}): HeuristicEvaluation | null {
+    const simulation = simulatePlacement(board, placement, context);
     if (!simulation) return null;
 
     const metricsBefore = getBoardMetrics(board);
@@ -170,6 +178,7 @@ export function evaluatePlacement(board: Board, placement: unknown): HeuristicEv
         boardAfter: simulation.boardAfter,
         linesCleared: simulation.linesCleared,
         gameOver: simulation.gameOver,
+        nextSpawnOutcome: simulation.nextSpawnOutcome,
         score,
         metricsBefore,
         metricsAfter,
@@ -184,10 +193,10 @@ export function evaluatePlacement(board: Board, placement: unknown): HeuristicEv
  * @param {{pieceType: string, rotation: number, row: number, col: number}} activePiece - 현재 활성 조각
  * @returns {Array<Object>} 점수 내림차순 평가 결과
  */
-export function rankPlacements(board: Board, activePiece: unknown): RankedHeuristicEvaluation[] {
-    return generateReachablePlacements(board, activePiece)
+export function rankPlacements(board: Board, activePiece: unknown, context: PlacementSimulationContext = {}): RankedHeuristicEvaluation[] {
+    return generateReachablePlacements(board, activePiece, context.spinRotation)
         .map(candidate => {
-            const evaluation = evaluatePlacement(board, candidate.placement);
+            const evaluation = evaluatePlacement(board, candidate.placement, { ...context, tSpinType: candidate.tSpinType });
             if (!evaluation) return null;
 
             return {
@@ -196,7 +205,9 @@ export function rankPlacements(board: Board, activePiece: unknown): RankedHeuris
             };
         })
         .filter((evaluation): evaluation is RankedHeuristicEvaluation => evaluation !== null)
-        .sort(compareHeuristicEvaluations);
+        .sort((left, right) => board.length === BOARD_ROWS
+            ? compareHeuristicEvaluations(left, right)
+            : compareHeuristicEvaluations({ ...left, gameOver: undefined }, { ...right, gameOver: undefined }));
 }
 
 /**
@@ -226,7 +237,18 @@ export function getHeuristicDecision(gameState: unknown): HeuristicDecision {
         );
     }
 
-    const rankedPlacements = rankPlacements(gameState.board, gameState.activePiece);
+    if ("nextQueue" in gameState && gameState.nextQueue !== undefined
+        && (!Array.isArray(gameState.nextQueue)
+            || !gameState.nextQueue.every(piece => typeof piece === "string" && Object.hasOwn(BLOCKS, piece)))) {
+        return createFailure("INVALID_GAME_STATE", "nextQueue must contain known piece types.");
+    }
+    const rankedPlacements = rankPlacements(gameState.board, gameState.activePiece, {
+        pendingGarbageQueue: "pendingGarbageQueue" in gameState && Array.isArray(gameState.pendingGarbageQueue) ? gameState.pendingGarbageQueue : undefined,
+        combo: "combo" in gameState && typeof gameState.combo === "number" ? gameState.combo : undefined,
+        backToBack: "backToBack" in gameState && gameState.backToBack === true,
+        spinRotation: "spinRotation" in gameState ? gameState.spinRotation as PlacementSimulationContext["spinRotation"] : null,
+        nextPieceType: "nextQueue" in gameState && Array.isArray(gameState.nextQueue) ? gameState.nextQueue[0] as PieceType : undefined,
+    });
     if (rankedPlacements.length === 0) {
         return createFailure(
             "NO_LEGAL_PLACEMENT",

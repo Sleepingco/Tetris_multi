@@ -48,6 +48,7 @@ import {
     validatePlacementDecisionLog,
 } from "../validators/gameLogValidator.js";
 import { clientToServerSchemas } from "../../shared/socketContracts.mjs";
+import { BUFFER_GAMEPLAY_RULES_VERSION, LEGACY_GAMEPLAY_RULES_VERSION, getGameplayLogContext } from "../../shared/gameplayLogContext.js";
 import type {
     ClientToServerParsedPayload,
     ServerToClientParsedPayload,
@@ -552,6 +553,7 @@ export function registerMultiplayerHandlers(
         ): void => {
             hasEmittedInputResult = true
             const resultPayload: InputResultPayload = {
+                gameId: getMatchState(roomId).match?.gameId,
                 ok,
                 reason,
                 clientSequence,
@@ -809,7 +811,7 @@ export function registerMultiplayerHandlers(
             && (
                 (logRecord.schemaVersion === 1
                     && (logRecord.source === undefined || logRecord.source === "human"))
-                || (logRecord.schemaVersion === 2 && logRecord.source === "human")
+                || ((logRecord.schemaVersion === 2 || logRecord.schemaVersion === 3) && logRecord.source === "human")
             )
             && hasValidPlacementResultScalars(logRecord.placementResult)
 
@@ -841,6 +843,7 @@ export function registerMultiplayerHandlers(
             Number(logRecord.authoritativeClientSequence),
             Number(logRecord.authoritativePieceIndex),
             now(),
+            logRecord.schemaVersion === 3 ? BUFFER_GAMEPLAY_RULES_VERSION : LEGACY_GAMEPLAY_RULES_VERSION,
         )
         if (!receiptResult.ok) {
             clientSocket.emit("game:log:result", {
@@ -852,6 +855,7 @@ export function registerMultiplayerHandlers(
         }
         const authenticatedLog = {
             ...logRecord,
+            ...(logRecord.schemaVersion === 3 ? getGameplayLogContext(receiptResult.receipt.gameplayRulesVersion) : {}),
             gameId: receiptResult.receipt.gameId,
             roomId: receiptResult.receipt.roomId,
             playerId: receiptResult.receipt.playerId,
@@ -1083,6 +1087,7 @@ function emitAuthoritativeSnapshot(
     const payload: ServerToClientParsedPayload<"game:authoritative:snapshot"> = {
         roomId,
         playerId,
+        gameId: snapshotResult.match.gameId,
         snapshot: snapshotResult.snapshot,
     }
     if (presentationEffect?.id) {
@@ -1179,7 +1184,8 @@ function persistGameEventLog(
 function createGameStartLog(room: RoomState, match: MatchState) {
     return {
         eventType: "game_start",
-        schemaVersion: 1,
+        schemaVersion: match.gameplayRulesVersion === "buffer20-v1" ? 3 : 1,
+        ...(match.gameplayRulesVersion === "buffer20-v1" ? getGameplayLogContext(match.gameplayRulesVersion) : {}),
         gameId: match.gameId,
         roomId: room.roomId,
         mode: room.mode === "pve" ? "pve" : "multi",

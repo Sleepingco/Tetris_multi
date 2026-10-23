@@ -30,6 +30,14 @@ rehearsal은 [production boundary script](../../../scripts/verify-postgres-produ
 6. 실제 사용자 data 삭제는 자동화하지 않는다.
 7. 명령 실행 전 prompt가 OCI인지 확인한다.
 
+### 게임 오버 계획 2단계의 로컬 호환 빌드 (2026-10-22)
+
+[저장 호환 구현·검증 기록](../../gameplay/top-out-buffer-zone-plan.md#13-2단계-저장-호환-기반-완료-2026-10-22)은 로컬에서 완료했으며 위 운영 image·DB가 갱신됐다는 의미는 아니다. 새 빌드는 migration **3**을 요구한다. 운영 반영 시에는 기존 절차대로 백업 후 003 migration을 적용하고 app을 교체한다. migration 역할과 runtime 역할은 계속 분리한다.
+
+향후 40행 gameplay에서 이전 동작으로 복구할 기준은 **기존 20행 gameplay + v3 reader + migration 3 기동**을 갖춘 2단계 빌드다. migration 2만 아는 이전 image로 바로 돌아가지 않는다. DB를 2로 내리거나 이미 저장한 v3 row·volume·migration 이력을 삭제하지 않는다.
+
+로컬 생성물은 `release-artifacts/top-out-stage2-rollback-2026-10-22.tar.gz`와 동봉 `.sha256`, `ROLLBACK.json`이다. Git/Docker context에서 제외하므로 운영 배포 전 별도로 보관하고 checksum을 확인한다. 새 빈 경로에 풀어 Node 24.18.0에서 `npm ci --omit=dev --ignore-scripts`로 runtime dependency를 설치하고, 운영 credential을 별도로 제공한다. archive는 credential을 포함하지 않는다. 실제 운영 배포·rollback은 별도 승인 후 수행한다.
+
 ```text
 ubuntu@primary-vnic:/srv/tetris/repository$
 ```
@@ -204,6 +212,7 @@ CI 이름 `Migration CI`는 기존 workflow 식별자이며, 마이그레이션 
 명령의 원천은 [package.json](../../../package.json)과 [production boundary script](../../../scripts/verify-postgres-production.sh)다.
 DB 검증은 격리된 테스트 환경에서 실행한다. 테스트가 통과해도 실제 OCI의 TLS·backup·restore 확인을 대체하지 않는다.
 [배포 workflow](../../../.github/workflows/deploy-production.yml)는 선택한 commit의 성공한 main push CI를 확인한다.
+실행 중 app과 후보의 DB 기대 버전이 다르면 migration 전에 중단한다. 이 경우 진행 중 접속 종료·유입 차단·backup·호환 rollback을 갖춘 수동 전환이 필요하다. 버퍼 존의 2→3 전환은 [5단계 실행 기록](../history/oci/oci-buffer-zone-deployment-2026-10-23.md)을 따른다. migration 3 이후 migration 2 image로 자동 복구하지 않는다.
 [당시 Goal 9D](../../archive/migration/goals/09d-postgres-ci-release.md)는 도입 범위의 역사적 근거이며 현재 실행 지침이 아니다.
 
 ## Backup과 restore rehearsal
@@ -1021,3 +1030,18 @@ openssl x509 \
 - private key
 - DuckDNS token
 - raw user payload
+
+
+### 버퍼 존 3단계 로컬 검증 (2026-10-23)
+
+[계획 §14](../../gameplay/top-out-buffer-zone-plan.md#14-3단계-40행-gameplay-통합-2026-10-23)의 40행 gameplay·protocol 2·v3 로그를 로컬에서 구현하고 격리 PostgreSQL 17.10 검사 9/9를 통과했다. 운영 접속·migration·배포를 수행한 기록이 아니다. 실제 배포 시 server/client를 같은 빌드로 교체하고 열린 탭을 새로고침한다. 장애 시 2단계의 20행 gameplay + migration 3 호환 산출물로 server/client를 함께 복구하며 v3 row·확장 schema·volume은 남긴다. Docker 운영 재현·백업/복구의 추가 검증과 실제 배포는 4/5단계에서 별도로 진행한다.
+
+### 버퍼 존 4단계 로컬 검증과 수집 제한 (2026-10-23)
+
+[계획 §15](../../gameplay/top-out-buffer-zone-plan.md)의 격리 Docker 검증에서 정상 PVP/PVE 2/2·DB 중단 gameplay 1/1, v3 저장·재기동·backup/restore의 row/hash 일치와 shutdown exit 0·OOM false·pool 잔여 연결 0을 확인했다. 실제 PostgreSQL 9/9에는 terminal lock_out과 여섯 종료 사유 저장을 포함한다. 운영 DB·배포를 수행한 기록이 아니며 5단계는 별도다.
+
+완료 경기의 `game_over.payload.expectedPlacementEventCounts`와 실제 placement 저장 수를 비교한다. 이번 합성 cohort는 예상 25건/저장 21건의 차이 4건이 브라우저가 받은 `RATE_LIMITED` 4건과 일치했다. `scripts/verify-postgres-production.sh`는 모드·human/AI별로 이 차이를 대조하며 설명되지 않는 누락이나 AI 저장 불일치는 실패로 처리한다.
+
+사람 로그의 기존 한도는 10초당 10건이다. 이 거부는 DB write 전에 발생하므로 DB 실패 counter가 0이어도 빠른 정상 플레이의 사람 로그가 모두 저장됐다는 의미가 아니다. 수집은 계속 best-effort이며 불완전 경기는 분석에서 구분한다. 완전한 행동 모방 데이터 수집을 원하면 입력 궤적·누락 감지·한도/재전송 계약을 별도로 설계해야 한다. 이번 검증을 위해 보안 한도나 single-sink·budget을 변경하지 않았으며, 누락 로그를 추정해 채우지 않는다.
+
+공유 `dist`를 다시 만드는 `verify`와 DB 검사 명령은 순서대로 실행한다. 한 명령이 산출물을 지우는 동안 다른 DB CLI가 실행되면 artifact 누락으로 실패할 수 있다. 운영 row·schema·volume을 지우는 방식으로 검증 실패를 해결하지 않는다.

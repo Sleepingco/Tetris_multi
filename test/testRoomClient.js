@@ -90,6 +90,7 @@ test("mutation buffer를 비우고 disconnect reason과 terminal 여부를 전�
     let resumeAuth = null;
     socketOptions.auth(payload => { resumeAuth = payload; });
     assert.deepEqual(resumeAuth, {
+        protocolVersion: 2,
         playerId: "00000000-0000-4000-8000-000000000001",
         token: "d".repeat(43),
         nickname: "Player",

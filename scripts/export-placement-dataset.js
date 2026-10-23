@@ -241,6 +241,11 @@ function groupEventsByGameId(entries) {
  * disconnect/leave 또는 잘린 로그는 선택 결과를 끝까지 관찰한 cohort가 아니므로 제외한다.
  */
 function getGameExclusionReason(game) {
+    if ([...game.gameStart, ...game.placementDecision, ...game.gameOver].some(({ log }) => (
+        log.schemaVersion === 3 || log.boardBefore?.length === 40 || (log.gameplayRulesVersion !== undefined && log.gameplayRulesVersion !== "legacy20-v1")
+    ))) {
+        return "UNSUPPORTED_GAMEPLAY_RULESET";
+    }
     if (game.gameStart.length > 1 || game.gameOver.length > 1) {
         return "AMBIGUOUS_GAME_LIFECYCLE";
     }

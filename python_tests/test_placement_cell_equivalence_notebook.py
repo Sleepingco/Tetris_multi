@@ -12,7 +12,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK_PATH = ROOT / "scripts/ml/notebooks/placement_cell_equivalence_logo_experiment.ipynb"
-DOC_PATH = ROOT / "docs/placement-cell-equivalence-logo.md"
+DOC_PATH = ROOT / "docs/ai-ml/experiments/placement-cell-equivalence-logo.md"
 
 
 class PlacementCellEquivalenceNotebookContractTest(unittest.TestCase):

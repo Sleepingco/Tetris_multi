@@ -5,6 +5,7 @@
  * 로비 복귀 상태를 확인한다. 중간 assertion이 실패해도 finally에서 두 context를 닫는다.
  */
 const { test, expect } = require("@playwright/test");
+const { monitorPlacementLogs } = require("./helpers/placementLogs.js");
 const {
     MULTI_LOBBY_URL,
     createPlayerPages,
@@ -12,9 +13,10 @@ const {
     hardDropUntilMatchFinishes,
 } = require("./helpers/multiplayer.js");
 
-test("server game over 이후 두 플레이어가 로비로 돌아오면 재시작할 수 있다", async ({ browser }) => {
+test("server game over 이후 두 플레이어가 로비로 돌아오면 재시작할 수 있다", async ({ browser }, testInfo) => {
     const players = await createPlayerPages(browser);
     const { hostPage, guestPage } = players;
+    const logs = monitorPlacementLogs(hostPage);
 
     try {
         await enterTwoPlayerMatch(hostPage, guestPage);
@@ -33,6 +35,7 @@ test("server game over 이후 두 플레이어가 로비로 돌아오면 재시�
         await expect(guestPage.locator('.game-text[data-player="2"] > span')).toHaveText("승리");
         await expect(hostLobbyButton).toBeVisible();
         await expect(guestLobbyButton).toBeVisible();
+        await logs.verifyAndWrite(testInfo, "multi");
 
         await Promise.all([
             hostPage.waitForURL(MULTI_LOBBY_URL),
@@ -47,6 +50,7 @@ test("server game over 이후 두 플레이어가 로비로 돌아오면 재시�
         await expect(hostPage.locator("#btnPrimaryAction")).toBeEnabled();
         await expect(guestPage.locator("#btnPrimaryAction")).toBeDisabled();
     } finally {
+        logs.dispose();
         await players.close();
     }
 });

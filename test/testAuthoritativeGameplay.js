@@ -114,13 +114,13 @@ test("authoritative line clear는 정확한 row와 player별 presentation effect
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 3,
     };
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
-    hostPlayer.authoritativeState.board[19] = Array(gameCore.BOARD_COLS).fill("stack");
-    hostPlayer.authoritativeState.board[19][3] = null;
-    hostPlayer.authoritativeState.board[19][4] = null;
+    hostPlayer.authoritativeState.board[39] = Array(gameCore.BOARD_COLS).fill("stack");
+    hostPlayer.authoritativeState.board[39][3] = null;
+    hostPlayer.authoritativeState.board[39][4] = null;
     hostPlayer.authoritativeState.pieceQueue = ["tree"];
     hostPlayer.authoritativeState.pieceIndex = 7;
 
@@ -134,11 +134,11 @@ test("authoritative line clear는 정확한 row와 player별 presentation effect
         id: "host-player:7:line_clear",
         type: "line_clear",
         pieceIndex: 7,
-        rows: [19],
+        rows: [39],
         boardBeforeClear: result.gameplayResult.presentationEffect.boardBeforeClear,
     });
     assert.equal(
-        result.gameplayResult.presentationEffect.boardBeforeClear[19].every(Boolean),
+        result.gameplayResult.presentationEffect.boardBeforeClear[39].every(Boolean),
         true,
     );
     assert.equal(result.gameplayResult.placementResult.linesCleared, 1);
@@ -161,13 +161,13 @@ test("gravity lock line clear도 match 경계에서 presentation effect id를 �
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 3,
     };
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
-    hostPlayer.authoritativeState.board[19] = Array(gameCore.BOARD_COLS).fill("stack");
-    hostPlayer.authoritativeState.board[19][3] = null;
-    hostPlayer.authoritativeState.board[19][4] = null;
+    hostPlayer.authoritativeState.board[39] = Array(gameCore.BOARD_COLS).fill("stack");
+    hostPlayer.authoritativeState.board[39][3] = null;
+    hostPlayer.authoritativeState.board[39][4] = null;
     hostPlayer.authoritativeState.pieceQueue = ["tree"];
     hostPlayer.authoritativeState.pieceIndex = 11;
 
@@ -191,7 +191,7 @@ test("gravity lock line clear도 match 경계에서 presentation effect id를 �
     assert.equal(result.ok, true);
     assert.equal(result.gravityResult.kind, "lock");
     assert.equal(result.presentationEffect.id, "host-player:11:line_clear");
-    assert.deepEqual(result.presentationEffect.rows, [19]);
+    assert.deepEqual(result.presentationEffect.rows, [39]);
     assert.equal(result.gravityStepResult.presentationEffect, result.presentationEffect);
 });
 
@@ -223,13 +223,13 @@ test("getAuthoritativePlayerSnapshot은 authoritativeState 복사본을 반환�
     assert.deepEqual(snapshot.activePiece, hostPlayer.authoritativeState.activePiece);
     assert.deepEqual(snapshot.board, hostPlayer.authoritativeState.board);
 
-    snapshot.board[19][3] = "mutated";
+    snapshot.board[39][3] = "mutated";
     snapshot.activePiece.pieceType = "mutated";
     snapshot.pendingPiece.pieceType = "mutated";
     snapshot.pieceQueue.push("mutated");
     snapshot.pendingGarbageQueue.push({ lines: 9, holeCol: 9 });
 
-    assert.notEqual(hostPlayer.authoritativeState.board[19][3], "mutated");
+    assert.notEqual(hostPlayer.authoritativeState.board[39][3], "mutated");
     assert.notEqual(hostPlayer.authoritativeState.activePiece.pieceType, "mutated");
     assert.notEqual(hostPlayer.authoritativeState.pendingPiece.pieceType, "mutated");
     assert.equal(hostPlayer.authoritativeState.pieceQueue.includes("mutated"), false);
@@ -323,11 +323,11 @@ test("getAuthoritativePlayerSnapshotDto는 client snapshot 후보 필드와 tick
     assert.deepEqual(dto.activePiece, hostPlayer.authoritativeState.activePiece);
     assert.equal(internalSnapshotResult.snapshot.currentTick, hostPlayer.authoritativeState.currentTick);
 
-    dto.board[19][3] = "mutated";
+    dto.board[39][3] = "mutated";
     dto.activePiece.pieceType = "mutated";
     dto.pieceQueue.push("mutated");
 
-    assert.notEqual(hostPlayer.authoritativeState.board[19][3], "mutated");
+    assert.notEqual(hostPlayer.authoritativeState.board[39][3], "mutated");
     assert.notEqual(hostPlayer.authoritativeState.activePiece.pieceType, "mutated");
     assert.equal(hostPlayer.authoritativeState.pieceQueue.includes("mutated"), false);
 });

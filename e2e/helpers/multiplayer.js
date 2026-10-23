@@ -121,14 +121,15 @@ async function readBottomBoardState(page, playerNumber, bottomRows = 6) {
         const cols = 10;
         const rows = 20;
         const cellWidth = canvas.width / cols;
-        const cellHeight = canvas.height / rows;
+        const cellHeight = canvas.width / cols;
+        const visibleTop = canvas.height - rows * cellHeight;
         const cells = [];
         let occupiedCellCount = 0;
 
         for (let row = rows - rowsToRead; row < rows; row += 1) {
             for (let col = 0; col < cols; col += 1) {
                 const x = Math.floor((col + 0.5) * cellWidth);
-                const y = Math.floor((row + 0.5) * cellHeight);
+                const y = Math.floor(visibleTop + (row + 0.5) * cellHeight);
                 const [red, green, blue, alpha] = context.getImageData(x, y, 1, 1).data;
 
                 const color = alpha >= 240

@@ -7,6 +7,7 @@
  */
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const { createHash } = require("node:crypto");
 const { execFileSync, spawn, spawnSync } = require("node:child_process");
 const { createServer } = require("node:net");
 const { cp, mkdtemp, readFile, readdir, rm } = require("node:fs/promises");
@@ -76,7 +77,7 @@ function createInstallEnvironment() {
     return environment;
 }
 
-test("production dependencies만 있는 source-less release가 HTTP, PVP/PVE와 V4를 실행한다", {
+test("production dependencies만 있는 source-less release가 HTTP, 40행 PVP/PVE와 V4 fallback을 실행한다", {
     timeout: 120_000,
 }, async () => {
     const releaseRoot = await mkdtemp(path.join(os.tmpdir(), "tetris-goal8c-release-"));
@@ -129,6 +130,8 @@ test("production dependencies만 있는 source-less release가 HTTP, PVP/PVE와 
             releaseFiles.filter(file => /(?:^|\/)(?:test|tests|e2e|fixtures?)(?:\/|$)/i.test(file)),
             [],
         );
+        const modelBytes = await readFile(path.join(releaseRoot, "dist/server/server/assets/placement-v4-125g-experimental-model.json"));
+        assert.equal(createHash("sha256").update(modelBytes).digest("hex"), MODEL_SHA256);
 
         const serviceProbe = `
             const rooms = require("./dist/server/server/services/roomService.js");
@@ -163,6 +166,8 @@ test("production dependencies만 있는 source-less release가 HTTP, PVP/PVE와 
                 console.log(JSON.stringify({
                     pvp: pvpRoom.ok && pvpStarted.ok && pvpMatch.ok && pvpInput.ok,
                     pve: pveRoom.ok && pveStarted.ok && pveMatch.ok,
+                    pvpBoardRows: pvpMatch.match.players[0].authoritativeState.board.length,
+                    pveBoardRows: aiPlayer.authoritativeState.board.length,
                     reason: pveDecision.reason,
                     policyUsed: pveDecision.decision?.policyUsed,
                     fallbackReason: pveDecision.decision?.fallbackReason,
@@ -180,10 +185,12 @@ test("production dependencies만 있는 source-less release가 HTTP, PVP/PVE와 
         assert.deepEqual(probe, {
             pvp: true,
             pve: true,
+            pvpBoardRows: 40,
+            pveBoardRows: 40,
             reason: "AI_PLAN_CREATED",
-            policyUsed: "placement_v4",
-            fallbackReason: null,
-            modelSha256: MODEL_SHA256,
+            policyUsed: "heuristic",
+            fallbackReason: "RULESET_INCOMPATIBLE",
+            modelSha256: null,
         });
 
         const port = await getFreePort();

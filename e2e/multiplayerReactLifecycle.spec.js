@@ -103,7 +103,7 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
                 expect(await column.locator("canvas").evaluate(canvas => ({
                     width: canvas.width,
                     height: canvas.height,
-                }))).toEqual({ width: 300, height: 600 });
+                }))).toEqual({ width: 300, height: 720 });
             }
         }
 
@@ -230,6 +230,7 @@ test("multiplayer BFCache 복귀와 terminal replacement는 stale 입력을 남�
                 forceNew: true,
                 reconnection: false,
                 auth: {
+                    protocolVersion: 2,
                     playerId: session.playerId,
                     token: session.token,
                     nickname: session.nickname,
@@ -270,15 +271,9 @@ test("placement V4 badge와 production artifact 경계를 유지한다", async (
 
     await expect(page.locator('.next-preview[data-player="1"] .next-cell')).toHaveCount(64);
     const policyBadge = page.locator("#player2RoleBadge");
-    await expect(policyBadge).toHaveText(
-        /^(실험 AI · 동작 중|실험 AI · 휴리스틱 전환)$/,
-    );
-    const policyText = await policyBadge.textContent();
-    if (policyText?.includes("전환")) {
-        await expect(policyBadge).toHaveAttribute("title", /^모델 전환 사유: .+/);
-    } else {
-        await expect(policyBadge).not.toHaveAttribute("title");
-    }
+    await expect(policyBadge).toContainText("실험 AI · 휴리스틱 전환");
+    await expect(policyBadge).toContainText("새 규칙 미지원 · 휴리스틱 사용");
+    await expect(policyBadge).toHaveAttribute("title", "새 규칙 미지원 · 휴리스틱 사용");
 
     if (process.env.PLAYWRIGHT_VITE_DEV !== "1") {
         const modulePath = await page.locator('script[type="module"]').getAttribute("src");

@@ -35,6 +35,7 @@ export type PlayerSession = Pick<ActiveSession, "playerId" | "nickname">;
 export type SessionError = { code: string; terminal: boolean };
 export type SessionDisconnect = { reason: string; terminal: boolean };
 type AuthPayload = {
+    protocolVersion: 2;
     nickname: string;
     playerId?: string;
     token?: string;
@@ -151,16 +152,17 @@ function readStoredSession(): StoredCredential | MalformedSession | null {
 function createHandshakeAuth(callback: (payload: AuthPayload) => void): void {
     const session = readStoredSession()
     if (session && "malformed" in session) {
-        callback({ nickname: readNickname(), credentialError: "MALFORMED" })
+        callback({ protocolVersion: 2, nickname: readNickname(), credentialError: "MALFORMED" })
         return
     }
     callback(session
         ? {
+            protocolVersion: 2,
             playerId: session.playerId,
             token: session.token,
             nickname: readNickname(),
         }
-        : { nickname: readNickname() })
+        : { protocolVersion: 2, nickname: readNickname() })
 }
 
 function clearIdentityAndRoom(): void {
@@ -290,6 +292,11 @@ serverConnection.on("connect_error", (error: ConnectError) => {
 
     const { code, terminal } = validation.data
     sessionErrorHandlers.forEach(handler => handler({ code, terminal }))
+    if (code === "GAMEPLAY_PROTOCOL_INCOMPATIBLE") {
+        serverConnection.io?.reconnection?.(false)
+        serverConnection.disconnect?.()
+        return
+    }
 
     if (recoveringWithNewSession) {
         recoveringWithNewSession = false

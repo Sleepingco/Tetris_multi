@@ -25,14 +25,14 @@ const AI_ID = `heuristic-ai-${ROOM_ID}`
 const PIECES = ["bar", "eleft", "eright", "ess", "square", "tree", "zee"]
 
 function createBoard() {
-    return Array.from({ length: 20 }, () => Array(10).fill(null))
+    return Array.from({ length: 40 }, () => Array(10).fill(null))
 }
 
 function createSnapshot(overrides = {}) {
     return {
         spinRotation: null,
         board: createBoard(),
-        activePiece: { pieceType: "bar", rotation: 0, row: -1, col: 3 },
+        activePiece: { pieceType: "bar", rotation: 0, row: 19, col: 3 },
         pieceQueue: ["square", "tree"],
         holdPieceType: null,
         holdUsedThisDrop: false,
@@ -60,7 +60,7 @@ test("고정 유예 snapshot은 공통 상한을 검증하고 client의 유예 �
     const schema = serverToClientSchemas["game:authoritative:snapshot"];
     assert.equal(schema.safeParse(envelope).success, true);
     for (const invalid of [{ remainingMs: 501 }, { remainingMs: -1 }, { resetCount: 16 },
-        { resetCount: 1.5 }, { lowestRow: 20 }, { hasTouchedGround: "true" }]) {
+        { resetCount: 1.5 }, { lowestRow: 40 }, { hasTouchedGround: "true" }]) {
         assert.equal(schema.safeParse({ ...envelope,
             snapshot: createSnapshot({ lockDelay: { ...lockDelay, ...invalid } }) }).success, false);
     }
@@ -231,7 +231,7 @@ const serverFixtures = {
             type: "line_clear",
             id: `${HUMAN_ID}:1:line_clear`,
             pieceIndex: 1,
-            rows: [19],
+            rows: [39],
             boardBeforeClear: createBoard(),
         },
     },
@@ -270,9 +270,9 @@ test("strict event envelope는 null, array와 unknown key를 거부한다", () =
 })
 
 test("handshake, 문자열, 숫자와 고정 배열 상한을 검증한다", () => {
-    assert.equal(handshakeAuthSchema.safeParse({ nickname: " Host " }).success, true)
-    assert.equal(handshakeAuthSchema.safeParse({ nickname: "Host", unknown: true }).success, false)
-    assert.equal(handshakeAuthSchema.safeParse({ nickname: "x".repeat(25) }).success, false)
+    assert.equal(handshakeAuthSchema.safeParse({ protocolVersion: 2, nickname: " Host " }).success, true)
+    assert.equal(handshakeAuthSchema.safeParse({ protocolVersion: 2, nickname: "Host", unknown: true }).success, false)
+    assert.equal(handshakeAuthSchema.safeParse({ protocolVersion: 2, nickname: "x".repeat(25) }).success, false)
     assert.equal(connectErrorDataSchema.safeParse({
         code: "SESSION_INVALID",
         terminal: true,
@@ -295,7 +295,7 @@ test("handshake, 문자열, 숫자와 고정 배열 상한을 검증한다", () 
 
 test("authoritative board의 garbage cell만 허용하고 piece queue는 확장하지 않는다", () => {
     const garbageBoard = createBoard()
-    garbageBoard[19][0] = "garbage"
+    garbageBoard[39][0] = "garbage"
 
     assert.equal(serverToClientSchemas["game:authoritative:snapshot"].safeParse({
         ...serverFixtures["game:authoritative:snapshot"],

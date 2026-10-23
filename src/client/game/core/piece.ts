@@ -1,4 +1,8 @@
 import type { PieceType } from "../state/blocks.ts";
+import BLOCKS from "../state/blocks.ts";
+import { SPAWN_POSITION } from "../state/config.ts";
+import { canPlacePiece } from "./board.ts";
+import type { Board } from "./board.ts";
 
 // =============================
 // 움직이는 조각 보조 계산
@@ -37,6 +41,14 @@ export function createSpawnedPiece(
         col: spawnCol,
         rotation: 0,
     };
+}
+
+/** 2009 Guideline §3.4의 초기 위치 충돌을 먼저 검사하고, 가능할 때만 즉시 한 행 내린다. */
+export function getSpawnedPiece(board: Board, pieceType: PieceType): PlaceablePieceState | null {
+    const piece = createSpawnedPiece(pieceType, SPAWN_POSITION.row, pieceType === "square" ? 4 : SPAWN_POSITION.col);
+    if (!canPlacePiece(board, piece, BLOCKS)) return null;
+    const descended = { ...piece, row: piece.row + 1 };
+    return canPlacePiece(board, descended, BLOCKS) ? descended : piece;
 }
 
 /**

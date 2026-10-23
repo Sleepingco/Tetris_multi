@@ -45,7 +45,7 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
     initialAi.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     };
     initialAi.authoritativeState.pendingPiece = {
@@ -118,11 +118,11 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
         return event.eventName === "game:authoritative:snapshot" &&
             event.payload.playerId === "ai" &&
             event.payload.snapshot.pieceIndex === 1 &&
-            event.payload.snapshot.activePiece.row >= 0;
+            event.payload.snapshot.activePiece.row >= 20;
     });
     assert.deepEqual(
         softDropSnapshots.map(event => event.payload.snapshot.activePiece.row),
-        [0, 1, 2, 3, 4],
+        [20, 21, 22, 23, 24],
     );
     assert.equal(initialAi.authoritativeState.board.flat().every(cell => cell === null), true);
     assert.equal(initialAi.authoritativeState.pieceIndex, 1);
@@ -137,7 +137,7 @@ test("PVE ticker는 human gravity와 AI action cadence를 분리해 순서대로
             event.payload.playerId === "ai";
     });
 
-    assert.equal(human.authoritativeState.activePiece.row, 1);
+    assert.equal(human.authoritativeState.activePiece.row, 21);
     assert.equal(ai.authoritativeState.pieceIndex, 2);
     assert.ok(ai.authoritativeState.board.flat().some(cell => cell !== null));
     assert.equal(aiSnapshotEvents.length, 9);
@@ -251,7 +251,7 @@ test("hard PVE ticker는 terminal soft_drop 없이 action별 snapshot 후 hard_d
     aiPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     };
     aiPlayer.authoritativeState.pendingPiece = {
@@ -326,7 +326,7 @@ test("PVE ticker는 AI 후보가 없으면 human 승리로 match를 종료한다
     const match = createMatch(getRoomState(roomId)).match;
     const aiPlayer = match.players.find(player => player.playerId === aiRoomPlayer.playerId);
     aiPlayer.authoritativeState.board = Array.from(
-        { length: 20 },
+        { length: 40 },
         () => Array(10).fill("garbage"),
     );
 
@@ -377,9 +377,9 @@ test("AI executor는 고정 fixture의 authoritative input 결과를 유지한�
     const executorPlayer = match.players.find(player => player.playerId === "ai");
     const fixtureState = {
         ...structuredClone(executorPlayer.authoritativeState),
-        board: Array.from({ length: 20 }, () => Array(10).fill(null)),
-        activePiece: { pieceType: "square", rotation: 0, row: -1, col: 3 },
-        pendingPiece: { pieceType: "square", rotation: 0, row: -1, col: 3 },
+        board: Array.from({ length: 40 }, () => Array(10).fill(null)),
+        activePiece: { pieceType: "square", rotation: 0, row: 19, col: 3 },
+        pendingPiece: { pieceType: "square", rotation: 0, row: 19, col: 3 },
         pieceQueue: ["tree", "bar", "zee", "ess", "eleft", "eright", "square", "tree"],
         pieceIndex: 1,
     };
@@ -417,20 +417,20 @@ test("AI executor는 고정 fixture의 authoritative input 결과를 유지한�
     assert.deepEqual(executorResult.placementResult.lockedPiece, {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 0,
     });
-    assert.equal(executorPlayer.authoritativeState.board[18][0], "square");
-    assert.equal(executorPlayer.authoritativeState.board[18][1], "square");
-    assert.equal(executorPlayer.authoritativeState.board[19][0], "square");
-    assert.equal(executorPlayer.authoritativeState.board[19][1], "square");
+    assert.equal(executorPlayer.authoritativeState.board[38][0], "square");
+    assert.equal(executorPlayer.authoritativeState.board[38][1], "square");
+    assert.equal(executorPlayer.authoritativeState.board[39][0], "square");
+    assert.equal(executorPlayer.authoritativeState.board[39][1], "square");
     assert.equal(executorPlayer.authoritativeState.score, 28);
     assert.equal(executorPlayer.authoritativeState.lines, 0);
     assert.equal(executorPlayer.authoritativeState.pieceIndex, 2);
     assert.deepEqual(executorPlayer.authoritativeState.activePiece, {
         pieceType: "tree",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
     assert.equal(executorPlayer.aiPlan, null);

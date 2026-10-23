@@ -64,6 +64,7 @@ test("current token 중복 연결은 이전 로비 탭을 terminal 상태로 남
             forceNew: true,
             reconnection: false,
             auth: {
+                    protocolVersion: 2,
                 playerId: session.playerId,
                 token: session.token,
                 nickname: session.nickname,

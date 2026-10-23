@@ -38,6 +38,7 @@ async function deliverAchievement(page, playerNumber, values) {
         const player = join.match.players[playerNumber - 1];
         const pieceIndex = window.__achievementIndexes[playerNumber - 1]++;
         const payload = {
+            gameId: join.match.gameId,
             roomId: join.room.roomId,
             playerId: player.playerId,
             snapshot: { ...player.snapshot, pieceIndex: pieceIndex + 1 },

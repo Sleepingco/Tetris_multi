@@ -13,7 +13,7 @@ export type SnapshotDriftState = {
     startedAtMs: number;
 };
 export type SnapshotCorrectionReason = "PERSISTENT_PIECE_INDEX_GAP" | "GAME_OVER" |
-    "GARBAGE_APPLIED" | "PIECE_INDEX_GAP" | "SETTLED_BOARD_MISMATCH";
+    "LOCAL_FALSE_GAME_OVER" | "GARBAGE_APPLIED" | "PIECE_INDEX_GAP" | "SETTLED_BOARD_MISMATCH";
 export type SnapshotCorrectionDecision = {
     shouldCorrect: boolean;
     reason: SnapshotCorrectionReason | null;
@@ -106,6 +106,9 @@ export function evaluateOwnSnapshotCorrection(
     if (!serverSnapshot || !localSnapshot) return createDecision(false)
     if (serverSnapshot.phase === "gameOver") {
         return createDecision(true, "GAME_OVER")
+    }
+    if (localSnapshot.phase === "gameOver" && serverSnapshot.phase === "playing") {
+        return createDecision(true, "LOCAL_FALSE_GAME_OVER")
     }
     if (localSnapshot.phase === "lineClearing") {
         return createDecision(false)

@@ -45,7 +45,16 @@ function createPveMatch(roomId, aiDifficulty = "normal", aiPolicy = "heuristic")
 }
 
 function createV4Match(roomId) {
-    return createPveMatch(roomId, "normal", "placement_v4");
+    const match = createPveMatch(roomId, "normal", "placement_v4");
+    match.gameplayRulesVersion = "legacy20-v1";
+    for (const player of match.players) {
+        const state = player.authoritativeState;
+        state.board = state.board.slice(20);
+        state.activePiece.row -= 20;
+        state.pendingPiece.row -= 20;
+        state.lockDelay.lowestRow -= 20;
+    }
+    return match;
 }
 
 async function processUntilPlacement(service, roomId, gameCore, maxSteps = 100) {
@@ -81,8 +90,8 @@ function createDecision({ selectedPlacement, plannedActions }) {
         plannedActions,
         score: 10,
         candidateCount: 1,
-        metricsBefore: createMetrics(Array.from({ length: 20 }, () => Array(10).fill(null))),
-        metricsAfter: createMetrics(Array.from({ length: 20 }, () => Array(10).fill(null))),
+        metricsBefore: createMetrics(Array.from({ length: 40 }, () => Array(10).fill(null))),
+        metricsAfter: createMetrics(Array.from({ length: 40 }, () => Array(10).fill(null))),
         reason: {
             linesCleared: 0,
             holesDelta: 0,
@@ -199,7 +208,7 @@ test("AI step은 plan을 먼저 만들고 action을 하나씩 적용한 뒤 log�
         humanBefore,
     );
     assert.equal(savedLogs.length, 1);
-    assert.equal(savedLogs[0].schemaVersion, 2);
+    assert.equal(savedLogs[0].schemaVersion, 3);
     assert.equal(savedLogs[0].source, "heuristic_ai");
     assert.equal(savedLogs[0].modelType, "heuristic");
     assert.equal(savedLogs[0].aiDifficulty, "normal");
@@ -239,11 +248,11 @@ test("hard 난이도는 move와 rotate 후 terminal soft_drop 없이 hard_drop�
     const aiPlayer = setActivePiece(match, {
         pieceType: "tree",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
     const decision = createDecision({
-        selectedPlacement: { pieceType: "tree", rotation: 1, row: 17, col: 2 },
+        selectedPlacement: { pieceType: "tree", rotation: 1, row: 37, col: 2 },
         plannedActions: ["move_left", "rotate", "hard_drop"],
     });
     const savedLogs = [];
@@ -271,7 +280,7 @@ test("hard 난이도는 move와 rotate 후 terminal soft_drop 없이 hard_drop�
     assert.deepEqual(result.placementResult.lockedPiece, {
         pieceType: "tree",
         rotation: 1,
-        row: 17,
+        row: 37,
         col: 2,
     });
     assert.equal(result.placementResult.droppedRows, 18);
@@ -291,7 +300,7 @@ test("AI 후보가 없으면 AI state만 gameOver로 처리한다", async () => 
     const aiPlayer = match.players.find(player => player.playerId === "ai");
     const humanPlayer = match.players.find(player => player.playerId === "human");
     aiPlayer.authoritativeState.board = Array.from(
-        { length: 20 },
+        { length: 40 },
         () => Array(10).fill("garbage"),
     );
 
@@ -316,7 +325,7 @@ test("AI plannedActions가 잘못되면 action을 실행하지 않고 gameOver �
     const match = createPveMatch("PVE-AI-INVALID-PLAN");
     const aiPlayer = match.players.find(player => player.playerId === "ai");
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 38, col: 3 },
         plannedActions: ["hard_drop", "move_left"],
     });
     let applyCallCount = 0;
@@ -378,13 +387,13 @@ test("AI action executor는 기존 authoritative line clear와 score 규칙을 �
     const gameCore = await loadGameCore();
     const match = createPveMatch("PVE-AI-5");
     const aiPlayer = match.players.find(player => player.playerId === "ai");
-    aiPlayer.authoritativeState.board[19] = Array(10).fill("stack");
-    aiPlayer.authoritativeState.board[19][3] = null;
-    aiPlayer.authoritativeState.board[19][4] = null;
+    aiPlayer.authoritativeState.board[39] = Array(10).fill("stack");
+    aiPlayer.authoritativeState.board[39][3] = null;
+    aiPlayer.authoritativeState.board[39][4] = null;
     aiPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     };
     aiPlayer.authoritativeState.pendingPiece = {
@@ -409,15 +418,15 @@ test("PVE의 실제 회전·고정은 Mini Single 보상과 신규 분류를 로
     resetMatches();
     const core = await loadGameCore();
     const match = createPveMatch("PVESPIN1", "hard");
-    const player = setActivePiece(match, { pieceType: "tree", rotation: 3, row: 17, col: 3 });
+    const player = setActivePiece(match, { pieceType: "tree", rotation: 3, row: 37, col: 3 });
     const state = player.authoritativeState;
     state.lockDelay = core.createLockDelay(17);
-    state.board[18] = Array(10).fill("square");
-    for (const col of [3, 4, 5]) state.board[18][col] = null;
-    state.board[17][3] = state.board[19][3] = state.board[19][5] = "square";
+    state.board[38] = Array(10).fill("square");
+    for (const col of [3, 4, 5]) state.board[38][col] = null;
+    state.board[37][3] = state.board[39][3] = state.board[39][5] = "square";
     const saved = [];
     const decision = createDecision({
-        selectedPlacement: { pieceType: "tree", rotation: 0, row: 17, col: 3 },
+        selectedPlacement: { pieceType: "tree", rotation: 0, row: 37, col: 3 },
         plannedActions: ["rotate", "hard_drop"],
     });
     const service = createPveAiPlayerService({
@@ -465,7 +474,7 @@ test("AI step은 move/rotate/soft_drop 중 하나만 authoritative state에 적�
         { action: "move_left", field: "col", expected: 2 },
         { action: "move_right", field: "col", expected: 4 },
         { action: "rotate", field: "rotation", expected: 1 },
-        { action: "soft_drop", field: "row", expected: 0 },
+        { action: "soft_drop", field: "row", expected: 20 },
     ];
 
     for (const fixture of fixtures) {
@@ -475,14 +484,14 @@ test("AI step은 move/rotate/soft_drop 중 하나만 authoritative state에 적�
             const aiPlayer = setActivePiece(match, {
                 pieceType: "tree",
                 rotation: 0,
-                row: -1,
+                row: 19,
                 col: 3,
             });
             const decision = createDecision({
                 selectedPlacement: {
                     pieceType: "tree",
                     rotation: fixture.action === "rotate" ? 1 : 0,
-                    row: 18,
+                    row: 38,
                     col: fixture.action === "move_left" ? 2 : 3,
                 },
                 plannedActions: [fixture.action, "hard_drop"],
@@ -523,11 +532,11 @@ test("AI action 실패는 input을 기록하지 않고 plan을 폐기한다", as
     const aiPlayer = setActivePiece(match, {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 2 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 38, col: 2 },
         plannedActions: ["move_left", "hard_drop"],
     });
     const service = createPveAiPlayerService({
@@ -561,11 +570,11 @@ test("stale AI plan은 state를 적용하지 않고 폐기한다", async () => {
     const aiPlayer = setActivePiece(match, {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 2 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 38, col: 2 },
         plannedActions: ["move_left", "hard_drop"],
     });
     const service = createPveAiPlayerService({
@@ -595,11 +604,11 @@ test("terminal hard_drop 전 soft_drop 5회와 남은 거리 점수를 실제 in
     const aiPlayer = setActivePiece(match, {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 2 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 38, col: 2 },
         plannedActions: ["move_left", "hard_drop"],
     });
     const savedLogs = [];
@@ -641,7 +650,7 @@ test("terminal hard_drop 전 soft_drop 5회와 남은 거리 점수를 실제 in
     assert.equal(moveResult.action, "move_left");
     assert.equal(moveResult.placementResult, null);
     assert.deepEqual(softDropResults.map(result => result.action), Array(5).fill("soft_drop"));
-    assert.deepEqual(softDropRows, [0, 1, 2, 3, 4]);
+    assert.deepEqual(softDropRows, [20, 21, 22, 23, 24]);
     assert.deepEqual(aiPlayer.aiPlan.remainingActions, ["hard_drop"]);
     assert.equal(aiPlayer.aiPlan.terminalSoftDropsExecuted, 5);
     assert.equal(aiPlayer.authoritativeState.pieceIndex, 1);
@@ -654,7 +663,7 @@ test("terminal hard_drop 전 soft_drop 5회와 남은 거리 점수를 실제 in
     assert.deepEqual(lockResult.placementResult.lockedPiece, {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 2,
     });
     assert.equal(aiPlayer.authoritativeState.pieceIndex, 2);
@@ -674,13 +683,13 @@ test("terminal hard_drop 전 soft_drop 5회와 남은 거리 점수를 실제 in
     assert.deepEqual(savedLogs[0].selectedPlacement, {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 2,
         cells: [
-            { row: 18, col: 2 },
-            { row: 18, col: 3 },
-            { row: 19, col: 2 },
-            { row: 19, col: 3 },
+            { row: 38, col: 2 },
+            { row: 38, col: 3 },
+            { row: 39, col: 2 },
+            { row: 39, col: 3 },
         ],
     });
     assert.deepEqual(
@@ -703,10 +712,10 @@ test("terminal hard_drop 전 soft_drop 5회와 남은 거리 점수를 실제 in
     assert.deepEqual(savedLogs[0].activePiece, {
         ...stateBefore.activePiece,
         cells: [
-            { row: -1, col: 3 },
-            { row: -1, col: 4 },
-            { row: 0, col: 3 },
-            { row: 0, col: 4 },
+            { row: 19, col: 3 },
+            { row: 19, col: 4 },
+            { row: 20, col: 3 },
+            { row: 20, col: 4 },
         ],
     });
     assert.deepEqual(aiPlayer.authoritativeState.board, savedLogs[0].boardAfter);
@@ -721,11 +730,11 @@ test("terminal soft_drop이 예상보다 일찍 lock되면 divergence로 처리�
     const aiPlayer = setActivePiece(match, {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 3,
     });
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 19, col: 3 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 39, col: 3 },
         plannedActions: ["hard_drop"],
     });
     let logCount = 0;
@@ -747,7 +756,7 @@ test("terminal soft_drop이 예상보다 일찍 lock되면 divergence로 처리�
     });
 
     await service.processAiStep("PVE-AI-DIVERGED", "ai", gameCore);
-    aiPlayer.authoritativeState.lockDelay = { hasTouchedGround: true, remainingMs: 0, resetCount: 15, lowestRow: 18 };
+    aiPlayer.authoritativeState.lockDelay = { hasTouchedGround: true, remainingMs: 0, resetCount: 15, lowestRow: 38 };
     const result = await service.processAiStep("PVE-AI-DIVERGED", "ai", gameCore);
 
     assert.equal(result.ok, false);
@@ -757,11 +766,11 @@ test("terminal soft_drop이 예상보다 일찍 lock되면 divergence로 처리�
     assert.deepEqual(result.placementResult.lockedPiece, {
         pieceType: "square",
         rotation: 0,
-        row: 18,
+        row: 38,
         col: 3,
     });
-    assert.equal(aiPlayer.authoritativeState.board[18][3], "square");
-    assert.equal(aiPlayer.authoritativeState.board[19][4], "square");
+    assert.equal(aiPlayer.authoritativeState.board[38][3], "square");
+    assert.equal(aiPlayer.authoritativeState.board[39][4], "square");
     assert.equal(aiPlayer.authoritativeState.pieceIndex, 2);
     assert.equal(aiPlayer.aiPlan, null);
     assert.equal(logCount, 0);
@@ -774,11 +783,11 @@ test("실패한 terminal soft_drop은 inputSequence에 기록하지 않는다", 
     const aiPlayer = setActivePiece(match, {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 38, col: 3 },
         plannedActions: ["hard_drop"],
     });
     const appliedActions = [];
@@ -818,13 +827,13 @@ test("selectedPlacement까지 거리가 5보다 짧으면 필요한 soft_drop만
     const aiPlayer = setActivePiece(match, {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
-    aiPlayer.authoritativeState.board[4][3] = "stack";
-    aiPlayer.authoritativeState.board[4][4] = "stack";
+    aiPlayer.authoritativeState.board[24][3] = "stack";
+    aiPlayer.authoritativeState.board[24][4] = "stack";
     const decision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 2, col: 3 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 22, col: 3 },
         plannedActions: ["hard_drop"],
     });
     const service = createPveAiPlayerService({
@@ -851,11 +860,11 @@ test("selectedPlacement까지 거리가 5보다 짧으면 필요한 soft_drop만
         "soft_drop",
         "hard_drop",
     ]);
-    assert.deepEqual(softDropRows, [0, 1, 2]);
+    assert.deepEqual(softDropRows, [20, 21, 22]);
     assert.deepEqual(stepResults.at(-1).placementResult.lockedPiece, {
         pieceType: "square",
         rotation: 0,
-        row: 2,
+        row: 22,
         col: 3,
     });
     assert.equal(aiPlayer.authoritativeState.score, 0);
@@ -866,7 +875,7 @@ test("heuristic policy는 model 설정과 무관하게 V4 loader를 호출하지
     const gameCore = await loadGameCore();
     createPveMatch("PVE-V4-DEFAULT");
     const heuristicDecision = createDecision({
-        selectedPlacement: { pieceType: "square", rotation: 0, row: 18, col: 3 },
+        selectedPlacement: { pieceType: "square", rotation: 0, row: 38, col: 3 },
         plannedActions: ["hard_drop"],
     });
     let modelLoadCount = 0;
@@ -1249,4 +1258,33 @@ test("pending 또는 rejected evidence Promise는 authoritative gameplay를 기�
         assert.equal(result.log, null);
         assert.equal(result.logResult.reason, "V4_TRAINING_LOG_EXCLUDED");
     });
+});
+
+test("40행의 V4 요청은 모델 로드·후보 변환 전에 휴리스틱으로 전환하고 실제 v3 로그를 남긴다", async () => {
+    resetMatches();
+    const core = await loadGameCore();
+    const match = createPveMatch("BUFFER_V4", "normal", "placement_v4");
+    setActivePiece(match, { pieceType: "square", rotation: 0, row: 19, col: 3 });
+    let v4Loads = 0;
+    const logs = [];
+    const decision = createDecision({ selectedPlacement: { pieceType: "square", rotation: 0, row: 38, col: 3 },
+        plannedActions: ["hard_drop"] });
+    const service = createPveAiPlayerService({
+        loadHeuristicAi: createStubAi(decision),
+        loadPlacementV4Ai() { v4Loads++; throw new Error("must not load"); },
+        loadPlacementV4Model() { v4Loads++; throw new Error("must not load"); },
+        savePlacementDecisionLog(log) { logs.push(log); return { ok: true, log, reason: null }; },
+    });
+    const planned = await service.processAiStep("BUFFER_V4", "ai", core);
+    assert.equal(planned.decision.policyRequested, "placement_v4");
+    assert.equal(planned.decision.policyUsed, "heuristic");
+    assert.equal(planned.decision.fallbackReason, "RULESET_INCOMPATIBLE");
+    const { result } = await processUntilPlacement(service, "BUFFER_V4", core);
+    assert.equal(result.ok, true);
+    assert.equal(v4Loads, 0);
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].schemaVersion, 3);
+    assert.equal(logs[0].observation.stage, "post_garbage_spawn");
+    assert.equal(logs[0].observation.nextSpawnOutcome, "clear");
+    assert.equal(validatePlacementDecisionLog(logs[0]).ok, true);
 });

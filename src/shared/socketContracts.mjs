@@ -4,7 +4,7 @@
 // strictObject를 사용해 위조된 playerId 같은 선언되지 않은 필드도 신뢰 경계에서 거부한다.
 // =============================
 import * as z from "zod";
-import { LOCK_DELAY_MS, LOCK_RESET_LIMIT } from "../client/game/state/config.ts";
+import { LOCK_DELAY_MS, LOCK_RESET_LIMIT, BOARD_ROWS, BOARD_COLS } from "../client/game/state/config.ts";
 
 z.config({ jitless: true });
 
@@ -60,7 +60,7 @@ export const roomPublicSchema = z.strictObject({
 });
 
 const boardCellSchema = z.union([pieceTypeSchema, z.literal("garbage")]).nullable();
-export const boardSchema = z.array(z.array(boardCellSchema).length(10)).length(20);
+export const boardSchema = z.array(z.array(boardCellSchema).length(BOARD_COLS)).length(BOARD_ROWS);
 const activePieceSchema = z.strictObject({
     pieceType: z.union([pieceTypeSchema, z.literal("")]),
     rotation: z.number().int().min(0).max(3),
@@ -78,7 +78,7 @@ export const snapshotSchema = z.strictObject({
         hasTouchedGround: z.boolean(),
         remainingMs: z.number().finite().min(0).max(LOCK_DELAY_MS),
         resetCount: z.number().int().min(0).max(LOCK_RESET_LIMIT),
-        lowestRow: z.number().int().min(-4).max(19),
+        lowestRow: z.number().int().min(-4).max(BOARD_ROWS - 1),
     }).optional(),
     board: boardSchema,
     activePiece: activePieceSchema.nullable(),
@@ -101,7 +101,7 @@ const presentationEffectSchema = z.strictObject({
     type: z.literal("line_clear"),
     id: z.string().min(1).max(160),
     pieceIndex: safeNonNegativeIntegerSchema,
-    rows: z.array(z.number().int().min(0).max(19)).max(20),
+    rows: z.array(z.number().int().min(0).max(BOARD_ROWS - 1)).max(4),
     boardBeforeClear: boardSchema,
 });
 const combatEffectSchema = z.strictObject({
@@ -153,6 +153,7 @@ const matchSchema = z.strictObject({
 });
 
 export const handshakeAuthSchema = z.strictObject({
+    protocolVersion: z.literal(2),
     nickname: nicknameSchema,
     playerId: humanPlayerIdSchema.optional(),
     token: sessionTokenSchema.optional(),
@@ -250,6 +251,7 @@ const roomSystemMessageSchema = z.strictObject({
     roomId: roomIdSchema,
 });
 const inputResultSchema = z.strictObject({
+    gameId: z.string().regex(UUID_V4_PATTERN).optional(),
     ok: z.boolean(),
     reason: reasonSchema.nullable(),
     clientSequence: safePositiveIntegerSchema.optional(),
@@ -312,6 +314,7 @@ export const serverToClientSchemas = Object.freeze({
         playerId: humanPlayerIdSchema,
     }),
     "game:authoritative:snapshot": z.strictObject({
+        gameId: z.string().regex(UUID_V4_PATTERN).optional(),
         roomId: roomIdSchema,
         playerId: z.union([humanPlayerIdSchema, heuristicPlayerIdSchema]),
         snapshot: snapshotSchema,

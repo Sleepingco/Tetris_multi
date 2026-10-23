@@ -175,6 +175,20 @@ test("AI expected placement count는 같은 pieceIndex를 중복 집계하지 �
     assert.equal(result.match.players[1].expectedPlacementEventCount, 2);
 });
 
+test("receipt는 match 삭제 뒤에도 서버 규칙 문맥을 보존하고 version 거부로 소비되지 않는다", () => {
+    resetMatches();
+    const created = createMatch(createPlayingRoom("RULES001"));
+    assert.equal(created.match.gameplayRulesVersion, "buffer20-v1");
+    const recorded = recordHumanPlacementReceipt("RULES001", "host-player", 1, 1, 1_000);
+    deleteMatch("RULES001");
+    assert.equal(recorded.receipt.gameplayRulesVersion, "buffer20-v1");
+    const mismatch = authenticateHumanPlacementReceipt("RULES001", "host-player", 1, 1, 1_001, "legacy20-v1");
+    assert.equal(mismatch.reason, "GAMEPLAY_RULES_VERSION_MISMATCH");
+    const accepted = authenticateHumanPlacementReceipt("RULES001", "host-player", 1, 1, 1_001, "buffer20-v1");
+    assert.equal(accepted.ok, true);
+    assert.equal(accepted.receipt.gameId, created.match.gameId);
+});
+
 test("createMatch는 PVE room 난이도를 match 단일 실행 설정으로 복사한다", () => {
     resetMatches();
 
@@ -267,14 +281,14 @@ test("createMatch는 player별 최소 authoritative state를 만든다", () => {
     const expectedSpawnedPiece = {
         pieceType: firstPieceType,
         rotation: 0,
-        row: -1,
-        col: 3,
+        row: 19,
+        col: firstPieceType === "square" ? 4 : 3,
     };
 
     assert.equal(result.ok, true);
     assert.deepEqual(hostPlayer.authoritativeState, {
-        lockDelay: { hasTouchedGround: false, remainingMs: 500, resetCount: 0, lowestRow: -1 },
-        board: Array.from({ length: 20 }, () => Array(10).fill(null)),
+        lockDelay: { hasTouchedGround: false, remainingMs: 500, resetCount: 0, lowestRow: 19 },
+        board: Array.from({ length: 40 }, () => Array(10).fill(null)),
         activePiece: expectedSpawnedPiece,
         pendingPiece: expectedSpawnedPiece,
         pieceQueue: flattenedBag.slice(1),
@@ -414,7 +428,7 @@ test("applyAuthoritativeInputToMatchPlayerState는 move_left를 player authorita
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "tree",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 4,
     };
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
@@ -431,7 +445,7 @@ test("applyAuthoritativeInputToMatchPlayerState는 move_left를 player authorita
     assert.deepEqual(hostPlayer.authoritativeState.activePiece, {
         pieceType: "tree",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 3,
     });
 });
@@ -529,7 +543,7 @@ test("applyAuthoritativeInputToMatchPlayerState는 hard_drop을 player authorita
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     };
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
@@ -549,7 +563,7 @@ test("applyAuthoritativeInputToMatchPlayerState는 hard_drop을 player authorita
     assert.deepEqual(hostPlayer.authoritativeState.activePiece, {
         pieceType: "tree",
         rotation: 0,
-        row: -1,
+        row: 19,
         col: 3,
     });
 });
@@ -564,7 +578,7 @@ test("internal soft_drop은 expectedTransform 없이 기존 authoritative 규칙
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 4,
     };
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
@@ -576,7 +590,7 @@ test("internal soft_drop은 expectedTransform 없이 기존 authoritative 규칙
 
     assert.equal(result.ok, true);
     assert.equal(result.reason, null);
-    assert.equal(hostPlayer.authoritativeState.activePiece.row, 1);
+    assert.equal(hostPlayer.authoritativeState.activePiece.row, 21);
 });
 
 test("applyAuthoritativeInputToMatchPlayerState는 없는 match면 실패 결과를 반환한다", () => {
@@ -635,7 +649,7 @@ test("applyGravityStepToMatchPlayerState는 player authoritativeState에 gravity
     hostPlayer.authoritativeState.activePiece = {
         pieceType: "square",
         rotation: 0,
-        row: 0,
+        row: 20,
         col: 3,
     };
     hostPlayer.authoritativeState.pendingPiece = { ...hostPlayer.authoritativeState.activePiece };
@@ -649,7 +663,7 @@ test("applyGravityStepToMatchPlayerState는 player authoritativeState에 gravity
     assert.deepEqual(hostPlayer.authoritativeState.activePiece, {
         pieceType: "square",
         rotation: 0,
-        row: 1,
+        row: 21,
         col: 3,
     });
     assert.equal(hostPlayer.authoritativeState.currentTick, 1);

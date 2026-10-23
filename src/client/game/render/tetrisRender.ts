@@ -1,3 +1,10 @@
+import { HIDDEN_ROWS, VISIBLE_ROWS, BOARD_ROWS } from "../state/config.ts";
+
+export const UPPER_DISPLAY_ROWS = 4;
+
+export function internalRowToCanvasRow(row: number): number {
+        return UPPER_DISPLAY_ROWS + row - HIDDEN_ROWS;
+}
 // =============================
 // Canvas와 preview 렌더러
 // core/runtime이 확정한 board, activePiece, animation 진행값을 화면에 그리기만 한다.
@@ -227,7 +234,12 @@ export function renderBoardCanvas({
         if (!ctx) return;
 
         const width = cols * CELL_SIZE;
-        const height = rows * CELL_SIZE;
+        const bufferRules = board.length === BOARD_ROWS;
+        const hiddenRows = bufferRules ? HIDDEN_ROWS : 0;
+        const upperRows = bufferRules ? UPPER_DISPLAY_ROWS : 0;
+        const visibleRows = bufferRules ? VISIBLE_ROWS : rows;
+        const height = (upperRows + visibleRows) * CELL_SIZE;
+        if (ctx.canvas.height !== height) ctx.canvas.height = height;
         const canvasStyle = getComputedStyle(ctx.canvas);
         const gridColor = canvasStyle.getPropertyValue("--game-board-grid").trim() || "rgba(255, 255, 255, 0.04)";
 
@@ -238,13 +250,16 @@ export function renderBoardCanvas({
         ctx.strokeStyle = gridColor;
         ctx.lineWidth = 1;
         ctx.beginPath();
-        for (let r = 0; r <= rows; r++) { ctx.moveTo(0, r * CELL_SIZE); ctx.lineTo(width, r * CELL_SIZE); }
-        for (let c = 0; c <= cols; c++) { ctx.moveTo(c * CELL_SIZE, 0); ctx.lineTo(c * CELL_SIZE, height); }
+        for (let r = 1; r <= visibleRows; r++) { ctx.moveTo(0, (r + upperRows) * CELL_SIZE); ctx.lineTo(width, (r + upperRows) * CELL_SIZE); }
+        for (let c = 0; c <= cols; c++) { ctx.moveTo(c * CELL_SIZE, upperRows * CELL_SIZE); ctx.lineTo(c * CELL_SIZE, height); }
         ctx.stroke();
 
+        // 모든 cell과 연출은 동일한 내부 행 좌표를 쓴다.
+        ctx.save();
+        ctx.translate(0, (upperRows - hiddenRows) * CELL_SIZE);
         // === 고정된 플록(seized) 그리기 ===
         ctx.save();
-        for (let row = 0; row < rows; row++) {
+        for (let row = Math.max(0, hiddenRows - upperRows); row < board.length; row++) {
                 // 이 행이 삭제되는(번쩍이는) 중이라면 애니메이션 효과 적용
                 const isFlashing = flashRows && flashRows.some(fr => typeof fr === 'object' ? fr.row === row : fr === row);
 
@@ -331,7 +346,7 @@ export function renderBoardCanvas({
                 ctx.restore();
         }
 
-        if (!activePiece || !activePiece.pieceType) return;
+        if (!activePiece || !activePiece.pieceType) { ctx.restore(); return; }
 
         const currentOffsets = blocks[activePiece.pieceType][activePiece.rotation];
         const color = BLOCK_COLORS[activePiece.pieceType];
@@ -358,6 +373,14 @@ export function renderBoardCanvas({
                         drawBlock(ctx, targetCol, targetRow, color);
                 }
         });
+        ctx.restore();
+        if (bufferRules && currentOffsets.every(([, y]) => internalRowToCanvasRow(activePiece.row + y) < 0)) {
+                ctx.fillStyle = color;
+                for (const col of new Set(currentOffsets.map(([x]) => activePiece.col + x))) {
+                        ctx.fillRect(col * CELL_SIZE + 3, 1, CELL_SIZE - 6, 4);
+                }
+        }
+
 }
 
 /**

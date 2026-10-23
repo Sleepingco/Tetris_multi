@@ -1,3 +1,4 @@
+import { getGameplayLogContext } from "../../shared/gameplayLogContext.js";
 // =============================
 // 서버 확정 경기 종료
 // socket input, gravity, AI, disconnect가 같은 종료 순서를 공유하도록 한 곳에서 조율한다.
@@ -36,7 +37,8 @@ function createGameOverLog(result: Extract<FinishGameResult, { ok: true }>, matc
     if (!match?.gameId) return null;
     return {
         eventType: "game_over",
-        schemaVersion: 1,
+        schemaVersion: match.gameplayRulesVersion === "buffer20-v1" ? 3 : 1,
+        ...(match.gameplayRulesVersion === "buffer20-v1" ? getGameplayLogContext(match.gameplayRulesVersion) : {}),
         gameId: match.gameId,
         roomId: result.room.roomId,
         mode: match?.mode === "pve" ? "pve" : "multi",

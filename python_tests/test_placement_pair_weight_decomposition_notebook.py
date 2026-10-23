@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 NOTEBOOK_PATH = (
     ROOT / "scripts/ml/notebooks/placement_pair_weight_decomposition_experiment.ipynb"
 )
-DOCUMENTATION_PATH = ROOT / "docs/placement-pair-weight-decomposition.md"
+DOCUMENTATION_PATH = ROOT / "docs/ai-ml/experiments/placement-pair-weight-decomposition.md"
 
 
 class PlacementPairWeightDecompositionNotebookContractTest(unittest.TestCase):

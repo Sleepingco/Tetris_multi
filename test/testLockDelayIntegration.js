@@ -24,7 +24,7 @@ test("싱글·멀티 예측·서버는 벽차기 순환을 고정하고 최대 1
         for (const layer of ["single", "multi", "server"]) {
             for (const pieceType of ["bar", "square"]) {
                 time = 0;
-                const piece = { pieceType, rotation: 0, row: 18, col: 3 };
+                const piece = { pieceType, rotation: 0, row: 38, col: 3 };
                 let game;
                 let ticker;
                 let state;
@@ -38,7 +38,7 @@ test("싱글·멀티 예측·서버는 벽차기 순환을 고정하고 최대 1
                     const player = match.players[0];
                     state = player.authoritativeState;
                     Object.assign(state, { activePiece: piece, pendingPiece: { ...piece },
-                        lockDelay: core.updateLockDelay(core.createLockDelay(18), 18, true),
+                        lockDelay: core.updateLockDelay(core.createLockDelay(38), 38, true),
                         pieceQueue: ["tree", "square"] });
                     player.lockUpdatedAt = time;
                     ticker = createAuthoritativeTickerService({
@@ -68,7 +68,7 @@ test("싱글·멀티 예측·서버는 벽차기 순환을 고정하고 최대 1
                         if (pieceType === "square") {
                             act("rotate");
                             rotations++;
-                        } else if (snapshot().activePiece.row === 18) {
+                        } else if (snapshot().activePiece.row === 38) {
                             act("rotate");
                             act("rotate_ccw");
                             rotations += 2;
@@ -93,16 +93,16 @@ test("싱글·멀티 예측·서버는 벽차기 순환을 고정하고 최대 1
         try {
             time = 0;
             game.init({ autoStart: false });
-            const piece = { pieceType: "square", rotation: 0, row: 18, col: 3 };
+            const piece = { pieceType: "square", rotation: 0, row: 38, col: 3 };
             game.applySnapshot({ ...game.getSnapshot(), activePiece: piece, pendingPiece: { ...piece },
                 pieceIndex: 1, pieceQueue: ["tree"],
-                lockDelay: { hasTouchedGround: true, remainingMs: 120, resetCount: 15, lowestRow: 18 } },
+                lockDelay: { hasTouchedGround: true, remainingMs: 120, resetCount: 15, lowestRow: 38 } },
             { resumeGravity: true });
             time += 119;
             callback();
             assert.equal(game.getSnapshot().lockDelay.remainingMs, 1);
             game.syncActivePieceState({ ...game.getSnapshot(), lockDelay: {
-                hasTouchedGround: true, remainingMs: 500, resetCount: 15, lowestRow: 18 } });
+                hasTouchedGround: true, remainingMs: 500, resetCount: 15, lowestRow: 38 } });
             assert.equal(game.getSnapshot().lockDelay.remainingMs, 1);
             game.applySnapshot(game.getSnapshot(), { resumeGravity: true });
             time++;
@@ -120,8 +120,8 @@ test("싱글·멀티 예측·서버는 벽차기 순환을 고정하고 최대 1
 
 test("막힌 soft drop은 즉시 고정하지 않으며 만료 후 입력은 다음 조각에 적용하지 않는다", async () => {
     const core = await loadGameCore();
-    const piece = { pieceType: "square", rotation: 0, row: 18, col: 3 };
-    const state = { board: core.createEmptyBoard(20, 10), activePiece: piece, pendingPiece: { ...piece },
+    const piece = { pieceType: "square", rotation: 0, row: 38, col: 3 };
+    const state = { board: core.createEmptyBoard(40, 10), activePiece: piece, pendingPiece: { ...piece },
         pieceQueue: ["tree"], holdPieceType: null, holdUsedThisDrop: false, score: 0, lines: 0,
         phase: "playing", gameOver: false, combo: -1, backToBack: false,
         currentTick: 0, pieceIndex: 1, pendingGarbageQueue: [], spinRotation: null,
@@ -144,7 +144,7 @@ test("snapshot은 서버 유예의 복사본이며 reconnect 조회로 예산을
         const match = createMatch({ roomId: "LOCKJOIN", mode: "pvp", status: "playing",
             players: [{ playerId: "human", nickname: "test", role: "host" }] }).match;
         const state = match.players[0].authoritativeState;
-        state.lockDelay = { hasTouchedGround: true, remainingMs: 42, resetCount: 15, lowestRow: 18 };
+        state.lockDelay = { hasTouchedGround: true, remainingMs: 42, resetCount: 15, lowestRow: 38 };
         state.spinRotation = { lastKickIndex: 0, usedKick5: true };
         const first = getAuthoritativePlayerSnapshotDto("LOCKJOIN", "human").snapshot;
         assert.deepEqual(first.lockDelay, state.lockDelay);

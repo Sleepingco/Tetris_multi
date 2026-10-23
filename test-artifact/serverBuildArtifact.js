@@ -29,6 +29,7 @@ const PLACEMENT_V4_MODEL_SHA256 = "ff64b0d3e4cd9eb6c6d7920f2cbe961f1d70e4c90ccc6
 const GAME_EVENTS_MIGRATION_PATHS = [
     "server/db/migrations/001_game_events.sql",
     "server/db/migrations/002_lifecycle_event_v2.sql",
+    "server/db/migrations/003_gameplay_log_v3.sql",
 ];
 
 async function listFiles(directory, prefix = "") {
@@ -63,6 +64,7 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
         return file === "app.js"
             || file === "client/package.json"
             || file === "shared/socketContracts.mjs"
+            || file === "shared/gameplayLogContext.js"
             || file === "server/assets/placement-v4-125g-experimental-model.json"
             || /^server\/db\/.+\.js$/.test(file)
             || GAME_EVENTS_MIGRATION_PATHS.includes(file)
@@ -226,9 +228,9 @@ test("clean build는 허용된 production artifact와 실행 가능한 shared co
         core,
     );
     assert.equal(decision.reason, "AI_PLAN_CREATED");
-    assert.equal(decision.decision.policyUsed, "placement_v4");
-    assert.equal(decision.decision.fallbackReason, null);
-    assert.equal(decision.decision.modelSha256, PLACEMENT_V4_MODEL_SHA256);
+    assert.equal(decision.decision.policyUsed, "heuristic");
+    assert.equal(decision.decision.fallbackReason, "RULESET_INCOMPATIBLE");
+    assert.equal(decision.decision.modelSha256, null);
 
     const stackTraceResult = spawnSync(
         process.execPath,

@@ -2,9 +2,23 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-10-21. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
+- Last update: 2026-10-23. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
+
+### 게임 오버·버퍼 존 1~4단계 (2026-10-23)
+
+- [조사·계획과 구현 기록](docs/gameplay/top-out-buffer-zone-plan.md)의 규칙·fixture, v3 저장/migration 3/rollback 기반, 40행 gameplay 통합과 4단계 경계·운영 검증을 완료했다. 현재 검증과 남은 수집 리스크는 §15를 따른다. §12~14는 앞선 checkpoint와 표시 보완 기록이다.
+- 싱글·멀티 예측·서버의 보드는 숨은 20행을 포함한 40×10이다. 최초/next/hold는 공용 생성 함수로 초기 충돌과 한 행 하강을 처리한다. 전체 상단 고정은 줄 삭제·공격·garbage·next 없이 `lock_out`, 그 밖에는 줄 삭제→상쇄→garbage `top_out`→spawn `block_out` 순서다. 천장 밖 T-Spin 코너는 충돌 경계와 일치한다.
+- 열린 천장은 후속 사용자 요청으로 상단 표시 여백을 4행으로 늘린 300×720 Canvas를 쓰며 가시 20행/300×600 크기를 유지한다. 여백을 감싸던 외곽 frame을 제거하고 가시 20행의 측면·바닥만 남겼다. 고정·활성·고스트·착지/줄 효과는 같은 좌표 변환을 쓰고, 더 높은 활성 조각에는 열 위치를 표시한다. 새 handshake protocol 2·40행 snapshot/effect/유예, match UUID와 잘못된 local gameOver 복구를 연결했다.
+- 스폰은 2009 Guideline §3.4와 대조해 기존 좌표가 일치함을 확인했다. 바닥 기준 21·22행(I는 21행)에서 최초 충돌을 검사하고 가능하면 즉시 한 행 내린다. 표시 여백은 바닥 기준 21~24행이고 25~40행의 cell도 board·충돌·줄 삭제·로그에 남는다. 여백 끝을 게임 오버 경계로 사용하지 않으며 gameplay/log/protocol 버전은 그대로다. 상세와 검증은 계획 §14의 후속 기록을 따른다.
+- heuristic은 완전한 문맥에서 실제 다음 조각과 공격 상쇄/garbage 뒤 결과를 평가하고 생존 후보를 우선한다. 미확정 next는 별도로 구분한다. 40행 V4는 모델 로드/추론 전 명시적 heuristic fallback과 본문 사유 표시를 사용한다. 기존 frozen model·20행 분석·dataset은 보존하며 재학습하지 않았다.
+- 새 경기 start/placement/over는 v3로 생성한다. 서버 receipt는 규칙 불일치와 로그 버전 낮추기를 소비 전에 차단한다. 기존 builder/exporter는 v3/40행 규칙을 거부해 기존 ML 입력과 섞지 않는다. 사람 로그의 줄 삭제 직후 관찰을 서버의 최종 승패로 승격하지 않는다.
+- 싱글 후속 버그를 수정했다. 한 행도 내리지 못한 상단 조각의 자동 고정에서 내부 `gameOver`만 바뀌고 React HUD 알림이 빠지던 경로에 표시 발행을 추가했다. next/hold의 500ms 유예 후 종료·유예 중 탈출과 브라우저 종료 표시/재시작을 회귀 검사했다.
+- 4단계 최종 검증: 필수 verify Node **769 pass·기존 조건부 1 skip·0 fail**, 전체 Chromium **58/58**, 격리 PostgreSQL **9/9**, Docker PVP/PVE 정상 2/2·DB 중단 1/1, ML parity Node **35/35**·Python **115/115** 통과. 실제 DB에 terminal lock_out과 여섯 종료 사유를 저장했고 backup/restore·재기동·shutdown·privacy/중복을 확인했다.
+- 격리 완료 2경기·4명의 예상 배치 **25건/저장 21건** 차이는 사람 로그의 `RATE_LIMITED` **4건**과 일치했다. 기존 사람 로그 한도 **10초에 10건**을 유지하므로 빠른 정상 플레이에서도 누락될 수 있고 완전한 행동 모방 dataset은 아니다. 새 규칙의 브라우저 raw 601건을 검증했고 배치 549건은 기존 ML export에서 모두 제외됐다. 19경기 완결/10경기 불완전과 원본 불변을 기록했다.
+- 실제 20행 rollback 빌드와 비교한 40행 후보 평가 p95는 로컬 fixture에서 최대 약 **1.395ms**다. empty/low/high의 BFS 방문 수·후보 수가 같고 임의 탐색 제한을 추가하지 않았다. 8 PVP room/16명의 in-process ticker batch p95는 **0.172ms**, snapshot 평균은 약 **1.65배**다. 전송망·DB·AI가 포함된 운영 처리량 보장은 아니며 [측정 산출물](docs/gameplay/verification/top-out-buffer-zone-stage4-measurement-2026-10-23.json)에 조건·checksum을 남겼다.
+- 사용자 요청으로 5단계 운영 배포를 진행한다. 현재 운영 image 842b744·migration 2·HTTPS 200을 읽기 전용으로 확인했다. main CI와 호환 rollback·유입 차단·backup 이후 직접 SSH 절차로 전환하며 [실행 기록](docs/operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md)에 결과를 남긴다. 실기기·장시간 운영 부하·ML full 평가·행동 모방 데이터 파이프라인은 별도다.
 
 ### T-Spin 기록·Mini 분류 구현 (2026-10-21)
 

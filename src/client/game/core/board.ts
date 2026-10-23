@@ -1,5 +1,6 @@
 import type { PieceState, PlaceablePieceState } from "./piece.ts";
 import type { BlockDefinitions } from "../state/blocks.ts";
+import { BOARD_ROWS, HIDDEN_ROWS } from "../state/config.ts";
 
 export type BoardCell = string | null;
 export type Board = BoardCell[][];
@@ -14,7 +15,7 @@ export type Board = BoardCell[][];
 
 /**
   * 조각의 한 cell이 사용할 수 있는 좌표인지 확인한다.
-  * - 화면 위쪽 바깥(`row < 0`)은 스폰 처리를 위해 비어 있다고 본다.
+  * - 40행 보드의 천장 밖은 막혀 있다. 과거 20행 분석의 음수 스폰 계약은 유지한다.
   * - 좌우 경계 밖이나 바닥 아래는 막힌 칸으로 본다.
   * - 보드 안에서는 값이 `null`인 칸만 비어 있다.
   */
@@ -22,7 +23,8 @@ function isCellEmpty(board: Board, row: number, col: number): boolean {
         const rows = board.length
         const cols = board[0]?.length ?? 0
         if (col < 0 || col >= cols || row >= rows) return false
-        if (row < 0) return true
+        // 20행 분석 자료의 과거 충돌 계약은 보존한다.
+        if (row < 0) return rows !== BOARD_ROWS
         return board[row][col] === null
 }
 
@@ -54,7 +56,7 @@ export function canPlacePiece(
 /**
   * 움직이던 조각의 cell을 고정 블록인 board에 기록한다.
   * - 전달받은 board를 직접 변경하는 함수다.
-  * - 화면 위쪽 cell은 top-out 판정에만 쓰이므로 board에는 기록하지 않는다.
+  * - 보드 안의 숨은 cell도 모두 기록하며 범위 밖 좌표는 기록하지 않는다.
   * - 줄 삭제는 여기서 결정하지 않고 `clearFilledLines`가 별도로 처리한다.
   */
 export function lockPieceOnBoard(
@@ -94,6 +96,12 @@ export function isPieceAboveTop(
         if (!Array.isArray(cells)) return false
 
         return cells.some(([, offsetY]) => piece.row + offsetY < 0)
+}
+
+/** 고정 확정 시 네 cell 전부 skyline 위에 있으면 Lock Out이다. */
+export function isLockOut(piece: PieceState, blocks: BlockDefinitions): boolean {
+        if (!piece.pieceType) return false;
+        return blocks[piece.pieceType][piece.rotation].every(([, offsetY]) => piece.row + offsetY < HIDDEN_ROWS);
 }
 
 /**

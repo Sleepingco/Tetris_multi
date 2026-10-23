@@ -191,8 +191,8 @@ run_migration() {
 
 migration_first="$(run_migration)"
 migration_second="$(run_migration)"
-test "$migration_first" = "PostgreSQL migrations applied=2 skipped=0"
-test "$migration_second" = "PostgreSQL migrations applied=0 skipped=2"
+test "$migration_first" = "PostgreSQL migrations applied=3 skipped=0"
+test "$migration_second" = "PostgreSQL migrations applied=0 skipped=3"
 
 docker exec -i "$database_container" \
     psql --quiet --set ON_ERROR_STOP=1 --username postgres --dbname "$database_name" \
@@ -342,6 +342,27 @@ PLAYWRIGHT_EXTERNAL_SERVER=1 npx --no-install playwright test \
     e2e/multiplayerPve.spec.js \
     --grep 'server game over|PVE server gameOver'
 
+node -e '
+const log = require("./test/fixtures/gameplay-log-v3.json");
+log.authoritativeClientSequence = 7;
+log.authoritativePieceIndex = 5;
+process.stdout.write(JSON.stringify(log));
+' | docker exec -i "$application_container" node -e '
+const fs = require("node:fs");
+const { createRuntimeEventStorage } = require("./dist/server/server/services/runtimeEventStorage.js");
+const log = JSON.parse(fs.readFileSync(0, "utf8"));
+(async () => {
+    const storage = await createRuntimeEventStorage();
+    try {
+        const result = await storage.savePlacementDecisionLog(log);
+        if (!result.ok) throw new Error("V3_COMPATIBLE_WRITE_FAILED");
+        process.stdout.write("[test:docker:postgres] v3_saved_before_gameplay_restart=true\n");
+    } finally {
+        await storage.close();
+    }
+})().catch(() => { process.exitCode = 1; });
+'
+
 stop_application
 
 event_counts="$(docker exec "$database_container" \
@@ -378,6 +399,88 @@ do
         exit 1
     }
 done
+
+cohort_counts="$(docker exec "$database_container" \
+    psql --quiet --tuples-only --no-align --field-separator '|' \
+    --username postgres --dbname "$database_name" --command "
+        WITH expected AS (
+            SELECT e.game_id, e.payload->>'mode' AS mode,
+                   member->>'playerId' AS player_id,
+                   member->>'playerType' AS player_type,
+                   (member->>'expectedPlacementEventCount')::integer AS expected_count
+            FROM tetris_analytics.game_events e
+            CROSS JOIN LATERAL pg_catalog.jsonb_array_elements(
+                e.payload->'expectedPlacementEventCounts'
+            ) member
+            WHERE e.event_type = 'game_over' AND e.schema_version = 3
+        ), actual AS (
+            SELECT game_id, player_id, pg_catalog.count(*)::integer AS stored_count
+            FROM tetris_analytics.game_events
+            WHERE event_type = 'placement_decision'
+            GROUP BY game_id, player_id
+        ), paired AS (
+            SELECT expected.*, COALESCE(actual.stored_count, 0) AS stored_count
+            FROM expected LEFT JOIN actual USING (game_id, player_id)
+        )
+        SELECT pg_catalog.count(DISTINCT game_id), pg_catalog.count(*),
+               COALESCE(pg_catalog.sum(expected_count), 0),
+               COALESCE(pg_catalog.sum(stored_count), 0),
+               COALESCE(pg_catalog.sum(GREATEST(expected_count - stored_count, 0)), 0),
+               COALESCE(pg_catalog.sum(GREATEST(stored_count - expected_count, 0)), 0),
+               pg_catalog.string_agg(mode || '/' || player_type || ':' ||
+                   expected_count || '/' || stored_count, ',' ORDER BY mode, player_type)
+        FROM paired;")"
+IFS='|' read -r completed_games completed_players expected_placements stored_placements \
+    missing_placements unexpected_placements cohort_details <<< "$cohort_counts"
+printf '[test:docker:postgres] completed_games=%s players=%s expected_placements=%s stored_placements=%s missing=%s unexpected=%s details=%s\n' \
+    "$completed_games" "$completed_players" "$expected_placements" "$stored_placements" \
+    "$missing_placements" "$unexpected_placements" "$cohort_details"
+test "$completed_games" -ge 2
+test "$completed_players" -ge 4
+test "$unexpected_placements" = 0
+client_counts="$(node - "$cohort_details" <<'NODE'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const reports = [];
+function visit(directory) {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+        const file = path.join(directory, entry.name);
+        if (entry.isDirectory()) visit(file);
+        else if (entry.name === "placement-log-cohort.json") reports.push(JSON.parse(fs.readFileSync(file, "utf8")));
+    }
+}
+visit("test-results");
+assert.equal(reports.length, 2);
+assert.deepEqual(reports.map(value => value.mode).sort(), ["multi", "pve"]);
+const database = process.argv[2].split(",").map(value => {
+    const match = /^(multi|pve)\/(human|heuristic_ai):(\d+)\/(\d+)$/.exec(value);
+    assert.ok(match);
+    return { mode: match[1], type: match[2], expected: Number(match[3]), stored: Number(match[4]) };
+});
+for (const report of reports) {
+    assert.equal(report.committed, report.sent);
+    assert.equal(report.accepted + report.rateLimited, report.sent);
+    const human = database.filter(value => value.mode === report.mode && value.type === "human");
+    assert.equal(human.reduce((sum, value) => sum + value.expected, 0), report.committed);
+    assert.equal(human.reduce((sum, value) => sum + value.stored, 0), report.accepted);
+}
+for (const value of database.filter(value => value.type === "heuristic_ai")) assert.equal(value.expected, value.stored);
+const sum = key => reports.reduce((total, report) => total + report[key], 0);
+process.stdout.write([sum("committed"), sum("accepted"), sum("rateLimited")].join("|"));
+NODE
+)"
+IFS='|' read -r client_committed client_accepted client_rate_limited <<< "$client_counts"
+test "$missing_placements" = "$client_rate_limited" || {
+    echo "BUFFER_COHORT_UNEXPLAINED_MISSING" >&2
+    exit 1
+}
+test "$((expected_placements - client_committed))" = "$((stored_placements - client_accepted))" || {
+    echo "BUFFER_COHORT_AI_COUNT_MISMATCH" >&2
+    exit 1
+}
+printf '[test:docker:postgres] client_committed=%s client_accepted=%s rate_limited=%s unexplained_missing=0\n' \
+    "$client_committed" "$client_accepted" "$client_rate_limited"
 
 privacy_count="$(docker exec "$database_container" \
     psql --quiet --tuples-only --no-align \

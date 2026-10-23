@@ -140,6 +140,9 @@ export function getPlacementV4PveDecision(
     const firstEvaluation = evaluations[0];
     if (!firstEvaluation) return createNoPlacementFailure();
 
+    if (gameState.board.length === 40) {
+        return createHeuristicFallback(firstEvaluation, evaluations.length, "RULESET_INCOMPATIBLE");
+    }
     let candidates: PlacementV4Candidate[];
     try {
         candidates = evaluations.map(toV4Candidate);

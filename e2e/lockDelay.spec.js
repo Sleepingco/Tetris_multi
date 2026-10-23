@@ -6,10 +6,11 @@ async function readSkyCells(page) {
     return page.locator("#tetrisBoardCanvas").evaluate(canvas => {
         const ctx = canvas.getContext("2d");
         const cells = [];
+        const visibleTop = canvas.height - 20 * canvas.width / 10;
         for (let row = 14; row < 20; row++) {
             for (let col = 0; col < 10; col++) {
                 const [r, g, b, a] = ctx.getImageData((col + 0.5) * canvas.width / 10,
-                    (row + 0.5) * canvas.height / 20, 1, 1).data;
+                    visibleTop + (row + 0.5) * canvas.width / 10, 1, 1).data;
                 if (a >= 240 && Math.abs(r - 14) <= 4 && Math.abs(g - 165) <= 4 && Math.abs(b - 233) <= 4) {
                     cells.push({ row, col });
                 }

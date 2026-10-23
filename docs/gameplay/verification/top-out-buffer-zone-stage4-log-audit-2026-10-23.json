@@ -1,0 +1,52 @@
+{
+    "schemaVersion": 1,
+    "sourceSha256": "2f1a8cf1f347aa4cc21926f5e216fdeb84976b16211188fe908363a5237a676b",
+    "sourceBytes": 3721276,
+    "eventCounts": {
+        "game_start": 29,
+        "placement_decision": 549,
+        "game_over": 23
+    },
+    "observationStages": {
+        "post_line_clear": 55,
+        "post_garbage_spawn": 494
+    },
+    "placementSources": {
+        "human": 55,
+        "heuristic_ai": 494
+    },
+    "largestCanonicalBytes": 8074,
+    "import": {
+        "failures": 0,
+        "canonical": {
+            "eventCount": 601,
+            "eventTypeCounts": {
+                "game_over": 23,
+                "game_start": 29,
+                "placement_decision": 549
+            },
+            "orderedEventSha256": "49164f5fd0d2ac8823466e0ca95a6071cdb17f70efa7a42a23e0dde6ac35e510",
+            "uniqueIdentityCount": 601,
+            "duplicateIdentityCount": 0,
+            "conflictIdentityCount": 0
+        },
+        "completeness": {
+            "gameCount": 29,
+            "completeGameCount": 19,
+            "ambiguousGameCount": 0,
+            "incompleteGameCount": 10,
+            "reasonCodeCounts": {
+                "lifecycle_over_missing": 6,
+                "placement_tail_count_mismatch": 4
+            }
+        }
+    },
+    "legacyExport": {
+        "train": 0,
+        "validation": 0,
+        "rejected": 549,
+        "reason": "UNSUPPORTED_GAMEPLAY_RULESET"
+    },
+    "sourceUnchanged": true,
+    "scope": "synthetic browser cohort; not production data or an action-imitation dataset"
+}

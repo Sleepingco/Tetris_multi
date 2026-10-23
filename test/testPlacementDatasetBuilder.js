@@ -426,3 +426,16 @@ test("입력 sample 순서가 바뀌어도 gameId별 split과 출력 순서가 �
     assert.deepEqual(createGameSplitMap(forward), createGameSplitMap(reversed));
     assert.deepEqual(forward, reversed);
 });
+
+test("기존 학습 builder는 v2로 표시한 40행 로그와 새 규칙 metadata도 거부한다", async () => {
+    const { buildPlacementDataset } = await import("../src/client/game/ai/dataset/placementDatasetBuilder.ts");
+    const log = await createValidLog();
+    for (const changed of [
+        { ...log, boardBefore: [...Array.from({ length: 20 }, () => Array(10).fill(null)), ...log.boardBefore] },
+        { ...log, gameplayRulesVersion: "buffer20-v1" },
+    ]) {
+        const result = buildPlacementDataset([changed]);
+        assert.equal(result.samples.length, 0);
+        assert.equal(result.rejected[0].reason, "UNSUPPORTED_GAMEPLAY_RULESET");
+    }
+});

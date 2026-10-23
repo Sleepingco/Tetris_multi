@@ -2,15 +2,15 @@
  * 브라우저와 AI가 만든 game log를 영속화하기 전 검사하는 신뢰 경계다.
  *
  * 공통 검사에서 JSON 직렬화 가능성, 최대 256 KiB, schema version을 확인한 뒤 event별
- * 필드를 검사한다. game_start/game_over는 v1을, placement_decision은 legacy v1과
- * dataset용 v2 계약을 검증한다. v2는 재생성에 필요한 board·piece·metrics·source/model
- * 계약까지 포함한다.
+ * 필드를 검사한다. 기존 lifecycle v1과 placement v1/v2를 보존하고 v3는 40행
+ * 규칙·좌표·관찰 문맥을 추가 검증한다. v2/v3는 board·piece·metrics·source/model도 검사한다.
  */
 
 import {
     isValidAiDifficulty,
     isValidAiPolicy,
 } from "../services/aiDifficulty.js";
+import { isValidGameplayLogV3 } from "./gameplayLogV3.js";
 
 export const DEFAULT_MAX_LOG_BYTES = 256 * 1024;
 
@@ -56,7 +56,7 @@ export function validatePlacementDecisionLog(
 ): LogValidationResult {
     const baseResult = validateBaseLog(log, {
         ...options,
-        allowedSchemaVersions: [1, 2],
+        allowedSchemaVersions: [1, 2, 3],
     });
     if (!baseResult.ok || !isPlainObject(log)) return baseResult;
 
@@ -97,6 +97,10 @@ export function validatePlacementDecisionLog(
 
     if (log.schemaVersion === 1) {
         return validateLegacyPlacementDecisionLog(log);
+    }
+
+    if (log.schemaVersion === 3 && !isValidGameplayLogV3(log, "placement_decision")) {
+        return createFailure("INVALID_V3_GAMEPLAY_CONTEXT");
     }
 
     return validatePlacementDecisionLogV2(log);
@@ -187,11 +191,14 @@ export function validateGameStartLog(
     log: unknown,
     options: ValidationOptions = {},
 ): LogValidationResult {
-    const baseResult = validateBaseLog(log, options);
+    const baseResult = validateBaseLog(log, { ...options, allowedSchemaVersions: options.allowedSchemaVersions ?? [1, 3] });
     if (!baseResult.ok || !isPlainObject(log)) return baseResult;
 
     if (log.eventType !== "game_start") {
         return createFailure("INVALID_EVENT_TYPE");
+    }
+    if (log.schemaVersion === 3 && !isValidGameplayLogV3(log, "game_start")) {
+        return createFailure("INVALID_V3_GAMEPLAY_CONTEXT");
     }
 
     if (!isNonEmptyString(log.gameId)) {
@@ -233,11 +240,14 @@ export function validateGameOverLog(
     log: unknown,
     options: ValidationOptions = {},
 ): LogValidationResult {
-    const baseResult = validateBaseLog(log, options);
+    const baseResult = validateBaseLog(log, { ...options, allowedSchemaVersions: options.allowedSchemaVersions ?? [1, 3] });
     if (!baseResult.ok || !isPlainObject(log)) return baseResult;
 
     if (log.eventType !== "game_over") {
         return createFailure("INVALID_EVENT_TYPE");
+    }
+    if (log.schemaVersion === 3 && !isValidGameplayLogV3(log, "game_over")) {
+        return createFailure("INVALID_V3_GAMEPLAY_CONTEXT");
     }
 
     if (!isNonEmptyString(log.gameId)) {

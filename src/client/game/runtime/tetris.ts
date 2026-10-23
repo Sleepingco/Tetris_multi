@@ -5,7 +5,7 @@ import {
     canPlacePiece,
     lockPieceOnBoard,
     clearFilledLines,
-    isPieceAboveTop,
+    isLockOut,
 } from "../core/board.ts"
 import { calculateGarbageAttack } from "../core/garbage.ts"
 import { resolveAttackState } from "../core/attackState.ts"
@@ -15,7 +15,7 @@ import {
     resolveMoveIntent,
 } from "../core/step.ts"
 import type { MoveIntent } from "../core/step.ts"
-import { createSpawnedPiece, getHardDropRow } from "../core/piece.ts"
+import { getSpawnedPiece, createSpawnedPiece, getHardDropRow } from "../core/piece.ts"
 import type { PieceState, PlaceablePieceState } from "../core/piece.ts"
 import type { Board } from "../core/board.ts"
 import { createLockDelay, updateLockDelay, shouldLockPiece } from "../core/lockDelay.ts";
@@ -29,6 +29,7 @@ import type { RuntimeDisplayHandle } from "./displayBridge.ts"
 import { INPUT_ACTION } from "./input.ts"
 import type { InputAction } from "./input.ts"
 import {
+    BUFFER_GAMEPLAY_LOG_CONTEXT,
     BOARD_ROWS,
     BOARD_COLS,
     SPAWN_POSITION,
@@ -107,10 +108,11 @@ type PlacementResult = {
     scoreAfter: number;
     scoreDelta: number;
     gameOver: boolean;
+    gameOverReason?: "lock_out";
 };
 type PlacementContext = {
     eventType: "placement_decision";
-    schemaVersion: 1;
+    schemaVersion: 3;
     mode: RuntimeMode;
     gameId: string | null;
     roomId: string | null;
@@ -127,7 +129,11 @@ type PlacementContext = {
     selectedPlacement: PieceLog;
 };
 export type PlacementDecisionLog = Omit<PlacementContext, "scoreBefore" | "schemaVersion"> & {
-    schemaVersion: 1 | 2;
+    schemaVersion: 3;
+    gameplayRulesVersion: typeof BUFFER_GAMEPLAY_LOG_CONTEXT.gameplayRulesVersion;
+    coordinateSystem: typeof BUFFER_GAMEPLAY_LOG_CONTEXT.coordinateSystem;
+    geometry: typeof BUFFER_GAMEPLAY_LOG_CONTEXT.geometry;
+    observation: { stage: "lock_commit" | "post_line_clear"; nextSpawnOutcome: "not_evaluated"; terminalOutcome: "lock_out" | null };
     boardAfter: Board;
     placementResult: PlacementResult;
     source?: "human";
@@ -383,7 +389,7 @@ export function createTetrisRuntime({
 
     /**
       * 이전 세션의 loop를 먼저 끊고 gameState와 runtime의 세션별 값을 기본값으로 되돌린다.
-      * board는 여기서 처음 실제 20x10 배열이 되며 UI 표시도 같은 값으로 맞춘다.
+      * board는 여기서 처음 실제 40x10 배열이 되며 UI 표시도 같은 값으로 맞춘다.
       */
     function resetSessionState(): void {
         stopGameLoops()
@@ -452,7 +458,7 @@ export function createTetrisRuntime({
             displayBridge.publishDisplay()
             return
         }
-        const nextActivePiece = createSpawnedPiece(currentType, SPAWN_ROW, SPAWN_COL)
+        const nextActivePiece = getSpawnedPiece(gameState.board!, currentType) ?? createSpawnedPiece(currentType, SPAWN_ROW, currentType === "square" ? 4 : SPAWN_COL)
 
         runtime.pieceIndex++
         activateSpawnedPiece(nextActivePiece)
@@ -490,7 +496,7 @@ export function createTetrisRuntime({
             return { applied: false, reason: "NO_PIECE_AVAILABLE" }
         }
 
-        const swappedPiece = createSpawnedPiece(incomingType, SPAWN_ROW, SPAWN_COL)
+        const swappedPiece = getSpawnedPiece(gameState.board!, incomingType) ?? createSpawnedPiece(incomingType, SPAWN_ROW, incomingType === "square" ? 4 : SPAWN_COL)
 
         activateSpawnedPiece(swappedPiece)
         gameState.holdUsedThisDrop = true
@@ -751,7 +757,7 @@ export function createTetrisRuntime({
         }
     }
 
-    /** 입력과 중력이 같은 고정 예산을 사용하며 만료된 접지 조각만 고정한다. */
+    /** 만료된 접지 조각을 고정하고 입력·중력 처리 전 종료된 경우에도 HUD에 결과를 발행한다. */
     function refreshLockDelay(reset = false): boolean {
         const now = performance.now();
         const elapsedMs = Math.max(0, now - runtime.lockUpdatedAt);
@@ -762,6 +768,7 @@ export function createTetrisRuntime({
         gameState.lockDelay = updateLockDelay(gameState.lockDelay, piece.row, grounded, elapsedMs, reset);
         if (!shouldLockPiece(gameState.lockDelay, grounded)) return false;
         seizeBlock();
+        displayBridge.publishDisplay();
         return true;
     }
 
@@ -884,7 +891,7 @@ export function createTetrisRuntime({
         const lockedPiece: PlaceablePieceState = { ...activePiece }
         const placementContext = createPlacementDecisionContext(lockedPiece)
         runtime.decisionStartPiece = null
-        const touchesAboveTop = isPieceAboveTop(activePiece, BLOCKS)
+        const touchesAboveTop = isLockOut(activePiece, BLOCKS)
         gameState.tSpinType = classifyTSpin({
             board,
             piece: activePiece,
@@ -931,7 +938,7 @@ export function createTetrisRuntime({
             ui.showGameOver()
             finalizePlacementDecision(placementContext, {
                 linesCleared: 0,
-                tSpinType: gameState.tSpinType,
+                tSpinType: "none",
                 gameOver: true,
             })
             return
@@ -1230,7 +1237,7 @@ export function createTetrisRuntime({
       * authoritative gameplay state와 분리된 line clear 표시만 재생한다.
       * - 전달받은 clear 전 보드 복사본만 애니메이션에 사용한다.
       * - 완료 후 현재 runtime의 최신 authoritative 보드를 다시 렌더링한다.
-      * - rows와 20x10 board 계약을 검사하지만 점수, phase, 중력은 변경하지 않는다.
+      * - rows와 40x10 board 계약을 검사하지만 점수, phase, 중력은 변경하지 않는다.
       */
     function playLineClearPresentation({ rows, board }: {
         rows?: number[];
@@ -1315,7 +1322,7 @@ export function createTetrisRuntime({
 
         return {
             eventType: "placement_decision",
-            schemaVersion: 1,
+            schemaVersion: 3,
             mode: runtime.mode,
             gameId: runtime.gameId,
             roomId: runtime.roomId,
@@ -1338,7 +1345,7 @@ export function createTetrisRuntime({
     /**
       * lock과 line clear가 끝난 상태를 더해 placement_decision 한 행을 완성한다.
       * - boardBefore/선택 배치와 boardAfter/점수·공격 결과를 한 decision으로 묶는다.
-      * - 유효한 게임 lineage와 분석 결과가 모두 있으면 ML feature-ready schema v2, 아니면 원시 v1로 남긴다.
+      * - 40행 로그는 v3로 남기고, 유효한 판단 시작 상태가 있어야 서버 저장 검증을 통과한다.
       * - 클라이언트 공격량은 기록용이며 garbage 상쇄·적용의 최종 결정은 authoritative 서버가 한다.
       * - 완성 로그는 메모리에 보관하고 선택적인 recorder로 전달한다.
       */
@@ -1350,15 +1357,22 @@ export function createTetrisRuntime({
 
         const { scoreBefore, ...logBase } = placementContext
         const scoreAfter = gameState.score
-        const attackState = updateAttackState({
-            linesCleared: result.linesCleared,
-            tSpinType: result.tSpinType,
-        })
+        const attackState = result.gameOver
+            ? { linesCleared: 0, tSpinType: "none" as const, combo: 0, backToBack: gameState.backToBack }
+            : updateAttackState({ linesCleared: result.linesCleared, tSpinType: result.tSpinType })
         const rawAttackLines = calculateGarbageAttack(attackState)
         const boardAfter = serializeGameState(gameState).board
         if (!boardAfter) return { gameOver: false }
         const log: PlacementDecisionLog = {
             ...logBase,
+            ...BUFFER_GAMEPLAY_LOG_CONTEXT,
+            source: "human",
+            modelType: null,
+            observation: {
+                stage: result.gameOver ? "lock_commit" : "post_line_clear",
+                nextSpawnOutcome: "not_evaluated",
+                terminalOutcome: result.gameOver ? "lock_out" : null,
+            },
             boardAfter,
             placementResult: {
                 linesCleared: result.linesCleared,
@@ -1375,6 +1389,7 @@ export function createTetrisRuntime({
                 scoreAfter,
                 scoreDelta: scoreAfter - scoreBefore,
                 gameOver: result.gameOver,
+                ...(result.gameOver ? { gameOverReason: "lock_out" as const } : {}),
             },
         }
 
@@ -1390,7 +1405,7 @@ export function createTetrisRuntime({
             typeof log.roomId === "string" && log.roomId.length > 0 &&
             typeof log.playerId === "string" && log.playerId.length > 0
         ) {
-            log.schemaVersion = 2
+            log.schemaVersion = 3
             log.source = "human"
             log.modelType = null
             log.metricsBefore = analysis.metricsBefore

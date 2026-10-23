@@ -162,6 +162,10 @@ export function registerSocketHandlers(
                 next(createSessionError("SESSION_RATE_LIMITED"))
                 return
             }
+            if (authRecord.protocolVersion !== 2) {
+                next(createSessionError("GAMEPLAY_PROTOCOL_INCOMPATIBLE"));
+                return;
+            }
             const nickname = authRecord.nickname
             const hasInvalidNickname = typeof nickname !== "string"
                 || !nickname.trim()

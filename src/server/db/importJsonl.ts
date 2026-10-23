@@ -84,6 +84,7 @@ type PlacementState = {
 
 type GameState = {
     gameId: string;
+    rulesVersions: Set<string>;
     starts: LifecycleState[];
     overs: LifecycleState[];
     placements: Map<string, PlacementState>;
@@ -250,6 +251,7 @@ function addCompletenessEvent(
     if (!game) {
         game = {
             gameId: event.gameId,
+            rulesVersions: new Set(),
             starts: [],
             overs: [],
             placements: new Map(),
@@ -257,6 +259,7 @@ function addCompletenessEvent(
         };
         games.set(event.gameId, game);
     }
+    game.rulesVersions.add(event.schemaVersion === 3 ? String(event.payload.gameplayRulesVersion) : "legacy20-v1");
     if (event.eventType === "game_start") {
         game.starts.push(lifecycleState(event));
         return;
@@ -292,6 +295,7 @@ function gameCompleteness(game: GameState): {
     if (game.overs.length === 0) reasons.add("lifecycle_over_missing");
     if (game.overs.length > 1) reasons.add("lifecycle_over_duplicate");
     if (game.idempotencyConflict) reasons.add("idempotency_conflict");
+    if (game.rulesVersions.size > 1) reasons.add("gameplay_rules_version_mismatch");
 
     const start = game.starts.length === 1 ? game.starts[0] : null;
     const over = game.overs.length === 1 ? game.overs[0] : null;
@@ -331,6 +335,8 @@ function gameCompleteness(game: GameState): {
         }
     } else if (over?.schemaVersion === 1) {
         reasons.add("legacy_unknown_tail");
+    } else if (over) {
+        reasons.add("expected_placement_counts_missing");
     }
 
     const reasonCodes = Object.freeze([...reasons].sort());
@@ -344,7 +350,7 @@ function gameCompleteness(game: GameState): {
             .update(canonicalJson(["identity-v1", "game", game.gameId]), "utf8")
             .digest("hex"),
         status,
-        mlExportEligible: status === "complete",
+        mlExportEligible: status === "complete" && game.rulesVersions.has("legacy20-v1"),
         reasonCodes,
     });
 }

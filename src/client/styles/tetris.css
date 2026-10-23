@@ -375,10 +375,6 @@ kbd {
 .playfield {
     position: relative;
     padding: 1rem;
-    background: var(--game-panel-soft);
-    border-radius: 6px;
-    box-shadow: var(--game-shadow);
-    border: 1px solid var(--game-border);
     display: flex;
     justify-content: center;
 }
@@ -387,12 +383,28 @@ kbd {
     min-height: 380px;
 }
 
-.playground>canvas {
+.playground {
+    --board-visible-top: calc(100% / 6);
+    position: relative;
+}
+
+/* 상단 4행은 열린 여백으로 두고 가시 20행에만 옆면과 바닥 테두리를 그린다. */
+.playground::after {
+    content: "";
+    position: absolute;
+    inset: var(--board-visible-top) 0 0;
     border: 1px solid var(--game-border);
+    border-top: 0;
+    border-radius: 0 0 4px 4px;
+    pointer-events: none;
+}
+
+.playground>canvas {
+    border: 0;
     width: 300px;
-    height: 600px;
-    background: var(--game-board-bg);
-    border-radius: 4px;
+    height: 720px;
+    background: linear-gradient(to bottom, transparent 0% var(--board-visible-top), var(--game-board-bg) var(--board-visible-top) 100%);
+    border-radius: 0 0 4px 4px;
     display: block;
     box-shadow: var(--game-shadow);
 }
@@ -548,7 +560,7 @@ kbd {
 .board-with-incoming .playground > canvas {
     width: 100%;
     height: auto;
-    aspect-ratio: 1 / 2;
+    aspect-ratio: 5 / 12;
 }
 
 .incoming-root {
@@ -873,7 +885,7 @@ kbd {
     .player-column .playground > canvas {
         width: 100%;
         height: auto;
-        aspect-ratio: 1 / 2;
+        aspect-ratio: 5 / 12;
     }
 
     .single-layout > .panel--right {
@@ -984,4 +996,10 @@ kbd {
         padding: 0.5rem 0.65rem;
         font-size: 0.8rem;
     }
+}
+
+.ai-fallback-reason {
+    display: block;
+    font-size: 0.75rem;
+    overflow-wrap: anywhere;
 }

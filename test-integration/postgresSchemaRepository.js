@@ -60,6 +60,7 @@ const HOSTILE_DATABASE = "tetris_goal9b_hostile";
 const RELEASE_DATABASE = "tetris_goal9b_release";
 const OLD_SCHEMA_DATABASE = "tetris_goal9b_old_schema";
 const LOCAL_IMPORT_DATABASE = "tetris_goal9c_local_import";
+const V3_COMPAT_DATABASE = "tetris_gameplay_v3_compat";
 const DATABASES = [
     MAIN_DATABASE,
     CONCURRENT_DATABASE,
@@ -68,6 +69,7 @@ const DATABASES = [
     RELEASE_DATABASE,
     OLD_SCHEMA_DATABASE,
     LOCAL_IMPORT_DATABASE,
+    V3_COMPAT_DATABASE,
 ];
 const ADVISORY_LOCK_KEY = "9026072300090001";
 
@@ -373,8 +375,8 @@ async function verifyMigrations(plainUrl) {
     const second = await runPostgresMigrations(
         migrationOptions(plainUrl, MAIN_DATABASE, "goal9b-migrate-second"),
     );
-    assert.deepEqual(first, { applied: 2, skipped: 0 });
-    assert.deepEqual(second, { applied: 0, skipped: 2 });
+    assert.deepEqual(first, { applied: 3, skipped: 0 });
+    assert.deepEqual(second, { applied: 0, skipped: 3 });
 
     const adminUrl = databaseUrl(plainUrl, "postgres", MAIN_DATABASE);
     await withClient(clientConfig(adminUrl), async client => {
@@ -383,7 +385,7 @@ async function verifyMigrations(plainUrl) {
               FROM tetris_analytics.schema_migrations
              ORDER BY version
         `);
-        assert.equal(history.rowCount, 2);
+        assert.equal(history.rowCount, 3);
         assert.equal(history.rows[0].version, 1);
         assert.equal(history.rows[0].name, "game_events");
         assert.match(history.rows[0].checksum, /^[0-9a-f]{64}$/);
@@ -391,6 +393,8 @@ async function verifyMigrations(plainUrl) {
         assert.equal(history.rows[1].version, 2);
         assert.equal(history.rows[1].name, "lifecycle_event_v2");
         assert.match(history.rows[1].checksum, /^[0-9a-f]{64}$/);
+        assert.equal(history.rows[2].version, 3);
+        assert.equal(history.rows[2].name, "gameplay_log_v3");
 
         const invalidHistoryRows = [
             [-1, "negative", sha256("negative")],
@@ -470,8 +474,8 @@ async function verifyMigrations(plainUrl) {
             migrationOptions(plainUrl, CONCURRENT_DATABASE, "goal9b-concurrent-b"),
         ),
     ]);
-    assert.equal(concurrentResults.reduce((sum, value) => sum + value.applied, 0), 2);
-    assert.equal(concurrentResults.reduce((sum, value) => sum + value.skipped, 0), 2);
+    assert.equal(concurrentResults.reduce((sum, value) => sum + value.applied, 0), 3);
+    assert.equal(concurrentResults.reduce((sum, value) => sum + value.skipped, 0), 3);
 
     const concurrentAdminUrl = databaseUrl(
         plainUrl,
@@ -535,7 +539,7 @@ async function verifyMigrations(plainUrl) {
             recursive: true,
         });
         await writeFile(
-            path.join(failureDirectory, "003_forced_failure.sql"),
+            path.join(failureDirectory, "004_forced_failure.sql"),
             `CREATE TABLE tetris_analytics.must_rollback (id integer PRIMARY KEY);
 SELECT 1 / 0;
 `,
@@ -568,14 +572,14 @@ SELECT 1 / 0;
                        )::integer AS open_runner_count
             `);
             assert.equal(state.rows[0].rolled_back_table, null);
-            assert.equal(state.rows[0].migration_count, 2);
+            assert.equal(state.rows[0].migration_count, 3);
             assert.equal(state.rows[0].open_runner_count, 0);
         });
         assert.deepEqual(
             await runPostgresMigrations(
                 migrationOptions(plainUrl, FAILURE_DATABASE, "goal9b-after-failure"),
             ),
-            { applied: 0, skipped: 2 },
+            { applied: 0, skipped: 3 },
         );
     } finally {
         await rm(failureDirectory, { recursive: true, force: true });
@@ -817,7 +821,7 @@ async function verifySchemaAndRoles(plainUrl) {
             SELECT version, name, checksum
               FROM tetris_analytics.schema_migrations
         `);
-        assert.equal(history.rowCount, 2);
+        assert.equal(history.rowCount, 3);
         const allowed = await client.query(`
             SELECT event_id, event_type, game_id, player_id, piece_index, event_sha256
               FROM tetris_analytics.game_events
@@ -1894,6 +1898,7 @@ async function verifySourceLessArtifact(plainUrl) {
         for (const filename of [
             "001_game_events.sql",
             "002_lifecycle_event_v2.sql",
+            "003_gameplay_log_v3.sql",
         ]) {
             const sourceSql = await readFile(
                 path.join(SOURCE_MIGRATIONS_DIRECTORY, filename),
@@ -1920,8 +1925,8 @@ async function verifySourceLessArtifact(plainUrl) {
             ["run", "db:migrate", "--silent"],
             environment,
         );
-        assert.equal(first, "PostgreSQL migrations applied=2 skipped=0\n");
-        assert.equal(second, "PostgreSQL migrations applied=0 skipped=2\n");
+        assert.equal(first, "PostgreSQL migrations applied=3 skipped=0\n");
+        assert.equal(second, "PostgreSQL migrations applied=0 skipped=3\n");
 
         const importFixturePath = path.join(releaseRoot, "import-fixture.jsonl");
         const releaseStart = runtimeGameStart(
@@ -2036,6 +2041,89 @@ try {
     }
 }
 
+async function verifyGameplayLogV3(plainUrl) {
+    const directory = await mkdtemp(path.join(os.tmpdir(), "tetris-v3-migration-"));
+    const adminUrl = databaseUrl(plainUrl, "postgres", V3_COMPAT_DATABASE);
+    try {
+        for (const filename of ["001_game_events.sql", "002_lifecycle_event_v2.sql"]) {
+            await cp(path.join(SOURCE_MIGRATIONS_DIRECTORY, filename), path.join(directory, filename));
+        }
+        const beforeMigration = await runPostgresMigrations(migrationOptions(
+            plainUrl, V3_COMPAT_DATABASE, "v3-legacy-bootstrap", { migrationsDirectory: directory },
+        ));
+        assert.deepEqual(beforeMigration, { applied: 2, skipped: 0 });
+        await withClient(clientConfig(adminUrl), client => client.query(
+            `GRANT CONNECT ON DATABASE ${quoteIdentifier(V3_COMPAT_DATABASE)} TO ${quoteIdentifier(RUNTIME_ROLE)}`,
+        ));
+        await grantEventWriterPrivileges(plainUrl, V3_COMPAT_DATABASE, RUNTIME_ROLE);
+        const runtimeUrl = databaseUrl(plainUrl, RUNTIME_ROLE, V3_COMPAT_DATABASE);
+        const repository = createPostgresEventRepository({ connectionUrl: runtimeUrl });
+        const legacy = createPlacementEvent({ gameId: "legacy-before-v3" });
+        const legacyId = prepareCanonicalGameEvent(legacy).eventId;
+        assert.equal((await repository.append(legacy)).status, "inserted");
+        const legacyRow = () => withClient(clientConfig(adminUrl), async client => (
+            await client.query("SELECT event_id, event_sha256, payload, ingested_at FROM tetris_analytics.game_events WHERE event_id=$1", [legacyId])
+        ).rows[0]);
+        const before = await legacyRow();
+        assert.deepEqual(await runPostgresMigrations(migrationOptions(plainUrl, V3_COMPAT_DATABASE, "v3-upgrade")), { applied: 1, skipped: 2 });
+        assert.deepEqual(await runPostgresMigrations(migrationOptions(plainUrl, V3_COMPAT_DATABASE, "v3-rerun")), { applied: 0, skipped: 3 });
+        assert.deepEqual(await legacyRow(), before);
+        await repository.verifyReady(3);
+        await assert.rejects(repository.verifyReady(2), { code: "POSTGRES_SCHEMA_VERSION_MISMATCH" });
+
+        const { projectGameEventLog } = require("../dist/server/server/services/gameEventProjector.js");
+        const raw = { ...require("../test/fixtures/gameplay-log-v3.json"), authoritativeClientSequence: 7, authoritativePieceIndex: 5 };
+        const event = projectGameEventLog(raw);
+        assert.equal((await repository.append(event)).status, "inserted");
+        assert.equal((await repository.append(event)).status, "duplicate");
+        const conflict = structuredClone(event);
+        conflict.payload.placementResult.scoreDelta += 1;
+        assert.equal((await repository.append(conflict)).status, "conflict");
+        const terminal = structuredClone(raw);
+        terminal.gameId = "v3-terminal-lock-out";
+        terminal.selectedPlacement.row = 18;
+        terminal.selectedPlacement.cells = terminal.selectedPlacement.cells.map(cell => ({ ...cell, row: cell.row - 20 }));
+        terminal.activePiece = structuredClone(terminal.selectedPlacement);
+        terminal.boardAfter = structuredClone(terminal.boardBefore);
+        for (const cell of terminal.selectedPlacement.cells) terminal.boardAfter[cell.row][cell.col] = terminal.selectedPlacement.pieceType;
+        terminal.placementResult.gameOver = true;
+        terminal.placementResult.gameOverReason = "lock_out";
+        terminal.observation = { stage: "lock_commit", nextSpawnOutcome: "not_evaluated", terminalOutcome: "lock_out" };
+        assert.equal((await repository.append(projectGameEventLog(terminal))).status, "inserted");
+        const { getGameplayLogContext } = require("../dist/server/shared/gameplayLogContext.js");
+        for (const reason of ["lock_out", "top_out", "block_out", "disconnect_timeout", "ai_no_legal_placement", "ai_decision_failed"]) {
+            const over = { ...runtimeGameOver(`v3-finish-${reason}`, "multi", [
+                { playerId: "v3-human", playerType: "human", expectedPlacementEventCount: 0 },
+                { playerId: "v3-other", playerType: "human", expectedPlacementEventCount: 0 },
+            ]),
+                schemaVersion: 3, ...getGameplayLogContext("buffer20-v1"), reason };
+            assert.equal((await repository.append(projectGameEventLog(over))).status, "inserted");
+        }
+        await withClient(clientConfig(adminUrl), async client => {
+            const invalid = rawEvent("v3-missing-metadata", { schemaVersion: 3 });
+            await assertSqlStateError(insertRawEvent(client, invalid), "23514");
+        });
+        await repository.close();
+
+        // 현재 40행 build가 migration 3 DB에 재기동한다. 20행 rollback 산출물은 계획 §13에 별도 보존한다.
+        const { loadGameCore } = require("../dist/server/server/services/gameCoreLoader.js");
+        assert.equal((await loadGameCore()).BOARD_ROWS, 40);
+        for (let restart = 0; restart < 2; restart++) {
+            const storage = await createRuntimeEventStorage({ env: {
+                NODE_ENV: "production", GAME_EVENT_STORAGE: "postgres", DATABASE_URL: runtimeUrl,
+            } });
+            const log = runtimeGameStart(`v3-compatible-restart-${restart}`, "multi", [
+                { playerId: "restart-human", role: "host", playerType: "human" },
+            ]);
+            assert.equal((await storage.saveGameEventLog(log)).ok, true);
+            await storage.close();
+        }
+        assert.deepEqual(await legacyRow(), before);
+    } finally {
+        await rm(directory, { recursive: true, force: true });
+    }
+}
+
 test("Goal 9B actual PostgreSQL contract", { timeout: 120_000 }, async t => {
     const plainUrl = requireEnvironment("GOAL9B_TEST_PLAIN_URL");
     if (process.env.GOAL9D_POSTGRES_SERVICE === "1") {
@@ -2060,6 +2148,9 @@ test("Goal 9B actual PostgreSQL contract", { timeout: 120_000 }, async t => {
     });
     await t.test("repository: inserts, duplicates, conflicts and lifecycle", () => {
         return verifyRepository(plainUrl);
+    });
+    await t.test("v3: upgrade preserves rows, rerun, duplicate/conflict and current gameplay restart", () => {
+        return verifyGameplayLogV3(plainUrl);
     });
     await t.test("import: streaming, rerun, recovery and local copy", () => {
         return verifyJsonlImporter(plainUrl);

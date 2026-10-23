@@ -1,5 +1,6 @@
 import type { Board } from "./board.ts";
 import type { PieceState } from "./piece.ts";
+import { BOARD_ROWS } from "../state/config.ts";
 
 // =============================
 // T-Spin 판정과 고정 점수
@@ -58,7 +59,7 @@ export function classifyTSpin({
     ];
 
     const occupied = corners.map(([cx, cy]) => (
-        cx < 0 || cx >= cols || cy >= rows || (cy >= 0 && Boolean(boardRows[cy]?.[cx]))
+        cx < 0 || cx >= cols || cy >= rows || (cy < 0 && rows === BOARD_ROWS) || (cy >= 0 && Boolean(boardRows[cy]?.[cx]))
     ));
     if (occupied.filter(Boolean).length < 3) return "none";
 

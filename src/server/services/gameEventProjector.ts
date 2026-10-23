@@ -12,6 +12,7 @@ import {
     HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER,
     HUMAN_PLACEMENT_RECEIPT_TTL_MS,
 } from "./matchService.js";
+import { BUFFER_GAMEPLAY_LOG_CONTEXT } from "../../shared/gameplayLogContext.js";
 
 const PIECE_TYPES = new Set([
     "bar",
@@ -43,6 +44,7 @@ const FINISH_REASONS = new Set([
     "ai_no_legal_placement",
     "ai_decision_failed",
 ]);
+const V3_FINISH_REASONS = new Set([...FINISH_REASONS, "lock_out"]);
 const PLAYER_ROLES = new Set(["host", "guest"]);
 const PLAYER_TYPES = new Set(["human", "heuristic_ai"]);
 
@@ -140,7 +142,7 @@ function projectPiece(value: unknown): CanonicalJsonValue {
     return projected;
 }
 
-function projectPlacementResult(value: unknown): CanonicalJsonValue {
+function projectPlacementResult(value: unknown, includeTerminalReason = false): CanonicalJsonValue {
     const result = record(value);
     const projected: Record<string, CanonicalJsonValue> = {
         linesCleared: integer(result.linesCleared, 0),
@@ -167,6 +169,9 @@ function projectPlacementResult(value: unknown): CanonicalJsonValue {
     }
     if (result.tSpinType !== undefined) {
         projected.tSpinType = enumString(result.tSpinType, T_SPIN_TYPES);
+    }
+    if (includeTerminalReason && result.gameOverReason !== undefined) {
+        projected.gameOverReason = enumString(result.gameOverReason, V3_FINISH_REASONS);
     }
     return projected;
 }
@@ -248,10 +253,10 @@ function projectPlacementPayload(log: RecordValue): Record<string, CanonicalJson
             : enumString(log.holdPiece, PIECE_TYPES),
         inputSequence: projectInputSequence(log.inputSequence),
         selectedPlacement: projectPiece(log.selectedPlacement),
-        placementResult: projectPlacementResult(log.placementResult),
+        placementResult: projectPlacementResult(log.placementResult, log.schemaVersion === 3),
     };
     if (log.activePiece !== undefined) payload.activePiece = projectPiece(log.activePiece);
-    if (log.schemaVersion === 2) {
+    if (log.schemaVersion === 2 || log.schemaVersion === 3) {
         payload.metricsBefore = projectMetrics(log.metricsBefore);
         payload.metricsAfter = projectMetrics(log.metricsAfter);
         payload.evaluation = projectEvaluation(log.evaluation);
@@ -260,6 +265,15 @@ function projectPlacementPayload(log: RecordValue): Record<string, CanonicalJson
         if (log.source === "human") {
             payload.aiComparison = projectAiComparison(log.aiComparison);
         }
+    }
+    if (log.schemaVersion === 3) {
+        Object.assign(payload, BUFFER_GAMEPLAY_LOG_CONTEXT);
+        const observation = record(log.observation);
+        payload.observation = {
+            stage: observation.stage as string,
+            nextSpawnOutcome: observation.nextSpawnOutcome as string,
+            terminalOutcome: observation.terminalOutcome as string | null,
+        };
     }
     return payload;
 }
@@ -296,13 +310,14 @@ function projectGameStart(log: RecordValue): CanonicalGameEvent {
     return createCanonicalGameEvent({
         identityVersion: "identity-v1",
         eventType: "game_start",
-        schemaVersion: 2,
+        schemaVersion: log.schemaVersion === 3 ? 3 : 2,
         gameId: log.gameId,
         playerId: null,
         pieceIndex: null,
         trustLevel: "server_authoritative",
         occurredAt: timestamp(log.startedAt),
         payload: {
+            ...(log.schemaVersion === 3 ? BUFFER_GAMEPLAY_LOG_CONTEXT : {}),
             roomId: log.roomId,
             mode: enumString(log.mode, MODES),
             aiDifficulty: optionalEnum(log.aiDifficulty, AI_DIFFICULTIES),
@@ -329,9 +344,10 @@ function projectGameOver(log: RecordValue): CanonicalGameEvent {
                 : fail(),
         winnerPlayerId: log.winnerPlayerId as CanonicalJsonValue,
         loserPlayerId: log.loserPlayerId as CanonicalJsonValue,
-        reason: enumString(log.reason, FINISH_REASONS),
+        reason: enumString(log.reason, log.schemaVersion === 3 ? V3_FINISH_REASONS : FINISH_REASONS),
         finishType: log.finishType === "normal" ? "normal" : fail(),
     };
+    if (log.schemaVersion === 3) Object.assign(payload, BUFFER_GAMEPLAY_LOG_CONTEXT);
     if (hasExpectedCounts) {
         payload.expectedPlacementEventCounts = projectExpectedCounts(
             log.expectedPlacementEventCounts,
@@ -344,7 +360,7 @@ function projectGameOver(log: RecordValue): CanonicalGameEvent {
     return createCanonicalGameEvent({
         identityVersion: "identity-v1",
         eventType: "game_over",
-        schemaVersion: hasExpectedCounts ? 2 : 1,
+        schemaVersion: log.schemaVersion === 3 ? 3 : hasExpectedCounts ? 2 : 1,
         gameId: log.gameId,
         playerId: null,
         pieceIndex: null,
@@ -357,7 +373,7 @@ function projectGameOver(log: RecordValue): CanonicalGameEvent {
 function projectPlacement(log: RecordValue): CanonicalGameEvent {
     const isHuman = log.source !== "heuristic_ai";
     if (isHuman && log.source !== undefined && log.source !== "human") return fail();
-    if (!isHuman && (log.schemaVersion !== 2 || log.modelType !== "heuristic")) return fail();
+    if (!isHuman && ((log.schemaVersion !== 2 && log.schemaVersion !== 3) || log.modelType !== "heuristic")) return fail();
     const occurredAt = log.createdAt === undefined
         ? null
         : timestamp(log.createdAt);
