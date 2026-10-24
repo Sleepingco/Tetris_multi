@@ -91,3 +91,4 @@ for (const [options, expectedActive, expectedVersion, status] of [
         } finally { f.close(); }
     });
 }
+
