@@ -6,6 +6,10 @@
 
 ## Current Project Status
 
+### Human 행동 데이터 질문 기록 (2026-10-24)
+
+- [QnA](QnA.md)에 유효성 감사와 정제의 차이, 원본 재추출 여부, 승패 대신 정상 참여 품질을 보는 기준, 입력 시각과 Notebook/테스트 역할에 대한 사용자 질문·결정을 기록했다. 질문 기록 자체는 정제·학습·수집 변경의 구현이나 승인이 아니다.
+
 ### 게임 오버·버퍼 존 1~4단계 (2026-10-23)
 
 - [조사·계획과 구현 기록](docs/gameplay/top-out-buffer-zone-plan.md)의 규칙·fixture, v3 저장/migration 3/rollback 기반, 40행 gameplay 통합과 4단계 경계·운영 검증을 완료했다. 현재 검증과 남은 수집 리스크는 §15를 따른다. §12~14는 앞선 checkpoint와 표시 보완 기록이다.
