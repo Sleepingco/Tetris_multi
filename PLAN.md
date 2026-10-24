@@ -2,13 +2,21 @@
 
 - Role: 이 문서는 현재 저장소의 단일 기준 문서다.
 - Use: 현재 사실, 구조, 멀티 방향, 다음 액션을 한 곳에서 본다.
-- Last update: 2026-10-23. 배포·migration 이력은 2026-07-24 확인 기준이다. Goal 11E와 Goal 9A~9D는 main/origin에 반영됐고 hosted [Migration CI #30042098224](https://github.com/Sleepingco/Tetris_multi/actions/runs/30042098224)의 Fast/Browser/Docker/PostgreSQL 네 job이 모두 green이다. OCI 단일 VM의 공개 HTTPS·Caddy·same-origin Socket.IO 운영과 PostgreSQL 단일 sink 전환도 완료했다. 기존 JSONL 131건을 멱등 import했고 실제 게임 뒤 195행, app 재시작 뒤에도 195행이 보존됐다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
+- Last update: 2026-10-23. 최신 운영은 `tetris-app:bbf26b7`·migration 3이며 [main CI #39930149609](https://github.com/Sleepingco/Tetris_multi/actions/runs/39930149609)의 네 job과 공개 싱글/PVP/PVE 검증을 통과했다. 상세는 아래 버퍼 존 5단계와 실행 기록을 따른다. 2026-07-24의 최초 OCI/PostgreSQL 전환에서는 기존 JSONL 131건을 멱등 import하고 실제 게임 뒤 195행을 보존했다. JSONL은 local/test 기본값과 명시적 rollback 원본으로만 유지한다.
 
 ## Current Project Status
+
+- 2026-10-24 사용자 요청으로 남은 CD 수정·배포 검증 기록·UI 배치 계획·데이터 제외 규칙을 로컬 checkpoint로 커밋한다. 최신 필수 verify는 781 pass·기존 1 skip·0 fail이며 push·Actions 실행·운영 재배포는 포함하지 않는다.
 
 ### Human 행동 데이터 질문 기록 (2026-10-24)
 
 - [QnA](QnA.md)에 유효성 감사와 정제의 차이, 원본 재추출 여부, 승패 대신 정상 참여 품질을 보는 기준, 입력 시각과 Notebook/테스트 역할에 대한 사용자 질문·결정을 기록했다. 질문 기록 자체는 정제·학습·수집 변경의 구현이나 승인이 아니다.
+
+### 게임·멀티 로비 배치 개선 조사·계획 (2026-10-24)
+
+- [최소 변경 계획](docs/design/buffer-layout-plan.md)을 작성했다. 내부 40행·표시 24행·NEXT 4개·기존 색상을 유지하고 게임 CSS의 높이·기준선·간격과 로비의 방 조작 우선 DOM 순서를 조정하는 범위다.
+- 현재 source를 로컬 Chromium에서 측정했다. 1280×720의 싱글 보드 하단 y=856·멀티 약 y=980, 390×844 로비의 방 조작 시작 y=811을 확인했다. 멀티 성과 연출과 기존 gap assertion을 연결해 영향 파일·완료 조건·회귀 검증·복구 방법을 정했다.
+- 이번에는 문서만 변경했다. 게임 구현·색상 변경·새 UI 기능·DB/ML 평가·운영 배포는 시작하지 않았다.
 
 ### 행동 모방용 게임 품질 기준 (2026-10-24)
 
@@ -42,9 +50,16 @@
 - 검증은 새 테스트 16/16, verify:ml Node 35/Python 131, 필수 verify Node 781 pass·기존 1 skip이다. [실행 기록](ai-harness/runs/human-action-data-readiness-implement-smoke-2026-10-24.md)에 환경 보완·checksum·한계를 남겼다. 당시 다음 gate였던 사용자 full 감사는 이후 완료했으며 위 full 분석 상태를 따른다. 엔진 replay·dataset 생성·학습·runtime 변경은 하지 않았다.
 - 문서 정리이며 Notebook·생성기·모델 학습·runtime·수집 한도·운영 배포는 변경하지 않았다. 상세 검증과 이력은 `change-log.md`를 따른다.
 
-### 게임 오버·버퍼 존 1~4단계 (2026-10-23)
+### CD의 버퍼 존·schema 전환 대응 (2026-10-23)
 
-- [조사·계획과 구현 기록](docs/gameplay/top-out-buffer-zone-plan.md)의 규칙·fixture, v3 저장/migration 3/rollback 기반, 40행 gameplay 통합과 4단계 경계·운영 검증을 완료했다. 현재 검증과 남은 수집 리스크는 §15를 따른다. §12~14는 앞선 checkpoint와 표시 보완 기록이다.
+- [기존 Production deployment workflow](.github/workflows/deploy-production.yml)의 `run` 단계에 DB 기대 version·40×10 geometry 확인, backup 실제 restore·기존 event 해시 비교, 접속 0건/503 차단, migration 두 번, 호환 rollback boot와 app 교체·복구를 직접 반영했다. 별도 배포 SH/JS는 추가하지 않는다.
+- 같은 DB version은 현재 image로, version 변경은 새 DB 호환 image의 tag+archive checksum을 입력받아 복구한다. DB downgrade·운영 row/volume 삭제·Compose/Caddy 원본 덮어쓰기는 하지 않는다.
+- 게임 기능과 v3 로그 계약 검사는 기존 main CI가 담당한다. CD는 그 commit의 CI 성공을 요구하고 운영 DB version·기존 row 보존·app healthy/HTTPS 200·기동 중 write_failed 로그를 검사한다. CD 안에서 새 브라우저 경기를 만들거나 별도 cohort JS를 실행하지 않는다.
+- Node 24.18.0 필수 verify **781 pass·기존 조건부 1 skip·0 fail**, YAML에 직접 정의한 성공·실패·복구 경로 검사 **12/12**, workflow YAML/Bash 구문 검사가 통과했다. 운영은 여전히 `bbf26b7`/migration 3이며 commit/push/Actions dispatch/재배포는 수행하지 않았다. 실행 입력·실패 복구와 제한은 [runbook](docs/operations/deployment/postgres-production-runbook.md#github-actions-cd-실행과-복구)을 따른다.
+
+### 게임 오버·버퍼 존 1~5단계 완료 (2026-10-23)
+
+- [조사·계획과 구현 기록](docs/gameplay/top-out-buffer-zone-plan.md)의 규칙·fixture, v3 저장/migration 3/rollback 기반, 40행 gameplay 통합·경계 검증과 실제 운영 배포까지 완료했다. 로컬 검증·수집 리스크는 §15, 최신 운영 상태는 §16을 따른다. §12~14는 앞선 checkpoint와 표시 보완 기록이다.
 - 싱글·멀티 예측·서버의 보드는 숨은 20행을 포함한 40×10이다. 최초/next/hold는 공용 생성 함수로 초기 충돌과 한 행 하강을 처리한다. 전체 상단 고정은 줄 삭제·공격·garbage·next 없이 `lock_out`, 그 밖에는 줄 삭제→상쇄→garbage `top_out`→spawn `block_out` 순서다. 천장 밖 T-Spin 코너는 충돌 경계와 일치한다.
 - 열린 천장은 후속 사용자 요청으로 상단 표시 여백을 4행으로 늘린 300×720 Canvas를 쓰며 가시 20행/300×600 크기를 유지한다. 여백을 감싸던 외곽 frame을 제거하고 가시 20행의 측면·바닥만 남겼다. 고정·활성·고스트·착지/줄 효과는 같은 좌표 변환을 쓰고, 더 높은 활성 조각에는 열 위치를 표시한다. 새 handshake protocol 2·40행 snapshot/effect/유예, match UUID와 잘못된 local gameOver 복구를 연결했다.
 - 스폰은 2009 Guideline §3.4와 대조해 기존 좌표가 일치함을 확인했다. 바닥 기준 21·22행(I는 21행)에서 최초 충돌을 검사하고 가능하면 즉시 한 행 내린다. 표시 여백은 바닥 기준 21~24행이고 25~40행의 cell도 board·충돌·줄 삭제·로그에 남는다. 여백 끝을 게임 오버 경계로 사용하지 않으며 gameplay/log/protocol 버전은 그대로다. 상세와 검증은 계획 §14의 후속 기록을 따른다.
@@ -54,7 +69,8 @@
 - 4단계 최종 검증: 필수 verify Node **769 pass·기존 조건부 1 skip·0 fail**, 전체 Chromium **58/58**, 격리 PostgreSQL **9/9**, Docker PVP/PVE 정상 2/2·DB 중단 1/1, ML parity Node **35/35**·Python **115/115** 통과. 실제 DB에 terminal lock_out과 여섯 종료 사유를 저장했고 backup/restore·재기동·shutdown·privacy/중복을 확인했다.
 - 격리 완료 2경기·4명의 예상 배치 **25건/저장 21건** 차이는 사람 로그의 `RATE_LIMITED` **4건**과 일치했다. 기존 사람 로그 한도 **10초에 10건**을 유지하므로 빠른 정상 플레이에서도 누락될 수 있고 완전한 행동 모방 dataset은 아니다. 새 규칙의 브라우저 raw 601건을 검증했고 배치 549건은 기존 ML export에서 모두 제외됐다. 19경기 완결/10경기 불완전과 원본 불변을 기록했다.
 - 실제 20행 rollback 빌드와 비교한 40행 후보 평가 p95는 로컬 fixture에서 최대 약 **1.395ms**다. empty/low/high의 BFS 방문 수·후보 수가 같고 임의 탐색 제한을 추가하지 않았다. 8 PVP room/16명의 in-process ticker batch p95는 **0.172ms**, snapshot 평균은 약 **1.65배**다. 전송망·DB·AI가 포함된 운영 처리량 보장은 아니며 [측정 산출물](docs/gameplay/verification/top-out-buffer-zone-stage4-measurement-2026-10-23.json)에 조건·checksum을 남겼다.
-- 사용자 요청으로 5단계 운영 배포를 진행한다. 현재 운영 image 842b744·migration 2·HTTPS 200을 읽기 전용으로 확인했다. main CI와 호환 rollback·유입 차단·backup 이후 직접 SSH 절차로 전환하며 [실행 기록](docs/operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md)에 결과를 남긴다. 실기기·장시간 운영 부하·ML full 평가·행동 모방 데이터 파이프라인은 별도다.
+- 5단계 운영 배포 완료: main CI 네 job이 green인 `bbf26b7`로 server/client를 함께 교체했다. 무접속 확인 뒤 약 83초 유입 차단·운영 backup/임시 restore·migration 2→3/재실행을 통과했다. 기존 **143,404건**의 row/hash/시각을 보존하고, 공개 싱글/PVP/PVE와 네 HTML/JS checksum을 확인했다. 합성 두 경기 v3 start 2/placement **33/33**/over 2, RATE_LIMITED·누락·중복·저장 실패 로그 0건이다. 배포 검증 시 총 143,441건이며 이번 cohort의 성공을 일반적인 무손실 수집 보장으로 해석하지 않는다. 기존 Caddy 통계 경로·PostgreSQL container/volume을 보존했다.
+- migration 3 호환 20행 rollback image **`6be7d05`**를 보관하고 실제 운영 DB에서 healthy·HTTP 200·정상 종료를 확인했다. migration 2를 요구하는 이전 `842b744`로 직접 복구하지 않는다. source commit·image/backup checksum과 절차는 [실행 기록](docs/operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md)을 따른다. 실기기·장시간 운영 부하·off-VM 재해 복구·ML 재학습·행동 모방 데이터 파이프라인은 별도이며 구버전 탭은 새로고침한다.
 
 ### T-Spin 기록·Mini 분류 구현 (2026-10-21)
 

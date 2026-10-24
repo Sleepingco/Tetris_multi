@@ -224,7 +224,7 @@ event identity는 현재 placement의 `(gameId, playerId, pieceIndex)`와 lifecy
 | 2. 저장 호환 기반 — 완료 | v1/v2 읽기 유지, v3 validator/projector/canonical/SQL·receipt 문맥·export 분리. DB migration 후에도 구 gameplay를 실행할 수 있는 rollback 빌드 준비 | §13: verify 741 pass·1 skip, 실제 PostgreSQL 9/9, Docker PVP/PVE·재시작 3/3와 v3 저장/backup/restore 통과. gameplay는 아직 이전 규칙 |
 | 3. 통합 gameplay 변경 — 완료 | 40행 core·최초/next/hold·runtime·wire·보정·열린 천장 렌더·heuristic의 다음 spawn 평가/선택·V4 fallback을 함께 연결. 새 ruleset의 로그 생성 | 싱글/PVP/PVE에서 같은 fixture가 같은 결과. 내/상대/재접속 hidden 상태 수렴. 기존 유예·T-Spin·전투 회귀 통과 |
 | 4. 경계·운영 검증 — 완료 | 지연·재접속·구버전 탭·종료 로그·실제 DB·export smoke·payload/후보 시간 측정 | §15: verify 769 pass·1 skip, Chromium 58/58, PostgreSQL 9/9, Docker 2+1 통과. 배치 수 차이는 명시적인 RATE_LIMITED 수와 일치하며 V4 비호환·export 분리를 확인 |
-| 5. 별도 배포 | 검증 결과·백업·호환 rollback 이미지가 준비된 뒤 운영자가 배포 | 같은 빌드의 server/client, 진행 중 경기 종료/유입 중단 절차, 새 경기의 start/placement/over와 실패 지표 확인 |
+| 5. 별도 배포 — 완료 | 사용자 요청으로 main CI·운영 backup/restore·호환 rollback을 확인한 뒤 app 교체 | §16: bbf26b7·migration 3 운영 반영, 기존 143,404건 보존, 공개 싱글/PVP/PVE·새 v3 배치 33/33 저장 확인 |
 
 ### 필요한 검증 행렬
 
@@ -241,7 +241,7 @@ event identity는 현재 placement의 `(gameId, playerId, pieceIndex)`와 lifecy
 
 ## 10. 배포와 rollback
 
-[PostgreSQL 운영 runbook](../operations/deployment/postgres-production-runbook.md)의 백업·복구·단일 sink 원칙을 따른다. 실행 중 match는 메모리이므로 배포로 상태를 보존한다고 약속하지 않는다. 진행 중 경기를 마무리하고 새 진입을 제어하는 운영 절차를 먼저 준비한다. 이번 작업은 운영 접속·배포를 수행하지 않는다.
+[PostgreSQL 운영 runbook](../operations/deployment/postgres-production-runbook.md)의 백업·복구·단일 sink 원칙을 따른다. 실행 중 match는 메모리이므로 배포로 상태를 보존한다고 약속하지 않는다. 진행 중 경기를 마무리하고 새 진입을 제어하는 운영 절차를 먼저 준비한다. 1~4단계는 운영 접속·배포를 수행하지 않았으며, 사용자 요청으로 실행한 5단계 결과는 §16에 기록한다.
 
 권장 순서는 **격리 DB에서 검증 → 백업 → 확장 migration → 동일 버전 server/client → 구버전 탭 갱신 안내 → 새 경기 검증**이다. migration 최대 버전이 3이 되면 조사 기준 HEAD의 서버는 기대값 2와 달라 시작하지 못한다. 2단계에서는 **기존 gameplay + 새 DB 버전 호환 reader/readiness**를 갖춘 빌드를 준비하고 실제 재기동을 검증했다(§13). 새 빌드의 readiness도 검증한 버전 3과 정확히 일치해야 하며 미래 migration을 임의로 `>=` 허용하지 않는다.
 
@@ -395,7 +395,7 @@ rollback은 §13의 **기존 20행 gameplay + migration 3 reader** 산출물로 
 
 ## 15. 4단계: 경계·운영 검증 완료 (2026-10-23)
 
-상태: **4단계 완료, 5단계 배포 미실행**. 현재 `main`/HEAD `3ac6045ff65929efa17561845584eff6fafad174`의 미커밋 변경을 포함해 검증했다. 이번 단계는 검사·측정·기록을 추가했고 게임 규칙·통신/DB/log 버전·모델·production 빈도 제한은 변경하지 않았다.
+4단계 완료 당시 상태: **4단계 완료, 5단계 배포 미실행**. 당시 `main`/HEAD `3ac6045ff65929efa17561845584eff6fafad174`의 미커밋 변경을 포함해 검증했다. 이번 단계는 검사·측정·기록을 추가했고 게임 규칙·통신/DB/log 버전·모델·production 빈도 제한은 변경하지 않았다. 이후 사용자 요청으로 실행한 운영 배포는 §16을 따른다.
 
 ### 통신·저장 경계
 
@@ -474,10 +474,16 @@ node scripts/measure-buffer-zone.js "$legacy_build_dir"
 DB 검증은 다른 build 명령과 순서대로 실행한다. 테스트용 DB 외의 운영 DB에는 접속하지 않았다. 별도 운영 배포·장시간 운영 부하·실기기·ML full 학습/평가는 이번 완료 범위에 포함하지 않는다. 5단계는 자동 시작하지 않으며 커밋·push도 수행하지 않았다. 4단계 검사만 되돌릴 경우 검사/측정/기록을 함께 복구하며 runtime·DB rollback은 필요 없다. 제품 자체의 rollback은 §13의 server/client 산출물과 migration 3 reader를 함께 사용하고 v3 row·volume을 보존한다.
 
 
-## 16. 5단계: 운영 배포 진행 (2026-10-23)
+## 16. 5단계: 운영 배포 완료 (2026-10-23)
 
 사용자가 5단계를 명시적으로 요청해 운영 접속과 배포를 시작했다. 배포 전 운영은 `tetris-app:842b744`, migration 2이며 app/PostgreSQL healthy·HTTPS 200을 확인했다. 디스크 사용률은 21%다. 기존 SSH known_hosts의 운영 IP 공개키를 검증한 직접 SSH 경로를 사용한다.
 
-배포용 source-less release 검사가 과거 V4 실행을 기대해 실패했다. 실제 40행 fallback은 정상이며, 검사를 40행 PVP/PVE·RULESET_INCOMPATIBLE·휴리스틱 실행과 보존된 모델 checksum 검증으로 수정했다. 자동 배포에는 active/candidate의 DB 기대 버전이 다르면 migration 전에 중단하는 가드를 추가했다. 이번 2→3 전환은 main CI·호환 rollback 이미지·접속 종료 확인·유입 차단·운영 backup 뒤 수동 절차로 수행한다. 기존 image로 자동 rollback하지 않는다.
+배포용 source-less release 검사가 과거 V4 실행을 기대해 실패했다. 실제 40행 fallback은 정상이며, 검사를 40행 PVP/PVE·RULESET_INCOMPATIBLE·휴리스틱 실행과 보존된 모델 checksum 검증으로 수정했다. 자동 배포에는 active/candidate의 DB 기대 버전이 다르면 migration 전에 중단하는 가드를 추가했다. 실제 workflow 블록을 기존 2/후보 3으로 실행해 의도한 사유의 exit 1과 DB 버전 2 보존을 확인했다. 로컬 verify 769 pass·기존 조건부 1 skip, source-less release 1/1과 정확한 main commit의 [CI 네 job](https://github.com/Sleepingco/Tetris_multi/actions/runs/39930149609)이 모두 통과했다.
 
-실행 결과와 운영 확인값은 [5단계 배포 기록](../operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md)에 남긴다. 이 항목만으로 배포가 완료됐다는 의미는 아니다.
+운영은 `tetris-app:bbf26b7`(commit `bbf26b72554907017765338c331416f32debc80a`)와 migration **3**으로 전환했다. 접속을 세 번 확인해 모두 0건인 상태에서 09:26:22~09:27:45 UTC(18:26:22~18:27:45 KST), 약 83초간 신규 app 유입을 차단했다. backup을 임시 DB에 복원해 기존 **143,404건**의 event_id·event_sha256·ingested_at 결합 해시가 일치함을 확인했고, migration 뒤에도 같았다. 003은 1 applied/2 skipped, 재실행은 0 applied/3 skipped였다. 운영 Caddy의 추가 Umami 경로·원본 파일과 PostgreSQL container·volume을 보존했다.
+
+공개 HTTPS에서 싱글 종료/재시작·1600px/390px 표시·PVP/PVE 완료·양쪽 40행 snapshot과 V4의 명시적 heuristic fallback을 확인했다. 네 HTML/진입 JS의 SHA-256이 검증한 local dist와 일치한다. 운영 DB에는 두 경기의 v3 start 2건/placement **33건**/over 2건이 저장됐고, 예상 배치 33/실제 33·누락 0·중복 0·문맥 오류 0이었다. 사람 22건은 commit/전송/성공이 모두 22건이며 입력 간격을 둔 이번 cohort의 RATE_LIMITED는 0건이다. PVP 종료는 block_out, PVE는 lock_out이다. 기존 10초당 10건 한도와 best-effort 경계의 일반적 누락 가능성은 유지된다.
+
+rollback image `tetris-app:6be7d05`는 §13 archive checksum에서 정한 tag이며 Git commit tag가 아니다. 실제 운영 migration 3 DB에 연결해 20행 gameplay·HTTP 200·healthy와 exit 0/OOM false를 확인했다. 장애 시 이 이미지를 사용해 server/client를 함께 복구하고 v3 row·schema·volume은 남긴다. 이전 `842b744`는 migration 2를 요구하므로 직접 복구 대상으로 사용하지 않는다.
+
+자세한 image/backup checksum·최종 상태·rollback 명령은 [배포 기록](../operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md), 공개 smoke 증거는 [검증 산출물](verification/top-out-buffer-zone-stage5-production-smoke-2026-10-23.json)을 따른다. 실제 휴대폰·장시간 운영 부하·off-VM 재해 복구·ML 재학습은 수행하지 않았다. 열린 구버전 탭은 새로고침해야 한다.

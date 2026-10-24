@@ -8,6 +8,15 @@ on:
         required: false
         type: string
 
+      rollback_image_tag:
+        description: Existing image tag compatible with the NEW DB version (required for schema upgrades)
+        required: false
+        type: string
+      rollback_artifact_sha256:
+        description: Artifact checksum label of that rollback image (provide together with tag)
+        required: false
+        type: string
+
 permissions:
   contents: read
   actions: read
@@ -18,9 +27,10 @@ concurrency:
 
 jobs:
   ssh-check:
-    name: Transfer production artifact
+    name: Deploy and verify production
     runs-on: ubuntu-24.04
     environment: production
+    timeout-minutes: 45
 
     steps:
       - name: Check out selected commit
@@ -71,6 +81,26 @@ jobs:
           fi
 
           printf 'release commit passed main CI: %s\n' "$release_commit"
+
+      - name: Validate deployment destination and rollback inputs
+        env:
+          OCI_HOST: ${{ vars.OCI_HOST }}
+          OCI_USER: ${{ vars.OCI_USER }}
+          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+          OCI_INCOMING_DIR: ${{ vars.OCI_INCOMING_DIR }}
+          ROLLBACK_IMAGE_TAG: ${{ inputs.rollback_image_tag }}
+          ROLLBACK_ARTIFACT_SHA256: ${{ inputs.rollback_artifact_sha256 }}
+        run: |
+          set -euo pipefail
+          [[ "$OCI_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$OCI_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$OCI_SSH_PORT" =~ ^[0-9]{1,5}$ ]]
+          (( 10#$OCI_SSH_PORT > 0 && 10#$OCI_SSH_PORT <= 65535 ))
+          test "$OCI_INCOMING_DIR" = /srv/tetris/incoming
+          if test -n "$ROLLBACK_IMAGE_TAG" || test -n "$ROLLBACK_ARTIFACT_SHA256"; then
+              [[ "$ROLLBACK_IMAGE_TAG" =~ ^[0-9a-f]{7,40}$ ]]
+              [[ "$ROLLBACK_ARTIFACT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          fi
 
       - name: Prepare SSH files
         shell: bash
@@ -184,6 +214,8 @@ jobs:
           test -f "$build_directory/Dockerfile"
           test -f "$build_directory/compose.production.yml"
           test -f "$build_directory/package.json"
+          # Host Compose와 Caddy 설정은 별도 검토 없이 교체하지 않는다.
+          cmp "$build_directory/compose.production.yml" /srv/tetris/repository/compose.production.yml
 
           cd "$build_directory"
 
@@ -237,286 +269,286 @@ jobs:
           printf 'candidate image prepared: %s\n' "$RELEASE_SHA"
           REMOTE
 
-      - name: Back up and verify production database
+      - name: Back up, migrate and activate production app
         env:
           OCI_HOST: ${{ vars.OCI_HOST }}
           OCI_USER: ${{ vars.OCI_USER }}
           OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
+          DEPLOY_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          ROLLBACK_IMAGE_TAG: ${{ inputs.rollback_image_tag }}
+          ROLLBACK_ARTIFACT_SHA256: ${{ inputs.rollback_artifact_sha256 }}
         run: |
           set -euo pipefail
-
           ssh \
             -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
             -o IdentitiesOnly=yes \
+            -o BatchMode=yes \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
+            -o ConnectTimeout=10 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=3 \
             -p "$OCI_SSH_PORT" \
             "$OCI_USER@$OCI_HOST" \
-            "RELEASE_SHA='$release_sha' sh -s" <<'REMOTE'
-          set -eu
+            "RELEASE_SHA='$release_sha' RELEASE_COMMIT='$release_commit' ARTIFACT_SHA256='$artifact_sha256' DEPLOY_ID='$DEPLOY_ID' ROLLBACK_IMAGE_TAG='$ROLLBACK_IMAGE_TAG' ROLLBACK_ARTIFACT_SHA256='$ROLLBACK_ARTIFACT_SHA256' timeout --signal=TERM --kill-after=120 1200 bash -s" <<'REMOTE'
+          # DEPLOY_REMOTE_BEGIN
+          set -euo pipefail
           umask 077
-
-          case "$RELEASE_SHA" in
-              *[!0-9a-f]*|'')
-                  echo "INVALID_RELEASE_SHA" >&2
-                  exit 1
-                  ;;
-          esac
-          test "${#RELEASE_SHA}" -eq 7
-
-          timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
-          backup="/srv/tetris/backups/tetris-${RELEASE_SHA}-${timestamp}.dump"
-          temporary="${backup}.tmp"
-
-          sudo install -d -o ubuntu -g ubuntu -m 700 /srv/tetris/backups
-          test ! -e "$backup"
-          test ! -e "$temporary"
-
-          cleanupTemporary() {
-              test ! -e "$temporary" || rm -f -- "$temporary"
-          }
-          trap cleanupTemporary EXIT
-
-          sudo docker compose \
-              --env-file /srv/tetris/secrets/production.env \
-              -f /srv/tetris/repository/compose.production.yml \
-              exec -T postgres \
-              pg_dump \
-              --username postgres \
-              --dbname tetris \
-              --format=custom \
-              > "$temporary"
-
-          test -s "$temporary"
-          sudo docker compose \
-              --env-file /srv/tetris/secrets/production.env \
-              -f /srv/tetris/repository/compose.production.yml \
-              exec -T postgres \
-              pg_restore --list \
-              < "$temporary" \
-              >/dev/null
-
-          mv "$temporary" "$backup"
-          chmod 400 "$backup"
-          trap - EXIT
-
-          sha256sum "$backup"
-          stat -c '%a %U:%G %s %n' "$backup"
-          printf 'production database backup verified: %s\n' "$backup"
-          REMOTE
-
-      - name: Apply and verify database migrations
-        env:
-          OCI_HOST: ${{ vars.OCI_HOST }}
-          OCI_USER: ${{ vars.OCI_USER }}
-          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
-        run: |
-          set -euo pipefail
-
-          ssh \
-            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
-            -p "$OCI_SSH_PORT" \
-            "$OCI_USER@$OCI_HOST" \
-            "RELEASE_SHA='$release_sha' sh -s" <<'REMOTE'
-          set -eu
-          case "$RELEASE_SHA" in
-              *[!0-9a-f]*|'')
-                  echo "INVALID_RELEASE_SHA" >&2
-                  exit 1
-                  ;;
-          esac
-          test "${#RELEASE_SHA}" -eq 7
-
-          active_app=$(sudo docker compose \
-              --env-file /srv/tetris/secrets/production.env \
-              -f /srv/tetris/repository/compose.production.yml ps -q app)
-          test -n "$active_app"
-          version_probe='require("./dist/server/server/services/runtimeEventStorage.js").EXPECTED_POSTGRES_MIGRATION_VERSION'
-          active_version=$(sudo docker exec "$active_app" node -p "$version_probe")
-          candidate_version=$(sudo docker run --rm "tetris-app:${RELEASE_SHA}" node -p "$version_probe")
-          if test "$active_version" != "$candidate_version"; then
-              echo "SCHEMA_TRANSITION_REQUIRES_MANUAL_CUTOVER: prepare a compatible rollback and drain traffic before migration" >&2
-              exit 1
+          [[ "$RELEASE_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_SHA" =~ ^[0-9a-f]{7}$ ]]
+          test "$RELEASE_SHA" = "${RELEASE_COMMIT:0:7}"
+          [[ "$ARTIFACT_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$DEPLOY_ID" =~ ^[0-9]+-[0-9]+$ ]]
+          rollback_input=${ROLLBACK_IMAGE_TAG-}
+          rollback_sha=${ROLLBACK_ARTIFACT_SHA256-}
+          if test -n "$rollback_input" || test -n "$rollback_sha"; then
+              [[ "$rollback_input" =~ ^[0-9a-f]{7,40}$ ]] || exit 1
+              [[ "$rollback_sha" =~ ^[0-9a-f]{64}$ ]] || exit 1
           fi
 
-          runMigration() {
-              sudo docker run --rm \
-                  --network tetris_database \
-                  --mount type=bind,src=/srv/tetris/certs/ca.crt,dst=/run/secrets/postgres-ca.crt,readonly \
-                  --env-file /srv/tetris/secrets/migration.env \
-                  --env NODE_EXTRA_CA_CERTS=/run/secrets/postgres-ca.crt \
-                  "tetris-app:${RELEASE_SHA}" \
-                  node dist/server/server/db/migrateCli.js
+          root=/srv/tetris
+          state_dir="$root/deployments/$RELEASE_SHA-$DEPLOY_ID"
+          env_file="$root/secrets/production.env"
+          compose_file="$root/repository/compose.production.yml"
+          public_url=https://tetra-arena.duckdns.org
+          candidate="tetris-app:$RELEASE_SHA"
+          maintenance=false
+          cutover_started=false
+          restore_created=false
+          restore_db="deploy_verify_${RELEASE_SHA}_${DEPLOY_ID//-/_}"
+          before_tag=
+          after_tag=
+          before_version=
+          target_version=
+          baseline=
+
+          fail() { printf '%s\n' "$1" >&2; return 1; }
+          compose() { sudo docker compose --env-file "$env_file" -f "$compose_file" "$@"; }
+          sql() { sudo docker exec -e 'PGOPTIONS=-c statement_timeout=30000 -c lock_timeout=5000' tetris-postgres-1 psql -X -v ON_ERROR_STOP=1 -U postgres -d "${2:-tetris}" -At -c "$1"; }
+          version() { sql 'SELECT max(version) FROM tetris_analytics.schema_migrations'; }
+          field() { sed -n "s/^$1=//p" "$state_dir/state"; }
+          status() { printf '%s\n' "$1" > "$state_dir/status.tmp" || return 1; mv "$state_dir/status.tmp" "$state_dir/status"; }
+          snapshot() {
+              local where=${1-}
+              sql "SELECT count(*) || '|' || md5(COALESCE(string_agg(event_id || ':' || event_sha256 || ':' || ingested_at::text, E'\n' ORDER BY event_id), '')) FROM tetris_analytics.game_events $where" "${2:-tetris}"
+          }
+          profile() {
+              sudo docker run --rm "$1" node -e 'const s=require("./dist/server/server/services/runtimeEventStorage.js"); const c=require("./dist/server/client/game/state/config.js"); console.log([s.EXPECTED_POSTGRES_MIGRATION_VERSION,c.BOARD_ROWS,c.BOARD_COLS].join("|"));'
+          }
+          image_id() { sudo docker image inspect "tetris-app:$1" --format '{{.Id}}'; }
+          check_image() {
+              local image="tetris-app:$1" details
+              details=$(sudo docker image inspect "$image" --format '{{.Architecture}} {{.Os}} {{.Config.User}} {{json .Config.Cmd}}')
+              test "$details" = 'amd64 linux node ["node","dist/server/app.js"]' || fail DEPLOY_IMAGE_RUNTIME_INVALID
+          }
+          health() {
+              test "$(sudo docker inspect tetris-app-1 --format '{{.Config.Image}} {{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}}')" = "tetris-app:$1 running healthy false"
+          }
+          http_status() { curl --max-time 20 --silent --show-error --output /dev/null --write-out '%{http_code}' "$public_url/"; }
+          quiet() {
+              local count sample
+              for sample in 1 2 3; do
+                  count=$(sudo docker exec tetris-app-1 node -e 'const fs=require("node:fs");let n=0;for(const p of ["/proc/net/tcp","/proc/net/tcp6"]){for(const l of fs.readFileSync(p,"utf8").trim().split("\n").slice(1)){const f=l.trim().split(/\s+/);if(f[1].endsWith(":157C")&&f[3]==="01")n++;}}console.log(n);') || return 1
+                  [[ "$count" =~ ^[0-9]+$ ]] || return 1
+                  if test "$count" != 0; then fail DEPLOY_ACTIVE_CONNECTIONS; return 1; fi
+                  sleep 1 || return 1
+              done
+          }
+          close_ingress() {
+              sudo docker exec tetris-caddy-1 sh -c 'test "$(grep -c "reverse_proxy app:5500" /etc/caddy/Caddyfile)" -eq 1 && sed '\''s/reverse_proxy app:5500/respond "Server update in progress. Please refresh shortly." 503/'\'' /etc/caddy/Caddyfile > /tmp/tetris-deploy-maintenance.Caddyfile' || return 1
+              sudo docker exec tetris-caddy-1 caddy validate --config /tmp/tetris-deploy-maintenance.Caddyfile --adapter caddyfile || return 1
+              maintenance=true
+              status maintenance || return 1
+              sudo docker exec tetris-caddy-1 caddy reload --config /tmp/tetris-deploy-maintenance.Caddyfile --adapter caddyfile || return 1
+              test "$(http_status)" = 503
+          }
+          open_ingress() {
+              test "$(sha256sum "$root/repository/Caddyfile" | cut -d ' ' -f 1)" = "$(field CADDY_SHA)" || return 1
+              sudo docker exec tetris-caddy-1 caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || return 1
+              test "$(http_status)" = 200 || return 1
+              maintenance=false
+          }
+          set_tag() {
+              local tag=$1 temporary
+              [[ "$tag" =~ ^[0-9a-f]{7,40}$ ]] || return 1
+              temporary=$(mktemp "$root/secrets/production.env.XXXXXX")
+              if ! sed "s/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=$tag/" "$env_file" > "$temporary" \
+                  || test "$(grep -c '^APP_IMAGE_TAG=' "$temporary")" -ne 1; then
+                  rm -f -- "$temporary"
+                  return 1
+              fi
+              if ! chmod 600 "$temporary" || ! mv "$temporary" "$env_file"; then
+                  rm -f -- "$temporary"
+                  return 1
+              fi
+          }
+          replace_app() {
+              set_tag "$1" || return 1
+              compose up -d --no-deps --no-build --force-recreate --wait --wait-timeout 90 app || return 1
+              health "$1"
+          }
+          recover() {
+              local actual tag expected_id current
+              actual=$(version) || return 1
+              if test "$actual" = "$before_version"; then
+                  tag=$before_tag
+                  expected_id=$(field BEFORE_ID)
+              elif test "$actual" = "$target_version"; then
+                  tag=$after_tag
+                  expected_id=$(field AFTER_ID)
+              else
+                  fail DEPLOY_ROLLBACK_SCHEMA_UNKNOWN
+                  return 1
+              fi
+              test "$(image_id "$tag")" = "$expected_id" || return 1
+              current=$(sudo docker inspect tetris-app-1 --format '{{.Image}}') || current=
+              if test -n "$current" && test "$current" != "$(field CANDIDATE_ID)" && test "$current" != "$(field BEFORE_ID)" && test "$current" != "$(field AFTER_ID)"; then
+                  fail DEPLOY_ROLLBACK_STALE
+                  return 1
+              fi
+              if test "$maintenance" = false; then
+                  if test "$(http_status)" = 503; then
+                      maintenance=true
+                  else
+                      if test "$(sudo docker inspect tetris-app-1 --format '{{.State.Status}}' 2>/dev/null)" = running; then
+                          quiet || return 1
+                      fi
+                  fi
+              fi
+              # 직전 reload가 실패했을 수도 있으므로 복구 교체 전에 차단을 다시 확인한다.
+              close_ingress || return 1
+              replace_app "$tag" || return 1
+              open_ingress || return 1
+              status rolled_back || return 1
+              printf 'DEPLOY_ROLLBACK_VERIFIED=%s schema=%s\n' "$tag" "$actual"
+          }
+          cleanup() {
+              local code=$?
+              trap - EXIT
+              if test "$restore_created" = true; then
+                  if ! sudo docker exec tetris-postgres-1 dropdb -U postgres "$restore_db"; then
+                      code=1
+                      printf 'DEPLOY_RESTORE_CLONE_CLEANUP_FAILED\n' >&2
+                  fi
+              fi
+              if test "$code" -ne 0 && test -f "$state_dir/state"; then
+                  if test "$maintenance" = true || test "$cutover_started" = true; then
+                      if ! recover; then status manual_recovery_required; fi
+                  else
+                      status failed_preflight
+                  fi
+              fi
+              exit "$code"
           }
 
-          first_result="$(runMigration)"
-          printf '%s\n' "$first_result"
-          printf '%s\n' "$first_result" \
-              | grep -Eq '^PostgreSQL migrations applied=[0-9]+ skipped=[0-9]+$'
+          mkdir -p "$root/deployments"
+          exec 9> "$root/deployments/deploy.lock"
+          flock -n 9 || fail DEPLOY_ALREADY_RUNNING
+          trap cleanup EXIT
+          trap 'exit 143' TERM HUP
+          trap 'exit 130' INT
 
-          second_result="$(runMigration)"
-          printf '%s\n' "$second_result"
-          printf '%s\n' "$second_result" \
-              | grep -Eq '^PostgreSQL migrations applied=0 skipped=[1-9][0-9]*$'
-
-          printf 'database migrations verified: %s\n' "$RELEASE_SHA"
-          REMOTE
-
-      - name: Activate and verify production app
-        env:
-          OCI_HOST: ${{ vars.OCI_HOST }}
-          OCI_USER: ${{ vars.OCI_USER }}
-          OCI_SSH_PORT: ${{ vars.OCI_SSH_PORT }}
-        run: |
-          set -euo pipefail
-
-          ssh \
-            -i "$RUNNER_TEMP/tetris-ssh/id_rsa" \
-            -o IdentitiesOnly=yes \
-            -o StrictHostKeyChecking=yes \
-            -o UserKnownHostsFile="$RUNNER_TEMP/tetris-ssh/known_hosts" \
-            -p "$OCI_SSH_PORT" \
-            "$OCI_USER@$OCI_HOST" \
-            "RELEASE_SHA='$release_sha' RELEASE_COMMIT='$release_commit' bash -s" <<'REMOTE'
-          set -euo pipefail
-
-          case "$RELEASE_SHA" in
-              *[!0-9a-f]*|'')
-                  echo "INVALID_RELEASE_SHA" >&2
-                  exit 1
-                  ;;
-          esac
-          test "${#RELEASE_SHA}" -eq 7
-
-          env_file=/srv/tetris/secrets/production.env
-          compose_file=/srv/tetris/repository/compose.production.yml
-          current_tag=$(sed -n 's/^APP_IMAGE_TAG=//p' "$env_file")
+          test ! -e "$state_dir" || fail DEPLOY_STATE_EXISTS
+          mkdir -m 700 "$state_dir"
+          status preparing
           test "$(grep -c '^APP_IMAGE_TAG=' "$env_file")" -eq 1
-          case "$current_tag" in
-              *[!0-9a-f]*|'')
-                  echo "INVALID_CURRENT_IMAGE_TAG" >&2
-                  exit 1
-                  ;;
-          esac
-          if [[ ! "$current_tag" =~ ^[0-9a-f]{7,40}$ ]]; then
-              echo "INVALID_CURRENT_IMAGE_TAG" >&2
-              exit 1
+          before_tag=$(sed -n 's/^APP_IMAGE_TAG=//p' "$env_file")
+          [[ "$before_tag" =~ ^[0-9a-f]{7,40}$ ]] || fail DEPLOY_ACTIVE_TAG_INVALID
+          check_image "$RELEASE_SHA"
+          check_image "$before_tag"
+          health "$before_tag"
+          test "$(sudo docker inspect tetris-app-1 --format '{{.Image}}')" = "$(image_id "$before_tag")"
+          test "$(sudo docker image inspect "$candidate" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$RELEASE_COMMIT"
+          test "$(sudo docker image inspect "$candidate" --format '{{index .Config.Labels "com.tetris.release.artifact-sha256"}}')" = "$ARTIFACT_SHA256"
+          IFS='|' read -r target_version rows cols <<< "$(profile "$candidate")"
+          IFS='|' read -r before_version before_rows before_cols <<< "$(profile "tetris-app:$before_tag")"
+          [[ "$target_version" =~ ^[1-9][0-9]*$ && "$before_version" =~ ^[1-9][0-9]*$ ]] || fail DEPLOY_PROFILE_INVALID
+          test "$rows|$cols" = '40|10' || fail DEPLOY_GEOMETRY_UNSUPPORTED
+          test "$(version)" = "$before_version" || fail DEPLOY_ACTIVE_SCHEMA_MISMATCH
+          test "$target_version" -ge "$before_version" || fail DEPLOY_SCHEMA_DOWNGRADE_FORBIDDEN
+          after_tag=$before_tag
+          if test "$target_version" != "$before_version"; then
+              test -n "$rollback_input" || fail DEPLOY_COMPATIBLE_ROLLBACK_REQUIRED
+              after_tag=$rollback_input
           fi
-          sudo docker image inspect "tetris-app:${current_tag}" >/dev/null
-          sudo docker image inspect "tetris-app:${RELEASE_SHA}" >/dev/null
-
-          setImageTag() {
-              image_tag=$1
-              temporary=$(mktemp /srv/tetris/secrets/production.env.XXXXXX) || return 1
-              if ! sed "s/^APP_IMAGE_TAG=.*/APP_IMAGE_TAG=${image_tag}/" \
-                  "$env_file" > "$temporary"; then
-                  rm -f -- "$temporary"
-                  return 1
-              fi
-              if ! test "$(grep -c '^APP_IMAGE_TAG=' "$temporary")" -eq 1 \
-                  || ! chmod 600 "$temporary" \
-                  || ! mv "$temporary" "$env_file"; then
-                  rm -f -- "$temporary"
-                  return 1
-              fi
-              return 0
-          }
-
-          replaceApp() {
-              sudo docker compose \
-                  --env-file "$env_file" \
-                  -f "$compose_file" \
-                  up -d --no-deps --no-build --force-recreate --wait app
-          }
-
-          verifyApp() {
-              app_id=$(sudo docker compose \
-                  --env-file "$env_file" \
-                  -f "$compose_file" \
-                  ps -q app) || return 1
-              test -n "$app_id" || return 1
-              actual=$(sudo docker inspect "$app_id" \
-                  --format '{{.Config.Image}} {{.State.Status}} {{.State.Health.Status}} {{.State.OOMKilled}}') \
-                  || return 1
-              test "$actual" = "tetris-app:${expected_tag} running healthy false" \
-                  || return 1
-
-              http_status=$(curl -fsS \
-                  --retry 10 \
-                  --retry-delay 2 \
-                  --retry-all-errors \
-                  -o /dev/null \
-                  -w '%{http_code}' \
-                  https://tetra-arena.duckdns.org) || return 1
-              test "$http_status" = 200 || return 1
-          }
-
-          diagnoseCandidate() {
-              app_id=$(sudo docker compose \
-                  --env-file "$env_file" \
-                  -f "$compose_file" \
-                  ps -aq app | head -n 1) || app_id=
-              if test -z "$app_id"; then
-                  echo "CANDIDATE_CONTAINER_NOT_FOUND" >&2
-                  return 0
-              fi
-
-              image=$(sudo docker inspect "$app_id" --format '{{.Config.Image}}') \
-                  || image=unknown
-              if test "$image" != "tetris-app:${RELEASE_SHA}"; then
-                  printf 'CANDIDATE_CONTAINER_NOT_FOUND; found image=%s\n' "$image" >&2
-                  return 0
-              fi
-
-              echo "Candidate container state:"
-              sudo docker inspect "$app_id" \
-                  --format 'image={{.Config.Image}} status={{.State.Status}} exit={{.State.ExitCode}} oom={{.State.OOMKilled}}' \
-                  || true
-              echo "Candidate healthcheck history:"
-              sudo docker inspect "$app_id" \
-                  --format '{{if .State.Health}}{{json .State.Health}}{{else}}no-healthcheck{{end}}' \
-                  || true
-              echo "Candidate application logs (last 80 lines):"
-              sudo docker logs --timestamps --tail=80 "$app_id" 2>&1 \
-                  || true
-          }
-
-          rollback() {
-              echo "Deployment verification failed; restoring ${current_tag}" >&2
-              if ! setImageTag "$current_tag" || ! replaceApp; then
-                  echo "ROLLBACK_FAILED: app could not be recreated" >&2
-                  return 1
-              fi
-              expected_tag=$current_tag
-              if ! verifyApp; then
-                  echo "ROLLBACK_FAILED: restored app did not pass health checks" >&2
-                  return 1
-              fi
-              echo "rollback verified: ${current_tag}"
-          }
-
-          if test "$current_tag" = "$RELEASE_SHA" \
-              || test "$current_tag" = "$RELEASE_COMMIT"; then
-              expected_tag=$current_tag
-              if verifyApp; then
-                  printf 'release already active and healthy: %s\n' "$RELEASE_SHA"
-                  exit 0
-              fi
-              echo "CURRENT_RELEASE_UNHEALTHY; manual recovery is required" >&2
-              exit 1
+          if test -n "$rollback_input"; then
+              after_tag=$rollback_input
+              check_image "$after_tag"
+              test "$(sudo docker image inspect "tetris-app:$after_tag" --format '{{index .Config.Labels "com.tetris.release.artifact-sha256"}}')" = "$rollback_sha"
           fi
-
-          setImageTag "$RELEASE_SHA"
-          expected_tag=$RELEASE_SHA
-          if ! replaceApp || ! verifyApp; then
-              diagnoseCandidate || true
-              rollback || true
-              exit 1
+          IFS='|' read -r rollback_version rollback_rows rollback_cols <<< "$(profile "tetris-app:$after_tag")"
+          test "$rollback_version" = "$target_version" || fail DEPLOY_ROLLBACK_SCHEMA_MISMATCH
+          test "$rollback_cols" = 10
+          [[ "$rollback_rows" = 20 || "$rollback_rows" = 40 ]]
+          baseline=-
+          write_state() {
+              printf 'COMMIT=%s\nARTIFACT_SHA=%s\nBEFORE_TAG=%s\nBEFORE_ID=%s\nAFTER_TAG=%s\nAFTER_ID=%s\nBEFORE_VERSION=%s\nTARGET_VERSION=%s\nCANDIDATE_ID=%s\nCADDY_SHA=%s\nBASELINE=%s\n' \
+                  "$RELEASE_COMMIT" "$ARTIFACT_SHA256" "$before_tag" "$(image_id "$before_tag")" "$after_tag" "$(image_id "$after_tag")" \
+                  "$before_version" "$target_version" "$(image_id "$RELEASE_SHA")" "$(sha256sum "$root/repository/Caddyfile" | cut -d ' ' -f 1)" "$baseline" > "$state_dir/state.tmp"
+              mv "$state_dir/state.tmp" "$state_dir/state"
+          }
+          write_state
+          if test "$before_tag" = "$RELEASE_SHA"; then
+              status unchanged
+              printf 'DEPLOY_ALREADY_ACTIVE=%s\n' "$RELEASE_SHA"
+              exit 0
           fi
+          quiet
+          baseline=$(snapshot)
+          [[ "$baseline" =~ ^[0-9]+\|[0-9a-f]{32}$ ]]
+          write_state
+          backup="$root/backups/tetris-$RELEASE_SHA-$DEPLOY_ID.dump"
+          mkdir -p "$root/backups"
+          test ! -e "$backup"
+          timeout 600 sudo docker exec tetris-postgres-1 pg_dump -U postgres -d tetris --format=custom --lock-wait-timeout=5000 > "$backup.tmp"
+          test -s "$backup.tmp"
+          sudo docker exec -i tetris-postgres-1 pg_restore --list < "$backup.tmp" > /dev/null
+          mv "$backup.tmp" "$backup"
+          chmod 400 "$backup"
+          sha256sum "$backup" > "$state_dir/backup.sha256"
+          printf '%s\n' "$backup" > "$state_dir/backup-path"
+          sudo docker exec tetris-postgres-1 createdb -U postgres --owner=tetris_migration "$restore_db"
+          restore_created=true
+          timeout 600 sudo docker exec -i tetris-postgres-1 pg_restore -U postgres --exit-on-error --no-owner --role=tetris_migration --dbname="$restore_db" < "$backup"
+          test "$(snapshot '' "$restore_db")" = "$baseline" || fail DEPLOY_BACKUP_RESTORE_MISMATCH
+          test "$(snapshot)" = "$baseline" || fail DEPLOY_BACKUP_CHANGED_DURING_CAPTURE
+          sudo docker exec tetris-postgres-1 dropdb -U postgres "$restore_db"
+          restore_created=false
+          status backup_verified
+          quiet
+          close_ingress
+          compose stop --timeout 10 app
+          cutover_started=true
+          test "$(sudo docker inspect tetris-app-1 --format '{{.State.ExitCode}} {{.State.OOMKilled}}')" = '0 false'
+          test "$(snapshot)" = "$baseline" || fail DEPLOY_BACKUP_STALE
+          status migrating
+          run_migration() {
+              sudo docker run --rm --network tetris_database --mount "type=bind,src=$root/certs/ca.crt,dst=/run/secrets/postgres-ca.crt,readonly" \
+                  --env-file "$root/secrets/migration.env" --env NODE_EXTRA_CA_CERTS=/run/secrets/postgres-ca.crt \
+                  "$candidate" node dist/server/server/db/migrateCli.js
+          }
+          first=$(run_migration)
+          [[ "$first" =~ ^PostgreSQL\ migrations\ applied=[0-9]+\ skipped=[0-9]+$ ]]
+          second=$(run_migration)
+          [[ "$second" =~ ^PostgreSQL\ migrations\ applied=0\ skipped=[1-9][0-9]*$ ]]
+          test "$(version)" = "$target_version"
+          test "$(snapshot)" = "$baseline" || fail DEPLOY_MIGRATION_CHANGED_EVENTS
+          printf '%s\n%s\n' "$first" "$second" > "$state_dir/migration-result"
+          # 실제 DB에서 호환 image를 기동한 뒤 후보로 교체한다. probe에 사용자 트래픽은 열지 않는다.
+          replace_app "$after_tag"
+          status rollback_boot_verified
+          replace_app "$RELEASE_SHA"
+          test "$(snapshot)" = "$baseline"
+          open_ingress
+          test "$(version)" = "$target_version"
+          failures=$(sudo docker logs tetris-app-1 2>&1 | awk '/\[gameEventStorage\].*write_failed/{n++} END{print n+0}')
+          test "$failures" = 0 || fail DEPLOY_STORAGE_WRITE_FAILED
+          status complete
+          printf 'DEPLOY_VERIFIED=%s schema=%s geometry=40x10\n' "$RELEASE_SHA" "$target_version"
 
-          printf 'production app activated and verified: %s (previous=%s)\n' \
-              "$RELEASE_SHA" "$current_tag"
+          # DEPLOY_REMOTE_END
           REMOTE
+
+      - name: Remove runner SSH credentials
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/tetris-ssh/id_rsa" "$RUNNER_TEMP/tetris-ssh/known_hosts"

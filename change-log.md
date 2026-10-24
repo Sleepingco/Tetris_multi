@@ -1,9 +1,21 @@
+## 2026-10-24 — 남은 배포·계획 변경 로컬 checkpoint
 
+- 사용자 요청으로 기존 Actions CD 수정과 복구 테스트, 5단계 운영 배포 기록·집계 증거, UI 배치 개선 계획과 `data/*` 제외 규칙을 함께 커밋한다. 기존 데이터 감사 checkpoint와 사용자 변경은 보존한다.
+- 현재 HEAD 기준 `bash scripts/verify.sh`는 **781 pass·기존 조건부 1 skip·0 fail**이다. workflow YAML/Bash 구문, 집계 JSON, 배치 계획 링크와 diff 검사가 통과했다. 원격 push·Actions 실행·운영 재배포·UI 구현은 수행하지 않는다.
 
 ## 2026-10-24 — Human 행동 데이터 질문·결정 기록
 
 - `QnA.md`에 유효성 검사와 정제·학습의 구분, 기존 JSONL 재추출 필요 여부, 정상 참여 기준, runtime 입력 시각의 의미, Notebook·테스트·실행본 역할을 정리했다. 사용자 목적은 좋은 배치/승자 복제가 아니라 Human 조작 간격·리듬·행동·hold 모방이다.
 - 이 문서 기록만 별도 checkpoint 대상으로 삼는다. 기존 미커밋 구현·ML 경로 이동·배포·UI 계획 변경은 포함하지 않으며 실제 정제·추출·학습·백업 삭제·runtime 변경도 수행하지 않는다. 문서 경로·fence·공백을 검증하고 전체 테스트는 반복하지 않는다.
+
+## 2026-10-24 — 게임·멀티 로비 배치 개선 조사·계획
+
+- 사용자 요청에 따라 Ponytail full을 적용한 [배치 개선 계획](docs/design/buffer-layout-plan.md)을 작성했다. 게임·로비 CSS/JSX와 runtime 표시 경계, 멀티 성과·공격 연출 caller, 기존 E2E·fixture·Vite/Playwright 설정을 조사했다.
+- Node 24.18.0·로컬 Vite source·설치된 Chromium에서 싱글·로비·PVE 선택·멀티 화면을 1600×900·1280×720·1100×800·390×844로 측정했다. 임시 backend/JSONL만 사용했다. 낮은 화면의 보드 하단 넘침과 모바일 채팅 우선 배치를 확인하고 구현 후 수락 기준에 연결했다.
+- 색상·NEXT 4개·기존 좌우 위치·40행 판정은 보존하고 CSS 중심 수정, 싱글 native 조작법 접기, 로비 두 영역의 DOM 순서 변경으로 범위를 좁혔다. 시안의 새 슬롯·채팅 탭·설정 메뉴는 제외한다. 기존 연출 안전 간격을 확보할 수 있을 때 멀티 JS는 수정하지 않는다.
+- 이번 변경은 계획·현재 상태·이력 문서뿐이다. 공백·문서 경로·링크·code fence를 검사하며 runtime/전체 테스트는 반복하지 않는다. 다크 배치·실기기·확대·완주 회귀는 구현 검증에 남긴다. 기존 사용자 변경을 보존하고 구현·commit·push·배포는 수행하지 않는다.
+
+
 
 ## 2026-10-24 — AI 문서·실험 읽기 순서와 Human 조작 AI 설계 정리
 
@@ -2937,3 +2949,20 @@ client input
 - 사용자 요청으로 실제 OCI 운영 배포를 시작했다. 현재 842b744/migration 2와 app/PostgreSQL healthy·HTTPS 200을 확인했다.
 - 배포 전용 source-less 검사의 과거 V4 기대값을 수정했다. 실제 40행 PVP/PVE·명시적 heuristic fallback과 패키지에 보존된 V4 artifact checksum을 함께 검사한다.
 - 배포 workflow는 실행 중 app과 후보의 DB 기대 버전이 다르면 migration 전에 중단한다. 2→3 전환은 검증한 stage2 rollback 이미지·접속 종료·유입 차단·backup을 갖춘 수동 절차를 사용한다. 실제 전환 결과는 후속 실행 기록에 남긴다.
+
+## 버퍼 존 5단계: 운영 배포 완료 (2026-10-23)
+
+- 배포 commit `bbf26b72554907017765338c331416f32debc80a`를 main에 반영하고 [CI #39930149609](https://github.com/Sleepingco/Tetris_multi/actions/runs/39930149609)의 Fast/Browser/Docker/PostgreSQL 네 job success를 확인했다. 로컬 verify 769 pass·기존 1 skip, source-less release 1/1과 실제 workflow의 버전 전환 중단 경로를 검증했다.
+- 운영 custom-format backup 42,327,177 bytes를 임시 DB에 restore해 기존 143,404건의 event_id/event_sha256/ingested_at 해시 일치를 확인했다. 접속 0건을 세 번 확인하고 약 83초간 app 신규 유입을 막은 뒤 migration 2→3·재실행과 app만 교체했다. 현재 image는 bbf26b7이며 기존 Caddy 통계 경로·PostgreSQL container/volume·row를 보존했다.
+- 실제 공개 HTTPS에서 싱글 종료/재시작·1600/390px·PVP/PVE 완료·40행 snapshot·명시적 V4→heuristic 전환을 확인했다. 네 HTML/진입 JS가 local dist와 checksum이 같았다. 운영 DB에 새 v3 start 2/placement 33/over 2를 저장했고 예상 33/실제 33·누락/중복/문맥 오류 0, 사람 commit/전송/성공 22/22/22·RATE_LIMITED 0, write_failed 로그 0이다. 최종 event 143,441건이며 기존 best-effort/10초 10건 한도는 유지한다.
+- migration 3 호환 20행 rollback image 6be7d05를 별도 보관하고 실제 운영 DB 기동·healthy·HTTP 200·exit 0/OOM false를 확인했다. migration 2 전용 842b744로 직접 복구하지 않는다. 보호된 backup과 image checksum·운영 값·복구 절차는 [실행 기록](docs/operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md), 집계 증거는 [산출물](docs/gameplay/verification/top-out-buffer-zone-stage5-production-smoke-2026-10-23.json)에 남겼다.
+- 실기기·장시간 부하·off-VM 재해 복구·기존 의존성 audit 영향 분석·ML 재학습/행동 모방 수집 개편은 수행하지 않았다. 구버전 탭은 새로고침해야 한다.
+
+
+## 2026-10-23 — 기존 GitHub Actions 배포 단계의 schema 전환 대응
+
+- `.github/workflows/deploy-production.yml` 자체의 배포 단계를 수정했다. 별도 배포 SH/JS 없이 기존 CI 성공 확인·소스 전송·이미지 빌드를 유지하고, 같은 workflow의 SSH `run` 안에서 backup 실제 restore·기존 event 해시, 접속 0건/503 차단, migration 재실행, 호환 rollback boot·app만 교체를 수행한다.
+- schema 변경 시 새 DB version을 지원하는 rollback image tag와 archive checksum을 요구한다. 실패 복구는 실제 DB version에 맞는 image를 선택하며 운영 row/volume·Compose/Caddy 원본을 덮어쓰거나 삭제하지 않는다.
+- Single/PVP/PVE·40행·V4 fallback·v3 로그 계약은 기존 main CI 검사를 사용한다. CD는 정확한 commit의 CI 성공과 운영 DB version·event 보존·healthy/HTTPS 200·기동 write_failed 로그를 검사한다. 별도의 브라우저 smoke/cohort 실행기나 런타임 권한 변경은 추가하지 않는다.
+- workflow에 실제 적힌 원격 명령을 추출해 격리 대역에서 성공·실패·rollback을 검사한다. 이번 수정은 Actions dispatch·운영 재배포를 수행하지 않는다.
+- Node 24.18.0 `bash scripts/verify.sh`: **781 pass·기존 1 skip·0 fail**. YAML 내부 명령을 직접 검사하는 성공/실패/복구 **12/12**, workflow YAML·Bash 구문과 문서 경로·diff 검사가 통과했다. 실제 GitHub Actions/OCI 실행은 미검증이다.

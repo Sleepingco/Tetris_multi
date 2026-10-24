@@ -1,0 +1,91 @@
+// 운영 명령을 실행하지 않는 격리 대역. 알 수 없는 명령은 실패시킨다.
+const fs = require("node:fs");
+const path = require("node:path");
+const { createHash } = require("node:crypto");
+const file = process.env.DEPLOY_TEST_STATE;
+const s = JSON.parse(fs.readFileSync(file, "utf8"));
+const command = path.basename(process.argv[1]);
+const args = process.argv.slice(2);
+s.commands.push([command, ...args]);
+let output = "";
+let code = 0;
+const contains = text => args.some(arg => arg.includes(text));
+const reject = () => { code = 1; };
+if (command === "sleep" || command === "flock") {
+    if (command === "flock" && s.fault === "locked") reject();
+} else if (command === "sha256sum") {
+    output = createHash("sha256").update(fs.readFileSync(args[0])).digest("hex") + "  " + args[0];
+} else if (command === "curl") {
+    output = s.maintenance ? "503" : "200";
+} else if (command === "sudo") {
+    if (args[0] !== "docker") throw Error("unexpected sudo");
+    const format = args[args.indexOf("--format") + 1];
+    if (args[1] === "image") {
+        const tag = args[3].split(":")[1];
+        if (!s.images[tag]) reject();
+        else if (format === "{{.Id}}") output = "sha256:" + tag;
+        else if (format.includes("Architecture")) output = 'amd64 linux node ["node","dist/server/app.js"]';
+        else if (format.includes("revision")) output = s.commit;
+        else if (format.includes("artifact-sha256")) output = tag === s.candidate ? s.artifact : s.rollbackSha;
+        else throw Error("unexpected image format");
+    } else if (args[1] === "inspect") {
+        if (format.includes("Config.Image")) output = `tetris-app:${s.active} running healthy false`;
+        else if (format === "{{.Image}}") output = "sha256:" + s.active;
+        else if (format.includes("ExitCode")) output = "0 false";
+        else if (format.includes("State.Status")) output = s.running ? "running" : "exited";
+        else throw Error("unexpected inspect");
+    } else if (args[1] === "run") {
+        if (contains("--deployment-stdin")) {
+            if (s.fault === "cohort") reject();
+            else output = '{"status":"verified"}';
+        } else if (contains("migrateCli.js")) {
+            s.migrations++;
+            if (s.fault === "migration-before") reject();
+            else {
+                const changed = s.version !== s.images[s.candidate];
+                s.version = s.images[s.candidate];
+                if (s.fault === "migration-after") reject();
+                else output = `PostgreSQL migrations applied=${changed ? 1 : 0} skipped=${changed ? 2 : 3}`;
+            }
+        } else {
+            const tag = args.find(arg => arg.startsWith("tetris-app:")).split(":")[1];
+            output = `${s.images[tag]}|${tag === s.before && s.images[tag] === 2 ? 20 : 40}|10`;
+        }
+    } else if (args[1] === "compose") {
+        if (contains("stop")) s.running = false;
+        else if (contains("up")) {
+            s.active = fs.readFileSync(path.join(process.env.TETRIS_DEPLOY_ROOT, "secrets/production.env"), "utf8").match(/^APP_IMAGE_TAG=(.+)$/m)[1];
+            s.running = true;
+            if (s.active === s.candidate && ["candidate", "rollback"].includes(s.fault)) {
+                s.failedCandidate = true;
+                reject();
+            } else if (s.fault === "rollback" && s.failedCandidate) reject();
+        } else throw Error("unexpected compose");
+    } else if (args[1] === "logs") output = s.fault === "storage" ? "[gameEventStorage] write_failed" : "";
+    else if (args[1] === "exec") {
+        if (contains("psql")) {
+            const query = args[args.indexOf("-c") + 1];
+            if (query.includes("max(version)")) output = String(s.version);
+            else if (query.includes("clock_timestamp")) output = "2026-10-23T09:00:00.000000Z";
+            else if (query.includes("md5(")) {
+                const clone = args[args.indexOf("-d") + 1].startsWith("deploy_verify_");
+                output = (clone && s.fault === "restore" ? "11" : "10") + "|" + "a".repeat(32);
+            } else throw Error("unexpected SQL");
+        } else if (contains("pg_dump")) output = "SYNTHETIC_DUMP";
+        else if (contains("pg_restore") || contains("createdb") || contains("dropdb")) output = "";
+        else if (contains("/proc/net/tcp")) output = s.fault === "active" ? "1" : "0";
+        else if (contains("--deployment-stdin")) {
+            if (s.fault === "cohort") reject();
+            else output = '{"status":"verified"}';
+        } else if (contains("caddy")) {
+            if (contains("reload")) {
+                if (s.fault === "gate" && !s.gateFailed) { s.gateFailed = true; reject(); }
+                else s.maintenance = contains("/tmp/tetris-deploy-maintenance.Caddyfile");
+            }
+        } else if (contains("grep -c")) output = "";
+        else throw Error("unexpected exec");
+    } else throw Error("unexpected docker");
+} else throw Error("unexpected command " + command);
+fs.writeFileSync(file, JSON.stringify(s));
+if (output) process.stdout.write(output + "\n");
+process.exitCode = code;
