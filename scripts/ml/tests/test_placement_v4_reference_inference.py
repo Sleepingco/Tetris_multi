@@ -18,8 +18,8 @@ from scripts.ml import placement_v4_reference_inference as inference
 from scripts.ml import train_placement_v4 as trainer
 
 
-ROOT = Path(__file__).resolve().parents[1]
-FIXTURE_PATH = ROOT / "python_tests/fixtures/placement_v4_reference_inference_fixture.json"
+ROOT = Path(__file__).resolve().parents[3]
+FIXTURE_PATH = ROOT / "scripts/ml/tests/fixtures/placement_v4_reference_inference_fixture.json"
 
 
 class PlacementV4ReferenceInferenceTest(unittest.TestCase):

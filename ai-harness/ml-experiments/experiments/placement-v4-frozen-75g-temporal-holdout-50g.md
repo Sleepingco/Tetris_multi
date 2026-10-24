@@ -41,7 +41,7 @@
 - `scripts/export-placement-dataset.js`
 - `ai-harness/ml-experiments/experiments/placement-v4-frozen-75g-temporal-holdout-50g.md`
 - `scripts/ml/notebooks/placement_v4_frozen_75g_temporal_holdout_50g.ipynb`
-- `python_tests/test_placement_v4_frozen_temporal_holdout_notebook.py`
+- `scripts/ml/tests/test_placement_v4_frozen_temporal_holdout_notebook.py`
 
 ## 금지 변경
 
@@ -53,7 +53,7 @@
 ## 구현 산출물
 
 - Source Notebook: `scripts/ml/notebooks/placement_v4_frozen_75g_temporal_holdout_50g.ipynb`
-- Contract test: `python_tests/test_placement_v4_frozen_temporal_holdout_notebook.py`
+- Contract test: `scripts/ml/tests/test_placement_v4_frozen_temporal_holdout_notebook.py`
 - Smoke report: `/private/tmp/placement-v4-frozen-75g-temporal-holdout-50g-smoke.json`
 - Full report: `data/ml-experiments/placement-v4-frozen-75g-temporal-holdout-50g/full-report.json`
 - Full report SHA-256: `e7e2af381d420999dd2d993f542d897767ff5bf4563c2d553df5e57b2f921264`

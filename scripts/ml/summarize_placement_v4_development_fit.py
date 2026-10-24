@@ -71,7 +71,7 @@ def load_json_object(path: Path) -> dict[str, Any]:
 
 def find_repository_root(start: Path) -> Path:
     for candidate in [start.resolve(), *start.resolve().parents]:
-        if (candidate / "package.json").is_file() and (candidate / "python_tests").is_dir():
+        if (candidate / "package.json").is_file() and (candidate / "scripts/ml").is_dir():
             return candidate
     raise ValueError("REPOSITORY_ROOT_NOT_FOUND")
 

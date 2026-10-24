@@ -42,7 +42,7 @@
 
 - Source Notebook: `scripts/ml/notebooks/placement_v4_pve_gameplay_benchmark.ipynb`
 - Node test: `test/testPlacementV4PveGameplayBenchmark.js`
-- Notebook contract test: `python_tests/test_placement_v4_pve_gameplay_benchmark_notebook.py`
+- Notebook contract test: `scripts/ml/tests/test_placement_v4_pve_gameplay_benchmark_notebook.py`
 - Smoke report: `/private/tmp/placement-v4-pve-gameplay-smoke-run{1,2}.json`
 - Timing report: `/private/tmp/placement-v4-pve-gameplay-smoke-timing-run{1,2}.json`
 

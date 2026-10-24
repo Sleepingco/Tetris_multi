@@ -581,9 +581,11 @@ Tetris_multi/
 ├─ test-integration/
 ├─ e2e/
 ├─ test-artifact/
-├─ python_tests/
 ├─ scripts/
 │  └─ ml/
+│     ├─ notebooks/
+│     └─ tests/
+│        └─ fixtures/
 ├─ ai-harness/
 ├─ migration-harness/
 ├─ docs/
@@ -616,7 +618,7 @@ Tetris_multi/
 | `test-integration` | 실제 PostgreSQL schema/repository 검증 | mock으로 확인할 수 없는 SQL constraint, migration, TLS와 role 권한을 별도 환경에서 검증한다. |
 | `e2e` | Chromium user flow | 실제 두 context, Socket.IO, Canvas, React lifecycle을 검증한다. |
 | `test-artifact` | clean build와 source-less release | 개발 환경에 우연히 의존하는 production build를 막는다. |
-| `python_tests` | parity, Notebook contract, summarizer | offline ML 결과와 안전한 파일 처리를 검증한다. |
+| `scripts/ml/tests` | parity, Notebook contract, summarizer | offline ML 결과와 안전한 파일 처리를 검증한다. |
 | `scripts` | build, export, evaluation, training, DB/production smoke, summary | 반복 실행을 명령으로 고정하고 수작업 차이를 줄인다. |
 | `ai-harness` | 작업 방식과 ML experiment contract | 긴 프롬프트 반복을 줄이고 implement-smoke/full/analyze 단계를 분리한다. |
 | `migration-harness` | Goal 범위, 선행조건, 검증, rollback | 큰 기술 전환을 작은 merge gate로 제한한다. |
@@ -1431,7 +1433,7 @@ event producer가 살아 있고 best-effort write가 in-flight인 상태에서 �
 | 저장 경계 | `src/server/services/runtimeEventStorage.ts`, `src/server/services/gameEventProjector.ts`, `src/server/repositories`, `src/server/db` |
 | PostgreSQL 운영 | `docs/operations/database/database-event-storage-blueprint.md`, `docs/operations/deployment/postgres-production-runbook.md`, `migration-harness/runs/goal-09a-*`~`goal-09d-*` |
 | AI/ML | `src/client/game/ai`, `scripts/ml`, `docs/placement-*`, `ai-harness/runs` |
-| test | `test`, `test-integration`, `e2e`, `test-artifact`, `python_tests` |
+| test | `test`, `test-integration`, `e2e`, `test-artifact`, `scripts/ml/tests` |
 | Docker·CI | `Dockerfile`, `.dockerignore`, `.github/workflows/ci.yml`, `scripts/run-postgres-tests.js`, `scripts/verify-postgres-production.sh` |
 | migration 과정 | `migration-harness/goals`, `migration-harness/runs`, `docs/operations/history/goal-11-security-docker-ci-history.md` |
 
@@ -1603,11 +1605,11 @@ event producer가 살아 있고 best-effort write가 in-flight인 상태에서 �
 4. **추가 꼬리 질문**: 더 합칠 수 있는 부분은 없나요?
 5. **꼬리 질문에 대한 답변**: 실제 중복이나 탐색 비용이 확인되면 얇은 파일은 합칠 수 있습니다. 지금은 `multiplayerGameSession`이 network disposer를 한 곳에 모으는 실질 책임이 있어 유지합니다.
 
-### Q20. `test`, `e2e`, `test-artifact`, `python_tests`를 왜 나눴나요?
+### Q20. `test`, `e2e`, `test-artifact`, `scripts/ml/tests`를 왜 나눴나요?
 
 1. **질문**: 테스트 디렉토리가 여러 개인 이유는 무엇인가요?
 2. **면접관이 질문하는 이유**: 테스트 종류별 목적과 비용을 이해하는지 본다.
-3. **모범 답변**: `test`는 빠른 compiled Node 회귀, `e2e`는 실제 browser/Socket/Canvas, `test-artifact`는 source 없는 production 경계, `python_tests`는 ML parity와 summarizer 계약을 담당합니다. 한 runner로 섞으면 환경과 실패 원인이 불명확해집니다.
+3. **모범 답변**: `test`는 빠른 compiled Node 회귀, `e2e`는 실제 browser/Socket/Canvas, `test-artifact`는 source 없는 production 경계, `scripts/ml/tests`는 ML parity와 summarizer 계약을 담당합니다. 한 runner로 섞으면 환경과 실패 원인이 불명확해집니다.
 4. **추가 꼬리 질문**: CI에서 Python test를 왜 required로 돌리지 않나요?
 5. **꼬리 질문에 대한 답변**: Conda 설치 비용과 별도 action 공급망 검토가 필요해 현재 required CI에서는 제외했습니다. ML 변경 때는 `verify:ml`로 별도 실행합니다.
 

@@ -12,7 +12,7 @@ const { existsSync, readFileSync } = require("node:fs");
 const path = require("node:path");
 
 const ROOT = path.resolve(__dirname, "..");
-const FIXTURE_PATH = path.join(ROOT, "python_tests/fixtures/placement_v4_reference_inference_fixture.json");
+const FIXTURE_PATH = path.join(ROOT, "scripts/ml/tests/fixtures/placement_v4_reference_inference_fixture.json");
 const MODEL_PATH = path.join(ROOT, "data/models/placement-v4-125g-candidate/model.json");
 const REFERENCE_REPORT_PATH = path.join(
     ROOT,

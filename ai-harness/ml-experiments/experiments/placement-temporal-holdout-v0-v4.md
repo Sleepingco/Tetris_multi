@@ -25,7 +25,7 @@ V1~V3 decomposition은 반복하지 않는다.
 - `docs/ai-ml/experiments/placement-pair-weight-decomposition.md`
 - `docs/ai-ml/experiments/results/placement-pair-weight-decomposition-result.json`
 - `scripts/ml/notebooks/placement_pair_weight_decomposition_experiment.ipynb`
-- `python_tests/test_placement_pair_weight_decomposition_notebook.py`
+- `scripts/ml/tests/test_placement_pair_weight_decomposition_notebook.py`
 
 이 명세의 요약 문장은 탐색을 돕기 위한 것이며 위 tracked 계약을 대체하지 않는다.
 
@@ -68,7 +68,7 @@ V1~V3 decomposition은 반복하지 않는다.
 ## 허용 변경
 
 - `scripts/ml/notebooks/placement_temporal_holdout_v0_v4_experiment.ipynb`
-- `python_tests/test_placement_temporal_holdout_notebook.py`
+- `scripts/ml/tests/test_placement_temporal_holdout_notebook.py`
 - 필요할 때 `ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md`
 - Git ignored 새 cumulative dataset 경로
 

@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 NOTEBOOK_PATH = ROOT / "scripts/ml/notebooks/placement_v4_pve_gameplay_benchmark.ipynb"
 EXPERIMENT_PATH = ROOT / "ai-harness/ml-experiments/experiments/placement-v4-pve-gameplay-benchmark.md"
 RUNNER_PATH = ROOT / "scripts/run-placement-v4-pve-gameplay-benchmark.js"

@@ -56,9 +56,9 @@ Expected accepted cohort:
 
 - `ai-harness/ml-experiments/experiments/placement-v4-cumulative-75g-development-fit.md`
 - `scripts/ml/notebooks/placement_v4_cumulative_75g_development_fit.ipynb`
-- `python_tests/test_placement_v4_cumulative_development_fit_notebook.py`
+- `scripts/ml/tests/test_placement_v4_cumulative_development_fit_notebook.py`
 - `scripts/ml/summarize_placement_v4_development_fit.py`
-- `python_tests/test_summarize_placement_v4_development_fit.py`
+- `scripts/ml/tests/test_summarize_placement_v4_development_fit.py`
 
 ## 금지 변경
 
@@ -73,9 +73,9 @@ Expected accepted cohort:
 ## 구현 산출물
 
 - Source Notebook: `scripts/ml/notebooks/placement_v4_cumulative_75g_development_fit.ipynb`
-- Contract test: `python_tests/test_placement_v4_cumulative_development_fit_notebook.py`
+- Contract test: `scripts/ml/tests/test_placement_v4_cumulative_development_fit_notebook.py`
 - Full report summarizer: `scripts/ml/summarize_placement_v4_development_fit.py`
-- Summarizer test: `python_tests/test_summarize_placement_v4_development_fit.py`
+- Summarizer test: `scripts/ml/tests/test_summarize_placement_v4_development_fit.py`
 - Optional walkthrough: Notebook Markdown 자체
 - Smoke report: `/private/tmp/placement-v4-cumulative-75g-development-fit-smoke.json`
 - Full report: `/private/tmp/placement-v4-cumulative-75g-development-fit-full.json`

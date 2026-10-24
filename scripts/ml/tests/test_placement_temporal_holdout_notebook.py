@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 NOTEBOOK_PATH = (
     ROOT / "scripts/ml/notebooks/placement_temporal_holdout_v0_v4_experiment.ipynb"
 )

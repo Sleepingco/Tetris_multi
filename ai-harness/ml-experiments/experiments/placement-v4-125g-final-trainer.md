@@ -62,7 +62,7 @@ Expected accepted cohort:
 ## 허용 변경
 
 - `scripts/ml/train_placement_v4.py`
-- `python_tests/test_train_placement_v4.py`
+- `scripts/ml/tests/test_train_placement_v4.py`
 - `ai-harness/ml-experiments/experiments/placement-v4-125g-final-trainer.md`
 
 ## 금지 변경
@@ -78,7 +78,7 @@ Expected accepted cohort:
 ## 구현 산출물
 
 - Trainer: `scripts/ml/train_placement_v4.py`
-- Contract/unit test: `python_tests/test_train_placement_v4.py`
+- Contract/unit test: `scripts/ml/tests/test_train_placement_v4.py`
 - Experiment specification: 이 파일
 - Smoke model: `/private/tmp/placement-v4-125g-smoke/model.json`
 - Smoke report: `/private/tmp/placement-v4-125g-smoke/training-report.json`

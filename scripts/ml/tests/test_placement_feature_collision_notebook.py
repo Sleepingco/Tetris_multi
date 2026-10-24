@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 NOTEBOOK_PATH = (
     ROOT / "scripts/ml/notebooks/placement_feature_collision_analysis.ipynb"
 )

@@ -25,8 +25,8 @@
 - [migration 읽기 순서](../archive/migration/README.md)
 - [migration 공통 검증](../archive/migration/verification.md)
 - [실제 기본 검증 스크립트](../../scripts/verify.sh)
-- [PVE benchmark 문서 의존 테스트](../../python_tests/test_placement_v4_pve_gameplay_benchmark_notebook.py)
-- [development fit 문서 의존 테스트](../../python_tests/test_placement_v4_cumulative_development_fit_notebook.py)
+- [PVE benchmark 문서 의존 테스트](../../scripts/ml/tests/test_placement_v4_pve_gameplay_benchmark_notebook.py)
+- [development fit 문서 의존 테스트](../../scripts/ml/tests/test_placement_v4_cumulative_development_fit_notebook.py)
 
 ## 2. 범위와 보존 조건
 
@@ -82,7 +82,7 @@
 
 대상: `migration-harness/` 전체, `AGENTS.md`, README·PLAN, migration을 참조하는 운영·품질·이력 문서, 본 계획의 근거 링크.
 
-1. 파일 목록과 내용을 기준선으로 기록하고 저장소 전체에서 링크·문자열 참조·테스트 의존성을 확인한다. 현재 조사한 scripts/test/python_tests/.github/package.json에서는 migration 경로 의존성이 발견되지 않았으나 이동 직전에 다시 확인한다.
+1. 파일 목록과 내용을 기준선으로 기록하고 저장소 전체에서 링크·문자열 참조·테스트 의존성을 확인한다. 현재 조사한 scripts/test/scripts/ml/tests/.github/package.json에서는 migration 경로 의존성이 발견되지 않았으나 이동 직전에 다시 확인한다.
 2. migration에만 적혀 있으면서 현재도 필요한 조건을 확인한다. 기존 아키텍처·운영·품질 문서나 검증 스크립트에 이미 있으면 그 위치를 참조하고, 없으면 필요한 조건만 기존 적합한 문서에 옮긴다.
 3. 폴더를 `docs/archive/migration/`으로 이동하되 goals/runs/prompts 등 내부 구조를 유지한다. 과거 커밋·날짜·결과·checksum과 보류 상태를 보존한다.
 4. archive README와 실행 프롬프트에 종료된 작업의 기록이며 새 작업의 실행 권한·현재 명세가 아님을 표시한다. 새 migration 요구가 생기면 당시 계획을 참고하되 현재 코드 기준으로 새 범위를 정한다.

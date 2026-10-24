@@ -111,8 +111,8 @@
 
 | 소비자 | 이전 경로 | 사용할 경로 |
 | --- | --- | --- |
-| `python_tests/test_placement_cell_equivalence_notebook.py` | `docs/placement-cell-equivalence-logo.md` | `docs/ai-ml/experiments/placement-cell-equivalence-logo.md` |
-| `python_tests/test_placement_pair_weight_decomposition_notebook.py` | `docs/placement-pair-weight-decomposition.md` | `docs/ai-ml/experiments/placement-pair-weight-decomposition.md` |
+| `scripts/ml/tests/test_placement_cell_equivalence_notebook.py` | `docs/placement-cell-equivalence-logo.md` | `docs/ai-ml/experiments/placement-cell-equivalence-logo.md` |
+| `scripts/ml/tests/test_placement_pair_weight_decomposition_notebook.py` | `docs/placement-pair-weight-decomposition.md` | `docs/ai-ml/experiments/placement-pair-weight-decomposition.md` |
 
 완료 기준: 문서 계약 테스트가 파일을 찾고 원래 검증을 통과한다. 링크 제목과 목적지가 일치한다. 다른 브랜치의 내용은 현재 구현으로 합쳐지지 않는다.
 
@@ -151,7 +151,7 @@
 
 - `git diff --check`, 신규 파일의 공백·코드 fence 짝·마지막 개행을 확인한다.
 - 변경 파일과 유입 문서의 상대 링크, 제목 앵커, 이미지 경로를 검사한다. 존재하는 파일로 연결돼도 의미가 틀린 자기 링크는 별도로 확인한다.
-- `rg`로 Markdown뿐 아니라 `src/`, `test/`, `python_tests/`, `scripts/`, `.github/`, Notebook의 이전 경로 참조를 찾는다. 과거 명령의 문자열은 현재 참조와 구분한다.
+- `rg`로 Markdown뿐 아니라 `src/`, `test/`, `scripts/ml/tests/`, `scripts/`, `.github/`, Notebook의 이전 경로 참조를 찾는다. 과거 명령의 문자열은 현재 참조와 구분한다.
 - archive 이동은 본문 보존을 비교한다. 통합 문서는 고유 정보·검증 근거의 새 위치를 확인한다.
 - Q&A·로컬 초안·모델·dataset·Notebook·runtime과 배포 설정이 의도치 않게 바뀌지 않았는지 확인한다.
 - 외부 링크나 실제 운영 상태를 확인하지 않았다면 그 범위를 명시한다. 문서 편집만으로 새 CI·운영·성능 검증을 통과했다고 쓰지 않는다.
@@ -159,8 +159,8 @@
 1단계에서 문서 계약 테스트 경로를 수정하는 경우:
 
 ```bash
-conda run -n tetris-ml python -m unittest discover -s python_tests -p 'test_placement_cell_equivalence_notebook.py'
-conda run -n tetris-ml python -m unittest discover -s python_tests -p 'test_placement_pair_weight_decomposition_notebook.py'
+conda run -n tetris-ml python -m unittest discover -s scripts/ml/tests -p 'test_placement_cell_equivalence_notebook.py'
+conda run -n tetris-ml python -m unittest discover -s scripts/ml/tests -p 'test_placement_pair_weight_decomposition_notebook.py'
 bash scripts/verify.sh
 ```
 

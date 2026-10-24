@@ -10,7 +10,6 @@ coverage
 test
 test-artifact
 e2e
-python_tests
 test-results
 playwright-report
 blob-report

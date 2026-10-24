@@ -15,7 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = ROOT / "scripts/ml/summarize_placement_v4_development_fit.py"
 SPEC = importlib.util.spec_from_file_location("v4_development_summary", SCRIPT_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)

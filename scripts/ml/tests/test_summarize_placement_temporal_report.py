@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_PATH = ROOT / "scripts/ml/summarize_placement_temporal_report.py"
 SPEC = importlib.util.spec_from_file_location("temporal_summary", SCRIPT_PATH)
 MODULE = importlib.util.module_from_spec(SPEC)

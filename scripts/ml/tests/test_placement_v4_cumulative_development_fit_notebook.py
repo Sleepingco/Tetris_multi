@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 NOTEBOOK_PATH = ROOT / "scripts/ml/notebooks/placement_v4_cumulative_75g_development_fit.ipynb"
 EXPERIMENT_PATH = ROOT / "ai-harness/ml-experiments/experiments/placement-v4-cumulative-75g-development-fit.md"
 

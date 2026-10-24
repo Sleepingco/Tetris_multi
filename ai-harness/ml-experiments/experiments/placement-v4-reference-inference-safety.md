@@ -38,7 +38,7 @@ Sigmoid와 확률 변환은 사용하지 않는다. `gameOver` coefficient가 0�
 
 - Model: `data/models/placement-v4-125g-candidate/model.json`
 - Training report: `data/models/placement-v4-125g-candidate/training-report.json`
-- Fixture: `python_tests/fixtures/placement_v4_reference_inference_fixture.json`
+- Fixture: `scripts/ml/tests/fixtures/placement_v4_reference_inference_fixture.json`
 - Dataset/live log: 읽지 않음
 - Required environment variables: 없음
 
@@ -54,8 +54,8 @@ Artifact는 `canonicalArtifact=false`, `productionIntegration=false`,
 ## 허용 변경
 
 - `scripts/ml/placement_v4_reference_inference.py`
-- `python_tests/test_placement_v4_reference_inference.py`
-- `python_tests/fixtures/placement_v4_reference_inference_fixture.json`
+- `scripts/ml/tests/test_placement_v4_reference_inference.py`
+- `scripts/ml/tests/fixtures/placement_v4_reference_inference_fixture.json`
 - `ai-harness/ml-experiments/experiments/placement-v4-reference-inference-safety.md`
 
 ## 금지 변경
@@ -71,8 +71,8 @@ Artifact는 `canonicalArtifact=false`, `productionIntegration=false`,
 ## 구현 산출물
 
 - Reference inference: `scripts/ml/placement_v4_reference_inference.py`
-- Contract test: `python_tests/test_placement_v4_reference_inference.py`
-- Fixture: `python_tests/fixtures/placement_v4_reference_inference_fixture.json`
+- Contract test: `scripts/ml/tests/test_placement_v4_reference_inference.py`
+- Fixture: `scripts/ml/tests/fixtures/placement_v4_reference_inference_fixture.json`
 - Smoke run1: `/private/tmp/placement-v4-reference-inference-run1.json`
 - Smoke run2: `/private/tmp/placement-v4-reference-inference-run2.json`
 - Preserved report (ignored): `data/ml-experiments/placement-v4-reference-inference-safety/reference-report.json`
@@ -111,13 +111,13 @@ Fixture의 세 scenario만 actual preserved artifact로 평가한다.
 conda run -n tetris-ml python \
   scripts/ml/placement_v4_reference_inference.py \
   --model data/models/placement-v4-125g-candidate/model.json \
-  --fixture python_tests/fixtures/placement_v4_reference_inference_fixture.json \
+  --fixture scripts/ml/tests/fixtures/placement_v4_reference_inference_fixture.json \
   --output /private/tmp/placement-v4-reference-inference-run1.json
 
 conda run -n tetris-ml python \
   scripts/ml/placement_v4_reference_inference.py \
   --model data/models/placement-v4-125g-candidate/model.json \
-  --fixture python_tests/fixtures/placement_v4_reference_inference_fixture.json \
+  --fixture scripts/ml/tests/fixtures/placement_v4_reference_inference_fixture.json \
   --output /private/tmp/placement-v4-reference-inference-run2.json
 
 cmp /private/tmp/placement-v4-reference-inference-run1.json \

@@ -286,7 +286,7 @@ scikit-learn 수렴 결과:
 
 - [JavaScript parity bundle exporter](../../../scripts/export-placement-parity-bundle.js)
 - [Python parity CLI](../../../scripts/ml/placement_pairwise_parity.py)
-- [Python parity tests](../../../python_tests/test_placement_pairwise_parity.py)
+- [Python parity tests](../../../scripts/ml/tests/test_placement_pairwise_parity.py)
 - [Node parity tests](../../../test/testPlacementParityBundle.js)
 - [수학 계약 문서](placement-pairwise-ranker.md)
 - [ML 검증 스크립트](../../../scripts/verify-ml.sh)
@@ -333,7 +333,7 @@ Python-native Notebook으로 완전히 전환하기 전, JavaScript가 feature t
 
 - [Python LOGO baseline Notebook](../../../scripts/ml/notebooks/placement_pairwise_logo_experiment.ipynb)
 - [Archived Notebook 설명](../../archive/ai-ml/experiments/placement-python-experiment-notebook.md)
-- [Notebook 계약 테스트](../../../python_tests/test_placement_experiment_notebook.py)
+- [Notebook 계약 테스트](../../../scripts/ml/tests/test_placement_experiment_notebook.py)
 - [Conda 환경](../../../environment-ml.yml)
 
 데이터:
@@ -497,7 +497,7 @@ e75293adf8cdbc5689dceb6c1efa9857fd8cf1440e4acc33ec77052f11c0878c
 
 - [Collision 분석 Notebook](../../../scripts/ml/notebooks/placement_feature_collision_analysis.ipynb)
 - [Archived collision 분석 결과 문서](../../archive/ai-ml/experiments/placement-feature-collision-analysis.md)
-- [Collision Notebook 계약 테스트](../../../python_tests/test_placement_feature_collision_notebook.py)
+- [Collision Notebook 계약 테스트](../../../scripts/ml/tests/test_placement_feature_collision_notebook.py)
 
 결과:
 
@@ -544,7 +544,7 @@ piece별 collision:
 - [Cell-equivalence 비교 Notebook](../../../scripts/ml/notebooks/placement_cell_equivalence_logo_experiment.ipynb)
 - [Cell-equivalence 결과 문서](placement-cell-equivalence-logo.md)
 - [Canonical result JSON](results/placement-cell-equivalence-logo-result.json)
-- [Cell-equivalence Notebook 계약 테스트](../../../python_tests/test_placement_cell_equivalence_notebook.py)
+- [Cell-equivalence Notebook 계약 테스트](../../../scripts/ml/tests/test_placement_cell_equivalence_notebook.py)
 
 representation 변화:
 
@@ -1581,9 +1581,9 @@ jq '{
 
 ~~~bash
 conda run -n tetris-ml python -m unittest \
-  python_tests/test_placement_experiment_notebook.py \
-  python_tests/test_placement_feature_collision_notebook.py \
-  python_tests/test_placement_cell_equivalence_notebook.py
+  scripts/ml/tests/test_placement_experiment_notebook.py \
+  scripts/ml/tests/test_placement_feature_collision_notebook.py \
+  scripts/ml/tests/test_placement_cell_equivalence_notebook.py
 
 npm run verify:ml
 bash scripts/verify.sh
