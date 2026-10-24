@@ -1,14 +1,19 @@
 # AI/ML 문서와 파일 안내
 
-이 문서는 placement AI 관련 파일을 찾는 단일 진입점이다. 실행 코드와 Notebook
+이 문서는 placement AI와 Human 조작 AI 관련 파일을 찾는 단일 진입점이다. 실행 코드와 Notebook
 경로는 유지하면서 현재 재사용할 경로와 과거 실험 근거를 구분한다. 종료되거나
-대체되어 이동한 문서는 [AI/ML archive](README.md)에서 찾는다.
+대체되어 이동한 문서는 [AI/ML archive와 시간순 목차](../archive/ai-ml/README.md)에서 찾는다.
 
-현재 프로그램 상태는 `imitation_only_not_gameplay_ready`다. V4는 Human
-placement imitation을 눈으로 확인하는 사용자 선택형 Experimental PVE와 offline
-분석에만 사용하며, PVE/production 기본 정책은 heuristic이다. 자세한 현재 계획은
-[ai-plan.md](strategy/ai-plan.md), 실험 수치와 명령은
-[ai-experiments-log.md](experiments/ai-experiments-log.md)를 본다.
+실험·Python 검사는 [scripts/ml 안내](../../scripts/ml/README.md) 아래의 `notebooks/`,
+`tests/`, `tests/fixtures/`로 묶었다. CLI는 같은 부모의 `.py` 파일이다.
+
+기존 V4 연구의 결론은 `imitation_only_not_gameplay_ready`다. 현재 40행
+`buffer20-v1`에서 V4 선택은 호환 불가 사유를 표시하고 heuristic으로 fallback한다.
+새 Human 조작 AI는 데이터 full 적합성 감사를 완료했고 모델 학습은 시작하지 않았다.
+기록 간격 분석과 상태 조건부 행동·hold 학습의 미검증 범위를 구분하며,
+[full 결과 기록](../../ai-harness/runs/human-action-data-readiness-analyze-result-2026-10-24.md)을 따른다.
+자세한 현재 계획은 [ai-plan.md](strategy/ai-plan.md), 과거 수치와 명령은
+[실험 로그](experiments/ai-experiments-log.md), 프로젝트 구현·운영은 [PLAN.md](../../PLAN.md)를 본다.
 
 ## 권장 읽기 순서
 
@@ -23,10 +28,15 @@ placement imitation을 눈으로 확인하는 사용자 선택형 Experimental P
    [reachablePlacementPlanner.ts](../../src/client/game/ai/heuristic/reachablePlacementPlanner.ts).
 5. V4 artifact와 reference: [train_placement_v4.py](../../scripts/ml/train_placement_v4.py),
    [placement_v4_reference_inference.py](../../scripts/ml/placement_v4_reference_inference.py).
-6. dev-only runtime 경계: [placementV4OfflineScorer.ts](../../src/client/game/ai/ml/placementV4OfflineScorer.ts),
+6. 기존 V4 runtime 경계와 ruleset guard: [placementV4OfflineScorer.ts](../../src/client/game/ai/ml/placementV4OfflineScorer.ts),
    [placementV4PveDecisionAdapter.ts](../../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts),
    [pveAiPlayerService.ts](../../src/server/services/pveAiPlayerService.ts).
 7. 마지막으로 historical evidence와 run record를 읽어 현재 정책의 근거를 확인한다.
+
+과거를 공부하려면 [처음부터 읽는 실험 순서](../archive/ai-ml/README.md#처음부터-읽는-순서)를
+먼저 연다. 새 작업은 [Human 조작 dataset 설계](contracts/human-action-dataset.md)와
+[첫 데이터 적합성 명세](../../ai-harness/ml-experiments/experiments/human-action-data-readiness.md)를 읽는다.
+아래 reusable은 구성 요소의 참고 가치이며 새 ruleset·학습 과제에 무조건 호환된다는 뜻이 아니다.
 
 ## Current / reusable
 
@@ -40,7 +50,7 @@ placement imitation을 눈으로 확인하는 사용자 선택형 Experimental P
 | V4 reference inference·safety | frozen model과 candidate fixture | deterministic physical-class ranking, game-over safety diagnostic | 예, Python reference | [placement_v4_reference_inference.py](../../scripts/ml/placement_v4_reference_inference.py), [placement-v4-reference-inference-safety.md](../../ai-harness/ml-experiments/experiments/placement-v4-reference-inference-safety.md) |
 | Experimental PVE runtime | existing heuristic evaluations와 server-owned V4 model | 사용자 opt-in V4 decision 또는 explicit heuristic fallback | 예, 실험 기능 | [placementV4OfflineScorer.ts](../../src/client/game/ai/ml/placementV4OfflineScorer.ts), [placementV4PveDecisionAdapter.ts](../../src/client/game/ai/ml/placementV4PveDecisionAdapter.ts), [pveAiPlayerService.ts](../../src/server/services/pveAiPlayerService.ts), [experimental model](../../src/server/assets/placement-v4-125g-experimental-model.json) |
 | Gameplay benchmark runner | frozen model, deterministic 7-bag stream | canonical gameplay report와 non-canonical timing report | 예, evaluation only | [run-placement-v4-pve-gameplay-benchmark.js](../../scripts/run-placement-v4-pve-gameplay-benchmark.js) |
-| 공통 experiment harness | experiment spec과 MODE | smoke/full/analyze-result workflow와 run record | 예 | [ml-experiments README](README.md), [constraints](../../ai-harness/ml-experiments/constraints.md), [workflow](../../ai-harness/ml-experiments/workflow.md), [verification](../../ai-harness/ml-experiments/verification.md) |
+| 공통 experiment harness | experiment spec과 MODE | smoke/full/analyze-result workflow와 run record | 예 | [ml-experiments README](../../ai-harness/ml-experiments/README.md), [constraints](../../ai-harness/ml-experiments/constraints.md), [workflow](../../ai-harness/ml-experiments/workflow.md), [verification](../../ai-harness/ml-experiments/verification.md) |
 
 사용자가 로비에서 Experimental PVE를 명시적으로 선택했을 때만
 [pveAiPlayerService.ts](../../src/server/services/pveAiPlayerService.ts)가 V4 경로를
@@ -49,6 +59,10 @@ load한다. 모델 경로는 검토된 server-owned asset을 기본으로 사용
 Heuristic을 선택하거나 PVP를 실행하면 V4 module과 model을 load하지 않는다. 실제
 사용 policy는 match에 보존해 게임 페이지 진입 시 다시 전달하며, game-over log에는
 마지막 사용 policy, fallback 횟수·사유와 model SHA를 남긴다.
+
+위 흐름은 지원되는 기존 규칙의 V4 경로다. 현재 buffer20-v1은 모델 로드 전에
+ruleset guard가 fallback을 선택한다. UI의 Experimental 선택과 실제 V4 추론을 구분한다.
+기존 placement exporter/builder도 v3/40행을 거부하며 새 행동 dataset 생성기는 아직 없다.
 
 ## Historical evidence
 
@@ -75,7 +89,7 @@ production 보류 결론을 설명하는 근거다. 새 실험은 같은 질문�
 
 | 역할 | 입력 | 출력 또는 보관물 | 재사용 | 실제 상대 경로 |
 |---|---|---|---|---|
-| Live game logs | main gameplay/server event | append-only JSONL source | 읽기 전용, AI worktree에는 없음 | main worktree `../Tetris_multi/data/logs/` (`game-events.jsonl`) |
+| Local game logs / production export | local gameplay 또는 DB export | JSONL source | 원본 읽기 전용, 실제 경로는 실행 때 확인 | `data/logs/`, `data/datasets/`의 raw export. 운영은 PostgreSQL single-sink |
 | Immutable datasets | exporter input log | versioned train/validation/rejected/manifest snapshot | 승인된 snapshot만 읽기 | `data/datasets/` |
 | Full experiment evidence | user-run report/notebook | ignored copied full reports와 timing evidence | analysis only | `data/ml-experiments/` |
 | Candidate artifacts | frozen trainer output | model.json과 training report | reference/dev-only only | `data/models/` |
@@ -85,14 +99,14 @@ production 보류 결론을 설명하는 근거다. 새 실험은 같은 질문�
 텍스트로만 기록한다. 장기 분석에 필요한 full report는 `data/ml-experiments/`의
 ignored copy와 SHA-256로 추적한다.
 
-## 현재 결정과 다음 작업
+## 기존 V4 결정과 새 작업
 
 - V4 125-game candidate artifact, reference inference safety, dev-only PVE integration은 완료됐다.
-- 사용자 명시 선택형 Experimental PVE demo가 완료됐으며 실제 적용 policy와 fallback을 화면에 표시한다.
+- 사용자 선택형 Experimental PVE demo는 완료됐으며 현재 40행 규칙에서는 명시적 heuristic fallback을 표시한다.
 - V4 gameplay evaluation은 종료됐고, `imitation_only_not_gameplay_ready`다.
 - Production 기본 정책은 `keep_heuristic_default`다.
 - `canonicalArtifact=false`, `productionIntegration=false`를 유지한다.
-- 현재 활성 실험은 없다. 새 feature, hybrid, 재학습, 100-stream 확장은 이 문서만으로 시작하지 않는다.
+- 새 Human 조작 AI는 설계 단계다. 데이터 적합성 명세가 있으며 구현·full 실행·배포는 아직 수행하지 않았다.
 
 다음 작업이 필요해지면 먼저 [ai-plan.md](strategy/ai-plan.md)의 현재 상태와 해당
 experiment spec 또는 새 승인 문서를 갱신한다.

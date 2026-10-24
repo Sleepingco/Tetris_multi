@@ -1,5 +1,9 @@
 # Placement Temporal Holdout V0/V4 — Full Analysis Record
 
+경로 안내 (2026-10-24): 아래 실행 명령은 당시 기록이다. 현재 테스트 위치는
+[scripts/ml/tests](../../scripts/ml/README.md)이며 `python_tests.<module>` 대신
+`scripts.ml.tests.<module>`을 사용한다. 당시 결과·명령·checksum은 보존했다.
+
 ## Scope
 
 - Worktree: `Tetris_multi-ai`

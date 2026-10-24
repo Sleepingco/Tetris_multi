@@ -19,4 +19,7 @@
 - Source 불변성
 - 다음 gate
 
-Executed Notebook과 큰 JSON report는 repository가 아니라 `/private/tmp`에 둔다. 영구 근거가 필요할 때만 별도 canonical result를 사용자 승인으로 추가한다.
+Executed Notebook과 큰 JSON report는 실행 중 `/private/tmp`를 사용할 수 있다.
+장기 근거는 프로젝트의 ignored `data/ml-experiments/<experiment-id>/` 등에 보존하고
+위치·checksum을 기록한다. `/private/tmp`를 유일한 보관본으로 사용하지 않는다.
+Git에 canonical result를 추가하는 것은 별도 결정이다.

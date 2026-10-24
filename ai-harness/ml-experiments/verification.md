@@ -8,6 +8,11 @@
 - Source와 dataset 경로
 - 환경 버전
 
+과제별 해당 검사를 적용한다. 데이터 적합성 감사는 모델 convergence 대신 입력
+계약·lineage·시간·hold 경계·집계 불변성을 검사하고 미검증 replay를 분리한다.
+행동 모델은 오프라인 예측과 자체 실행 결과를 함께 확인한다. 확률적 실행은 seed와
+허용 오차를 사전에 정하며 timing 측정값은 canonical report에서 분리한다.
+
 ## `implement-smoke` gate
 
 Notebook 또는 테스트를 변경했다면 다음을 수행한다.

@@ -44,8 +44,12 @@ bash scripts/verify.sh
 현재 실험 파일과 MODE만 전달한다.
 
 ```text
-ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md를
+ai-harness/ml-experiments/experiments/human-action-data-readiness.md를
 MODE=implement-smoke로 실행해. 사용자 full-run gate에서 멈춰.
 ```
 
 세부 읽기 순서와 MODE 책임은 ML 안내를 따른다. 전체 실험 명세와 과거 실행 기록을 한꺼번에 읽지 않는다.
+
+조작 데이터 적합성 명세는 구현·사용자 full 감사·결과 해석을 완료했다. 위 호출 예시는
+해당 MODE를 실제로 요청받았을 때만 실행하며 후속 정제·학습을 자동 시작하지 않는다.
+완료 실험을 학습 순서대로 읽으려면 [AI/ML 역사 목차](../docs/archive/ai-ml/README.md)를 본다.

@@ -1,5 +1,10 @@
 # Tetris placement AI 실험 로그와 재현 가이드
 
+> 역사 기록: 본문 상단의 상태·다음 gate·worktree·명령은 Phase 0~8 당시 기준이다.
+> 이후 75/125게임 학습·추론·게임 평가까지는 [전체 실험 읽기 순서](../../archive/ai-ml/README.md)를 따른다.
+> [현재 AI 계획](../strategy/ai-plan.md)과 새 ruleset 상태를 먼저 확인하고, 과거 명령은
+> 당시 snapshot·환경·엔진이 있을 때만 재현한다. 이번 정리에서 metric과 명령은 변경하지 않았다.
+
 마지막 정리: 2026-07-18
 
 실험 상태: **continue_experimenting**

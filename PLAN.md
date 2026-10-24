@@ -10,6 +10,38 @@
 
 - [QnA](QnA.md)에 유효성 감사와 정제의 차이, 원본 재추출 여부, 승패 대신 정상 참여 품질을 보는 기준, 입력 시각과 Notebook/테스트 역할에 대한 사용자 질문·결정을 기록했다. 질문 기록 자체는 정제·학습·수집 변경의 구현이나 승인이 아니다.
 
+### 행동 모방용 게임 품질 기준 (2026-10-24)
+
+- 사용자 승인으로 기존 ML 테스트 경로 정리와 Human 데이터 감사 구현·계약·분석 기록을 로컬 checkpoint로 커밋한다. 최종 verify:ml Node 35/Python 131, 필수 verify Node 781 pass·기존 1 skip·0 fail이다. 원본·실행본·report는 ignored 보관을 유지하며 배포·UI 등 다른 작업은 포함하지 않는다. 실제 학습 dataset 생성·정제 수치 경계 확정은 아직 미실행이다.
+- [Human dataset 계약](docs/ai-ml/contracts/human-action-dataset.md#1단계-게임-품질-gate)에 사용자의 목적을 반영했다. PVE는 Human만, PVP는 양쪽 Human을 승패와 무관하게 후보로 삼는다. 좋은 배치/승자 선정이 아니라 정상 참여 기록의 간격·리듬·행동·hold 모방이 목표다.
+- 조기 포기 의심 하드드롭 연속·비정상 장시간·AI 단독 진행 의심과 빠른 정상 패배를 구분한다. 확정 이상 게임은 제외하고 의심/길이 판정 불가 게임은 첫 dataset에 넣지 않는다. 원본·이전 감사 결과는 보존한다. 초·연속 조각 수의 경계는 아직 미확정이며 다음 품질 감사 명세에서 학습 전에 고정한다.
+- 9,485구간은 새 게임 품질 gate 적용 전 후보 수다. 품질 gate 후 학습 대상·pair 수는 미산출이다. 이번 변경은 계약·계획·이력뿐이며 실제 정제·학습·수집·runtime은 바꾸지 않았다.
+
+### Human 입력 시각 생성 경로 조사 (2026-10-24)
+
+- [dataset 계약](docs/ai-ml/contracts/human-action-dataset.md#입력-시간-생성-경로-조사-2026-10-24)에 현재 caller·Git 이력·저장 경계를 확인했다. 입력 createdAt은 키 누름/서버 수신 시각이 아니라 runtime 처리 시도 직전의 Date.now다. 실패 시도와 자동 반복 입력이 포함될 수 있으며 성공 여부는 저장된 입력에서 알 수 없다.
+- 기록 함수가 있는 역사 버전 38개의 동일 본문·실행 전 기록 순서와 현재 runtime의 synthetic clock/실패 이동/hold/stale piece 재현을 확인했다. 각 경기의 실행 build와 연결된 증거는 없으므로 full report의 미검증 상태를 덮어쓰지 않는다.
+- 다음은 hold 없는 Human 9,485구간을 후보로 한 timing-only dataset 명세다. 조건은 인접 처리 시도 간격, 이전 action만 사용하는 첫 분포 baseline, game split이며 상태/hold 정책은 보류한다. 새 코드·dataset·학습·runtime·수집 변경은 하지 않았다.
+
+### Human 조작 데이터 full 감사 결과 해석 (2026-10-24)
+
+- 사용자 full 실행의 [분석 기록](ai-harness/runs/human-action-data-readiness-analyze-result-2026-10-24.md)을 남겼다. 235개 Human 게임·10,816구간·입력 88,845건이며 기록 간격은 usable 10,645 / limited 171이다. 상태 조건부 행동·hold는 각 10,816구간 unverified, hold 시도 1,173건은 성공 미확인이다.
+- Report SHA `27f2a5dc…41b4a`, `fullCohortCovered=true`, `dataDecisionEligible=true`, fit 0이다. 구간 재집계·flags·실행본/source 코드 일치·원본 SHA/bytes를 검증했다. 데이터는 legacy 20행이며 v3/40행 적합성이나 모델 성능 근거가 아니다.
+- 당시 후속 과제였던 timestamp 생성 의미 조사는 위 항목에서 완료했다. 새 데이터 수집·dataset 생성·재학습·replay·runtime 변경은 시작하지 않았다. 문서만 갱신했고 기존 사용자 변경과 full 증거를 보존했다.
+
+### ML 파일을 역할별 공통 경로로 통합 (2026-10-24)
+
+- [ML 코드 안내](scripts/ml/README.md)를 진입점으로 `scripts/ml/notebooks/`(단계별 실험), `scripts/ml/tests/`(검사), `scripts/ml/tests/fixtures/`(공통 입력·기대값), 기존 `scripts/ml/*.py`(학습·추론·요약 CLI)를 함께 둔다. 루트 `python_tests/`의 14개 테스트와 fixture를 이동했고 제목·필수 코드 문자열 검사를 포함한 기존 검사를 유지했다.
+- 검증 script·Node fixture 참조·문서 명령과 repository root 탐색을 새 경로로 연결했다. ML 검증 Node 35/Python 131, 필수 verify Node 781 pass·기존 1 skip·0 fail이다. 실험 계산·모델·데이터·runtime은 바꾸지 않았다. 저장돼 있던 Human Notebook 실행본은 ignored 실험 경로에 보존하고 source output만 비웠다. 커밋하지 않았다.
+
+### AI 문서와 다음 연구 정리 (2026-10-24)
+
+- [현재 AI 계획](docs/ai-ml/strategy/ai-plan.md)을 Human 조작 간격·행동 순서·hold의 설계 단계로 갱신했다. 이전 1,669행 roadmap은 역사본으로 보존하고 [13단계 읽기 목차](docs/archive/ai-ml/README.md)와 실험별 이전/다음 링크를 연결했다.
+- 공통 ML 하네스에서 legacy placement 전용 입력 금지·exporter 전제를 분리하고 [행동 dataset 설계](docs/ai-ml/contracts/human-action-dataset.md), [첫 데이터 적합성 명세](ai-harness/ml-experiments/experiments/human-action-data-readiness.md)를 작성했다. 기존 20행 V4와 현재 40행 fallback, v3 관찰 단계·누락·hold 문맥을 구분한다.
+- 첫 명세에 따른 Notebook·계약 테스트와 실제 smoke 구현을 완료했다. Source 전체 metadata scan과 4게임 상세 감사를 구분했으며 Human 184구간·입력 1,514건 중 기록 간격 usable 182/limited 2, hold 시도 21건은 성공 미확인이다. 상태 조건부 행동·hold는 각 184구간 unverified다. 두 report SHA `257b4371…6ec26`이 같고 source는 불변이다.
+- 검증은 새 테스트 16/16, verify:ml Node 35/Python 131, 필수 verify Node 781 pass·기존 1 skip이다. [실행 기록](ai-harness/runs/human-action-data-readiness-implement-smoke-2026-10-24.md)에 환경 보완·checksum·한계를 남겼다. 당시 다음 gate였던 사용자 full 감사는 이후 완료했으며 위 full 분석 상태를 따른다. 엔진 replay·dataset 생성·학습·runtime 변경은 하지 않았다.
+- 문서 정리이며 Notebook·생성기·모델 학습·runtime·수집 한도·운영 배포는 변경하지 않았다. 상세 검증과 이력은 `change-log.md`를 따른다.
+
 ### 게임 오버·버퍼 존 1~4단계 (2026-10-23)
 
 - [조사·계획과 구현 기록](docs/gameplay/top-out-buffer-zone-plan.md)의 규칙·fixture, v3 저장/migration 3/rollback 기반, 40행 gameplay 통합과 4단계 경계·운영 검증을 완료했다. 현재 검증과 남은 수집 리스크는 §15를 따른다. §12~14는 앞선 checkpoint와 표시 보완 기록이다.

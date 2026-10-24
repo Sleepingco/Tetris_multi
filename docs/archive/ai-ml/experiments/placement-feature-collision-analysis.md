@@ -1,5 +1,9 @@
 # Placement Feature Collision Analysis
 
+역사 기록 · [전체 순서](../README.md) ·
+[이전: Python LOGO](placement-python-experiment-notebook.md) ·
+[다음: cell equivalence](../../../ai-ml/experiments/placement-cell-equivalence-logo.md).
+
 ## 결론
 
 26-game Human snapshot의 기존 16-feature collision은 **새 geometry 정보 부족보다

@@ -1,5 +1,10 @@
 # ML Experiment: Frozen V4 75-game temporal holdout on 50 games
 
+역사 기록 · [전체 순서](../../../docs/archive/ai-ml/README.md) ·
+[이전: 75게임 fit](placement-v4-cumulative-75g-development-fit.md) ·
+[다음: 125게임 trainer](placement-v4-125g-final-trainer.md).
+아래 상태·추천 MODE·next gate는 당시 기록이며 재실행 지시가 아니다.
+
 ## 상태
 
 - Experiment ID: `placement-v4-frozen-75g-temporal-holdout-50g`

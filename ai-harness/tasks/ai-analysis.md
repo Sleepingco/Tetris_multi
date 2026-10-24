@@ -50,6 +50,9 @@ LLM 코칭 문구 작성이나 게임 규칙 구현을 대신하는 모드는 �
 - feature 이름과 의미, `schemaVersion`, 데이터 `source`가 기록되는가
 - 학습/검증 데이터가 같은 `gameId`에서 섞이지 않는가
 - 미래 결과나 label 정보가 feature에 섞이는 leakage가 없는가
+- 조작 과제의 예측 시점, 관측 이력과 다음 행동·대기시간 label이 구분되는가
+- hold 직전/직후 상태와 사용 제한, 교체 후 재계획을 검증하는가
+- ruleset·좌표·관찰 단계·시간 출처·입력 누락·성공 여부가 설명되는가
 - `NaN`, `Infinity`, 누락값과 잘못된 board를 처리하는가
 - 새 모델이 heuristic baseline보다 어떤 지표에서 나은지 비교할 수 있는가
 - model version, feature version, 실행 조건으로 결과를 다시 만들 수 있는가
@@ -62,7 +65,8 @@ LLM 코칭 문구 작성이나 게임 규칙 구현을 대신하는 모드는 �
 - `boardMetrics -> placementGenerator -> simulatePlacement -> heuristicEvaluator`의
   순수 모듈 흐름은 현재도 재사용하는 분석 기준이다.
 - PVE 기본 정책은 heuristic이다. 현재 사용자 선택형 Experimental V4와
-  검증 실패 시 heuristic fallback을 유지하며, 실험 결과만으로 기본 정책을 바꾸지 않는다.
+  fallback은 실제 지원 ruleset을 확인한다. buffer20-v1의 기존 V4는 호환되지 않아
+  명시적 heuristic fallback을 사용한다. 실험 결과만으로 기본 정책을 바꾸지 않는다.
 - Python AI 서버, 강화학습, LLM 코칭은 별도 승인이 없는 한 현재 작업에 섞지 않는다.
 
 ## 반복 ML 실험 라우팅

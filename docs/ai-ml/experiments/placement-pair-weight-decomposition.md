@@ -1,5 +1,9 @@
 # Placement pair-weight decomposition
 
+역사 기록 · [전체 순서](../../archive/ai-ml/README.md) ·
+[이전: cell equivalence](placement-cell-equivalence-logo.md) ·
+[다음: V0/V4 temporal](../../../ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md).
+
 ## 목적
 
 이 실험은 occupied-cell grouping에서 관측된 작은 physical-class MRR 하락을

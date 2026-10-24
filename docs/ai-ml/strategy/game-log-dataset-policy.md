@@ -1,4 +1,20 @@
-## 초기 학습 데이터 기준
+# 로그와 dataset 정책 안내
+
+현재 게임은 buffer20-v1·40×10과 schema v3를 사용한다. 저장·관찰 문맥은
+[게임 규칙 기록](../../gameplay/top-out-buffer-zone-plan.md)과 실제 validator/projector를 따른다.
+기존 placement exporter/builder는 v3/40행 경기를 거부한다.
+
+- 기존 20행 배치 모방: 아래의 legacy 정책과 [placement 평가 계약](../contracts/placement-ml-evaluation-contract.md)
+- 새 행동·시간·hold: [Human 조작 dataset 설계](../contracts/human-action-dataset.md)
+- 현재 작업 순서: [AI 계획](ai-plan.md), 과거 흐름: [실험 목차](../../archive/ai-ml/README.md)
+
+정상 종료·초기 5개 조각 제외는 아래 placement 정책이다. 새 조작 dataset에
+자동 적용하지 않는다. 신규 raw와 기존 bundle은 원본 그대로 보존한다.
+
+## 초기 학습 데이터 기준 — legacy 20행 placement
+
+이하 내용은 기존 v1/v2 배치 분석의 설계 배경과 필터다. "현재"·"나중" 표현은
+당시 기준이며 v3 수집·새 학습의 상태나 실행 지시로 사용하지 않는다.
 
 현재 우선순위는 ML 학습이 아니라 휴리스틱 PVE AI와 로그 축적이다.
 로그 정책은 나중에 ML 데이터셋으로 확장할 수 있게 정리하되, 지금 단계에서는 `placement_decision`과 board metric 기반 비교가 안정적으로 남는지를 먼저 본다.

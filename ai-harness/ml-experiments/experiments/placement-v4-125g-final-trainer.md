@@ -1,5 +1,10 @@
 # ML Experiment: Placement V4 125-game final trainer
 
+역사 기록 · [전체 순서](../../../docs/archive/ai-ml/README.md) ·
+[이전: frozen 75→50](placement-v4-frozen-75g-temporal-holdout-50g.md) ·
+[다음: reference inference](placement-v4-reference-inference-safety.md).
+아래 상태·추천 MODE·next gate는 당시 기록이며 재실행 지시가 아니다.
+
 ## 상태
 
 - Experiment ID: `placement-v4-125g-final-trainer`

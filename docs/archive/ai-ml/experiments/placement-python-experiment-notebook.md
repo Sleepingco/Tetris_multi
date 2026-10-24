@@ -1,5 +1,10 @@
 # Python Placement Experiment Notebook
 
+역사 기록 · [전체 순서](../README.md) ·
+[이전: 수치 parity](../../../ai-ml/experiments/placement-pairwise-ranker.md) ·
+[다음: collision 분석](placement-feature-collision-analysis.md).
+아래 실행 안내는 당시 snapshot·환경 기준이다.
+
 ## 역할
 
 `scripts/ml/notebooks/placement_pairwise_logo_experiment.ipynb`는 Human placement

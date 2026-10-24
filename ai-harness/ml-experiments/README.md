@@ -1,6 +1,12 @@
 # ML Experiment Harness
 
-이 하네스는 placement ML 실험에서 반복되는 데이터·Notebook·leakage·검증·Git 규칙을 한곳에 둔다.
+이 하네스는 placement ranking과 Human 조작 ML 실험의 데이터·Notebook·leakage·검증·Git 규칙을 한곳에 둔다.
+
+현재 방향은 [AI 계획](../../docs/ai-ml/strategy/ai-plan.md), 과거 실험은
+[시간순 목차](../../docs/archive/ai-ml/README.md)를 본다. 기존 `placement-*` 명세
+6개는 종료된 V4 연구/검증 기록이다. 경로와 당시 결과·명령을 보존하며 추천 MODE를
+자동 실행 지시로 읽지 않는다. [조작 데이터 적합성](experiments/human-action-data-readiness.md)은
+구현·사용자 full 감사·결과 분석을 완료했다. 다음 범위는 해당 명세와 현재 AI 계획을 따른다.
 
 새 요청에서는 긴 규칙을 다시 적지 않고 다음 두 값만 선택한다.
 
@@ -42,6 +48,8 @@ MODE나 환경변수 설정은 실행 승인이 아니다. `analyze-result`와 `
 ## 디렉터리
 
 - `experiments/`: 실험별로 달라지는 질문과 입력·비교 변수
+- 실험 코드·검사: [scripts/ml](../../scripts/ml/README.md)의 `notebooks/`와 `tests/`.
+  공통 fixture는 `scripts/ml/tests/fixtures/`에 둔다. 제목·문자열 계약 검사도 유지한다.
 - 공통 계약은 이 디렉터리의 `constraints.md`, `workflow.md`, `verification.md`
 - 실행 결과 기록이 필요하면 기존 `ai-harness/runs/` 사용
 
@@ -57,7 +65,7 @@ MODE나 환경변수 설정은 실행 승인이 아니다. `analyze-result`와 `
 긴 프롬프트를 만들지 않고 다음 한 문장만 전달한다.
 
 ```text
-ai-harness/ml-experiments/experiments/placement-temporal-holdout-v0-v4.md를
+ai-harness/ml-experiments/experiments/human-action-data-readiness.md를
 MODE=implement-smoke로 실행해. 사용자 full-run gate에서 멈춰.
 ```
 

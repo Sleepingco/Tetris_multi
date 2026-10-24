@@ -1,5 +1,9 @@
 # Placement cell-equivalence LOGO experiment
 
+역사 기록 · [전체 순서](../../archive/ai-ml/README.md) ·
+[이전: collision](../../archive/ai-ml/experiments/placement-feature-collision-analysis.md) ·
+[다음: pair-weight 분해](placement-pair-weight-decomposition.md).
+
 ## 왜 이 실험을 하는가
 
 Placement generator는 rotation이나 pivot 표현이 달라도 같은 네 칸을 차지하는 candidate를 여러 개 만들 수 있다. 기존 pairwise baseline은 selected candidate를 모든 unselected candidate와 비교하므로, selected와 물리적으로 같은 alias도 negative pair가 되고 generator의 중복 생성 횟수가 decision의 학습 구성에 영향을 준다.

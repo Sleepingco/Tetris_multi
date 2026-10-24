@@ -1,5 +1,10 @@
 # ML Experiment: Placement Temporal Holdout V0 vs V4
 
+역사 기록 · [전체 순서](../../../docs/archive/ai-ml/README.md) ·
+[이전: pair weight](../../../docs/ai-ml/experiments/placement-pair-weight-decomposition.md) ·
+[다음: 75게임 fit](placement-v4-cumulative-75g-development-fit.md).
+아래 상태·추천 MODE·next gate는 당시 기록이며 재실행 지시가 아니다.
+
 ## 상태
 
 - Experiment ID: `placement-temporal-holdout-v0-v4`

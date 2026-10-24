@@ -1,5 +1,10 @@
 # Placement ML Dataset and Evaluation Contract
 
+Scope: legacy 20-row placement ranking, dataset schema v2 / feature schema v1.
+This is not the v3 gameplay log or Human action dataset contract. See the
+[current plan](../strategy/ai-plan.md), [action dataset design](human-action-dataset.md),
+and [historical reading order](../../archive/ai-ml/README.md).
+
 This contract prepares placement data for later ranking experiments. It does not
 train a model or change PVE/runtime behavior.
 

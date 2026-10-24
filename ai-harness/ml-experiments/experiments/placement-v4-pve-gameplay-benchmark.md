@@ -1,5 +1,11 @@
 # ML Experiment: Placement V4 PVE gameplay benchmark
 
+역사 기록 · [전체 순서](../../../docs/archive/ai-ml/README.md) ·
+[이전: reference inference](placement-v4-reference-inference-safety.md) ·
+[다음: 규칙 변경과 현재 계획](../../../docs/ai-ml/strategy/ai-plan.md).
+아래 30-stream 결과는 당시 20행 엔진의 근거다. 현재 40행 ruleset의 성능이 아니며
+추천 MODE·수동 명령·next gate는 당시 기록이다.
+
 ## 상태
 
 - Experiment ID: `placement-v4-pve-gameplay-benchmark`

@@ -3,6 +3,8 @@
 ## 상태
 
 - Experiment ID: `<id>`
+- Lifecycle: `<proposed / active / closed / deferred>`
+- Task: `<placement ranking / action timing / next action / hold / data audit>`
 - Recommended mode: `implement-smoke`
 - Program gate: `continue_experimenting`
 
@@ -25,6 +27,11 @@
 - Hyperparameter:
 - Ranking/tie-break:
 - Metrics:
+- Supported ruleset/geometry/observation stage:
+- Learning unit and prediction time:
+- Observed input / target label:
+- History and hold boundary (if applicable):
+- Missing-data and replay policy:
 
 ## 입력
 
@@ -71,6 +78,11 @@ Routine report 상태:
 - Primary:
 - Secondary:
 - Diagnostics:
+- Execution/rollout checks (if applicable):
+- Human-perception and speed-matched comparison (if applicable):
+
+데이터 감사처럼 fit하지 않는 실험은 scaler/estimator를 해당 없음으로 표시하고,
+복원 가능한 범위와 count invariant를 정의한다.
 
 ## Decision rule
 

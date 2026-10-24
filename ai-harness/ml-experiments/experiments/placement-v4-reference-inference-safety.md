@@ -1,5 +1,10 @@
 # ML Experiment: Placement V4 reference inference and game-over safety
 
+역사 기록 · [전체 순서](../../../docs/archive/ai-ml/README.md) ·
+[이전: 125게임 trainer](placement-v4-125g-final-trainer.md) ·
+[다음: 게임 연결과 benchmark](placement-v4-pve-gameplay-benchmark.md).
+아래 상태·추천 MODE·next gate는 당시 기록이며 재실행 지시가 아니다.
+
 ## 상태
 
 - Experiment ID: `placement-v4-reference-inference-safety`

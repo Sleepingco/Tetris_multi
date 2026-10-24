@@ -6,6 +6,10 @@
 기존 사용자 승인 범위 안에서 진행하고, 문서의 MODE나 환경변수를 바꾸는 것만으로 권한이 추가됐다고 해석하지 않는다.
 완료 보고에는 수행한 작업, 검증 결과, 미실행·실패·남은 위험을 구분한다. 다음 MODE·실험·재학습·runtime 통합은 자동 시작하지 않는다.
 
+Placement ranking과 행동·시간·hold·데이터 감사를 구분한다. fit하지 않는 감사에서는
+convergence/scaler/pair 검사를 해당 없음으로 표시하고 복원 가능 범위·count·원본
+불변성·누락 근거를 확인한다. 첫 full 감사 report는 모델 채택이나 dataset 편입 승인이 아니다.
+
 ## 1. `implement-smoke`
 
 1. Git branch, HEAD와 기존 dirty 상태를 기록한다.

@@ -1,5 +1,10 @@
 # Placement Pairwise Linear Ranker
 
+Historical placement/parity reference · [Reading order](../../archive/ai-ml/README.md) ·
+[Previous: dataset contract](../contracts/placement-ml-evaluation-contract.md) ·
+[Next: Python LOGO](../../archive/ai-ml/experiments/placement-python-experiment-notebook.md).
+The parity path still serves regression checks; this document is not the new action model spec.
+
 ## Purpose
 
 This experiment learns to imitate Human placement choices from placement

@@ -5,6 +5,60 @@
 - `QnA.md`에 유효성 검사와 정제·학습의 구분, 기존 JSONL 재추출 필요 여부, 정상 참여 기준, runtime 입력 시각의 의미, Notebook·테스트·실행본 역할을 정리했다. 사용자 목적은 좋은 배치/승자 복제가 아니라 Human 조작 간격·리듬·행동·hold 모방이다.
 - 이 문서 기록만 별도 checkpoint 대상으로 삼는다. 기존 미커밋 구현·ML 경로 이동·배포·UI 계획 변경은 포함하지 않으며 실제 정제·추출·학습·백업 삭제·runtime 변경도 수행하지 않는다. 문서 경로·fence·공백을 검증하고 전체 테스트는 반복하지 않는다.
 
+## 2026-10-24 — AI 문서·실험 읽기 순서와 Human 조작 AI 설계 정리
+
+### 데이터 감사·ML 경로 이동 로컬 checkpoint
+
+- 사용자 승인으로 기존 테스트·fixture 이동과 참조 수정을 먼저, Human 데이터 감사 Notebook·테스트·계약·하네스·분석 기록을 다음 로컬 커밋으로 나눈다. AI 문서의 역사 목차와 이전 계획 보존도 포함한다. 배포 workflow·운영/UI 기록·사용자 ignore 변경은 제외한다.
+- 최종 verify:ml Node 35/Python 131, 필수 verify Node 781 pass·기존 1 skip·0 fail, 문서/공백 검사를 확인했다. 원본·executed Notebook·full report·이전 bytecode cache는 ignored 로컬 보관을 유지한다. Full 감사와 모델 학습을 혼동하지 않으며 실제 학습 dataset 생성·품질 cutoff 확정·재학습·push/merge는 하지 않는다.
+
+### 행동 모방 목적의 게임 품질 gate 명시
+
+- 사용자 요구에 따라 승자/좋은 배치 선정과 행동 모방용 품질을 분리했다. PVE Human과 PVP 양쪽 Human의 정상 참여를 대상으로 하며 승패로 후보를 고르지 않는다. 조기 포기 의심 하드드롭 연속·확정 포기·최대 시간 초과·AI 단독 진행 의심·길이 판정 불가를 별도 사유로 둔다.
+- 게임 품질 gate→과제별 구간 검사의 두 단계로 정리했다. 확정 이상 게임은 제외, 의심/미확정 게임은 첫 dataset에서 격리하되 원본은 보존한다. 빠른 Hard 패배나 높은 하드드롭 비율만으로 포기를 확정하지 않고 mode·난이도·승패별 제외 편향을 보고하도록 했다.
+- 시간·연속 조각 수의 수치 경계는 원본 분포/사례로 학습 전에 고정하며 아직 채택하지 않았다. 과거 10분 검토선도 자동 적용하지 않는다. 기존 full 감사와 9,485 후보는 새 gate 적용 전 기록으로 유지하고 정제 후 수치로 표시하지 않는다.
+- 계약·계획·명세의 후속 gate와 이력만 갱신했다. 실제 정제·full 재실행·dataset 생성·학습·runtime/수집 변경·원본 삭제·stage/commit은 수행하지 않았다. 문서 검증을 적용하며 전체 suite는 반복하지 않는다.
+
+### InputSequence 시간 생성 경로·timing-only 범위
+
+- keydown→queue→piece 검사→Date.now 기록→action 실행→성공 local action 전송→placement commit 확인→canonical 저장의 실제 흐름을 조사했다. 기록 시각은 브라우저 처리 시도 시각이며 서버 수신·입력 성공·반응시간과 구분한다. DB occurred_at/ingested_at으로 개별 입력 시각을 대체하지 않는다.
+- tetris의 Git 이력 43개 중 기록 함수가 있는 38개 버전의 본문·실행 전 호출 순서를 확인했다. Node 24 synthetic clock 재현에서 enqueue/소비 시각 구분·실패 이동 기록·첫/둘째 hold 결과 true/false와 동일 시각 기록·stale piece 제외를 검증했다. 현재 코드 검증을 경기별 과거 build 증명으로 확대하지 않았다.
+- [Human dataset 계약](docs/ai-ml/contracts/human-action-dataset.md)에 조사 근거·코드 읽기 명령·timing-only 후보 9,485구간과 label/feature/분할/제외 경계를 정리했다. 별도 dataset 명세를 다음 gate로 두며 상태 조건부 행동·hold는 보류한다. 기존 full report와 reason은 그대로 유지했다.
+- 문서만 변경했다. full 재실행·학습·dataset 생성·runtime/수집 변경·원본/백업 삭제·stage/commit은 하지 않았다. 문서 링크·fence·공백과 원본/report 불변성을 확인하고 전체 suite는 반복하지 않는다.
+
+### Human 조작 데이터 full 감사 analyze-result
+
+- 사용자 실행 결과를 재실행하지 않고 검증했다. Report `27f2a5dc…41b4a`의 full/eligibility flags, 원본 SHA/bytes, 구간별 readiness·hold 재집계와 count 불변식, executed/source Notebook cell 내용 일치·error 0을 확인했다. Human 235게임·10,816구간·88,845입력이며 전체 원본의 heuristic placement 110,803건은 상세 행동 분석에서 제외했다.
+- 기록 간격 usable 10,645 / limited 171과 상태 조건부 행동·hold의 전체 unverified를 구분했다. 입력 간격 median 158ms/p95 351ms는 기록 시각 차이일 뿐 반응시간·물리 입력 시간의 증거가 아니다. Hold 1,173시도 모두 성공 미확인, piece gap 109구간이며 원인·성공·상태를 보간하지 않았다.
+- 명세·현재 계획·문서 진입점과 [분석 기록](ai-harness/runs/human-action-data-readiness-analyze-result-2026-10-24.md)을 갱신했다. 다음 질문은 기존 timestamp의 생성 의미다. legacy 20행 원본 결과를 v3/40행이나 학습 준비 완료로 승격하지 않았다.
+- 문서 변경만 수행했다. 링크·code fence·공백과 `git diff --check`를 검사하며 runtime/ML 전체 suite는 반복하지 않는다. full 재실행·dataset 생성·모델 학습·수집 변경·원본/백업 삭제·stage/commit은 수행하지 않았다.
+
+### ML Notebook·Python 테스트 경로 통합
+
+- 루트 `python_tests/`의 14개 검사 파일과 공통 JSON fixture를 `scripts/ml/tests/`로 이동했다. Notebook은 `scripts/ml/notebooks/`, 최종 학습·추론·요약 CLI는 기존 `scripts/ml/*.py`에 유지하고 [역할별 안내](scripts/ml/README.md)를 추가했다. 제목·코드 문자열 검사도 삭제하지 않았다.
+- `verify-ml.sh`의 unittest discovery, Node offline scorer의 공유 fixture, Python 테스트의 root/path, 요약기와 기존 Notebook 3개의 repository root 탐색을 갱신했다. 실행 문서의 명령은 새 경로로 연결하고 과거 run record의 실제 명령은 이전 경로라는 안내와 함께 보존했다. `.dockerignore`의 사라진 루트 항목은 제거했으며 기존 `scripts/*` 규칙으로 ML 코드의 build context 제외는 유지된다.
+- 이동한 tracked 검사 13개는 root/fixture 경로 변경만, 공통 fixture는 byte-identical임을 확인했다. 기존 Notebook 3개는 root marker만 변경했다. root 탐색 8개 확인, verify:ml Node 35/Python 131, 필수 verify Node 781 pass·기존 조건부 1 skip·0 fail, `git diff --check`를 통과했다.
+- 사용자가 저장한 Human Notebook 실행본은 `data/ml-experiments/human-action-data-readiness/executed-before-layout-20261024.ipynb`에 byte-identical하게 보존했다(SHA `937db4efa98f96246b80e9682ed1866d76506c517e5aadd2e58eb417d91aba37`). source는 코드·metadata를 유지하고 execution count/output만 비웠다. 이전 위치의 bytecode cache도 새 tests 경로의 ignored `__pycache__/previous-location/`에 보존했다.
+- 데이터·모델·실험 계산·runtime 변경, full 감사·재학습·브라우저/DB 검증·stage/commit은 하지 않았다. 기존 사용자 변경은 보존했다. 과거 테스트 명령을 다시 실행할 때는 `python_tests.<module>` 대신 `scripts.ml.tests.<module>`을 사용한다.
+
+### 1차 데이터 적합성 실험 implement-smoke
+
+- `human_action_data_readiness.ipynb`에 단계별 설명·worked example·streaming DB/app 파서·identity 충돌 격리·시간/순번/hold 검사·과제별 readiness·결정적 report와 원본/출력 보호를 구현했다. 정의 셀을 직접 실행하는 synthetic/Notebook 회귀 16개를 추가했다.
+- 원본 122,095행 전체 metadata와 선택한 4게임의 Human 184구간을 분리했다. 입력 1,514건·hold 시도 21건, 기록 간격 usable 182/limited 2이며 상태 조건부 next action과 hold는 각각 184구간 모두 unverified다. 원본 SHA `eb64f867…092344` 불변, 두 smoke report SHA `257b4371…6ec26`과 bytes 일치를 확인했다.
+- 실제 DB identity-v1 형식·conda python3 kernel을 반영했다. Jupyter/HTTP의 sandbox localhost 제한은 허용된 실행에서 검증했다. verify:ml Node 35/Python 131, 필수 verify Node 781 pass·기존 1 skip·0 fail이다. 기록·full 명령은 [명세](ai-harness/ml-experiments/experiments/human-action-data-readiness.md)와 [run record](ai-harness/runs/human-action-data-readiness-implement-smoke-2026-10-24.md)를 따른다.
+- 기존 사용자 변경을 보존했다. Full 실제 데이터 상세 감사·dataset 생성·학습·엔진 replay·운영 DB·runtime·수집 정책·stage/commit/push는 수행하지 않았다.
+
+### 첫 실험 명세 실행 계약 구체화
+
+- `human-action-data-readiness`를 다음 구현에 사용할 수 있도록 source 형식·환경변수·허용 변경·Notebook 순서·최대 4게임 smoke·full 범위·synthetic 사례·과제별 readiness와 집계 불변식을 정의했다. 원본 파일 간 병합·fit·engine replay는 수행 범위에 넣지 않았다.
+- Hold 시도와 성공·직전 문맥을 구분하고, 최종 hold/queue에서 과거를 추정하지 않도록 했다. Full 데이터 감사의 `dataDecisionEligible`과 모델 채택용 `policyDecisionEligible`을 분리했다.
+- 명세·현재 계획·이력만 변경했다. 세 문서의 상대 링크 45개·code fence·필수 절과 `git diff --check`를 확인했다. Notebook/코드 구현이나 full 실행은 수행하지 않았다. 새 명세를 직접 읽는 계약 테스트는 아직 없으므로 문서 변경에서 runtime/ML 전체 suite는 반복하지 않았다.
+
+- `docs/archive/ai-ml/README.md`에 dataset→parity→LOGO→collision→cell equivalence→pair weight→temporal→75/125게임 fit→추론·PVE→gameplay 평가→규칙 전환의 읽기 순서를 정리했다. 각 실험의 질문·결론·후속 이유와 설명·Notebook·명세·실행 증거 링크를 연결했다.
+- 이전 `ai-plan.md` 전체를 `docs/archive/ai-ml/plans/placement-v4-roadmap.md`에 역사본으로 보존했다. 이전 수치·명령·보류 제안을 유지하고 현재 계획은 조작 간격·순서·hold·독립 평가·사이트 opt-in 적용 순서로 다시 작성했다. 완료 실험과 아직 실행하지 않은 V4 재학습 제안·대화 배경을 구분했다.
+- 공통 하네스에서 V4 전용 feature 금지·exporter 전제를 분리했다. 새 행동 dataset은 예측 시점까지의 이력을 사용할 수 있지만 미래 입력·최종 hold/queue·미확정 생존 결과를 입력으로 승격하지 않는다. hold 경계·수집 누락·시간 의미·ruleset 호환과 첫 적합성 조사 명세를 작성했다.
+- 문서·하네스만 변경했다. 과거 Notebook·테스트·result JSON·모델·raw bytes·runtime은 이동하거나 수정하지 않았고 학습·운영 수집/배포·Git stage/commit은 수행하지 않았다. 문서를 직접 읽는 네 Python 모듈의 계약 테스트 **38/38**이 통과했다. 상대 링크·fence·공백과 역사본 본문 보존을 확인했고 전체 runtime suite는 문서 변경 범위여서 생략했다.
+
 # 2025년 10월 20일
 
 ---

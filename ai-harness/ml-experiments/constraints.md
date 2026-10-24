@@ -1,10 +1,12 @@
 # ML Experiment Constraints
 
-모든 placement ML 실험에 적용하는 고정 계약이다. 실험 명세는 이 규칙을 반복하지 않고, 예외가 필요하면 이유와 승인을 명시한다.
+Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 입력·정답·시간과
+지원 ruleset은 현재 실험 명세와 연결된 dataset 계약에서 정한다.
 
 ## 1. 책임 경계
 
-- 기존 JavaScript exporter는 로그 schema와 candidate 생성·전처리 경계다.
+- 기존 게임 core·validator·후보 생성을 재사용한다. 기존 placement exporter는
+  legacy dataset 경계이며 Human 행동 dataset의 필수 형식으로 강제하지 않는다.
 - 새 feature·pair·weight·모델·평가 실험은 Python에서만 수행한다.
 - JavaScript에서 Python 실험을 다시 구현하지 않는다.
 - 실험은 Jupyter Notebook으로 작성한다.
@@ -20,14 +22,17 @@
 
 ## 3. 데이터 계약
 
-- Live log를 모델 fit에 직접 사용하지 않고 기존 exporter로 versioned dataset을 만든다.
+- Live log를 모델 fit에 직접 사용하지 않고 원본을 고정한 뒤 과제에 맞는 versioned dataset을 만든다.
 - 기존 dataset 경로를 덮어쓰지 않는다.
 - Source checksum과 line 수를 실행 전후 비교한다.
-- Dataset schema, exporter 정책, 네 output checksum을 기록한다.
+- Dataset schema, 생성 정책·revision, ruleset·좌표·관찰 단계·trust와 output checksum을 기록한다.
 - Split은 `gameId` 단위다.
-- Validation game과 candidate는 scaler, pair 생성, weight 계산과 model fit에 들어가지 않는다.
-- `selectedBySource`는 label 식별에만, `metadata.isWinner`는 사후 segment에만 사용한다.
-- Label, winner, 미래 outcome, heuristic score와 Human input sequence를 feature로 사용하지 않는다.
+- Validation/test는 scaler, 학습용 pair·weight·시간 기준 계산과 model fit에 들어가지 않는다.
+- 예측 시점 이후 label·winner·outcome·미래 행동을 feature로 사용하지 않는다.
+  조작 모델은 그 시점까지 관측된 입력 이력을 사용할 수 있다. 다음 행동과 대기시간은
+  정답이며 완성된 inputSequence 전체를 현재 판단의 입력으로 제공하지 않는다.
+- 관측하지 못한 상태·입력 성공·hold 직전 문맥은 추정값으로 조용히 채우지 않는다.
+  Human 로그와 AI 로그, client_reported와 서버 확정 결과를 구분한다.
 - 데이터만 추가하는 일반 반복에서는 외부 archive 복구를 연구 gate로 만들지 않는다. 원본 로그, cohort gameId와 checksum을 보존한다.
 
 ## 4. Notebook 계약
@@ -61,10 +66,13 @@
 - 기존 dirty/untracked 변경을 stage, reset, stash, checkout 또는 삭제하지 않는다.
 - Commit, push, merge와 rebase는 명시적인 권한이 있을 때만 수행한다.
 
-## 7. 현재 연구 방향
+## 7. 과제별 계약
 
-- 26게임 cohort는 파이프라인·representation·weight 원인 분석을 끝낸 historical baseline이다.
-- 새 로그는 먼저 temporal holdout으로 평가한 뒤 누적 training pool에 편입한다.
-- V1~V3 decomposition을 새 데이터마다 반복하지 않는다.
-- V0와 V4 비교는 신규 cohort에서 정책을 정하기 위한 비교이며, 결정 후에는 선택한 정책만 반복 학습한다.
-- Full LOGO는 feature·weight·estimator 변경 또는 freeze 시점에만 다시 검토한다.
+- Legacy placement ranking: [기존 dataset·평가 계약](../../docs/ai-ml/contracts/placement-ml-evaluation-contract.md).
+  `selectedBySource`는 label 전용, outcome은 사후 segment 전용이며 heuristic score와
+  Human inputSequence는 이 16-feature 모델의 입력에서 제외한다. 기존 26게임·V0~V4의
+  판단은 [역사 목차](../../docs/archive/ai-ml/README.md)를 따른다.
+- Human 조작·시간·hold: [설계 계약](../../docs/ai-ml/contracts/human-action-dataset.md).
+  행동 구간의 경계·지원 상태·시간 의미·누락 처리를 먼저 검증한다.
+- 현재 작업 순서는 [AI 계획](../../docs/ai-ml/strategy/ai-plan.md)에서 확인한다.
+  과거 spec의 next gate나 추천 MODE는 새 작업을 시작하는 지시가 아니다.
