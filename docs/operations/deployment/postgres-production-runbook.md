@@ -63,8 +63,7 @@ TRUNCATE tetris_analytics.game_events
 | OS/kernel update | maintenance 시간 확보, backup 후 upgrade/reboot, 전체 재검증 |
 | 장애 발생 시 | 상태를 보존하고 service별 inspect/log 확인, volume 삭제 금지 |
 
-자동 backup·retention·무중단 배포는 아직 구성하지 않았다. 현재는 아래 절차를
-운영자가 수동으로 실행한다.
+배포 시 backup·복원 검증은 아래 CD가 실행한다. 정기 backup·retention·무중단 배포는 아직 구성하지 않았다. 정기 작업과 장애 복구는 운영자가 아래 절차로 실행한다.
 
 ## 일상 점검
 
@@ -212,8 +211,43 @@ CI 이름 `Migration CI`는 기존 workflow 식별자이며, 마이그레이션 
 명령의 원천은 [package.json](../../../package.json)과 [production boundary script](../../../scripts/verify-postgres-production.sh)다.
 DB 검증은 격리된 테스트 환경에서 실행한다. 테스트가 통과해도 실제 OCI의 TLS·backup·restore 확인을 대체하지 않는다.
 [배포 workflow](../../../.github/workflows/deploy-production.yml)는 선택한 commit의 성공한 main push CI를 확인한다.
-실행 중 app과 후보의 DB 기대 버전이 다르면 migration 전에 중단한다. 이 경우 진행 중 접속 종료·유입 차단·backup·호환 rollback을 갖춘 수동 전환이 필요하다. 버퍼 존의 2→3 전환은 [5단계 실행 기록](../history/oci/oci-buffer-zone-deployment-2026-10-23.md)을 따른다. migration 3 이후 migration 2 image로 자동 복구하지 않는다.
+현재 CD는 아래의 schema별 rollback과 backup/restore·접속·공개 경기 검증을 포함한다. 버퍼 존의 최초 수동 2→3 전환은 [5단계 실행 기록](../history/oci/oci-buffer-zone-deployment-2026-10-23.md)에 보존한다. migration 3 이후 migration 2 image로 직접 복구하지 않는다.
 [당시 Goal 9D](../../archive/migration/goals/09d-postgres-ci-release.md)는 도입 범위의 역사적 근거이며 현재 실행 지침이 아니다.
+
+## GitHub Actions CD 실행과 복구
+
+기존 [Production deployment workflow](../../../.github/workflows/deploy-production.yml)를 수동 dispatch한다. 배포 절차는 이 YAML의 `run` 단계에 직접 정의한다. 별도 배포 SH/JS는 사용하지 않는다. 수정된 workflow를 포함하고 main push CI가 성공한 commit을 선택한다. 이번 CD 수정에서 실제 dispatch나 운영 재배포는 실행하지 않았다.
+
+### 입력과 사전 조건
+
+- `release_ref`: 배포 commit. 비우면 선택한 workflow ref를 사용한다.
+- `rollback_image_tag`와 `rollback_artifact_sha256`: **새 DB version에서 기동 가능한, host에 이미 보관한 image**의 tag와 `com.tetris.release.artifact-sha256` label. 둘을 함께 입력한다. schema가 바뀌면 필수이며 없거나 기대 version이 다르면 migration 전에 중단한다. 호환 image 빌드를 CD가 대신 만들지는 않는다.
+- DB version이 같으면 입력을 생략하고 현재 실행 image를 rollback으로 사용한다. DB downgrade는 거부한다. 호환 image는 runtime 설정과 DB 호환성을 사전 검증해야 하며, CD에서도 차단 구간에 실제 새 DB로 기동해 health를 다시 검사한다.
+- 기존 `production` environment의 SSH secrets와 `OCI_HOST`, `OCI_USER`, `OCI_SSH_PORT`, `OCI_INCOMING_DIR=/srv/tetris/incoming` vars를 사용한다.
+- Host Compose와 배포 source가 다르면 중단한다. Caddy의 통계 proxy 등은 유지하고 app proxy 한 곳만 임시 503으로 바꾼다. 유입 재개 전에 원본 Caddyfile의 hash가 같은지 확인한다.
+
+현재 운영은 migration 3이다. 다음 3→3 배포에서는 rollback 입력을 생략하면 현재 40행 image가 복구 대상이다. `6be7d05`는 최초 전환 때 보관한 **20행+DB3** image이며 Git commit tag가 아니다. 새로운 schema가 생기면 해당 schema의 호환 산출물을 먼저 준비한다.
+
+### 액션 실행 순서
+
+1. 기존 단계에서 정확한 commit의 main CI 성공, archive checksum과 image provenance를 확인하고 후보 image를 준비한다. 게임·Socket·v3 로그 계약·브라우저 기능은 기존 CI가 검사한다.
+2. workflow의 배포 `run` 단계가 host lock을 획득하고 실행 image·현재 DB·후보의 기대 DB version과 40×10 geometry, rollback image를 확인한다.
+3. app의 5500 포트 TCP 접속 0건을 세 번 확인하고 custom-format backup을 만든다. 별도 임시 DB에 실제 restore해 기존 event의 ID·payload hash·수집 시간에 대한 건수/해시를 원본과 대조한다. 임시 DB만 삭제한다.
+4. 접속 0건을 다시 확인하고 Caddy의 app 유입을 503으로 막은 뒤 app만 정상 종료한다. backup 이후 event가 바뀌었으면 중단한다. idle keep-alive도 접속으로 잡히므로 사용자가 떠난 뒤 잠시 기다려 재시도해야 할 수 있다.
+5. 후보 image의 기존 migration CLI를 두 번 실행해 두 번째가 no-op인지 확인한다. 실제 DB version과 기존 event 해시를 다시 검사한다.
+6. 차단 상태에서 새 DB 호환 rollback image를 실제 기동해 health를 확인하고 후보로 교체한다. 기존 row 보존을 확인한 뒤 원본 Caddy 설정으로 유입을 재개한다.
+7. 실제 DB version·app healthy/HTTPS 200·후보 기동 이후 `write_failed` 로그 0을 확인하고 완료를 기록한다. 공개 브라우저 경기와 경기별 DB cohort는 CD가 자동 생성·검사하지 않으므로 필요할 때 별도 운영 smoke로 확인한다.
+
+### 실패 복구와 기록
+
+`/srv/tetris/deployments/<release_sha>-<run_id>-<attempt>/`에 `state`(image ID·DB version·원본 hash), `status`, `backup-path`, `backup.sha256`, `migration-result`를 보관한다. credential이나 raw board를 저장하지 않는다. backup과 기록은 자동 삭제하지 않는다.
+
+- 차단 전 실패는 현재 app을 유지한다. 차단 이후 실패는 실제 DB version이 이전 version이면 이전 image, 새 version이면 호환 image로 **app만 복구**한다. DB row/volume을 되돌리거나 삭제하지 않는다.
+- 실제 DB version이나 실행 image identity가 예상과 다르거나 복구가 실패하면 `manual_recovery_required`로 남긴다. 유입 재개 뒤 접속자가 생겼을 때도 자동으로 끊고 복구하지 않는다.
+- Caddy 차단이 적용된 상태에서 복구에 실패하면 차단을 임의로 풀지 않는다. runner/SSH 강제 종료 시 host가 마지막 상태에 남을 수 있으므로 journal·실제 image·DB·Caddy를 확인한다. 자동 복구 완료를 가정하지 않는다.
+- 수동 복구는 journal의 `BEFORE_VERSION`/`TARGET_VERSION`과 실제 DB version을 비교해 `BEFORE_TAG` 또는 `AFTER_TAG`를 선택하고 아래의 **active image tag 갱신·app만 교체** 절차를 따른다. DB3에 DB2 전용 image를 기동하지 않는다. app 정상 확인 후 원본 `/etc/caddy/Caddyfile`을 reload해 HTTPS를 확인한다. 오래된 journal로 이후 배포를 되돌리지 않는다.
+
+이 절차는 짧은 maintenance 배포다. 접속 확인과 Caddy reload는 원자적인 drain이 아니다. 정기 backup/retention·off-VM 재해 복구·실기기/장시간 부하와 실제 새 Actions 배포는 별도 검증 범위다.
 
 ## Backup과 restore rehearsal
 
@@ -1045,3 +1079,9 @@ openssl x509 \
 사람 로그의 기존 한도는 10초당 10건이다. 이 거부는 DB write 전에 발생하므로 DB 실패 counter가 0이어도 빠른 정상 플레이의 사람 로그가 모두 저장됐다는 의미가 아니다. 수집은 계속 best-effort이며 불완전 경기는 분석에서 구분한다. 완전한 행동 모방 데이터 수집을 원하면 입력 궤적·누락 감지·한도/재전송 계약을 별도로 설계해야 한다. 이번 검증을 위해 보안 한도나 single-sink·budget을 변경하지 않았으며, 누락 로그를 추정해 채우지 않는다.
 
 공유 `dist`를 다시 만드는 `verify`와 DB 검사 명령은 순서대로 실행한다. 한 명령이 산출물을 지우는 동안 다른 DB CLI가 실행되면 artifact 누락으로 실패할 수 있다. 운영 row·schema·volume을 지우는 방식으로 검증 실패를 해결하지 않는다.
+
+### 버퍼 존 5단계 운영 배포 완료 (2026-10-23)
+
+사용자 요청으로 [실행 기록](../history/oci/oci-buffer-zone-deployment-2026-10-23.md)의 운영 전환을 완료했다. 현재 app은 **`tetris-app:bbf26b7`**, migration은 **3**이다. 정확한 source commit의 main CI 네 job·운영 backup/임시 restore·접속 0건 확인·83초 신규 유입 차단·migration/재실행·공개 싱글/PVP/PVE 검증을 통과했다. 기존 이벤트 143,404건을 보존했고 합성 두 경기 v3 배치 33/33·start 2/over 2를 저장했다. 이 cohort는 기존 빈도 제한을 제거하거나 일반적인 무손실 수집을 보장하지 않는다.
+
+검증된 호환 rollback은 **`tetris-app:6be7d05`**다. tag는 게임 오버 계획 §13 archive SHA-256 앞 7자리이며 Git commit tag가 아니다. 실제 운영 migration 3 DB에서 20행 gameplay·healthy·HTTP 200과 정상 종료를 확인했다. rollback 시 이 image로 server/client를 함께 복구하고 v3 row·schema·volume을 보존한다. 이전 `842b744`는 migration 2를 요구하므로 직접 되돌리지 않는다. 두 image와 backup은 운영 VM에 보관했다. 기존 Caddyfile의 추가 Umami 프록시 경로는 덮어쓰지 않았으며 원본 checksum과 200 응답을 확인했다.

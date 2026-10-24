@@ -1,0 +1,250 @@
+{
+    "schemaVersion": 1,
+    "purpose": "production_deployment_verification",
+    "verifiedAt": "2026-10-23T09:44:45.269Z",
+    "releaseCommit": "bbf26b72554907017765338c331416f32debc80a",
+    "publicUrl": "https://tetra-arena.duckdns.org",
+    "sourceArchive": {
+        "name": "tetris-bbf26b7.tar.gz",
+        "bytes": 6743408,
+        "sha256": "9b9f8e408109696daba1cd678835b9f20f49ff708ab38b960f48262d2206b823"
+    },
+    "ci": {
+        "id": 39930149609,
+        "url": "https://github.com/Sleepingco/Tetris_multi/actions/runs/39930149609",
+        "conclusion": "success",
+        "jobs": [
+            {
+                "name": "Fast gate",
+                "conclusion": "success"
+            },
+            {
+                "name": "Chromium PVP and PVE",
+                "conclusion": "success"
+            },
+            {
+                "name": "Production container smoke",
+                "conclusion": "success"
+            },
+            {
+                "name": "PostgreSQL event storage",
+                "conclusion": "success"
+            }
+        ]
+    },
+    "maintenance": {
+        "startedAt": "2026-10-23T09:26:22Z",
+        "completedAt": "2026-10-23T09:27:45Z",
+        "durationSeconds": 83,
+        "preCutoverEstablishedConnections": [
+            0,
+            0,
+            0
+        ]
+    },
+    "images": {
+        "active": {
+            "tag": "bbf26b7",
+            "id": "sha256:af97c6684e90717ec3476ad4bf79cb9454eb2409c4500d86452c1f8225f5bb45",
+            "architecture": "amd64",
+            "user": "node"
+        },
+        "rollback": {
+            "tag": "6be7d05",
+            "id": "sha256:f6dd0f2bf979580df69bf036573a7e75c213c1ed83b879a2494719a6cb756a6e",
+            "tagMeaning": "archive_sha256_prefix",
+            "archiveSha256": "6be7d05a859f2e8c49602e4111c19ec1fc488601780463836fe3c129e82fac8d",
+            "boardRows": 20,
+            "requiredMigration": 3,
+            "productionDatabaseBootVerified": true,
+            "trafficSwitchedToRollback": false,
+            "shutdownExitCode": 0
+        }
+    },
+    "backup": {
+        "path": "/srv/tetris/backups/tetris-buffer-bbf26b7-20261023T091556Z.dump",
+        "bytes": 42327177,
+        "mode": "400",
+        "sha256": "17e41ceb87e9adcb4363a498a7f870842de339c3624ea68c133e0b91e0ec3eaf",
+        "restoreVerified": true,
+        "temporaryDatabaseRemoved": true
+    },
+    "database": {
+        "migrationVersion": 3,
+        "firstMigration": {
+            "applied": 1,
+            "skipped": 2
+        },
+        "secondMigration": {
+            "applied": 0,
+            "skipped": 3
+        },
+        "legacyRows": 143404,
+        "legacyEventIdHashAndIngestedAtMd5": "b78fad7f3a0b09ec545003dcc27c7873",
+        "legacyPreserved": true,
+        "totalEventsAfterSmoke": 143441,
+        "cohort": {
+            "games": 2,
+            "players": [
+                {
+                    "mode": "multi",
+                    "playerType": "human",
+                    "expected": 11,
+                    "stored": 11
+                },
+                {
+                    "mode": "multi",
+                    "playerType": "human",
+                    "expected": 0,
+                    "stored": 0
+                },
+                {
+                    "mode": "pve",
+                    "playerType": "human",
+                    "expected": 11,
+                    "stored": 11
+                },
+                {
+                    "mode": "pve",
+                    "playerType": "heuristic_ai",
+                    "expected": 11,
+                    "stored": 11
+                }
+            ],
+            "schemaVersion": 3,
+            "startEvents": 2,
+            "placementEvents": 33,
+            "overEvents": 2,
+            "expectedPlacements": 33,
+            "storedPlacements": 33,
+            "missing": 0,
+            "unexpected": 0,
+            "duplicateIdentities": 0,
+            "invalidRulesContext": 0,
+            "gameOverReasons": {
+                "multi": "block_out",
+                "pve": "lock_out"
+            },
+            "reasonSource": "postgres_game_over_payload",
+            "observations": {
+                "post_line_clear": 21,
+                "post_garbage_spawn": 11,
+                "lock_commit": 1
+            }
+        },
+        "credentialFieldNamesChecked": [
+            "sessionToken",
+            "password",
+            "databaseUrl"
+        ],
+        "credentialFieldsFound": 0,
+        "runtimeCredentialTlsVerified": true
+    },
+    "browser": {
+        "single": {
+            "width": 300,
+            "height": 720,
+            "frameTop": 120,
+            "outerBorder": "0px",
+            "mobileOverflow": false,
+            "gameOverAndRestart": true
+        },
+        "pvp": {
+            "gameId": "00e215e4-ae3d-47e8-9aac-cf792969d00c",
+            "boardRows": [
+                40,
+                40
+            ],
+            "matchFinishEvents": 1,
+            "geometryErrors": 0,
+            "observedPageErrors": 0,
+            "humanPlacementLogs": {
+                "schemaVersion": 1,
+                "mode": "pvp",
+                "committed": 11,
+                "sent": 11,
+                "accepted": 11,
+                "rateLimited": 0
+            }
+        },
+        "pve": {
+            "gameId": "5d7e7d0e-1473-4d91-91a7-160a42f49e7f",
+            "boardRows": [
+                40,
+                40
+            ],
+            "matchFinishEvents": 1,
+            "geometryErrors": 0,
+            "observedPageErrors": 0,
+            "humanPlacementLogs": {
+                "schemaVersion": 1,
+                "mode": "pve",
+                "committed": 11,
+                "sent": 11,
+                "accepted": 11,
+                "rateLimited": 0
+            },
+            "policy": {
+                "policyRequested": "placement_v4",
+                "policyUsed": "heuristic",
+                "fallbackReason": "RULESET_INCOMPATIBLE"
+            },
+            "policyEvents": 12,
+            "databaseFallbackCount": 12
+        }
+    },
+    "publicAssets": [
+        {
+            "page": "/pages/index.html",
+            "htmlSha256": "baecac570fc9acede555a27a657a35c1a8d5722c3dc11ac060e056b43e678852",
+            "module": "/assets/index-U4uW_QvL.js",
+            "moduleSha256": "fb8f6ae908d71e9990124879e75e21767ef93d471090177e6bd572b925307a8a",
+            "matched": true
+        },
+        {
+            "page": "/pages/multiLobby.html",
+            "htmlSha256": "75802fc947c8a875972f89e81e38883fb5e13dac59412e92fb3f13fb702ecda5",
+            "module": "/assets/multiLobby-DaVH5ain.js",
+            "moduleSha256": "a375a1bb789ea9204cd1099787f0a93ff671e5d49a48ab70c194f58a062ffb68",
+            "matched": true
+        },
+        {
+            "page": "/pages/tetrisSingle.html",
+            "htmlSha256": "26eae2664dc23e1c115c458ccf43b1b825686bf686ede27084dbaa11319def87",
+            "module": "/assets/tetrisSingle--RN19I6M.js",
+            "moduleSha256": "62e4e6ac22d3a35b91bd869055bdf5706947907ae03609cd85221a2300499daf",
+            "matched": true
+        },
+        {
+            "page": "/pages/tetrisMulti.html",
+            "htmlSha256": "37c76325238683258270ff050bb8b70de3c6448a36fe3dfe189dce607d276ac0",
+            "module": "/assets/tetrisMulti-C2uJyHDE.js",
+            "moduleSha256": "48459538a06825ac488c24e5c9b8e09eab0c6f16bbb24f454a1b877dc6c8d283",
+            "matched": true
+        }
+    ],
+    "health": {
+        "appHealthy": true,
+        "oom": false,
+        "restarts": 0,
+        "storageWriteFailedLogCount": 0,
+        "httpStatus": 308,
+        "httpsStatus": 200,
+        "existingStatsScriptStatus": 200,
+        "caddyFileSha256": "8d19f3a9b5eb54591fca8b1c32db3a38ebd8f12bdec3f1ec934cafecb3ccbfc8",
+        "caddyFilePreserved": true,
+        "postgresContainerPreserved": true,
+        "availableMemoryMiB": 434,
+        "swapUsedMiB": 200,
+        "diskUsedPercent": 22
+    },
+    "limits": [
+        "Human placement logging remains best-effort with the existing 10 per 10 second limit. This paced cohort does not establish lossless collection.",
+        "No physical-device or sustained production-load test, off-VM disaster recovery, ML retraining or action-imitation pipeline.",
+        "Existing package-lock dependency audit findings were not investigated or changed."
+    ],
+    "evidenceSha256": {
+        "databaseAggregate": "8c1703c8332b2c05803e7e0c1fc773ba65298462ca3358d25e4cb6a5c6986cc3",
+        "observationAggregate": "c30a7db2137a3d2deca8ae733ef03fa80855e56c6c1efd94d2876d25b9bae159"
+    }
+}

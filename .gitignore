@@ -6,6 +6,8 @@ coverage/
 dist/
 /release-artifacts/
 
+data/*
+
 data/logs/*.jsonl
 data/datasets/
 data/ml-experiments/
