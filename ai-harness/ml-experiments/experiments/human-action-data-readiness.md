@@ -48,7 +48,8 @@ Feature/scaler/estimator/학습 split/모델 metric은 해당 없음이다. 정�
 | `HUMAN_ACTION_RUN_MODE` | 기본 `smoke`, 또는 `full` | 다른 값 거부. full 설정 자체는 실행 승인이 아님 |
 | `HUMAN_ACTION_REPORT` | 기본 `/private/tmp/human-action-data-readiness-smoke.json` | full은 명시적으로 새 출력 경로 지정 |
 
-기존 환경을 사용하고 새 dependency를 추가하지 않는다. 코드·raw·기존 artifact를
+기존 환경을 사용한다. 사용자 요청의 결과 시각화 보완으로 pandas 표·Matplotlib 그래프와
+`environment-ml.yml`의 `matplotlib-base=3.10.8`만 추가한다. 감사 계산·report 계약은 유지한다. 코드·raw·기존 artifact를
 출력으로 덮지 않는다. output 기존 파일·symlink와 source의 canonical path/inode
 충돌을 거부한다. report는 검사 완료 뒤에만 게시한다. 실패한 부분 report를
 정상 완료 산출물로 남기지 않는다.

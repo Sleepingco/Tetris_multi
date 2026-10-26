@@ -1,6 +1,8 @@
 """Execute notebook definitions against small audit fixtures, without a Jupyter kernel."""
 
 import copy
+from contextlib import redirect_stdout
+import io
 import json
 import os
 from pathlib import Path
@@ -89,6 +91,32 @@ class HumanActionReadinessTest(unittest.TestCase):
         wrong_identity["identity_version"] = 1
         with self.assertRaisesRegex(ValueError, "IDENTITY_VERSION_REQUIRED"):
             FUNCTIONS["normalize_event"](wrong_identity)
+
+    def test_pandas_tables_and_matplotlib_render_without_changing_report(self):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        cell = next(c for c in BOOK["cells"] if c["id"] == "show-tables")
+        text = "".join(cell["source"])
+        self.assertIn("import pandas as pd", text)
+        self.assertIn("import matplotlib.pyplot as plt", text)
+        for inputs in ([action(), action("hard_drop", 2, 1120)], []):
+            with self.subTest(inputs=len(inputs)):
+                report = self.audit([placement(inputs=inputs)])
+                before = copy.deepcopy(report)
+                namespace = {**FUNCTIONS, "REPORT": report}
+                with redirect_stdout(io.StringIO()), patch("IPython.display.display") as display, patch.object(
+                    plt, "show", side_effect=lambda: plt.gcf().canvas.draw()
+                ) as show:
+                    exec(compile(text, str(NOTEBOOK), "exec"), namespace)
+                self.assertEqual(report, before)
+                self.assertEqual(namespace["readiness_table"].sum(axis=1).tolist(), [1, 1, 1])
+                self.assertEqual(namespace["action_table"]["attempts"].sum(), len(inputs))
+                self.assertEqual(namespace["interval_table"].loc["count", "value"], report["detail"]["loggedIntervalMs"]["count"])
+                self.assertEqual(display.call_count, 4)
+                self.assertEqual(show.call_count, 1)
+                self.assertEqual(plt.get_fignums(), [])
 
     def test_exact_duplicates_and_all_conflicting_rows_are_rebucketed(self):
         first = placement()
