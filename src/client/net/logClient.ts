@@ -20,11 +20,12 @@ export function sendPlacementDecisionLog(
     roomId: string,
     _playerId: string,
     log: unknown,
-): void {
+): boolean {
     try {
-        sendPlacementDecisionLogEvent(roomId, log)
-    } catch (error) {
-        console.warn("placement_decision log send failed:", error)
+        return sendPlacementDecisionLogEvent(roomId, log)
+    } catch {
+        console.warn("placement_decision log send failed")
+        return false;
     }
 }
 

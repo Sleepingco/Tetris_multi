@@ -34,17 +34,12 @@ import {
     BOARD_COLS,
     SPAWN_POSITION,
     INITIAL_FALL_INTERVAL_MS,
-    NEXT_PREVIEW_DIMENSION,
     INPUT_TICK_MS,
     WALL_KICKS,
 } from "../state/config.ts"
 import {
     getBoardContext,
     renderBoardCanvas,
-    renderNextPieces as renderNextPiecesDom,
-    renderHoldPiece as renderHoldPieceDom,
-    buildHoldPreview as buildHoldPreviewDom,
-    buildNextPreview as buildNextPreviewDom,
 } from "../render/tetrisRender.ts"
 import { createGameState } from "../state/stateFactory.ts"
 import type { GamePhase, QueuedInput } from "../state/stateFactory.ts"
@@ -52,7 +47,6 @@ import {
     ensureQueueFilled as fillPieceQueue,
     takeNextFromQueue,
 } from "../state/pieceQueue.ts"
-import { createGameUi } from "../ui/ui.ts"
 import {
     serializeGameState,
     deserializeGameState,
@@ -181,7 +175,9 @@ type RuntimeState = {
     currentTick: number;
     pieceIndex: number;
     inputLog: AppliedInputLog[];
-    placementDecisionLog: PlacementDecisionLog[];
+    inputSequence: number;
+    inputLogBytes: number;
+    inputLogOverflow: boolean;
     decisionStartPiece: PlaceablePieceState | null;
     pendingLockScoreBefore: number | null;
     authoritativePendingGarbageLines: number;
@@ -192,18 +188,13 @@ type RuntimeState = {
 };
 export type TetrisRuntimeOptions = {
     boardCanvasEl?: HTMLCanvasElement | null;
-    gameOverEl?: HTMLElement | null;
-    scoreEl?: HTMLElement | null;
-    linesEl?: HTMLElement | null;
-    pendingGarbageEl?: HTMLElement | null;
-    nextPreviewEl?: HTMLElement | null;
-    holdPreviewEl?: HTMLElement | null;
     rng?: () => number;
     mode?: RuntimeMode;
     gameId?: string | null;
     roomId?: string | null;
     playerId?: string | null;
     placementDecisionRecorder?: ((log: PlacementDecisionLog) => void) | null;
+    onCollectionFailure?: ((reason: string) => void) | null;
     inputOutcomeRecorder?: ((record: InputOutcomeRecord) => void) | null;
 };
 export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "subscribeDisplay"> & {
@@ -224,9 +215,6 @@ export type TetrisRuntime = Pick<RuntimeDisplayHandle, "getDisplaySnapshot" | "s
     setAuthoritativePendingGarbageLines: (lines: number | undefined, options?: { publish?: boolean }) => number;
     appendServerBag: (chunk: PieceType[]) => void;
     getServerBagRemainingCount: () => number;
-    hideGameOver: () => void;
-    showGameOver: () => void;
-    getPlacementDecisionLog: () => PlacementDecisionLog[];
     runtime: RuntimeState;
 };
 
@@ -245,8 +233,10 @@ const ROWS = BOARD_ROWS
 const COLS = BOARD_COLS
 const SPAWN_ROW = SPAWN_POSITION.row
 const SPAWN_COL = SPAWN_POSITION.col
-const NEXT_PREVIEW_SIZE = NEXT_PREVIEW_DIMENSION
 const MAX_QUEUED_INPUTS_PER_TICK = 4
+const MAX_PIECE_INPUTS = 1024;
+const MAX_PIECE_INPUT_BYTES = 128 * 1024;
+const inputEncoder = new TextEncoder();
 
 const GAME_PHASE = {
     PLAYING: "playing",
@@ -265,18 +255,13 @@ const GAME_PHASE = {
   */
 export function createTetrisRuntime({
     boardCanvasEl = null,
-    gameOverEl = null,
-    scoreEl = null,
-    linesEl = null,
-    pendingGarbageEl = null,
-    nextPreviewEl = null,
-    holdPreviewEl = null,
     rng = Math.random,
     mode = "single",
     gameId = null,
     roomId = null,
     playerId = null,
     placementDecisionRecorder = null,
+    onCollectionFailure = null,
     inputOutcomeRecorder = null,
 }: TetrisRuntimeOptions = {}): TetrisRuntime {
     let hardDropEffect: HardDropEffect | null = null;
@@ -308,7 +293,9 @@ export function createTetrisRuntime({
         currentTick: 0,
         pieceIndex: 0,
         inputLog: [],
-        placementDecisionLog: [],
+        inputSequence: 0,
+        inputLogBytes: 0,
+        inputLogOverflow: false,
         decisionStartPiece: null,
         pendingLockScoreBefore: null,
         authoritativePendingGarbageLines: 0,
@@ -318,21 +305,6 @@ export function createTetrisRuntime({
         playerId,
 
     }
-
-    const ui = createGameUi({
-        scoreEl,
-        linesEl,
-        pendingGarbageEl,
-        gameOverEl,
-        nextPreviewEl,
-        holdPreviewEl,
-        nextQueueSize: NEXT_QUEUE_SIZE,
-        previewSize: NEXT_PREVIEW_SIZE,
-        buildNextPreview: buildNextPreviewDom,
-        buildHoldPreview: buildHoldPreviewDom,
-        renderNextPieces: renderNextPiecesDom,
-        renderHoldPiece: renderHoldPieceDom,
-    })
 
     const displayBridge = createRuntimeDisplayBridge(() => ({
         score: gameState.score,
@@ -357,7 +329,7 @@ export function createTetrisRuntime({
       * - 실행 중인 타이머를 멈추고 기본 하강 속도로 되돌린다.
       * - 점수, 홀드, 조각 queue, 입력 대기열, board를 새 세션 값으로 되돌린다.
       * - server bag이 전달되면 authoritative 조각 순서를, 아니면 local 7-bag을 사용한다.
-      * - 렌더러 컨텍스트와 미리보기 DOM을 다시 준비한다.
+      * - 렌더러 컨텍스트와 조각 queue를 다시 준비한다.
       * - `autoStart`가 true일 때만 input loop와 첫 턴을 시작한다.
       */
     function init({ autoStart = true, serverBagChunks = null }: {
@@ -378,7 +350,7 @@ export function createTetrisRuntime({
             col: SPAWN_COL,
         })
         gameState.pendingPiece = { ...gameState.activePiece }
-        preparePreviewUi()
+        prepareBoard()
         renderBoard()
         if (autoStart) {
             startInputLoop()
@@ -396,8 +368,8 @@ export function createTetrisRuntime({
         gameState.lockDelay = createLockDelay(SPAWN_ROW);
         gameState.score = 0
         gameState.lines = 0
-        ui.renderScore(gameState.score)
-        ui.renderLines(gameState.lines)
+        gameState.combo = -1;
+        gameState.backToBack = false;
         gameState.fallIntervalMs = INITIAL_FALL_INTERVAL_MS
         gameState.pieceQueue = []
         gameState.holdPieceType = null
@@ -409,24 +381,21 @@ export function createTetrisRuntime({
         gameState.board = createEngineBoard(ROWS, COLS)
         runtime.currentTick = 0
         runtime.inputLog = []
-        runtime.placementDecisionLog = []
+        runtime.inputSequence = 0;
+        runtime.inputLogBytes = 0;
+        runtime.inputLogOverflow = false;
         runtime.decisionStartPiece = null
         runtime.pendingLockScoreBefore = null
         runtime.authoritativePendingGarbageLines = 0
-        ui.renderPendingGarbage(0)
     }
 
     /**
-      * Canvas context와 preview cell을 준비하고 최초 조각 queue를 화면에 반영한다.
+      * Canvas context와 최초 조각 queue를 준비한다.
       * gameplay를 진행하지 않고 표시 구조와 스폰 준비만 끝낸다.
       */
-    function preparePreviewUi(): void {
+    function prepareBoard(): void {
         initBoardContext()
-        ui.buildHoldPreview()
-        ui.buildNextPreview()
         refillSpawnQueue()
-        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
-        ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
     }
 
     /**
@@ -463,7 +432,6 @@ export function createTetrisRuntime({
         runtime.pieceIndex++
         activateSpawnedPiece(nextActivePiece)
         gameState.holdUsedThisDrop = false
-        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         renderBlocks("spawn")
     }
 
@@ -500,8 +468,6 @@ export function createTetrisRuntime({
 
         activateSpawnedPiece(swappedPiece)
         gameState.holdUsedThisDrop = true
-        ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
-        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         startGravity()
         renderBlocks("spawn")
         return { applied: true, reason: null }
@@ -650,7 +616,6 @@ export function createTetrisRuntime({
         if (dropped > 0) {
             gameState.spinRotation = null;
             gameState.score += dropped * 2
-            ui.renderScore(gameState.score)
         }
 
         const landedPiece: PlaceablePieceState = {
@@ -827,7 +792,6 @@ export function createTetrisRuntime({
             stopGameLoops()
             setActivePiece(intent.active)
             renderBoard()
-            ui.showGameOver()
             return
         }
 
@@ -935,7 +899,6 @@ export function createTetrisRuntime({
             gameState.phase = GAME_PHASE.GAME_OVER
             gameState.inputQueue = []
             stopGameLoops()
-            ui.showGameOver()
             finalizePlacementDecision(placementContext, {
                 linesCleared: 0,
                 tSpinType: "none",
@@ -966,7 +929,6 @@ export function createTetrisRuntime({
             const points = calculatePlacementScore(0, tSpinType);
             if (points > 0) {
                 gameState.score += points;
-                ui.renderScore(gameState.score);
             }
             gameState.tSpinType = "none"
             renderBoard()
@@ -990,11 +952,9 @@ export function createTetrisRuntime({
             const points = calculatePlacementScore(clearedLines, gameState.tSpinType);
             if (points > 0) {
                 gameState.score += points;
-                ui.renderScore(gameState.score);
             }
             if (clearedLines > 0) {
                 gameState.lines += clearedLines
-                ui.renderLines(gameState.lines)
             }
 
             const tSpinType = gameState.tSpinType
@@ -1074,7 +1034,6 @@ export function createTetrisRuntime({
         stopGameLoops()
         runtime.detachKeyboard?.()
         runtime.detachKeyboard = null
-        ui.hideGameOver()
         gameState.inputQueue = []
         runtime.decisionStartPiece = null
         runtime.boardCtx = null
@@ -1266,14 +1225,30 @@ export function createTetrisRuntime({
       * 충돌로 실패한 입력도 판단 과정의 일부이므로 포함되며, 실제 성공 여부는 `recordInputOutcome`이 별도로 남긴다.
       */
     function recordAppliedInput(input: QueuedInput): void {
-        runtime.inputLog.push({
+        if (runtime.inputLog[0]?.pieceIndex !== input.pieceIndex) clearPieceInputLog();
+        const record = {
             playerId: runtime.playerId,
             action: input.action,
             tick: input.tick,
             pieceIndex: input.pieceIndex,
-            sequence: runtime.inputLog.length + 1,
+            sequence: ++runtime.inputSequence,
             createdAt: Date.now(),
-        })
+        };
+        if (runtime.inputLogOverflow) return;
+        const bytes = inputEncoder.encode(JSON.stringify(record)).length + 1;
+        if (runtime.inputLog.length >= MAX_PIECE_INPUTS || runtime.inputLogBytes + bytes > MAX_PIECE_INPUT_BYTES) {
+            runtime.inputLogOverflow = true;
+            onCollectionFailure?.("INPUT_LOG_TOO_LARGE");
+            return;
+        }
+        runtime.inputLog.push(record);
+        runtime.inputLogBytes += bytes;
+    }
+
+    function clearPieceInputLog(): void {
+        runtime.inputLog = [];
+        runtime.inputLogBytes = 0;
+        runtime.inputLogOverflow = false;
     }
 
     /**
@@ -1347,7 +1322,7 @@ export function createTetrisRuntime({
       * - boardBefore/선택 배치와 boardAfter/점수·공격 결과를 한 decision으로 묶는다.
       * - 40행 로그는 v3로 남기고, 유효한 판단 시작 상태가 있어야 서버 저장 검증을 통과한다.
       * - 클라이언트 공격량은 기록용이며 garbage 상쇄·적용의 최종 결정은 authoritative 서버가 한다.
-      * - 완성 로그는 메모리에 보관하고 선택적인 recorder로 전달한다.
+      * - 완성 로그는 recorder로 전달하며 초과한 입력을 잘라 정상 로그처럼 저장하지 않는다.
       */
     function finalizePlacementDecision(
         placementContext: PlacementContext | null,
@@ -1393,18 +1368,17 @@ export function createTetrisRuntime({
             },
         }
 
-        const analysis = createHumanPlacementLogAnalysis({
+        const hasCollectionContext =
+            typeof log.gameId === "string" && log.gameId.length > 0 &&
+            typeof log.roomId === "string" && log.roomId.length > 0 &&
+            typeof log.playerId === "string" && log.playerId.length > 0;
+        const analysis = hasCollectionContext ? createHumanPlacementLogAnalysis({
             boardBefore: log.boardBefore,
             boardAfter: log.boardAfter,
             activePieceAtDecisionStart: log.activePiece,
             selectedPlacement: log.selectedPlacement,
-        })
-        if (
-            analysis &&
-            typeof log.gameId === "string" && log.gameId.length > 0 &&
-            typeof log.roomId === "string" && log.roomId.length > 0 &&
-            typeof log.playerId === "string" && log.playerId.length > 0
-        ) {
+        }) : null;
+        if (analysis) {
             log.schemaVersion = 3
             log.source = "human"
             log.modelType = null
@@ -1414,8 +1388,9 @@ export function createTetrisRuntime({
             log.aiComparison = analysis.aiComparison
         }
 
-        runtime.placementDecisionLog.push(log)
-        if (typeof placementDecisionRecorder === "function") {
+        const incomplete = runtime.inputLogOverflow;
+        clearPieceInputLog();
+        if (!incomplete && typeof placementDecisionRecorder === "function") {
             placementDecisionRecorder(log)
         }
         runtime.pendingLockScoreBefore = null
@@ -1435,7 +1410,6 @@ export function createTetrisRuntime({
         { publish = true }: { publish?: boolean } = {},
     ): number {
         runtime.authoritativePendingGarbageLines = normalizePendingGarbageLines(lines)
-        ui.renderPendingGarbage(runtime.authoritativePendingGarbageLines)
         if (publish) displayBridge.publishDisplay()
         return runtime.authoritativePendingGarbageLines
     }
@@ -1665,16 +1639,7 @@ export function createTetrisRuntime({
             : runtime.pieceIndex
         runtime.pendingLockScoreBefore = null
 
-        ui.renderScore(gameState.score)
-        ui.renderLines(gameState.lines)
         setAuthoritativePendingGarbageLines(snapshot.pendingGarbageLines, { publish: false })
-        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
-        ui.renderHoldPiece(gameState.holdPieceType, BLOCKS)
-        if (gameState.phase === GAME_PHASE.GAME_OVER) {
-            ui.showGameOver()
-        } else {
-            ui.hideGameOver()
-        }
         renderBoard()
 
         if (resumeGravity && gameState.phase === GAME_PHASE.PLAYING) {
@@ -1702,7 +1667,6 @@ export function createTetrisRuntime({
         runtime.bagMode = "server"
         runtime.serverBagQueue.push(...chunk)
         refillSpawnQueue()
-        ui.renderNextPieces(gameState.pieceQueue, BLOCKS)
         displayBridge.publishDisplay()
     }
 
@@ -1776,11 +1740,6 @@ export function createTetrisRuntime({
         setAuthoritativePendingGarbageLines,
         appendServerBag,
         getServerBagRemainingCount,
-        hideGameOver: ui.hideGameOver,
-        showGameOver: ui.showGameOver,
-        getPlacementDecisionLog() {
-            return runtime.placementDecisionLog.map(log => ({ ...log }))
-        },
         runtime,
     }
 }

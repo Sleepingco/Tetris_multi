@@ -64,18 +64,9 @@ export type MultiplayerGameOptions = {
     match: Match;
     myCanvas: HTMLCanvasElement;
     opponentCanvas: HTMLCanvasElement;
-    myNextPreviewEl?: HTMLElement | null;
-    myHoldPreviewEl?: HTMLElement | null;
-    myScoreEl?: HTMLElement | null;
-    myLinesEl?: HTMLElement | null;
-    myPendingGarbageEl?: HTMLElement | null;
-    opponentNextPreviewEl?: HTMLElement | null;
-    opponentHoldPreviewEl?: HTMLElement | null;
-    opponentScoreEl?: HTMLElement | null;
-    opponentLinesEl?: HTMLElement | null;
-    opponentPendingGarbageEl?: HTMLElement | null;
     onUserInteract?: (() => void) | null;
     onCombatEffect?: ((presentation: CombatPresentation) => void) | null;
+    onCollectionFailure?: ((reason: string) => void) | null;
     deferStart?: boolean;
 };
 export type MultiplayerGameSession = {
@@ -97,6 +88,8 @@ const AFTER_ACTION_TRANSFORM_INPUTS = new Set([
     "rotate",
     "rotate_ccw",
 ])
+const MAX_PLACEMENT_ATTEMPTS = 128;
+const MAX_SETTLED_PLACEMENT_KEYS = 256;
 const BEFORE_ACTION_TRANSFORM_INPUTS = new Set([
     "soft_drop",
     "hard_drop",
@@ -137,18 +130,9 @@ export function startMultiplayerGame({
     match,
     myCanvas,
     opponentCanvas,
-    myNextPreviewEl,
-    myHoldPreviewEl,
-    myScoreEl,
-    myLinesEl,
-    myPendingGarbageEl,
-    opponentNextPreviewEl,
-    opponentHoldPreviewEl,
-    opponentScoreEl,
-    opponentLinesEl,
-    opponentPendingGarbageEl,
     onUserInteract,
     onCombatEffect,
+    onCollectionFailure,
     deferStart = false,
 }: MultiplayerGameOptions): MultiplayerGameSession {
     const myBagChunks = getPlayerBagChunks(match, playerId)
@@ -174,11 +158,6 @@ export function startMultiplayerGame({
 
     const myGame = createTetrisRuntime({
         boardCanvasEl: myCanvas,
-        scoreEl: myScoreEl,
-        linesEl: myLinesEl,
-        pendingGarbageEl: myPendingGarbageEl,
-        nextPreviewEl: myNextPreviewEl,
-        holdPreviewEl: myHoldPreviewEl,
         mode: mode === "pve" ? "pve" : "multi",
         gameId,
         roomId,
@@ -188,6 +167,7 @@ export function startMultiplayerGame({
             bufferLocalPlacementLog(log)
         },
         inputOutcomeRecorder: handleLocalInputOutcome,
+        onCollectionFailure,
     })
     myGame.init({ autoStart: !deferStart, serverBagChunks: myBagChunks })
     const myInitialSnapshot = getPlayerInitialSnapshot(match, playerId)
@@ -225,6 +205,11 @@ export function startMultiplayerGame({
         if (!key || placementLogBufferClosed || settledPlacementAttemptKeys.has(key)) return null
         if (typeof pieceIndex !== "number" || typeof tick !== "number") return null
         if (!pendingPlacementAttempts.has(key)) {
+            if (pendingPlacementAttempts.size >= MAX_PLACEMENT_ATTEMPTS) {
+                settlePlacementAttempt(key);
+                onCollectionFailure?.("PLACEMENT_BUFFER_FULL");
+                return null;
+            }
             pendingPlacementAttempts.set(key, {
                 pieceIndex,
                 tick,
@@ -240,6 +225,9 @@ export function startMultiplayerGame({
         if (!key) return
         pendingPlacementAttempts.delete(key)
         settledPlacementAttemptKeys.add(key)
+        if (settledPlacementAttemptKeys.size > MAX_SETTLED_PLACEMENT_KEYS) {
+            settledPlacementAttemptKeys.delete(settledPlacementAttemptKeys.values().next().value!);
+        }
     }
 
     /**
@@ -257,14 +245,15 @@ export function startMultiplayerGame({
         if (!attempt?.log || !attempt.authoritativeCommitted) return false
         if (!Number.isInteger(attempt.clientSequence)) return false
 
-        sendPlacementDecisionLog(roomId, playerId, {
+        const sent = sendPlacementDecisionLog(roomId, playerId, {
             ...attempt.log,
             authoritativeClientSequence: attempt.clientSequence,
             authoritativePieceIndex: attempt.pieceIndex,
         })
+        if (!sent) onCollectionFailure?.("LOG_SEND_FAILED");
         settlePlacementAttempt(key)
         maybeClosePlacementLogBufferAfterGameOver()
-        return true
+        return sent
     }
 
     function bufferLocalPlacementLog(log: PlacementDecisionLog): void {
@@ -294,7 +283,7 @@ export function startMultiplayerGame({
 
     function discardPlacementLogBuffer({ close = false }: { close?: boolean } = {}): void {
         for (const key of pendingPlacementAttempts.keys()) {
-            settledPlacementAttemptKeys.add(key)
+            settlePlacementAttempt(key)
         }
         pendingPlacementAttempts.clear()
         placementAttemptKeyByClientSequence.clear()
@@ -430,11 +419,6 @@ export function startMultiplayerGame({
 
     const opponentGame = createTetrisRuntime({
         boardCanvasEl: opponentCanvas,
-        scoreEl: opponentScoreEl,
-        linesEl: opponentLinesEl,
-        pendingGarbageEl: opponentPendingGarbageEl,
-        nextPreviewEl: opponentNextPreviewEl,
-        holdPreviewEl: opponentHoldPreviewEl,
         mode: mode === "pve" ? "pve" : "multi",
         gameId,
         roomId,

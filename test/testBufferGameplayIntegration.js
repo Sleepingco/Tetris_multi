@@ -28,8 +28,10 @@ async function createRuntimeHarness(t, mode, scenario) {
     globalThis.Audio = class { play() { return Promise.resolve(); } pause() {} };
     globalThis.localStorage = { getItem() { return null; }, setItem() {} };
     const { createTetrisRuntime } = await import("../src/client/game/runtime/tetris.ts");
-    const game = createTetrisRuntime({ mode, gameId: "00000000-0000-4000-8000-000000000001",
+    const placementLogs = [];
+    const game = createTetrisRuntime({ placementDecisionRecorder: log => placementLogs.push(log), mode, gameId: "00000000-0000-4000-8000-000000000001",
         roomId: "ABCDEF12", playerId: "00000000-0000-4000-8000-000000000002" });
+    Object.assign(game, { placementLogs });
     game.init({ autoStart: false });
     if (scenario) game.applySnapshot({ ...game.getSnapshot(), board: createBoard(scenario),
         activePiece: { ...scenario.piece }, pieceQueue: ["tree", "bar"], pieceIndex: 1,
@@ -62,7 +64,7 @@ for (const scenario of fixture.locks) {
             assert.deepEqual(game.getSnapshot().board, state.board);
             assert.equal(game.getSnapshot().score, state.score);
             assert.equal(game.getSnapshot().phase, state.phase);
-            const logs = game.getPlacementDecisionLog();
+            const logs = game.placementLogs;
             assert.equal(logs.length, 1);
             const log = logs[0];
             assert.equal(log.schemaVersion, 3);
@@ -230,7 +232,7 @@ for (const entrypoint of ["next", "hold"]) {
         assert.equal(game.getDisplaySnapshot().phase, "gameOver");
         assert.deepEqual(phases, ["gameOver"]);
         assert.equal(game.runtime.inputTimer, undefined);
-        assert.equal(game.getPlacementDecisionLog().at(-1).observation.terminalOutcome, "lock_out");
+        assert.equal(game.placementLogs.at(-1).observation.terminalOutcome, "lock_out");
         assert.equal(game.enqueueInput("move_left"), null);
         game.init({ autoStart: true });
         assert.equal(game.getDisplaySnapshot().phase, "playing");
@@ -251,5 +253,5 @@ test("싱글의 하강 불가 spawn도 고정 유예 중에는 좌우 이동으�
     assert.equal(game.getSnapshot().phase, "playing");
     assert.equal(game.getDisplaySnapshot().phase, "playing");
     assert.equal(game.getSnapshot().activePiece.row, 19);
-    assert.equal(game.getPlacementDecisionLog().length, 1);
+    assert.equal(game.placementLogs.length, 1);
 });

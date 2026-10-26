@@ -39,13 +39,37 @@ function installBrowserStubs() {
 
 async function loadRuntime() {
     installBrowserStubs();
-    const [{ createTetrisRuntime }, { INPUT_ACTION }] = await Promise.all([
+    const [{ createTetrisRuntime: createRuntime }, { INPUT_ACTION }] = await Promise.all([
         import("../src/client/game/runtime/tetris.ts"),
         import("../src/client/game/runtime/input.ts"),
     ]);
 
+    function createTetrisRuntime(options = {}) {
+        const placementLogs = [];
+        const game = createRuntime({ ...options, placementDecisionRecorder(log) {
+            placementLogs.push(log);
+            options.placementDecisionRecorder?.(log);
+        } });
+        const init = game.init;
+        game.init = options => { placementLogs.length = 0; init(options); };
+        return Object.assign(game, { placementLogs });
+    }
     return { createTetrisRuntime, INPUT_ACTION };
 }
+
+test("같은 runtime 재시작은 이전 combo/B2B를 초기화하고 snapshot 복구는 보존한다", async t => {
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+    game.init({ autoStart: false });
+    game.applySnapshot({ ...game.getSnapshot(), score: 999, combo: 3, backToBack: true });
+    assert.equal(game.getSnapshot().combo, 3);
+    assert.equal(game.getSnapshot().backToBack, true);
+    game.init({ autoStart: false });
+    assert.equal(game.getSnapshot().score, 0);
+    assert.equal(game.getSnapshot().combo, -1);
+    assert.equal(game.getSnapshot().backToBack, false);
+});
 
 function waitForTick(game, targetTick) {
     return new Promise((resolve, reject) => {
@@ -125,21 +149,6 @@ function installDocumentStub() {
     globalThis.document = {
         createElement: createFakeElement,
     };
-}
-
-function countPreviewCells(element) {
-    let count = 0;
-
-    function visit(node) {
-        if (!node || !Array.isArray(node.children)) return;
-        if (typeof node.className === "string" && node.className.includes("preview")) {
-            count++;
-        }
-        node.children.forEach(visit);
-    }
-
-    visit(element);
-    return count;
 }
 
 function createEmptyBoard() {
@@ -647,11 +656,7 @@ test("enqueueInput은 같은 tick에 과도하게 입력을 쌓지 않는다", a
 
 test("applySnapshot은 snapshot의 pieceIndex를 runtime에 반영한다", async (t) => {
     const { createTetrisRuntime } = await loadRuntime();
-    const scoreEl = createFakeElement();
-    const linesEl = createFakeElement();
     const game = createTetrisRuntime({
-        scoreEl,
-        linesEl,
         rng: () => 0,
     });
     t.after(() => game.destroy());
@@ -670,8 +675,8 @@ test("applySnapshot은 snapshot의 pieceIndex를 runtime에 반영한다", async
     const after = game.getSnapshot();
     assert.equal(after.score, 40);
     assert.equal(after.lines, 3);
-    assert.equal(scoreEl.innerText, 40);
-    assert.equal(linesEl.innerText, 3);
+    assert.equal(game.getDisplaySnapshot().score, 40);
+    assert.equal(game.getDisplaySnapshot().lines, 3);
     assert.equal(after.tick, before.tick + 10);
     assert.equal(after.pieceIndex, before.pieceIndex + 3);
     assert.equal(game.runtime.pieceIndex, before.pieceIndex + 3);
@@ -933,32 +938,6 @@ test("server bag runtime은 authoritative pieceQueue 적용 시 숨은 대기 qu
     assert.equal(game.runtime.gravityRunning, true);
 });
 
-test("runtime은 next와 hold preview DOM을 렌더링한다", async (t) => {
-    installDocumentStub();
-    const { createTetrisRuntime } = await loadRuntime();
-    const nextPreviewEl = createFakeElement();
-    const holdPreviewEl = createFakeElement();
-    const game = createTetrisRuntime({
-        nextPreviewEl,
-        holdPreviewEl,
-        rng: () => 0,
-    });
-    t.after(() => game.destroy());
-
-    game.init({ autoStart: false });
-    const before = game.getSnapshot();
-    game.applySnapshot({
-        ...before,
-        pieceQueue: ["bar", "square"],
-        holdPieceType: "tree",
-    });
-
-    assert.equal(nextPreviewEl.children.length, 4);
-    assert.equal(holdPreviewEl.children.length, 1);
-    assert.equal(countPreviewCells(nextPreviewEl) > 0, true);
-    assert.equal(countPreviewCells(holdPreviewEl) > 0, true);
-});
-
 test("authoritative snapshot 이후 placement_decision은 시작 조각과 최종 배치를 분리한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
     const placementLogs = [];
@@ -1067,7 +1046,7 @@ test("일반 spawn 후 hard drop 로그는 spawn 상태와 최종 locked 위치�
 
     await waitForTick(game, targetTick);
 
-    const [log] = game.getPlacementDecisionLog();
+    const [log] = game.placementLogs;
     assert.equal(log.schemaVersion, 3);
     assert.deepEqual(
         {
@@ -1106,7 +1085,7 @@ test("hold 후 로그는 incoming piece의 spawn 상태를 판단 시작 상태�
 
     await waitForTick(game, targetTick);
 
-    const [log] = game.getPlacementDecisionLog();
+    const [log] = game.placementLogs;
     assert.equal(log.activePiece.pieceType, "bar");
     assert.equal(log.activePiece.rotation, 0);
     assert.equal(log.activePiece.row, 19);
@@ -1143,7 +1122,7 @@ test("새 조각 spawn은 이전 조각의 판단 시작 상태를 재사용하�
     game.enqueueInput(INPUT_ACTION.HARD_DROP, secondTick, secondPieceIndex);
     await waitForTick(game, secondTick);
 
-    const [firstLog, secondLog] = game.getPlacementDecisionLog();
+    const [firstLog, secondLog] = game.placementLogs;
     assert.equal(firstLog.activePiece.pieceType, "tree");
     assert.equal(secondStart.pieceType, "bar");
     assert.deepEqual(
@@ -1205,7 +1184,7 @@ test("판단 시작 상태가 없어도 40행 로그를 구버전으로 낮추�
 
     await waitForTick(game, targetTick);
 
-    const [log] = game.getPlacementDecisionLog();
+    const [log] = game.placementLogs;
     assert.equal(log.schemaVersion, 3);
     assert.equal(log.activePiece, undefined);
     assert.ok(log.selectedPlacement);
@@ -1217,11 +1196,7 @@ test("판단 시작 상태가 없어도 40행 로그를 구버전으로 낮추�
 
 test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한다", async (t) => {
     const { createTetrisRuntime, INPUT_ACTION } = await loadRuntime();
-    const scoreEl = createFakeElement();
-    const linesEl = createFakeElement();
     const game = createTetrisRuntime({
-        scoreEl,
-        linesEl,
         rng: () => 0,
     });
     t.after(() => game.destroy());
@@ -1258,41 +1233,35 @@ test("placement_decision boardAfter는 line clear 반영 후 보드를 저장한
 
     await waitForTick(game, targetTick);
 
-    const [log] = game.getPlacementDecisionLog();
+    const [log] = game.placementLogs;
     assert.equal(log.boardBefore[39][0], "bar");
     assert.equal(log.boardBefore[39][4], null);
     assert.equal(log.placementResult.linesCleared, 1);
     assert.equal(log.placementResult.scoreBefore, 0);
     assert.equal(log.placementResult.scoreAfter, 10);
     assert.equal(log.placementResult.scoreDelta, 10);
-    assert.equal(scoreEl.innerText, 10);
-    assert.equal(linesEl.innerText, 1);
+    assert.equal(game.getDisplaySnapshot().score, 10);
+    assert.equal(game.getDisplaySnapshot().lines, 1);
     assert.equal(game.getSnapshot().lines, 1);
     assert.equal(log.boardAfter[39][4], "square");
     assert.equal(log.boardAfter[39][5], "square");
 });
 
-test("authoritative pending garbage는 incoming 수와 위험 상태를 갱신한다", async (t) => {
+test("authoritative pending garbage는 React 표시 snapshot의 incoming 수를 갱신한다", async (t) => {
     const { createTetrisRuntime } = await loadRuntime();
-    const incomingStatEl = createFakeElement();
-    const pendingGarbageEl = createFakeElement();
-    pendingGarbageEl.parentElement = incomingStatEl;
     const game = createTetrisRuntime({
         rng: () => 0,
-        pendingGarbageEl,
     });
     t.after(() => game.destroy());
 
     game.init({ autoStart: false });
     game.setAuthoritativePendingGarbageLines(3);
 
-    assert.equal(pendingGarbageEl.innerText, 3);
-    assert.ok(incomingStatEl.classList.contains("is-danger"));
+    assert.equal(game.getDisplaySnapshot().pendingGarbageLines, 3);
 
     game.setAuthoritativePendingGarbageLines(0);
 
-    assert.equal(pendingGarbageEl.innerText, 0);
-    assert.equal(incomingStatEl.classList.contains("is-danger"), false);
+    assert.equal(game.getDisplaySnapshot().pendingGarbageLines, 0);
 });
 
 test("placement_decision은 line clear 결과로 garbage attackLines를 기록한다", async (t) => {
@@ -1332,7 +1301,7 @@ test("placement_decision은 line clear 결과로 garbage attackLines를 기록�
 
     await waitForTick(game, targetTick);
 
-    const [log] = game.getPlacementDecisionLog();
+    const [log] = game.placementLogs;
 
     assert.equal(log.placementResult.linesCleared, 4);
     assert.equal(log.placementResult.rawAttackLines, 4);
@@ -1369,7 +1338,7 @@ test("실제 회전 뒤 낙하한 hard drop은 T-Spin 자격을 해제하고 제
                             for (let row = 0; row < distance; row++) await press(INPUT_ACTION.SOFT_DROP);
                         }
                         await press(INPUT_ACTION.HARD_DROP);
-                        const [log] = game.getPlacementDecisionLog();
+                        const [log] = game.placementLogs;
                         assert.equal(log.selectedPlacement.row, 37);
                         assert.equal(log.placementResult.isTSpin, distance === 0);
                         assert.equal(log.placementResult.scoreDelta,
@@ -1424,7 +1393,7 @@ test("placement_decision은 T-Spin Single 결과로 garbage attackLines를 기�
 
     await waitForTick(game, targetTick);
 
-    const [log] = game.getPlacementDecisionLog();
+    const [log] = game.placementLogs;
 
     assert.equal(log.placementResult.linesCleared, 1);
     assert.equal(log.placementResult.isTSpin, true);
@@ -1477,7 +1446,7 @@ test("실제 T 회전의 Mini·Full 결과와 보상은 싱글·멀티 예측·�
                     game.enqueueInput(action, tick, game.getSnapshot().pieceIndex);
                     await waitForTick(game, tick);
                 }
-                const [log] = game.getPlacementDecisionLog();
+                const [log] = game.placementLogs;
                 for (const result of [log.placementResult, expected.placementResult]) {
                     assert.equal(result.tSpinType, fixture.type, `${mode} ${fixture.lines}줄`);
                     assert.equal(result.isTSpin, true);
@@ -1513,7 +1482,7 @@ test("5번째 킥 승격은 연속 회전·실패 입력에 유지되고 이동�
         await press(INPUT_ACTION.MOVE_LEFT);
         assert.deepEqual(game.getSnapshot().spinRotation, { lastKickIndex: 0, usedKick5: true });
         await press(INPUT_ACTION.HARD_DROP);
-        assert.equal(game.getPlacementDecisionLog()[0].placementResult.tSpinType, "full");
+        assert.equal(game.placementLogs[0].placementResult.tSpinType, "full");
         assert.equal(game.getSnapshot().spinRotation, null);
         game.applySnapshot(saved);
         saved.spinRotation.usedKick5 = false;
@@ -1625,7 +1594,7 @@ test("runtime은 back-to-back Tetris bonus를 placementResult에 반영한다", 
 
     await waitForTick(game, secondTick);
 
-    const logs = game.getPlacementDecisionLog();
+    const logs = game.placementLogs;
     const firstLog = logs[0];
     const secondLog = logs[2];
 
@@ -1722,7 +1691,7 @@ test("runtime은 일반 line clear로 back-to-back이 끊긴 뒤 다음 Tetris�
         pieceIndex: 20,
     });
 
-    const logs = game.getPlacementDecisionLog();
+    const logs = game.placementLogs;
     const firstTetrisLog = logs[0];
     const doubleLog = logs[1];
     const finalTetrisLog = logs[3];
@@ -1801,7 +1770,7 @@ test("runtime은 combo bonus를 placementResult rawAttackLines에 반영한다",
 
     await waitForTick(game, secondTick);
 
-    const logs = game.getPlacementDecisionLog();
+    const logs = game.placementLogs;
     const firstLog = logs[0];
     const secondLog = logs[1];
 
@@ -1878,7 +1847,7 @@ test("runtime은 연속 Tetris에 combo와 back-to-back 보너스를 적용한�
 
     await waitForTick(game, secondTick);
 
-    const logs = game.getPlacementDecisionLog();
+    const logs = game.placementLogs;
     const firstLog = logs[0];
     const secondLog = logs[1];
 
@@ -2084,7 +2053,7 @@ test("착지 효과 종료·보정·destroy는 gameplay를 다시 실행하지 �
     complete(120);
     assert.equal(frames.size, 0);
     assert.deepEqual(game.getSnapshot(), afterLock);
-    assert.equal(game.getPlacementDecisionLog().length, 1);
+    assert.equal(game.placementLogs.length, 1);
 
     await drop();
     const stale = [...frames.values()][0];
@@ -2095,7 +2064,7 @@ test("착지 효과 종료·보정·destroy는 gameplay를 다시 실행하지 �
     assert.deepEqual(game.getSnapshot(), corrected);
 
     await drop();
-    assert.equal(game.getPlacementDecisionLog().length, 3);
+    assert.equal(game.placementLogs.length, 3);
     const destroyedFrame = [...frames.values()][0];
     game.destroy();
     const destroyed = game.getSnapshot();
@@ -2144,7 +2113,7 @@ test("줄 삭제 효과는 350ms 뒤 한 번만 gameplay를 완료한다", async
     assert.equal(game.getSnapshot().score, locked.score + 20);
     assert.equal(game.getSnapshot().phase, "playing");
     assert.equal(game.runtime.gravityRunning, true);
-    assert.equal(game.getPlacementDecisionLog().length, 1);
+    assert.equal(game.placementLogs.length, 1);
 });
 
 test("runtime destroy는 중복 호출과 이후 display 변경을 무시한다", async () => {
@@ -2164,4 +2133,55 @@ test("runtime destroy는 중복 호출과 이후 display 변경을 무시한다"
         phase: "gameOver",
     });
     assert.equal(calls, 0);
+});
+
+test("입력·placement 기록은 완료 조각마다 해제되고 경기 sequence는 계속 증가한다", async t => {
+    let now = 0;
+    let tick;
+    t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+    t.mock.method(globalThis, 'clearInterval', () => {});
+    t.mock.method(performance, 'now', () => now);
+    const { createTetrisRuntime } = await loadRuntime();
+    const game = createTetrisRuntime({ rng: () => 0 });
+    t.after(() => game.destroy());
+    game.init();
+    for (let index = 0; index < 1000; index++) {
+        game.applySnapshot({ ...game.getSnapshot(), board: createEmptyBoard(),
+            activePiece: { pieceType: 'square', rotation: 0, row: 20, col: 4 }, pieceIndex: index + 1 });
+        game.enqueueInput('hard_drop'); now += 16; tick();
+        assert.equal(game.runtime.inputLog.length, 0);
+    }
+    assert.equal(game.runtime.inputSequence, 1000);
+    assert.equal(game.placementLogs.length, 1000);
+    assert.equal(game.placementLogs[999].inputSequence[0].sequence, 1000);
+    assert.equal(Object.hasOwn(game.runtime, 'placementDecisionLog'), false);
+    assert.equal(Object.hasOwn(game, 'getPlacementDecisionLog'), false);
+});
+
+test("한 조각의 기록 상한 초과는 한 번 보고하고 잘린 로그는 저장하지 않는다", async t => {
+    let now = 0;
+    let tick;
+    t.mock.method(globalThis, 'setInterval', callback => { tick = callback; return 1; });
+    t.mock.method(globalThis, 'clearInterval', () => {});
+    t.mock.method(performance, 'now', () => now);
+    const { createTetrisRuntime } = await loadRuntime();
+    const failures = [];
+    const game = createTetrisRuntime({ rng: () => 0, onCollectionFailure: reason => failures.push(reason) });
+    t.after(() => game.destroy());
+    game.init();
+    const snapshot = game.getSnapshot();
+    for (let index = 0; index < 2000; index++) {
+        game.applySnapshot(snapshot, { resumeGravity: false });
+        game.enqueueInput('move_left'); now += 16; tick();
+    }
+    assert.deepEqual(failures, ['INPUT_LOG_TOO_LARGE']);
+    assert.ok(game.runtime.inputLog.length <= 1024);
+    assert.ok(game.runtime.inputLogBytes <= 128 * 1024);
+    game.enqueueInput('hard_drop'); now += 16; tick();
+    assert.equal(game.placementLogs.length, 0);
+    assert.equal(game.runtime.inputLog.length, 0);
+    game.applySnapshot({ ...game.getSnapshot(), board: createEmptyBoard() });
+    game.enqueueInput('hard_drop'); now += 16; tick();
+    assert.equal(game.placementLogs.length, 1);
+    assert.equal(game.placementLogs[0].inputSequence[0].sequence, 2002);
 });

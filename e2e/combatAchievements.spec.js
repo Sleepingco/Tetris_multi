@@ -151,3 +151,19 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 모바�
     await expect(page.locator(".combat-feedback[data-achievement]")).toHaveCount(0);
     expect(errors).toEqual([]);
 });
+
+test("수집 실패 건수는 화면에, 이유는 진단 로그에 남기고 게임을 유지한다", async ({ page }) => {
+    const warnings = [];
+    page.on("console", message => { if (message.type() === "warning") warnings.push(message.text()); });
+    await prepareAchievementFixtures(page);
+    await page.evaluate(() => {
+        for (const reason of ['RATE_LIMITED', 'DB_WRITE_FAILED']) {
+            window.__achievementSocket.listeners('game:log:result').forEach(listener => listener({ ok: false, log: null, reason }));
+        }
+    });
+    await expect(page.getByRole('status').filter({ hasText: '플레이 기록 저장 실패' }))
+        .toContainText('2건');
+    expect(warnings.some(message => message.includes('RATE_LIMITED'))).toBe(true);
+    expect(warnings.some(message => message.includes('DB_WRITE_FAILED'))).toBe(true);
+    await expect(page.locator('.player-column[data-player="1"] canvas')).toBeVisible();
+});

@@ -18,8 +18,7 @@ import type {
     RuntimeDisplaySnapshot,
 } from "../game/runtime/displayBridge.ts";
 import { initGameSound, playCombatSfx, tryPlayMusic } from "../game/runtime/sound.ts";
-import BLOCKS from "../game/state/blocks.ts";
-import type { PieceType } from "../game/state/blocks.ts";
+import { PiecePreview } from "../game/ui/piecePreview.tsx";
 import { onPlacementDecisionLogResult } from "../net/logClient.ts";
 import {
     getPlayerSession,
@@ -132,33 +131,6 @@ function storeRoom(room: PublicRoom) {
     sessionStorage.setItem("room", JSON.stringify(room));
 }
 
-function PiecePreview({ pieceType, shapeOnly = false }: { pieceType: PieceType | null; shapeOnly?: boolean }) {
-    const offsets = pieceType
-        ? BLOCKS[pieceType][0]
-        : null;
-    const occupied = new Set<string>();
-    let columns = 4;
-    if (offsets) {
-        const minX = Math.min(...offsets.map(([x]) => x));
-        const minY = Math.min(...offsets.map(([, y]) => y));
-        columns = Math.max(...offsets.map(([x]) => x)) - minX + 1;
-        offsets.forEach(([x, y]) => occupied.add(`${y - minY}:${x - minX}`));
-    }
-
-    return (
-        <ul className={shapeOnly ? "next-grid piece-shape" : "next-grid"}
-            style={shapeOnly ? { gridTemplateColumns: `repeat(${columns}, 20px)` } : undefined}>
-            {Array.from({ length: 16 }, (_, index) => {
-                const active = occupied.has(`${Math.floor(index / 4)}:${index % 4}`);
-                const className = active && pieceType
-                    ? `next-cell ${pieceType} preview`
-                    : "next-cell";
-                return <li className={className} key={index}
-                    style={shapeOnly ? { gridColumn: index % 4 + 1, gridRow: Math.floor(index / 4) + 1 } : undefined} />;
-            })}
-        </ul>
-    );
-}
 
 function IncomingMeter({ lines, playerNumber }: { lines: number; playerNumber: PlayerNumber }) {
     const filled = Math.min(lines, 20);
@@ -412,6 +384,7 @@ function MultiplayerGamePage() {
     const [overlays, setOverlays] = useState<[Overlay, Overlay]>(WAITING_OVERLAYS);
     const [homeDisabled, setHomeDisabled] = useState(true);
     const [retryPending, setRetryPending] = useState(false);
+    const [collectionFailureCount, setCollectionFailureCount] = useState(0);
     const retryJoinRef = useRef<() => void>(() => {});
     const [combatNotices, setCombatNotices] = useState<[CombatNotice | null, CombatNotice | null]>([null, null]);
 
@@ -819,7 +792,7 @@ function MultiplayerGamePage() {
 
         disposers.push(onPlacementDecisionLogResult((result: PlacementLogResult) => {
             if (!result.ok) {
-                console.warn("placement_decision log save failed:", result.reason);
+                reportCollectionFailure(result.reason ?? "LOG_SAVE_FAILED");
             }
         }));
         disposers.push(onGameJoinResult((result: GameJoinResult) => {
@@ -866,6 +839,7 @@ function MultiplayerGamePage() {
                 opponentCanvas: myRole === "host" ? player2Canvas : player1Canvas,
                 onUserInteract: tryPlayMusic,
                 onCombatEffect: showCombatEffect,
+                onCollectionFailure: reportCollectionFailure,
                 deferStart: true,
             });
             activeGameSession = session;
@@ -975,6 +949,11 @@ function MultiplayerGamePage() {
 
     const returnToLobby = () => window.location.replace("./multiLobby.html");
 
+    function reportCollectionFailure(reason: string): void {
+        console.warn("placement_decision collection failed:", reason);
+        setCollectionFailureCount(current => current + 1);
+    }
+
     return (
         <div className="multi-wrapper">
             <header className="multi-header">
@@ -989,6 +968,9 @@ function MultiplayerGamePage() {
                         <span id="roomCodeText">방 코드: {pageInfo.roomId ?? "-"}</span>
                     </div>
                     <p>2인 멀티 MVP</p>
+                    {collectionFailureCount > 0 && <p role="status">
+                        플레이 기록 저장 실패 {collectionFailureCount}건. 게임은 계속할 수 있습니다.
+                    </p>}
                 </div>
                 <div className="multi-actions">
                     <button

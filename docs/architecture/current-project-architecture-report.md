@@ -57,8 +57,11 @@ DOM 없이 판정                   브라우저에서 조율                   
 - `src/client/game/runtime/tetris.ts`
   - 게임을 실제로 진행시키는 조율자다. 입력 큐, gravity, spawn/hold/lock 순서, 타이머, snapshot 적용, server bag 소비를 연결한다.
   - 규칙을 새로 만들기보다 core 함수의 결과를 어떤 순서로 적용할지 결정하는 위치다.
-- `src/client/game/render/`, `ui/`
-  - `board`와 활성 조각을 Canvas에 그리고, 점수·다음 조각·홀드·garbage 표시를 갱신한다. 화면이 규칙을 결정하지 않는 것이 원칙이다.
+  - 처리 시도 기록은 한 조각의 상한 안에서 보관하고 placement recorder에 전달한 뒤 해제한다. 전체 placement history는 runtime에 보관하지 않는다.
+- `src/client/game/render/`
+  - 확정된 `board`와 활성 조각·연출을 Canvas에 그린다. 화면이 규칙을 결정하지 않는다.
+- `src/client/game/ui/piecePreview.tsx`
+  - 싱글·멀티의 NEXT/HOLD 모양을 공유하는 React 표시 component다. 점수·garbage·game-over HUD는 각 React page와 display bridge가 연결하며 legacy DOM adapter는 제거했다.
 - `src/client/game/entry/`, `src/client/pages/*.tsx`
   - page-local React shell과 runtime session을 연결하는 시작점이다. React는 HUD와 lifecycle을 맡고, runtime/core/render는 게임 실행과 Canvas drawing을 계속 소유한다.
 

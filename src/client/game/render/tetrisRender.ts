@@ -6,14 +6,14 @@ export function internalRowToCanvasRow(row: number): number {
         return UPPER_DISPLAY_ROWS + row - HIDDEN_ROWS;
 }
 // =============================
-// Canvas와 preview 렌더러
+// Canvas 렌더러
 // core/runtime이 확정한 board, activePiece, animation 진행값을 화면에 그리기만 한다.
 // 충돌, lock, line clear 같은 게임 규칙은 결정하지 않으며 렌더용 계산도 원본 상태를 바꾸지 않는다.
 // =============================
 
 import type { Board } from "../core/board.ts";
 import type { PieceState, PlaceablePieceState } from "../core/piece.ts";
-import type { BlockDefinitions, PieceType } from "../state/blocks.ts";
+import type { BlockDefinitions } from "../state/blocks.ts";
 
 const BLOCK_COLORS: Record<string, string> = {
         tree: "#8B5CF6",   // Violet
@@ -29,8 +29,6 @@ const BLOCK_COLORS: Record<string, string> = {
 const CELL_SIZE = 30; // 300px width / 10 cols
 const BREAK_START_PROGRESS = 0.45;
 
-export type PreviewCells = HTMLLIElement[][];
-export type NextPreviewCells = PreviewCells[];
 
 export type HardDropEffect = {
         piece: PlaceablePieceState;
@@ -170,42 +168,6 @@ function drawBreakingBlock(
                 drawBlockFragment(ctx, fragment, color);
         });
 }
-/**
-  * next slot별 preview grid를 한 번 만들고, 이후 갱신에 재사용할 cell 참조를 반환한다.
-  * gameState의 queue를 읽지 않으며 DOM 구조 생성만 담당한다.
-  */
-export function buildNextPreview({ nextPreviewEl, nextQueueSize, previewSize }: {
-        nextPreviewEl: HTMLElement | null;
-        nextQueueSize: number;
-        previewSize: number;
-}): NextPreviewCells {
-        if (!nextPreviewEl) return []
-        nextPreviewEl.innerHTML = ""
-        const previewCells: NextPreviewCells = []
-
-        for (let i = 0; i < nextQueueSize; i++) {
-                const slot = document.createElement("div")
-                slot.classList.add("next-slot")
-                const cells = buildPreviewGrid(slot, previewSize)
-                nextPreviewEl.append(slot)
-                previewCells.push(cells)
-        }
-
-        return previewCells
-}
-
-/**
-  * hold preview grid를 한 번 만들고 이후 갱신에 재사용할 cell 참조를 반환한다.
-  */
-export function buildHoldPreview({ holdPreviewEl, previewSize }: {
-        holdPreviewEl: HTMLElement | null;
-        previewSize: number;
-}): PreviewCells | null {
-        if (!holdPreviewEl) return null
-        holdPreviewEl.innerHTML = ""
-        return buildPreviewGrid(holdPreviewEl, previewSize)
-}
-
 /**
   * 한 프레임을 `배경 grid → 고정 board → ghost piece → active piece` 순서로 Canvas에 그린다.
   * `flashRows`에는 row와 진행률이 들어올 수 있으며, 해당 줄만 변형·파편 효과로 표시한다.
@@ -381,78 +343,4 @@ export function renderBoardCanvas({
                 }
         }
 
-}
-
-/**
-  * cached preview cell을 초기화한 뒤 queue 앞쪽 조각들을 차례로 표시한다.
-  * queue를 소비하지 않으므로 다음 스폰 순서에는 영향을 주지 않는다.
-  */
-export function renderNextPieces({ nextPreviewCells, pieceQueue, blocks }: {
-        nextPreviewCells: NextPreviewCells;
-        pieceQueue: PieceType[];
-        blocks: BlockDefinitions;
-}): void {
-        if (!nextPreviewCells) return
-
-        nextPreviewCells.forEach((cells, idx) => {
-                resetPreviewCells(cells)
-                renderPieceOnCells(cells, pieceQueue[idx], blocks)
-        })
-}
-
-/**
-  * cached hold cell을 초기화하고 현재 hold 조각이 있으면 기본 회전 모양을 표시한다.
-  */
-export function renderHoldPiece({ holdPreviewCells, holdPieceType, blocks }: {
-        holdPreviewCells: PreviewCells | null;
-        holdPieceType: PieceType | null;
-        blocks: BlockDefinitions;
-}): void {
-        resetPreviewCells(holdPreviewCells)
-        renderPieceOnCells(holdPreviewCells, holdPieceType, blocks)
-}
-
-// preview helper는 DOM 생성, class 초기화, 기본 회전 모양 표시를 한 책임씩 나눠 수행한다.
-function buildPreviewGrid(container: HTMLElement, size: number): PreviewCells {
-        const cells: PreviewCells = Array.from({ length: size }, () => [])
-        const grid = document.createElement("ul")
-        grid.classList.add("next-grid")
-
-        for (let row = 0; row < size; row++) {
-                for (let col = 0; col < size; col++) {
-                        const cell = document.createElement("li")
-                        cell.classList.add("next-cell")
-                        grid.append(cell)
-                        cells[row].push(cell)
-                }
-        }
-
-        container.append(grid)
-        return cells
-}
-
-function resetPreviewCells(cells: PreviewCells | null): void {
-        if (!cells) return
-        cells.flat().forEach(cell => {
-                cell.className = "next-cell"
-        })
-}
-
-function renderPieceOnCells(
-        cells: PreviewCells | null,
-        pieceType: PieceType | null | undefined,
-        blocks: BlockDefinitions,
-): void {
-        if (!cells || !pieceType) return
-        const offsets = blocks[pieceType][0]
-        const minX = Math.min(...offsets.map(([x]) => x))
-        const minY = Math.min(...offsets.map(([, y]) => y))
-
-        offsets.forEach(([offsetX, offsetY]) => {
-                const row = offsetY - minY
-                const col = offsetX - minX
-                const cell = cells[row]?.[col]
-                if (!cell) return
-                cell.classList.add(pieceType, "preview")
-        })
 }

@@ -1,8 +1,7 @@
 import { StrictMode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
-import BLOCKS from "../game/state/blocks.ts";
-import type { PieceType } from "../game/state/blocks.ts";
+import { PiecePreview } from "../game/ui/piecePreview.tsx";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { attachKeyboardInput } from "../game/runtime/input.ts";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.ts";
@@ -15,38 +14,6 @@ import type { RuntimeDisplayHandle, RuntimeDisplaySnapshot } from "../game/runti
 // React는 페이지 수명주기와 HUD만 소유하고, board 규칙·입력 queue·Canvas drawing은 Tetris runtime이 소유한다.
 // runtime 표시 snapshot → useSyncExternalStore → 기존 HTML 위치의 portal 순서로 HUD가 갱신된다.
 // =============================
-
-/**
- * 조각의 기본 회전 offset을 4x4 preview 안의 왼쪽 위로 맞춰 표시한다.
- * gameplay queue나 piece 상태를 바꾸지 않는 작은 표시 전용 component다.
- */
-function PiecePreview({ pieceType, shapeOnly = false }: { pieceType: PieceType | null; shapeOnly?: boolean }) {
-    const offsets = pieceType
-        ? BLOCKS[pieceType][0]
-        : null;
-    const occupied = new Set<string>();
-    let columns = 4;
-    if (offsets) {
-        const minX = Math.min(...offsets.map(([x]) => x));
-        const minY = Math.min(...offsets.map(([, y]) => y));
-        columns = Math.max(...offsets.map(([x]) => x)) - minX + 1;
-        offsets.forEach(([x, y]) => occupied.add(`${y - minY}:${x - minX}`));
-    }
-
-    return (
-        <ul className={shapeOnly ? "next-grid piece-shape" : "next-grid"}
-            style={shapeOnly ? { gridTemplateColumns: `repeat(${columns}, 20px)` } : undefined}>
-            {Array.from({ length: 16 }, (_, index) => {
-                const active = occupied.has(`${Math.floor(index / 4)}:${index % 4}`);
-                const className = active && pieceType
-                    ? `next-cell ${pieceType} preview`
-                    : "next-cell";
-                return <li className={className} key={index}
-                    style={shapeOnly ? { gridColumn: index % 4 + 1, gridRow: Math.floor(index / 4) + 1 } : undefined} />;
-            })}
-        </ul>
-    );
-}
 
 /**
  * runtime 외부 store를 구독해 점수, next, hold, game-over UI를 갱신한다.

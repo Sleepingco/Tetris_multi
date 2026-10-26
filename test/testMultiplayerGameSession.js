@@ -287,16 +287,6 @@ function createSessionParams(overrides = {}) {
         },
         myCanvas: createFakeCanvas(),
         opponentCanvas: createFakeCanvas(),
-        myNextPreviewEl: createFakeElement(),
-        myHoldPreviewEl: createFakeElement(),
-        myScoreEl: createFakeElement(),
-        myLinesEl: createFakeElement(),
-        myPendingGarbageEl: createFakeElement(),
-        opponentNextPreviewEl: createFakeElement(),
-        opponentHoldPreviewEl: createFakeElement(),
-        opponentScoreEl: createFakeElement(),
-        opponentLinesEl: createFakeElement(),
-        opponentPendingGarbageEl: createFakeElement(),
         ...overrides,
     };
 }
@@ -695,7 +685,7 @@ test("game session destroy는 timer와 handler를 한 번만 정리하고 stale 
     session.destroy();
     session.destroy();
     const snapshotAfterDestroy = JSON.stringify(session.myGame.getSnapshot());
-    const logCountAfterDestroy = session.myGame.getPlacementDecisionLog().length;
+    const logCountAfterDestroy = sharedFakeSocket.emitted.filter(event => event.eventName === "game:log:placement_decision").length;
 
     keyboardHandler({
         key: "ArrowLeft",
@@ -719,7 +709,7 @@ test("game session destroy는 timer와 handler를 한 번만 정리하고 stale 
     );
     assert.equal(JSON.stringify(session.myGame.getSnapshot()), snapshotAfterDestroy);
     assert.equal(session.myGame.getPendingInputCount(), 0);
-    assert.equal(session.myGame.getPlacementDecisionLog().length, logCountAfterDestroy);
+    assert.equal(sharedFakeSocket.emitted.filter(event => event.eventName === "game:log:placement_decision").length, logCountAfterDestroy);
     assert.equal(sharedFakeSocket.emitted.length, 0);
     assert.equal(displayCalls, 0);
 });
@@ -1768,7 +1758,7 @@ test("authoritative snapshot의 pendingGarbageLines가 상대 pending garbage �
 
     assert.equal(session.opponentGame.getSnapshot().pendingGarbageLines, 3);
     assert.equal(Object.hasOwn(session.opponentGame.getSnapshot(), "pendingGarbageQueue"), false);
-    assert.equal(params.opponentPendingGarbageEl.innerText, 3);
+    assert.equal(session.opponentGame.getDisplaySnapshot().pendingGarbageLines, 3);
     assert.equal(displayCalls, 1);
 });
 
@@ -1797,7 +1787,7 @@ test("내 authoritative snapshot의 pendingGarbageLines는 표시만 갱신하�
 
     assert.deepEqual(session.myGame.getSnapshot().activePiece, myBaseSnapshot.activePiece);
     assert.equal(session.myGame.getSnapshot().pendingGarbageLines, 4);
-    assert.equal(params.myPendingGarbageEl.innerText, 4);
+    assert.equal(session.myGame.getDisplaySnapshot().pendingGarbageLines, 4);
 });
 
 test("내 playerId의 authoritative snapshot은 pendingGarbageLines가 증가하면 표시만 갱신한다", async (t) => {
@@ -2275,4 +2265,51 @@ test("같은 room의 이전 경기 snapshot·ack는 현재 경기와 입력을 �
         snapshot: createAuthoritativeSnapshot({ phase: "gameOver", gameOver: true, pieceIndex: 99, tick: 999 }),
     });
     assert.deepEqual(session.myGame.getSnapshot(), before);
+});
+
+test("placement 전송 예외는 수집 실패를 한 번 알리고 게임과 재시도 방지를 유지한다", async t => {
+    const { startMultiplayerGame } = await loadSession();
+    const failures = [];
+    sharedFakeSocket.connect();
+    const session = startMultiplayerGame(createSessionParams({ onCollectionFailure: reason => failures.push(reason) }));
+    t.after(() => cleanupSession(session));
+    sharedFakeSocket.emitted = [];
+    emitDocumentEvent("keydown", { key: " ", code: "Space", repeat: false, preventDefault() {} });
+    await waitForLocalInputTick();
+    const input = sharedFakeSocket.emitted.find(event => event.eventName === 'game:input').payload;
+    const originalEmit = sharedFakeSocket.emit;
+    t.mock.method(sharedFakeSocket, 'emit', function(name, payload) {
+        if (name === 'game:log:placement_decision') throw new Error('synthetic transport failure');
+        return originalEmit.call(this, name, payload);
+    });
+    const result = { ok: true, reason: null, clientSequence: input.clientSequence,
+        pieceIndex: input.pieceIndex, placementCommitted: true };
+    sharedFakeSocket.emitServer('game:input:result', result);
+    sharedFakeSocket.emitServer('game:input:result', result);
+    assert.deepEqual(failures, ['LOG_SEND_FAILED']);
+    assert.equal(session.myGame.getSnapshot().phase, 'playing');
+});
+
+test("ack 없는 placement buffer는 128개에서 멈추고 초과 조각마다 한 번 실패를 알린다", async t => {
+    const { startMultiplayerGame } = await loadSession();
+    sharedFakeSocket.connect();
+    let now = 0;
+    let nextId = 0;
+    const timers = new Map();
+    t.mock.method(globalThis, 'setInterval', callback => { timers.set(++nextId, callback); return nextId; });
+    t.mock.method(globalThis, 'clearInterval', id => timers.delete(id));
+    t.mock.method(performance, 'now', () => now);
+    const failures = [];
+    const session = startMultiplayerGame(createSessionParams({ onCollectionFailure: reason => failures.push(reason) }));
+    t.after(() => cleanupSession(session));
+    const tick = timers.get(session.myGame.runtime.inputTimer);
+    for (let index = 1; index <= 140; index++) {
+        session.myGame.applySnapshot({ ...session.myGame.getSnapshot(),
+            board: Array.from({ length: 40 }, () => Array(10).fill(null)),
+            activePiece: { pieceType: 'square', rotation: 0, row: 20, col: 4 },
+            pieceQueue: ['square', 'bar'], pieceIndex: index });
+        session.myGame.enqueueInput('hard_drop'); now += 16; tick();
+    }
+    assert.deepEqual(failures, Array(12).fill('PLACEMENT_BUFFER_FULL'));
+    assert.equal(session.myGame.getSnapshot().phase, 'playing');
 });
