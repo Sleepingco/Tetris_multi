@@ -6,6 +6,69 @@
 
 ## Current Project Status
 
+### 날짜·항목별 로컬 Git checkpoint (2026-10-26)
+
+- 사용자 요청으로 10/24 게임 품질 감사·시각화와 timing dataset, 10/25 proxy·서버 집계·client 기록/HUD·로그 burst·문서, 10/26 0ms 진단/재현·baseline 명세를 분리 커밋했다. 실제 작업일은 commit body의 `Work-Date`에 남기고 commit 시각은 소급하지 않았다. [커밋 목차](change-log.md#2026-10-26--날짜항목별-로컬-checkpoint)를 따른다.
+- 필수 verify는 **793 pass·기존 1 skip·0 fail**, Node ML은 **35/35**, 사용자 출력만 비운 임시 source snapshot의 Python 전체 검사는 **169/169**다. 첫 sandbox 실행의 localhost EPERM은 같은 명령의 권한 허용 재실행으로 해소했다. 학습/full 실험·브라우저/DB·운영 검증은 반복하지 않았다.
+- Git에는 output-free source Notebook을 저장하고 실행된 두 작업 파일은 byte 그대로 남겼다. 따라서 해당 두 파일의 output/count 차이는 미커밋으로 남는다. 원본·dataset·model·report는 포함하지 않았으며 push·merge·배포는 하지 않았다.
+
+### Human timing baseline 비교 명세 준비 (2026-10-26)
+
+- [다음 실험 명세](ai-harness/ml-experiments/experiments/human-timing-baseline.md)를 작성했다. 기존 v1 213게임·61,190 pair·split을 유지하고 고정 평균/전체 경험 분포/이전 action별 경험 분포를 Train-only로 비교하도록 정했다. Primary는 Validation game-macro CRPS다.
+- 0ms 집중 게임은 유지한다. Validation으로 후보를 고정한 뒤 같은 모델을 Test 전체/해당 게임 제외/단독 범위에서 평가한다. 제외 결과는 민감도 분석이며 Test 기반 모델 선택·재학습·dataset 재생성이 아니다.
+- 이번에는 문서만 준비했다. 다음 gate는 Notebook implement-smoke이며 fit·평가·runtime 통합·stage/commit은 수행하지 않았다.
+
+### 0ms 마지막 재현 종료·AI dataset 준비 복귀 (2026-10-26)
+
+- 사용자 승인으로 [runtime 재현 test 4개](test/testInputTimingBatching.js)를 실행했다. 입력은 enqueue가 아닌 소비 시각에 기록되며 같은 tick의 4개는 0ms pair 3개, 분리 tick은 80ms 간격을 만들었다. 정상 listener의 keydown 한 번은 입력 한 개만 등록했다. Runtime 수정·브라우저·운영 로그 재현은 하지 않았다.
+- 과거 게임의 입력 발생 원천은 미확인이다. 사용자 stop condition에 따라 원인 조사를 종료하고 dataset 준비로 복귀한다. [마감 기록](ai-harness/runs/human-timing-zero-ms-reproduction-2026-10-26.md)을 따른다.
+- 기존 full v1 213게임·9,283구간·61,190 pair의 SHA/bytes/count·unique sampleId·인접 pair·유한 비음수 label·game 누수 0과 raw 불변을 확인했다. Manifest SHA `c203a1db…712fc88`을 유지하고 0ms·의심 game·split을 자동 수정하지 않는다.
+- 다음은 고정 snapshot에서 train-only timing baseline 명세 준비다. 새 학습·dataset 재생성·runtime 통합·추가 수집은 시작하지 않았다. 사용자 Notebook output·기타 dirty 변경도 보존했다.
+- 재현 4/4, 필수 verify 793 pass·기존 1 skip·0 fail, 변경 문서 상대 링크 129개·fence·diff 검사가 통과했다. Python 코드/Notebook 변경이 없어 verify:ml·감사/학습은 반복하지 않았다.
+
+### Human timing 0ms 진단 코드 작성·미실행 (2026-10-26)
+
+- 사용자 full 생성 결과는 213게임·9,283구간·61,190 pair이며, test의 0ms가 특정 게임에 집중된 점을 확인했다. 모델 학습은 아직 하지 않았다.
+- 사용자가 진단 코드만 작성하고 실행하지 말라고 요청했다. [Notebook](scripts/ml/notebooks/human_timing_zero_ms_diagnostic.ipynb)·[synthetic 테스트](scripts/ml/tests/test_human_timing_zero_ms_diagnostic_notebook.py)·[명세/수동 실행법](ai-harness/ml-experiments/experiments/human-timing-zero-ms-diagnostic.md)을 작성했다. 상태는 `prepared_unexecuted`다.
+- 원본의 전체 Human 입력과 이미 채택한 dataset pair를 구분하고 순서·tick·상대 시각·0ms 연속·Train 비교군을 pandas/Matplotlib으로 표시하도록 했다. 원인 확정·정책 변경·test 삭제/재분할·재추출은 하지 않는다.
+- 진단·예제·단위 테스트·smoke/full·verify suite는 사용자 지시에 따라 실행하지 않았다. 실행 검증 통과나 원인 확인 완료로 보고하지 않는다. 다음 gate는 사용자의 실행 결과 검토다.
+
+### 저장소 audit A01~A09 로컬 적용 (2026-10-25)
+
+- [감사 계획의 실행 결과](docs/maintenance/repository-audit-patch-plan.md#6-로컬-실행-결과-2026-10-25)에 따라 proxy별 세션 제한·새 경기 combo/B2B·자연 고정 count를 수정했다. placement 한도는 60건/10초이며 전송·저장·기록 상한 오류를 표시한다. receipt 1회 사용과 single sink를 유지하고 자동 재전송은 추가하지 않았다.
+- 입력은 piece 단위 1,024건/128 KiB, 미확정 placement 128개·최근 settled key 256개로 제한했다. 완료 history/getter와 legacy DOM HUD를 제거하고, 공격/snapshot 조립과 React preview를 공유했다. 문맥 없는 싱글의 heuristic 비교를 생략했다. source는 신규 preview를 포함해 순감소 359줄, package·lockfile·DB schema 변경은 없다.
+- 필수 verify **789 pass·기존 조건부 1 skip·0 fail**, production Chromium 관련 **30/30**, 임시 PostgreSQL **9/9**를 통과했다. Caddy 실제 header/고정 peer/503 설정과 Compose를 확인했다. HEAD 대비 v3 로그 3개 bytes 일치, 5,000 placement에서 GC 후 heap 약 11.40~11.42 MB·완료 input 기록 0을 확인했다. 이 synthetic 수치를 운영 동접 수용량으로 해석하지 않는다.
+- 추가 ML 검증은 Node 35/35, Python 162/163이다. 사용자 timing Notebook의 실행 count/output이 남은 source 형식 검사 1개가 실패했다. 실행본·기존 dirty·원본·report를 수정하지 않았고 ML 전체 통과로 보고하지 않는다.
+- 운영 미반영·미커밋 상태다. [proxy 적용·복구](docs/operations/deployment/postgres-production-runbook.md#audit-a01-proxy-접속-주소-적용과-복구-2026-10-25)에서 subnet 충돌·maintenance·app/Caddy의 주소와 신뢰 설정을 함께 확인해야 한다. 서로 다른 운영 접속망과 운영 장기 부하는 미검증이며 제품 B01~B06·패키지 대체·수집/full 학습은 실행하지 않았다.
+
+### 저장소 감사·제품 사용성 패치 계획 분리 (2026-10-25)
+
+- 앞선 Ponytail audit 9개 항목을 [저장소 감사 패치 계획](docs/maintenance/repository-audit-patch-plan.md)에, 사용자가 오전 5:47 수정사항으로 지칭한 제품 검토 6개 항목을 [제품 사용성 패치 계획](docs/design/product-usability-patch-plan.md)에 각각 정리했다. 이후 패키지·표준 라이브러리 대체 조사는 두 계획에서 제외했다.
+- `08e8c5a` 위 현재 코드·caller·운영 설정을 재확인하고 패치별 영향 파일·최소 변경·검증·완료 기준·복구 단위를 연결했다. 실제 proxy 경계·새 경기 초기화·고정 횟수와 로그 누락을 먼저 다루고, 공통 반복 입력→모바일 조작, 초대→재경기→결과 요약 순서를 제안한다.
+- 기존 배치 계획과 Human 처리 시도 데이터 계약을 유지한다. 문서 작성이며 기능 구현·패키지 교체·전체 테스트·실기기/운영 검증·수집·ML full 실행·배포는 시작하지 않았다. 변경 문서의 상대 링크 74개·code fence·공백과 `git diff --check`를 통과했다.
+
+### Human timing-only dataset implement-smoke (2026-10-24)
+
+- 사용자가 품질 full 결과의 213게임 사용·22게임 격리·11게임 Human 없음 제외를 승인했다. 30초/600초/5조각/AI tail 60초를 첫 `quality-policy-v1`로 고정하고 원본·기존 provisional report는 보존한다.
+- [timing 명세](ai-harness/ml-experiments/experiments/human-timing-dataset.md)와 [Notebook](scripts/ml/notebooks/human_timing_dataset.ipynb), 정의 셀을 직접 검사하는 테스트 13개를 추가했다. 별도 parser·dataset 생성 Python CLI는 만들지 않았다. Human·timing usable·hold 없는 segment의 인접 pair만 추출하고 이전 action을 feature, 기록된 간격을 label로 분리한다.
+- SHA-256 seed 정렬로 game을 70%/15%/나머지로 나누며 full 213게임이면 149/31/33게임이다. PVP 양쪽은 같은 split에 둔다. 0ms·긴 간격은 보존하고 gap을 잇거나 raw 시간을 반응시간으로 바꾸지 않는다.
+- 실제 5게임 smoke: Human 210구간 → 181구간/1,223 pair, hold 26·timing limited 3구간 분리, train/validation/test 847/138/238 pair·game 누수 0이다. [실행 기록](ai-harness/runs/human-timing-dataset-implement-smoke-2026-10-24.md)을 따른다.
+- 두 실행의 6개 파일 bytes/manifest SHA `998d4cbe…d6477a` 일치, targeted 13개·verify:ml Node 35/Python 163·필수 verify 781 pass/기존 1 skip 통과, 원본·기존 full report 불변을 확인했다.
+- 다음 gate는 명세의 사용자 full 생성과 manifest count·분포·제외 편향 검토다. Full dataset·baseline 학습·runtime·수집 변경·stage/commit은 하지 않는다.
+
+### Human 감사 결과 시각화 보완 (2026-10-24)
+
+- 현재 Human 적합성·게임 품질 Notebook에 pandas 요약·비교표와 Matplotlib 그래프를 추가했다. 과제별 상태·입력 시도·게임 분류·난이도·확인된 duration·사유와 검토 목록을 구분한다. 과거 종료된 placement Notebook은 변경하지 않는다.
+- 기존 full report를 로드해 표시 셀만 실행할 수 있다. 계산·후보 정책·원본과 기존 full report/실행본은 유지하며 dataset 생성·학습·runtime 변경은 하지 않는다. Matplotlib 3.10.8을 ML 환경에 추가한다.
+- 두 감사의 ignored `visualized-full.ipynb`·`overview.png`를 기존 report로 생성하고 error 0·그래프 가독성·report SHA 불변을 확인했다. 관련 테스트 35개, verify:ml Node 35/Python 150, 필수 verify 781 pass·기존 1 skip을 통과했다. 최초 sandbox HTTP listen 제한 2건은 권한 허용 재실행에서 통과했다.
+
+### Human 게임 품질 감사 implement-smoke (2026-10-24)
+
+- [게임 품질 명세](ai-harness/ml-experiments/experiments/human-game-quality-audit.md)와 [Notebook](scripts/ml/notebooks/human_game_quality_audit.ipynb), 정의 셀을 검사하는 테스트 17개를 구현했다. 기존 parser·identity·경로 보호를 재사용하고 내부 allValidByLine metadata만 노출했다. 별도 parser/trainer Python 파일은 만들지 않았다.
+- 실제 smoke 4게임·Human 139구간에서 포함 후보 3 / 제외 후보 1 / 검토 0이다. 27.93초 정상 Hard 경기는 포함 후보로 남고 Human 없는 미완결 AI 게임은 제외 후보로 분리했다. 30초/600초/5조각/AI tail 60초는 검토 후보이며 최종 학습 포함 기준이 아니다.
+- 두 최종 report SHA `60a4f494…882a5`와 bytes 일치, 기존 readiness smoke SHA `257b4371…6ec26` 유지, 원본 불변이다. verify:ml Node 35/Python 148, 필수 verify Node 781 pass·기존 1 skip 통과. [실행 기록](ai-harness/runs/human-game-quality-audit-implement-smoke-2026-10-24.md)을 따른다.
+- 다음은 명세의 사용자 full 실행과 후보 정책 검토다. Full·정책 채택·dataset 생성·학습·runtime·수집 변경·stage/commit은 하지 않았다.
+
 - 2026-10-24 사용자 요청으로 남은 CD 수정·배포 검증 기록·UI 배치 계획·데이터 제외 규칙을 로컬 checkpoint로 커밋한다. 최신 필수 verify는 781 pass·기존 1 skip·0 fail이며 push·Actions 실행·운영 재배포는 포함하지 않는다.
 
 ### Human 행동 데이터 질문 기록 (2026-10-24)
@@ -669,7 +732,7 @@
 | --- | --- | --- |
 | 입력별 full snapshot | 실재하는 전송 증폭이며 첫 성능 최적화 후보 | 동시 room 부하에서 bytes·ack 지연이 증가할 때 coalescing |
 | authoritative ticker | 실제 경과 시간 유실 가능성이 있는 정확성 문제 | 성능 최적화와 분리해 우선 수정 후보 |
-| runtime placement 로그 | 장시간 세션에서 메모리·재탐색 증가 위험 | 출력 parity를 고정한 뒤 piece 단위로 bounded 처리 |
+| runtime placement 로그 | 2026-10-25 감사 A04에서 piece 단위 상한·완료 history 제거 로컬 적용 | 정상 로그 parity·synthetic soak 통과, 운영 장기 관찰은 남음 |
 | PVE AI | 단일 decision은 현재 충분히 빠름 | 많은 PVE room에서 event-loop 지연이 확인될 때만 재검토 |
 | PostgreSQL·React | 현재 병목 근거 없음 | 운영 측정 전 최적화하지 않음 |
 | Canvas·로비 메시지 | 잠재 비용 | 실제 frame·메모리 문제를 재현한 경우에만 변경 |
@@ -711,14 +774,10 @@ worker pool이나 추가 abstraction을 만들지 않는다.
 
 ### 3. Runtime placement 로그 상한
 
-- 현재 누적 `inputLog` 재필터링은 장시간 세션에서
-  `O(placements × accumulated inputs)` 비용으로 커질 수 있다.
-- 외부 placement log의 schema·순서·canonical hash는 유지하면서 per-piece
-  input buffer 또는 처리 cursor로 완료된 입력을 다시 탐색하지 않게 한다.
-- recorder로 전달을 마친 board/input은 필요한 분석 계약만 남기고 runtime
-  메모리 보관 범위를 제한한다.
-- 기존 placement fixture의 byte/hash parity와 장시간 placement soak의
-  heap/RSS가 bounded인지 검증한 뒤 적용한다.
+- 기존 누적 `inputLog` 전체 재필터링은 [감사 A04](docs/maintenance/repository-audit-patch-plan.md#6-로컬-실행-결과-2026-10-25)에서 piece buffer와 독립 sequence로 바꿨다. 완료 placement history는 runtime에 보관하지 않는다.
+- 정상 처리 시도·hold·보정·줄 삭제의 v3 로그 3개가 HEAD와 bytes 동일하다. 5,000 placement의 synthetic 실행에서 완료 input 기록 0과 GC 후 heap 약 11.40~11.42 MB를 확인했다.
+- 한 조각 1,024건/128 KiB와 미확정 전송 버퍼의 상한 초과는 잘린 정상 로그로 저장하지 않고 수집 오류로 알린다. schema·timestamp 의미·원본 데이터는 유지한다.
+- 운영 적용은 아직 하지 않았다. 실제 장시간 사용자 경기와 정상 플레이의 상한 도달 빈도는 배포 후 별도로 관찰한다.
 
 ### 4. Snapshot coalescing 조건
 

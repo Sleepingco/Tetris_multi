@@ -10,6 +10,11 @@
 기존 V4 연구의 결론은 `imitation_only_not_gameplay_ready`다. 현재 40행
 `buffer20-v1`에서 V4 선택은 호환 불가 사유를 표시하고 heuristic으로 fallback한다.
 새 Human 조작 AI는 데이터 full 적합성 감사를 완료했고 모델 학습은 시작하지 않았다.
+후속 [게임 품질 감사 Notebook](../../scripts/ml/notebooks/human_game_quality_audit.ipynb)은
+사용자 full 246게임과 첫 정책 승인을 완료했다.
+[timing dataset Notebook](../../scripts/ml/notebooks/human_timing_dataset.ipynb)과
+[명세](../../ai-harness/ml-experiments/experiments/human-timing-dataset.md)의 full 생성·무결성 검토도 완료했다.
+다음은 [timing baseline 비교 명세](../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)의 Notebook 구현이다. 명세만 준비했으며 fit·Validation/Test 평가는 미실행이다.
 기록 간격 분석과 상태 조건부 행동·hold 학습의 미검증 범위를 구분하며,
 [full 결과 기록](../../ai-harness/runs/human-action-data-readiness-analyze-result-2026-10-24.md)을 따른다.
 자세한 현재 계획은 [ai-plan.md](strategy/ai-plan.md), 과거 수치와 명령은
@@ -62,7 +67,7 @@ Heuristic을 선택하거나 PVP를 실행하면 V4 module과 model을 load하�
 
 위 흐름은 지원되는 기존 규칙의 V4 경로다. 현재 buffer20-v1은 모델 로드 전에
 ruleset guard가 fallback을 선택한다. UI의 Experimental 선택과 실제 V4 추론을 구분한다.
-기존 placement exporter/builder도 v3/40행을 거부하며 새 행동 dataset 생성기는 아직 없다.
+기존 placement exporter/builder도 v3/40행을 거부한다. 새 timing-only 생성기도 이번에는 legacy 20행만 지원하며 v3 전이를 주장하지 않는다.
 
 ## Historical evidence
 

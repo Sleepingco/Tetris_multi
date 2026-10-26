@@ -1,6 +1,6 @@
 # Human 조작 dataset 설계 계약
 
-상태: 첫 timing-only 게임 정책 `quality-policy-v1` 사용자 승인, 생성기 Notebook implement-smoke. Full dataset 생성·모델 학습은 미실행.
+상태: 첫 timing-only 게임 정책 `quality-policy-v1` 사용자 승인, 생성기 Notebook과 사용자 full dataset 생성·무결성 검토 완료. Baseline 명세만 준비했으며 모델 학습은 미실행.
 [현재 계획](../strategy/ai-plan.md)에 따라 품질 경계를 학습 전에 고정한다.
 
 ## 목적과 단위
@@ -190,7 +190,7 @@ git show 83e29f9:src/client/game/runtime/input.js | rg -n 'NON_REPEATABLE|event.
 | 항목 | 최초 범위 |
 | --- | --- |
 | 데이터 | 이번 full 감사와 같은 immutable legacy 원본, Human만 사용 |
-| 후보 | 품질 gate 전 hold 없는 9,485구간, 승인 213게임 안의 기존 감사상 후보 9,283구간. pair 추가 검사를 거친 최종 표본 수는 full 생성에서 확인 |
+| 후보 | 품질 gate 전 hold 없는 9,485구간. 승인 213게임의 최종 eligible 9,283구간에서 61,190 pair 생성; hold 1,138/timing limited 95구간과 pair 3개 분리 |
 | 표본 | 같은 placement 입력 배열의 인접 두 action. 서로 다른 piece/게임/불연속 구간은 연결하지 않음 |
 | label | `recorded_interval_ms = current.createdAt - previous.createdAt` |
 | 최소 feature | 이전 action만. 첫 baseline은 train의 전체 간격 분포, 다음 비교는 이전 action별 분포 |
@@ -213,6 +213,7 @@ fit하고 validation/test는 별도로 평가한다. 사용자 식별 근거가 
 
 **현재 고정:** 게임 품질 `quality-policy-v1`, game 단위 SHA-256 split seed
 `human-timing-v1-20261024`, 70%/15%/나머지(213게임이면 149/31/33)다.
-**아직 미확정:** full 생성 후 최종 pair 수·제외 편향·모델 채택 기준·runtime 대기 경계·실제 사람다운 체감·v3/40행 전이다.
+**Full 확인:** 61,190 pair, Train/Validation/Test 41,151/10,180/9,859 pair, manifest SHA `c203a1db7b8f2aa7014c565b371088a9614f6abb0df5632e93fe6c807712fc88`이다.
+**아직 미확정:** 제외 편향·모델 채택·runtime 대기 경계·실제 사람다운 체감·v3/40행 전이다. 비교 방법은 [baseline 명세](../../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)에 준비했고 아직 fit하지 않았다.
 새 데이터 수집 없이 첫 제한적 dataset 실험은 진행할 수 있다. 상태 조건부 action/hold는
 여전히 replay와 별도 수집 증거가 필요하다.

@@ -39,6 +39,7 @@ Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 �
 
 - `왜 → 무엇 → 어떻게 → 결과 → 한계 → 다음 gate` 흐름을 갖는다.
 - 사용자가 손으로 따라갈 수 있는 작은 worked example을 포함한다.
+- 결과 요약·비교는 pandas 표, 분포·차이는 Matplotlib 그래프로 보여준다. 각 표·축의 분모와 smoke/full 범위를 표시하고 실제로 보존한 값만 시각화한다.
 - Source Notebook output과 execution count는 비워 둔다.
 - 환경변수로 dataset과 report 경로를 받는다.
 - 사용자 절대 경로, timestamp와 실행시간을 canonical report에 넣지 않는다.

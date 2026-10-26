@@ -7,6 +7,13 @@
 6개는 종료된 V4 연구/검증 기록이다. 경로와 당시 결과·명령을 보존하며 추천 MODE를
 자동 실행 지시로 읽지 않는다. [조작 데이터 적합성](experiments/human-action-data-readiness.md)은
 구현·사용자 full 감사·결과 분석을 완료했다. 다음 범위는 해당 명세와 현재 AI 계획을 따른다.
+[게임 품질 감사](experiments/human-game-quality-audit.md)의 사용자 full과 첫 정책 승인을 완료했다.
+[timing-only dataset](experiments/human-timing-dataset.md)의 사용자 full 생성·무결성 검토도 완료했다.
+[0ms 마지막 재현](../runs/human-timing-zero-ms-reproduction-2026-10-26.md)은 기록 메커니즘을 확인하고
+과거 입력 원천 미확인으로 종료했다. [고정 v1 timing baseline](experiments/human-timing-baseline.md)은
+명세 준비를 마쳤고 Notebook 구현·fit은 미실행이다. 다음 gate는 이 명세의 implement-smoke다.
+Validation 비교 후 후보를 고정하고 Test 전체/지정 게임 제외 민감도 평가는 별도 승인으로 수행한다.
+이전 implement-smoke/full 예시는 재실행 지시가 아니다.
 
 새 요청에서는 긴 규칙을 다시 적지 않고 다음 두 값만 선택한다.
 
@@ -65,7 +72,7 @@ MODE나 환경변수 설정은 실행 승인이 아니다. `analyze-result`와 `
 긴 프롬프트를 만들지 않고 다음 한 문장만 전달한다.
 
 ```text
-ai-harness/ml-experiments/experiments/human-action-data-readiness.md를
+ai-harness/ml-experiments/experiments/human-timing-baseline.md를
 MODE=implement-smoke로 실행해. 사용자 full-run gate에서 멈춰.
 ```
 

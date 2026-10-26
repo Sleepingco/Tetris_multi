@@ -1,6 +1,6 @@
 # AI 현재 계획
 
-정리일: 2026-10-24. 단계: **행동 모방용 게임 품질 기준 정리**, 수치 경계·dataset 생성·학습·새 runtime 통합 미실행.
+정리일: 2026-10-26. 단계: **timing baseline 비교 명세 준비 완료**. 사용자 full dataset 생성·무결성 검토 완료. 0ms 마지막 재현으로 기록 메커니즘을 확인했고 과거 입력 원천은 미확인으로 조사 종료했다. Baseline Notebook 구현·모델 학습·새 runtime 통합은 미실행.
 
 프로젝트의 구현·운영 상태는 [PLAN.md](../../../PLAN.md), 실제 코드와 테스트를 따른다.
 이 문서는 AI 작업의 목표·순서만 관리한다. 당시 수치와 실행 명령은
@@ -31,11 +31,26 @@
 생성으로 바로 넘어가지 않는다. 후속 코드 조사에서 createdAt은 키 입력 시각이 아닌
 **브라우저 runtime의 처리 시도 직전 시각**임을 확인했다. Git 이력의 기록 함수 38개
 버전도 같지만 경기별 실행 빌드 연결은 미확인이다. [timing-only 범위](../contracts/human-action-dataset.md#첫-timing-only-dataset의-제한된-범위)에 따라
-다음 작업은 **게임 품질 감사와 인접 입력 간격 dataset의 실험 명세 작성**이다.
-게임 길이 분포·종료 직전 하드드롭 연속·AI 단독 진행 의심을 먼저 확인해 수치 경계를
-학습 전에 고정한다. [품질 계약](../contracts/human-action-dataset.md#1단계-게임-품질-gate)을 따른다.
+후속 [게임 품질 감사 명세](../../../ai-harness/ml-experiments/experiments/human-game-quality-audit.md)와
+Notebook·검사를 구현했고 사용자 full 246게임에서 포함 213/제외 11/검토 22를 확인했다.
+검토 22게임은 조기 포기 의심 12, AI tail+미완결 7, 그 밖의 lifecycle 미확인 3이다.
+사용자는 첫 timing-only dataset에 213게임 사용·22게임 격리·11게임 Human 없음 제외를 승인했다.
+30초/600초/5조각/AI tail 60초를 `quality-policy-v1`로 고정하고 원본과 당시 provisional report를 보존한다.
+[품질 계약](../contracts/human-action-dataset.md#1단계-게임-품질-gate)을 따른다.
 9,485구간은 게임 품질 gate 전의 hold 없는 후보 수이지 확정 학습 대상이 아니다.
-품질 gate 후 구간/pair 수·split·분포 baseline을 명세에서 고정한다.
+승인 213게임에서 최종 9,283구간·61,190 pair를 생성했다. Hold 1,138/timing limited 95구간과 pair 3개를 분리했다.
+[timing dataset 명세](../../../ai-harness/ml-experiments/experiments/human-timing-dataset.md)와 Notebook에서
+인접 pair 정제·seed 고정 SHA-256 game split(149/31/33)·pandas/Matplotlib 진단을 구현한다.
+사용자 full 생성 뒤 원본·파일 SHA·count·unique sampleId·유한/비음수 간격·인접 index·game 누수 0을 확인했다.
+Manifest SHA는 `c203a1db…712fc88`이며 train/validation/test는 41,151/10,180/9,859 pair다.
+대상 게임의 0ms 집중은 같은 tick 묶음 소비와 일치하지만 과거 입력 원천은 미확인이다.
+사용자가 마지막 재현 후 원인 미확정이면 dataset 준비로 복귀하도록 요청했다. 실제 runtime test 4개로
+enqueue/소비 시각 차이·4개 묶음·분리 tick·한 keydown 한 등록을 확인하고 조사를 종료했다.
+[마감 기록](../../../ai-harness/runs/human-timing-zero-ms-reproduction-2026-10-26.md)을 따른다.
+후속 [timing baseline 명세](../../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)를 준비했다.
+다음 gate는 해당 명세의 **Notebook implement-smoke**다. 고정 평균·전체 경험 분포·이전 action별 경험 분포를 Train만으로 만들고 Validation game-macro CRPS로 비교한다.
+후보를 고정한 뒤 별도 승인으로 같은 모델을 Test 전체/0ms 집중 게임 제외/해당 게임 단독에서 평가한다. 제외 결과는 민감도 분석이며 Test로 모델을 선택하거나 재학습하지 않는다.
+현재는 명세만 작성했다. Dataset 재생성·test 삭제/재분할·clipping·추가 수집·fit은 하지 않았다.
 실제 반응시간·성공 입력 간격·상태 조건부 controller 학습으로 의미를 확대하지 않는다.
 
 현재 데이터는 전부 legacy 20×10이며 현재 v3/40행은 이 full 감사 대상이 아니다.
