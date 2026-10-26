@@ -681,6 +681,43 @@ keyboard input
 
 ---
 
+## 2026-09-07~2026-10-09 — PostgreSQL smoke, Caddy 배포, CD와 Umami
+
+### 2026-09-07 — PostgreSQL 테스트가 기동 직후 `the database system is shutting down`으로 실패
+
+Docker PostgreSQL 초기화 중에는 임시 서버가 먼저 연결을 받았다가 초기화 완료 뒤 종료되고, 최종 서버가 다시 기동할 수 있다. 기존 smoke test는 `pg_isready`가 한 번 성공한 것만으로 준비가 끝났다고 판단해 임시 서버에 연결했고, 이후 그 서버가 내려가며 테스트가 실패했다.
+
+`pg_isready`뿐 아니라 컨테이너 PID 1의 process가 최종 `postgres`인지 확인하도록 준비 조건을 보강했다. 이 문제는 운영 DB나 migration 오류가 아니라 테스트의 준비 완료 판정 문제였다.
+
+### 2026-09-08 — Caddyfile을 바꿨는데 Umami 경로가 계속 404
+
+`/stats/script.js` 요청은 Caddy를 통과했지만 404를 반환했다. 호스트의 Caddyfile에는 proxy 설정이 있었는데 실행 중인 컨테이너 안의 파일에는 설정이 없었다. `docker inspect`로 Caddyfile bind mount의 호스트 경로를 확인하고, 컨테이너 안에서 실제 파일을 읽어 차이를 확인했다.
+
+호스트 파일을 `install`로 새 파일로 교체하면, 개별 파일을 bind mount한 컨테이너는 이전 파일을 계속 바라볼 수 있다. 이때 `caddy reload`는 컨테이너 안의 이전 파일을 다시 읽으므로 새 설정이 적용되지 않는다. 실행 중인 컨테이너가 읽는 파일이 무엇인지 먼저 확인하고, 해당 mount에 새 내용이 보이는 것을 확인한 뒤 설정을 reload해야 한다.
+
+같은 시기에 `docker compose` 명령이 `DATABASE_URL is required`로 막힌 것은 Caddy 자체 오류가 아니었다. Compose는 특정 서비스만 대상으로 해도 전체 compose 파일의 `${DATABASE_URL}` 같은 변수를 해석한다. 배포 환경 파일을 전달하지 않으면 Caddy 명령에 도달하기 전에 실패할 수 있다. Compose 파일이 있는 경로에서 운영 `--env-file`을 함께 쓰거나, Caddy만 확인할 때는 이미 실행 중인 컨테이너를 직접 대상으로 삼는다.
+
+### 2026-09-25~2026-10-04 — CD가 release를 거부하거나 새 앱을 unhealthy로 되돌림
+
+두 실패는 서로 다른 단계에서 발생했다.
+
+| 증상 | 확인된 원인 | 대응 |
+| --- | --- | --- |
+| `RELEASE_COMMIT_HAS_NO_SUCCESSFUL_MAIN_CI` | 배포 대상 전체 commit SHA에 대해 `main` push로 실행된 성공 CI가 아직 없거나, 확인된 성공이 PR·수동 실행·다른 commit의 CI였다. | 정확한 commit을 main에 반영하고 그 commit의 main CI 성공을 확인한 뒤 배포한다. |
+| migration 로그에 `applied=0 skipped=2`가 나오고 앱 교체 뒤 `unhealthy` | migration은 이미 적용돼 재실행에서 건너뛴 상태였다. 후보 앱은 healthcheck를 통과하지 못해 이전 `abb9ebc` 이미지로 rollback됐고 복구 이미지는 healthy였다. 제공된 로그만으로 후보 앱의 근본 원인은 확정하지 못했다. | release SHA가 workflow 환경에 전달된 것을 확인했다. SHA 누락으로 단정하지 않고 rollback 전 image·container 상태, 종료 코드/OOM, healthcheck 기록과 최근 앱 로그를 남기도록 진단을 보강했다. |
+
+따라서 `skipped` migration은 멱등 재실행의 정상 결과일 수 있고, 후보 앱의 unhealthy 원인은 별도 로그로 찾아야 한다. 이 당시 새 release가 운영에서 활성화됐다고 간주하지 않았다. 이후 10월 23일 버퍼 존 배포는 별도 기록에서 backup·migration·rollback 호환성·health·HTTPS까지 확인했다: [운영 배포 기록](../operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md).
+
+### 2026-10-06~09 — Umami 요청 차단과 페이지별 통계 누락
+
+Umami tracker script는 `cloud.umami.is`에서 정상 로드됐지만, 실제 이벤트 요청은 `gateway.umami.is/api/send`로 전송됐다. CSP `connect-src`에 Cloud script origin만 있고 collector origin이 빠져 브라우저가 전송을 차단했다. tracker를 우회하는 proxy를 추가하는 대신, 공식 collector origin인 `https://gateway.umami.is`를 `connect-src`에 허용하고 CSP 테스트를 갱신했다.
+
+통계가 메인 화면에서만 잡히던 이유는 나머지 세 경로가 각각 별도 HTML 페이지인데 tracker script가 index에만 있었기 때문이다. 동일한 website ID와 운영 도메인 제한을 로비·싱글·멀티 HTML에도 넣었다. 이후 빌드 산출물 네 페이지에 설정이 포함되는 것을 확인했지만, 당시 운영 통계에서 각 페이지를 따로 대조하지는 않았다.
+
+Brave에서 `ERR_BLOCKED_BY_CLIENT`가 나고 방문이 잡히지 않은 것은 브라우저 privacy/ad-block 차단 가능성과 일치한다. 서버 설정만으로 차단 여부를 확인하지는 못했고, 차단기를 끈 비교 결과도 확보하지 않았다. 직접 Umami Cloud 연결을 유지하고 proxy 도입은 보류한 상태다. 이를 서버 장애가 해결된 것으로 기록하지 않는다.
+
+---
+
 ## 2026-10-13 — 빠른 재시작에서 NOT_AUTHORIZED와 PLAYER_ALREADY_IN_ROOM이 이어짐
 
 ### 재현 절차
@@ -880,3 +917,94 @@ Client 표시만 늦추고 서버를 바로 실행하면 첫 조각·AI가 먼�
 3. 브랜치 divergence, 실제 파일 충돌, detached HEAD, 미커밋 변경을 구분한 뒤 복구 방식을 선택한다.
 4. rebase는 이번처럼 원격에 없는 로컬 커밋을 다시 적용하는 경우와 이미 공유한 이력을 바꾸는 경우를 구분한다. 해결 명목의 무조건적인 hard reset·강제 push는 하지 않는다.
 5. GitHub main 보호 규칙은 원격 삭제·강제 push·병합을 제한하는 장치이지, 로컬에서 잘못된 브랜치에 pull하는 것을 막는 장치는 아니다.
+
+---
+
+## 2026-10-23 — 싱글에서 상단 자동 고정 뒤 게임이 멈춘 것처럼 보임
+
+### 증상
+
+새 조각이 가시 보드 맨 위에 막혀 한 칸도 내려가지 않으면 약 500ms 뒤 경기는 `lock_out`으로 종료됐지만, 화면 HUD는 `playing`으로 남았다. 입력 timer가 중지되고 재시작 안내도 보이지 않아 게임이 멈춘 것처럼 보였다.
+
+### 확인된 원인과 수정
+
+공용 runtime은 자동 고정과 게임 종료 상태를 갱신했지만, 이 경로에서 React 표시용 상태를 다시 발행하지 않았다. 게임 규칙이나 서버 판정의 실패가 아니라 runtime과 HUD 사이의 표시 통지 누락이었다.
+
+`refreshLockDelay`가 자동 고정 처리 직후 display state를 발행하도록 수정했다. 스폰·고정 유예·승패 규칙은 바꾸지 않았다. 상단에서 내려오지 못하는 조각, 유예 중 옆으로 탈출하는 조각, HUD game-over·입력 정리·재시작을 테스트와 실제 Chromium에서 확인했다.
+
+### 재발 시 확인
+
+내부 `gameOver`와 서버/로그 종료 사유가 이미 설정돼 있는데 화면만 진행 중이면, 규칙 판정부터 바꾸기보다 runtime의 표시 snapshot 발행 시점과 구독자가 그 변경을 받는지 확인한다. 당시 필수 verify는 767 pass·기존 조건부 1 skip이었고 운영 배포와 실기기 검증은 하지 않았다.
+
+---
+
+## 2026-10-23~25 — DB schema 배포와 Human 로그 검증 경계
+
+### 기존 GitHub Actions 배포 workflow 수정
+
+처음 schema 2→3 전환을 위해 별도 배포 script를 만들었지만, 요청 범위는 새로운 배포 정의가 아니라 **기존 GitHub Actions deployment 단계의 수정**이었다. 별도 shell/JS 실행기는 제거하고 `.github/workflows/deploy-production.yml`의 기존 SSH `run` 블록 안에 사전 검사·backup/restore 검증·접속 차단·migration·호환 rollback boot를 넣었다. workflow 자체에 기록된 명령을 격리 환경에서 재현해 성공·실패·복구 12/12를 확인했다. 실제 Actions 실행은 별도이며 이 문서 시점에는 실행 증거로 간주하지 않는다.
+
+기존 자동 배포의 active/candidate DB version 일치 가드는 migration 전에 의도적으로 중단했다. 이 guard는 migration 3 적용 후 migration 2 전용 app으로 잘못 rollback하는 것을 막는다. 실제 schema 전환은 접속 0건 확인, 신규 유입 차단, 기존 event hash를 검증한 backup restore, migration 재실행, migration 3 호환 20행 rollback image 확인 순으로 수동 진행했다. Caddy 운영 파일에는 저장소에 없는 Umami 경로가 있어 전체 파일을 덮어쓰지 않고 app proxy 변경만 적용했다. 운영 row·volume·Caddy 경로를 보존했다. 배포 결과·checksum·복구 명령은 [운영 실행 기록](../operations/history/oci/oci-buffer-zone-deployment-2026-10-23.md)에 있다.
+
+### 예상 placement와 DB 로그 수가 다를 때
+
+격리 PostgreSQL 검사에서 예상 배치 25건과 저장 21건이 처음 어긋났다. 이를 곧바로 DB 유실로 보지 않고 authoritative commit 예상 수, client 전송, 서버 응답, DB row를 분리 대조했다. 사람 로그 4건은 10초당 10건 제한의 `RATE_LIMITED` 응답과 일치했고 heuristic 1건은 저장됐다. 제한을 무력화하거나 로그를 추정 복구하지 않았다. 입력 간격을 둔 운영 smoke에서는 사람 22/22 commit·전송·저장을 확인했다. 따라서 best-effort 로그는 빠른 정상 입력에서 빠질 수 있으며, DB write 성공률만으로 행동 데이터 완전성을 판단할 수 없다.
+
+### Human 데이터 감사와 Notebook 검사
+
+| 증상 | 확인한 원인 | 해결·현재 상태 |
+|---|---|---|
+| 경로 보호 테스트가 macOS에서 실패 | `/var`와 `/private/var`가 같은 실제 경로를 가리키지만 문자열 경로 비교가 달랐음 | 경로를 resolve한 뒤 비교하도록 테스트를 고쳤다. 경로 검증 자체를 느슨하게 하지는 않았다. |
+| timing 데이터 smoke의 geometry 검사에서 기대한 독립 실패가 나지 않음 | 혼합 geometry가 게임 단위 gate에서 먼저 격리돼 하위 split gate까지 도달하지 않음 | geometry 검사 fixture를 train 단일 geometry 게임으로 바꿔 검사 대상을 분리했다. 실제 정책을 테스트 기대에 맞춰 약화하지 않았다. |
+| ML 검증 전체가 통과하지 않음 | 10월 25일 추가 검사에서 기존 사용자 timing Notebook의 실행 count/output이 source Notebook의 빈 실행 상태 계약과 달랐음 | 실행본·원본·report를 보존했고, 결과는 Node 35/35·Python 162/163으로 기록했다. 이 Python 실패는 해결 완료로 간주하지 않는다. |
+
+Human 로그의 `Date.now()` 간격은 브라우저에서 입력을 처리·기록한 시각 차이다. 서버 수신 시각, 실제 조작 성공, 사람의 반응시간으로 해석하지 않는다. 품질 smoke의 `include_candidate`도 학습 승인이나 정상 경기 판정이 아니다. 전체 감사·dataset 생성·학습으로 확대하기 전 원본 checksum, 경기 단위 split, 격리 사유와 사용자 승인 범위를 확인한다. 해당 절차와 결과는 [Human 게임 품질 실행 기록](../../ai-harness/runs/human-game-quality-audit-implement-smoke-2026-10-24.md), [timing dataset 실행 기록](../../ai-harness/runs/human-timing-dataset-implement-smoke-2026-10-24.md), [10월 25일 저장소 감사](../maintenance/repository-audit-patch-plan.md#6-로컬-실행-결과-2026-10-25)에 있다.
+
+### 재발 시 확인 순서
+
+1. 배포 workflow는 실제 YAML의 단계와 조건을 기준으로 읽고, migration 전 version guard가 중단시키는지 먼저 확인한다.
+2. schema rollback은 app image만이 아니라 현재 DB version이 그 image의 reader와 호환되는지 확인한다. 운영 DB row·volume을 rollback 편의로 축소하지 않는다.
+3. placement 누락은 commit → 전송 → 응답 사유 → DB 저장 순으로 계수하고, `RATE_LIMITED`와 write failure를 분리한다.
+4. Notebook 실패는 source와 executed artifact를 구분한다. 사용자 실행본은 검사 통과를 위해 지우거나 덮어쓰지 않는다.
+
+---
+
+## 2026-10-12~16 — 디자인과 게임 타격감 보완 과정
+
+### 화면 피드백과 해결
+
+| 사용자 피드백 | 확인한 문제 | 조치 |
+|---|---|---|
+| 홈이 밋밋하고 글자가 한쪽으로 몰림, 장식 블록이 맞물리지 않아 가독성이 낮음 | 첫 시안이 타이포그래피·여백·블록 장식을 균형 있게 묶지 못했고 라이트 모드 대비도 약했음 | 홈 제목과 모드 선택의 시각 위계를 다시 맞추고, 연결된 테트로미노 장식·라이트/다크 색 배치·버튼 반응을 보완. 브랜드명을 Tetra Arena로 변경하고 싱글 설명의 “닉네임 없이” 문구와 조작키 안내를 제거 |
+| NEXT 4개가 게임 보드 위에 놓이거나 모양이 모호하게 보임 | 미리보기의 위치·방향과 시각화 방식이 실제 조작 패널의 의도와 달랐고 격자 안 작은 블록은 식별하기 어려웠음 | 싱글에서는 보드 왼쪽에 세로 배치하고 멀티 양쪽 보드도 같은 바깥쪽 배치를 사용. 기존 블록 색/모양 데이터를 재사용하고 격자·빈 셀을 감춰 조각 모양만 표현. NEXT 제목은 한 번만 두고 멀티 HOLD는 NEXT 위에 배치 |
+| 멀티 보드 사이가 좁아 공격 효과가 답답하고 HOLD/NEXT 순서가 반대 | 보조 패널이 공격 이동 공간과 각 플레이어 보드의 대응 관계를 흐림 | 왼쪽 보드 보조 UI는 왼편, 오른쪽 보드는 오른편에 두고 HOLD 위/NEXT 아래 순서를 고정. 카드 간격과 wrapper 폭을 늘리고 작은 화면에서는 세로 적층 |
+| 공격 시 큰 픽셀 하나만 날아가는 것처럼 보여 타격감이 약함 | 기존 표현이 여러 조각이 이동·충돌한다는 감각을 전달하지 못함 | 크기가 다른 골드 파편 10~14개가 시간차를 두고 상대 보드로 이동하고 도착 시 6개 impact 파편으로 흩어지도록 구성. 이동은 거리별 440~620ms, 도착 파편은 220ms, 전체 파편 상한은 40개로 제한 |
+| 상대 공격 대기량이 숫자로만 보이고 TETRIS/T-SPIN 순간을 놓침 | 수치만으로는 대기 줄 수를 빠르게 가늠하기 어렵고 중요한 이벤트가 보드 안에 남지 않음 | 보드마다 20칸 세로 bar를 두고 아래부터 줄 단위로 채움. 실제 대기량 숫자는 20 초과도 보존. TETRIS·T-SPIN·COMBO를 보드 옆에 최대 1.2초 표시하고 combo 단독 및 줄 삭제 없는 T-SPIN도 포함 |
+| 공격·피격 사운드 생성 prompt가 잘려 입력되지 않음 | 상세한 서술형 prompt가 음원 생성 도구 입력 한도를 넘음 | 사운드별로 핵심 음색·동작·길이만 남긴 짧은 prompt로 압축해 사용. 코드에서는 별도 외부 음원 대신 기존 Web Audio 합성을 유지 |
+| 공격·착지·라인 사운드가 서로 묻히거나 조정이 필요함 | 동일 재생 경로와 겹친 AudioContext 상태가 재생을 어렵게 하고 효과별 gain 조정 근거가 분리되지 않음 | 착지와 전투 voice를 분리하고 사용자 입력 후 AudioContext 재개를 보완. 후속 청취 조정에서 전투음 gain을 30%, line-clear MP3를 추가 10% 낮춤. 공격·피격·라인 테스트와 브라우저 렌더링 확인을 각각 수행 |
+
+### 수치 측정 실험
+
+| 실험 | 측정 결과 | 해석과 한계 |
+|---|---|---|
+| 2026-10-13 멀티 한 경기 Chrome 프레임 trace, 약 87.62초 | `BeginFrame` 5,261회, `DrawFrame` 5,253회, dropped-frame 원시 표시 8회(약 0.15%). 프레임 표시 간격 중앙값·95백분위 16.667ms, 최대 33.333ms(25ms 초과 3회). 50ms 초과 메인 스레드 작업 0회. 녹화 시작을 제외한 최장 작업 5.862ms | 이 녹화에서는 반복적인 긴 JS 작업이나 뚜렷한 끊김 근거가 없었다. 단일 기기·경기 결과로 다른 기기의 성능을 보장하지 않으며, `DrawFrame`은 게임 Canvas 자체의 갱신 빈도와 같지 않다. |
+| 2026-10-14 별도 멀티 입력 trace, 약 9.718초 | keydown 175건의 Event Timing 중앙값 74.352ms, 95백분위 78.921ms, 최대 83.264ms. 핸들러 처리 중앙값 0.049ms, 95백분위 0.080ms, 최대 0.719ms. `BeginFrame` 593회, `DrawFrame` 582회, dropped-frame 표시 11회(약 1.85%) | 이벤트 핸들러 자체는 짧았지만 Event Timing은 게임 키 입력부터 해당 블록의 실제 화면 변화까지를 재지 않는다. 스크린샷 수와 viewport가 앞선 프레임 녹화와 달라 두 trace의 dropped-frame 비율을 성능 회귀처럼 직접 비교하지 않는다. 입력 체감은 사용자가 문제없다고 확인했고, 추가 입력 계측은 보류했다. |
+| 2026-10-14 싱글 하드드롭·재시작 후 heap snapshot A/B/C | 객체 자체 크기 합계 23.347 → 23.302 → 23.409 MiB, A→C +64,416 bytes(+0.26%). 전체 노드 392,307 → 388,243 → 388,851. detached 노드 209개와 주요 listener 수는 세 스냅샷에서 일정 | 같은 페이지에서 새로고침 없이 재시작한 제공 자료에서는 반복 증가 징후가 보이지 않았다. 이는 snapshot node의 `self_size` 합계이며 탭 전체·GPU·Canvas·Audio 메모리가 아니다. 재시작 횟수가 불명이고 A/B/C 세 점뿐이므로 누수가 없다고 확정하지 않는다. |
+
+원본 분석·계산 방법과 상세 표는 [Chrome 프레임 trace 분석](../design/performance-trace-2026-10-13.md) 및 [입력·반복 재시작 메모리 분석](../design/input-memory-measurement-2026-10-14.md)에 있다. 두 입력 trace는 경기·viewport·녹화 조건이 달라 직접적인 변경 전후 A/B 실험으로 취급하지 않는다.
+
+### 회귀 검사에서 걸린 시각 오탐
+
+- Rollback E2E가 착지 순간 cell RGB가 달라진 것을 보드 rollback으로 오판했다. authoritative board·pieceIndex·좌표는 변하지 않았고 효과가 끝나면 픽셀이 돌아왔다. 해당 검사에서는 효과를 끄고 고정 board fingerprint를 확인하되, 실제 효과 검사는 별도 테스트로 유지했다. 자세한 재현은 위의 [착지 RGB 오탐 기록](#2026-10-13--착지-연출의-rgb-변화가-rollback-e2e-실패로-판정됨)에 있다.
+- 모바일 성과 문구는 작은 viewport에서 보드와 겹쳤다. 단순히 문구 높이를 보정하는 첫 수정은 Linux CI에서 다시 실패했고, 실제 원인은 앞쪽 HUD가 변한 뒤에도 공용 레이어의 과거 좌표를 쓰는 것이었다. 문구를 대상 `.playfield`에 붙여 상대 위치로 두고 기본/확대 글줄·양쪽 보드·앞쪽 HUD 높이 변화를 검사했다. 자세한 증거와 남은 Linux CI 한계는 [모바일 알림 기록](#2026-10-16--모바일-성과-알림-배치가-로컬에서는-통과하고-ci에서-실패)에 있다.
+- 효과 축소 버튼과 관련 preference/runtime/render 분기는 이후 사용자 요청으로 제거됐다. 현재 재현·검증 절차에 효과 축소 설정이 있다고 전제하지 않는다.
+
+### 다음 디자인·효과 수정 때의 확인 순서
+
+1. 시안의 위치와 실제 화면 크기를 비교해 보조 패널·보드·상태 bar가 서로의 역할을 가리지 않는지 확인한다.
+2. Canvas 효과는 픽셀 색상만 비교하지 말고 authoritative state·조각 위치·효과 종료 후 상태를 따로 관찰한다.
+3. 새 효과는 게임 판정과 분리하고, 실제 서버가 확정한 combat effect를 표시한다. 연속 공격·동시 상쇄·중복 이벤트·종료/resize cleanup도 검사한다.
+4. 모바일 알림은 측정한 절대 좌표로 고정하지 말고 대상 보드의 레이아웃에 붙인다. 기본 글줄뿐 아니라 확대·HUD 변화 뒤에도 경계를 확인한다.
+5. 사운드는 mute·중첩 재생·효과별 gain·사용자 gesture 뒤 AudioContext 상태를 각각 확인한다. 청취 튜닝 수치와 브라우저 자동화 검증 결과는 구분한다.
+
+해당 시기의 화면·효과 구현과 테스트 수치는 [변경 이력의 10월 12~14일 기록](../../change-log.md)을 따른다. 이 항목은 이번 대화에서 다룬 디자인·게임 타격감의 문제와 해결 과정만 정리한다.
