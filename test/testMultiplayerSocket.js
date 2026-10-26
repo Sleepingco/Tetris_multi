@@ -4776,3 +4776,25 @@ test("40행 경기의 v3 로그를 v2로 낮추면 receipt를 소비하지 않�
     assert.equal(saved.length, 1);
     assert.equal(saved[0].schemaVersion, 3);
 });
+
+test("정상 placement burst 25건은 저장하고 10초 60건을 넘으면 계속 제한한다", async () => {
+    clearRoomsForTest();
+    const { createSocketRateLimitService } = require('../dist/server/server/services/socketRateLimitService.js');
+    let stored = 0;
+    const fixture = await createStartedPvpSocketFixture('placement-burst', {
+        socketRateLimitService: createSocketRateLimitService({ now: () => 0 }),
+        savePlacementDecisionLog: log => { stored++; return { ok: true, log, reason: null }; },
+    });
+    for (let index = 1; index <= 61; index++) {
+        recordLegacyHumanPlacementReceipt(fixture.roomId, fixture.hostPlayerId, index, index);
+        await fixture.hostSocket.triggerAsync('game:log:placement_decision', {
+            roomId: fixture.roomId,
+            log: createHumanPlacementLogV1(fixture.roomId, {
+                pieceIndex: index, authoritativePieceIndex: index, authoritativeClientSequence: index,
+            }),
+        });
+        if (index === 25) assert.equal(stored, 25);
+    }
+    assert.equal(stored, 60);
+    assert.equal(fixture.hostSocket.lastClientEvent('game:log:result').payload.reason, 'RATE_LIMITED');
+});

@@ -9,7 +9,7 @@ export const RATE_LIMITS = Object.freeze({
     input: { limit: 60, windowMs: 1_000 },
     bag: { limit: 2, windowMs: 1_000 },
     chat: { limit: 1, windowMs: 1_000 },
-    placementLog: { limit: 10, windowMs: 10_000 },
+    placementLog: { limit: 60, windowMs: 10_000 },
 } as const)
 export const TEST_RATE_LIMITS = Object.freeze({
     ...RATE_LIMITS,
