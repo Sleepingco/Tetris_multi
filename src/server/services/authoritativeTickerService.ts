@@ -6,6 +6,8 @@
 // =============================
 import type { Server } from "socket.io";
 import {
+    applyPlacementAttack,
+    getAuthoritativeSnapshotPayload,
     appendPendingGarbageToOpponent as defaultAppendPendingGarbageToOpponent,
     applyGravityStepToMatchPlayerState as defaultApplyGravityStepToMatchPlayerState,
     deleteMatch as defaultDeleteMatch,
@@ -461,7 +463,7 @@ export function createAuthoritativeTickerService(
             });
         }
 
-        const placementSideEffect = handlePlacementResult(roomId, playerId, stepResult.placementResult);
+        const placementSideEffect = applyPlacementAttack(roomId, playerId, stepResult.placementResult, createGarbageHoleCol, appendPendingGarbageToOpponent);
         // 상대 pending garbage까지 반영한 뒤 snapshot을 보내 client가 한 시점의 결과를 받게 한다.
         const snapshot = emitAuthoritativeSnapshot(
             roomId,
@@ -503,44 +505,12 @@ export function createAuthoritativeTickerService(
         presentationEffect: PresentationEffect | null = null,
         combatEffect: CombatEffect | null = null,
     ): ServerToClientParsedPayload<"game:authoritative:snapshot">["snapshot"] | null {
-        const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId);
-        if (!snapshotResult.ok) return null;
-
-        const payload: ServerToClientParsedPayload<"game:authoritative:snapshot"> = {
-            roomId,
-            playerId,
-            gameId: snapshotResult.match?.gameId,
-            snapshot: snapshotResult.snapshot,
-        };
-        if (presentationEffect?.id) {
-            payload.presentationEffect = {
-                ...presentationEffect,
-                id: presentationEffect.id,
-            };
-        }
-        if (combatEffect) payload.combatEffect = combatEffect;
-
+        const payload = getAuthoritativeSnapshotPayload(
+            roomId, playerId, presentationEffect, combatEffect, getAuthoritativePlayerSnapshotDto,
+        );
+        if (!payload) return null;
         socketServer.to(roomId).emit("game:authoritative:snapshot", payload);
-
-        return snapshotResult.snapshot;
-    }
-
-    function handlePlacementResult(
-        roomId: string,
-        playerId: string,
-        placementResult?: PlacementResult | null,
-    ): MatchResult | null {
-        const attackLines = placementResult?.attackLines ?? 0;
-        if (!Number.isInteger(attackLines) || attackLines <= 0) return null;
-
-        const garbage = {
-            lines: attackLines,
-            holeCol: createGarbageHoleCol(),
-        };
-        const appendResult = appendPendingGarbageToOpponent(roomId, playerId, garbage);
-        if (!appendResult.ok) return null;
-
-        return appendResult;
+        return payload.snapshot;
     }
 
     function normalizeAiFinishReason(reason: string | null): string {

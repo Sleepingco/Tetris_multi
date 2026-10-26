@@ -18,7 +18,8 @@ import {
 import {
     acknowledgeClientInputSequence,
     authenticateHumanPlacementReceipt,
-    appendPendingGarbageToOpponent,
+    applyPlacementAttack,
+    getAuthoritativeSnapshotPayload,
     applyAuthoritativeInputToMatchPlayerState,
     clearHumanPlacementReceiptsForPlayer,
     clearHumanPlacementReceiptsForRoom,
@@ -59,7 +60,6 @@ import type { GameCore } from "../services/gameCoreLoader.js";
 import type { LogSaveResult } from "../services/logService.js";
 import type {
     AuthoritativeSnapshotDto,
-    MatchResult,
     MatchState,
 } from "../services/matchService.js";
 import { createCombatEffect } from "../services/playerGameplayStep.js";
@@ -644,7 +644,7 @@ export function registerMultiplayerHandlers(
                             },
                         )
                     }
-                    const placementSideEffect = handleServerPlacementResult(
+                    const placementSideEffect = applyPlacementAttack(
                         roomId,
                         getPlayerId(),
                         gameplayResult?.placementResult,
@@ -1051,25 +1051,6 @@ function createSafeInputMetadata(
     }
 }
 
-function handleServerPlacementResult(
-    roomId: string,
-    playerId: string,
-    placementResult: PlacementResult | null | undefined,
-    createGarbageHoleCol: () => number,
-): MatchResult | null {
-    const attackLines = placementResult?.attackLines ?? 0
-    if (!Number.isInteger(attackLines) || attackLines <= 0) return null
-
-    const garbage = {
-        lines: attackLines,
-        holeCol: createGarbageHoleCol(),
-    }
-    const appendResult = appendPendingGarbageToOpponent(roomId, playerId, garbage)
-    if (!appendResult.ok) return null
-
-    return appendResult
-}
-
 /**
  * matchService의 public snapshot DTO를 room 전체에 broadcast한다.
  * state 변경이 끝난 뒤 호출하며, line-clear presentation은 해당 placement의 snapshot에만 붙인다.
@@ -1081,26 +1062,10 @@ function emitAuthoritativeSnapshot(
     presentationEffect: PresentationEffect | null = null,
     combatEffect: CombatEffect | null = null,
 ): AuthoritativeSnapshotDto | null {
-    const snapshotResult = getAuthoritativePlayerSnapshotDto(roomId, playerId)
-    if (!snapshotResult.ok) return null
-
-    const payload: ServerToClientParsedPayload<"game:authoritative:snapshot"> = {
-        roomId,
-        playerId,
-        gameId: snapshotResult.match.gameId,
-        snapshot: snapshotResult.snapshot,
-    }
-    if (presentationEffect?.id) {
-        payload.presentationEffect = {
-            ...presentationEffect,
-            id: presentationEffect.id,
-        }
-    }
-    if (combatEffect) payload.combatEffect = combatEffect;
-
-    socketServer.to(roomId).emit("game:authoritative:snapshot", payload)
-
-    return snapshotResult.snapshot
+    const payload = getAuthoritativeSnapshotPayload(roomId, playerId, presentationEffect, combatEffect);
+    if (!payload) return null;
+    socketServer.to(roomId).emit("game:authoritative:snapshot", payload);
+    return payload.snapshot;
 }
 
 /**

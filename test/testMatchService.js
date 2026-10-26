@@ -103,7 +103,7 @@ test("human placement receipt는 exact tuple, 1회 사용, TTL과 player별 128�
     assert.equal(first.ok, true);
     assert.equal(first.receipt.gameId, gameId);
     assert.strictEqual(first.receipt, duplicate.receipt);
-    assert.equal(matchResult.match.players[0].expectedPlacementEventCount, 1);
+    assert.equal(matchResult.match.players[0].expectedPlacementEventCount, 0);
     assert.equal(
         authenticateHumanPlacementReceipt("RECEIPT1", "host-player", 1, 1, 1_002).ok,
         true,
@@ -734,4 +734,32 @@ test("applyGravityStepToMatchPlayerState는 player authoritativeState가 없으�
     assert.equal(result.ok, false);
     assert.equal(result.match.roomId, "GRAVITY003");
     assert.equal(result.reason, "AUTHORITATIVE_STATE_NOT_FOUND");
+});
+
+test("고정 횟수는 input·lock 만료·gravity commit에서 세며 receipt와 hold는 증가시키지 않는다", async () => {
+    const core = await loadGameCore();
+    for (const mode of ["hard_drop", "input_expiry", "gravity"]) {
+        resetMatches();
+        const roomId = `COUNT_${mode}`;
+        const { match } = createMatch(createPlayingRoom(roomId));
+        const player = match.players[0];
+        const state = player.authoritativeState;
+        state.activePiece = { pieceType: "square", rotation: 0, row: 38, col: 4 };
+        state.pendingPiece = { ...state.activePiece };
+        state.lockDelay = { hasTouchedGround: true, remainingMs: mode === "hard_drop" ? 500 : 0, resetCount: 0, lowestRow: 38 };
+        player.lockUpdatedAt = performance.now();
+        const pieceIndex = state.pieceIndex;
+        const result = mode === "gravity"
+            ? applyGravityStepToMatchPlayerState(roomId, player.playerId, core, { now: player.lockUpdatedAt, gravityDue: false })
+            : applyAuthoritativeInputToMatchPlayerState(roomId, player.playerId,
+                { action: mode === "hard_drop" ? "hard_drop" : "move_left", pieceIndex, clientSequence: 1 }, core);
+        assert.equal(result.ok, true);
+        assert.equal(player.expectedPlacementEventCount, 1, mode);
+        recordHumanPlacementReceipt(roomId, player.playerId, 1, pieceIndex);
+        recordHumanPlacementReceipt(roomId, player.playerId, 1, pieceIndex);
+        assert.equal(player.expectedPlacementEventCount, 1, 'receipt must not count a placement again');
+        assert.equal(applyAuthoritativeInputToMatchPlayerState(roomId, player.playerId,
+            { action: "hold", pieceIndex: state.pieceIndex, clientSequence: 2 }, core).ok, true);
+        assert.equal(player.expectedPlacementEventCount, 1, 'hold is not a placement');
+    }
 });

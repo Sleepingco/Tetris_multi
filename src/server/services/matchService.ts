@@ -34,6 +34,7 @@ import type {
     GravityStepResult,
     PlacementResult,
     PresentationEffect,
+    CombatEffect,
 } from "./playerGameplayStep.js";
 import type { PveAiPlan } from "./pveAiPlayerService.js";
 import type { PlayerType, RoomState, RoomStatus } from "./roomService.js";
@@ -403,7 +404,6 @@ export function recordHumanPlacementReceipt(
         receipts.splice(0, receipts.length - HUMAN_PLACEMENT_RECEIPT_MAX_PER_PLAYER);
     }
     recentHumanPlacementReceipts.set(key, receipts);
-    countPlacementTarget(player, pieceIndex);
     return { ok: true, receipt, reason: null };
 }
 
@@ -647,6 +647,7 @@ export function applyAuthoritativeInputToMatchPlayerState(
     player.lockUpdatedAt = Math.max(clockNow, player.lockUpdatedAt ?? clockNow);
     const expiry = advanceAuthoritativeLockDelay(player.authoritativeState, gameCore, elapsedMs);
     if (expiry.placementResult) {
+        countPlacementTarget(player, expiry.placementResult.pieceIndex);
         markClientInputProcessed(player, clientSequence);
         attachPresentationEffectId(expiry, playerId);
         return createSuccess(match, { gameplayResult: expiry });
@@ -666,6 +667,7 @@ export function applyAuthoritativeInputToMatchPlayerState(
         };
     }
 
+    if (gameplayResult.placementResult) countPlacementTarget(player, gameplayResult.placementResult.pieceIndex);
     markClientInputProcessed(player, clientSequence);
     if (
         expectedTransform &&
@@ -853,6 +855,7 @@ export function applyGravityStepToMatchPlayerState(
     }
 
     attachPresentationEffectId(gravityStepResult, playerId);
+    if (gravityStepResult.placementResult) countPlacementTarget(player, gravityStepResult.placementResult.pieceIndex);
     return createSuccess(match, {
         gravityResult: gravityStepResult.gravityResult,
         gravityStepResult,
@@ -948,6 +951,40 @@ export function getAuthoritativePlayerSnapshotDto(
             ...createClientSnapshotDto(result.snapshot),
             lastProcessedClientSequence,
         },
+    };
+}
+
+/** 공격 판정이 끝난 양수 줄만 상대 queue로 옮기며 실패하면 전송 효과를 만들지 않는다. */
+export function applyPlacementAttack(
+    roomId: string,
+    playerId: string,
+    placement: Pick<PlacementResult, "attackLines"> | null | undefined,
+    createGarbageHoleCol: () => number,
+    appendGarbage = appendPendingGarbageToOpponent,
+): MatchResult | null {
+    const lines = placement?.attackLines ?? 0;
+    if (!Number.isInteger(lines) || lines <= 0) return null;
+    const result = appendGarbage(roomId, playerId, { lines, holeCol: createGarbageHoleCol() });
+    return result.ok ? result : null;
+}
+
+/** 동일한 public snapshot envelope를 input·gravity·AI 전송 경로에 제공한다. */
+export function getAuthoritativeSnapshotPayload(
+    roomId: string,
+    playerId: string,
+    presentationEffect: PresentationEffect | null = null,
+    combatEffect: CombatEffect | null = null,
+    getSnapshot = getAuthoritativePlayerSnapshotDto,
+): ServerToClientParsedPayload<"game:authoritative:snapshot"> | null {
+    const result = getSnapshot(roomId, playerId);
+    if (!result.ok) return null;
+    return {
+        roomId,
+        playerId,
+        gameId: result.match?.gameId,
+        snapshot: result.snapshot,
+        ...(presentationEffect?.id ? { presentationEffect: { ...presentationEffect, id: presentationEffect.id } } : {}),
+        ...(combatEffect ? { combatEffect } : {}),
     };
 }
 
