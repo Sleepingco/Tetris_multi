@@ -1,6 +1,6 @@
 # Human 조작 dataset 설계 계약
 
-상태: 행동 모방용 선정 원칙 확정, 시간·포기 패턴의 수치 경계와 생성기·학습 코드는 미확정/미구현.
+상태: 첫 timing-only 게임 정책 `quality-policy-v1` 사용자 승인, 생성기 Notebook implement-smoke. Full dataset 생성·모델 학습은 미실행.
 [현재 계획](../strategy/ai-plan.md)에 따라 품질 경계를 학습 전에 고정한다.
 
 ## 목적과 단위
@@ -79,11 +79,17 @@ DB `ingested_at`, 마지막 AI 이벤트 시각, 마지막 Human 입력만으로
 기록하고 완료 게임 duration과 섞지 않는다. 첫 dataset의 검증된 lifecycle 요구는
 이번 품질 gate의 명시적 선택이며 과거 placement 필터를 자동 승계한 것이 아니다.
 
-아직 임의의 10초/30초/10분 cutoff를 채택하지 않았다. 다음 명세에서 시간 분포와
-원본 사례를 확인해 `shortGameReviewSeconds`, `maxGameDurationSeconds`,
-`abandonmentTailMinPieces`와 연속 하드드롭 패턴의 정의를 학습 전에 고정한다.
-이전 V4 계획의 10분 검토선을 현재 계약의 확정값으로 가져오지 않는다.
-경계가 필요한 판정을 숫자 없이 실행하거나 모델/test 결과를 보고 경계를 바꾸지 않는다.
+2026-10-24 사용자가 full 결과를 검토한 뒤 첫 timing-only dataset에
+`shortGameReviewSeconds=30`, `maxGameDurationSeconds=600`,
+`abandonmentTailMinPieces=5`, `aiOnlyTailReviewSeconds=60`을 승인했다.
+이를 `quality-policy-v1`로 고정한다. 이전 V4 기준의 자동 승계나 모델/test 점수에
+맞춘 조정이 아니다. 다른 source·ruleset이나 정책 변경에는 별도 revision·검토가 필요하다.
+
+검토 구현은 [게임 품질 감사 명세](../../../ai-harness/ml-experiments/experiments/human-game-quality-audit.md)를 따른다.
+`provisional-review-v1`은 30초/600초/5조각/AI tail 60초를 후보로 출력하지만
+`policyStatus=provisional_review_only`를 유지한다. 당시 정책 승인이 아니었다. 그 report를
+수정하지 않고 후속 [timing dataset 명세](../../../ai-harness/ml-experiments/experiments/human-timing-dataset.md)와
+manifest에 사용자의 별도 채택을 기록한다. 213게임 사용·22게임 격리·11게임 Human 없음 제외이며 원본은 보존한다.
 
 이 gate는 짧은 패배·긴 정상 플레이·PVP 상대의 정상 데이터도 일부 줄일 수 있다.
 포함/제외/검토 대기 수를 mode·난이도·승패별로 보고하고, 사유와 대표 trace를 남긴다.
@@ -108,7 +114,7 @@ DB `ingested_at`, 마지막 AI 이벤트 시각, 마지막 Human 입력만으로
 
 Versioned manifest에 source checksum, ruleset/좌표/관찰 단계, 추출 코드 revision,
 과제별 입력·정답·시간 정의, 포함/제외 수와 사유, split game 목록·seed를 기록한다.
-생성 파일명과 dataset schema version은 첫 실험에서 확정한다. 기존 네 파일의
+첫 timing-only schema/split/파일명은 [timing dataset 명세](../../../ai-harness/ml-experiments/experiments/human-timing-dataset.md)에서 고정한다. 기존 네 파일의
 placement bundle 형식을 조작 dataset에 억지로 맞추지 않는다.
 
 관측 불가능한 상태는 0·빈 배열·안전으로 조용히 대체하지 않는다. 부족하면
@@ -184,7 +190,7 @@ git show 83e29f9:src/client/game/runtime/input.js | rg -n 'NON_REPEATABLE|event.
 | 항목 | 최초 범위 |
 | --- | --- |
 | 데이터 | 이번 full 감사와 같은 immutable legacy 원본, Human만 사용 |
-| 후보 | 게임 품질 gate 적용 전 timing usable 10,645구간 중 hold 시도 없는 9,485구간. 품질 gate 후 구간/pair 수는 미산출 |
+| 후보 | 품질 gate 전 hold 없는 9,485구간, 승인 213게임 안의 기존 감사상 후보 9,283구간. pair 추가 검사를 거친 최종 표본 수는 full 생성에서 확인 |
 | 표본 | 같은 placement 입력 배열의 인접 두 action. 서로 다른 piece/게임/불연속 구간은 연결하지 않음 |
 | label | `recorded_interval_ms = current.createdAt - previous.createdAt` |
 | 최소 feature | 이전 action만. 첫 baseline은 train의 전체 간격 분포, 다음 비교는 이전 action별 분포 |
@@ -205,8 +211,8 @@ test를 보고 clipping 기준을 고르지 않는다. 배포용 최소/최대 �
 fit하고 validation/test는 별도로 평가한다. 사용자 식별 근거가 없으면 개인 모방이라
 주장하지 않으며, 기록된 Human 집단의 처리 간격을 재현하는 탐색적 baseline으로 한정한다.
 
-**지금 확정하지 않은 것:** 게임 길이/포기 패턴 수치 경계·split 비율/seed·품질 gate 후
-구간/pair 수·제외 편향·모델 채택 기준·runtime 대기 경계·실제 사람다운 체감·v3/40행 전이.
-다음 명세에서 정하고 실행한다.
+**현재 고정:** 게임 품질 `quality-policy-v1`, game 단위 SHA-256 split seed
+`human-timing-v1-20261024`, 70%/15%/나머지(213게임이면 149/31/33)다.
+**아직 미확정:** full 생성 후 최종 pair 수·제외 편향·모델 채택 기준·runtime 대기 경계·실제 사람다운 체감·v3/40행 전이다.
 새 데이터 수집 없이 첫 제한적 dataset 실험은 진행할 수 있다. 상태 조건부 action/hold는
 여전히 replay와 별도 수집 증거가 필요하다.
