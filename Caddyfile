@@ -1,5 +1,6 @@
 tetra-arena.duckdns.org {
     handle {
+        request_header X-Real-IP {remote_host}
         reverse_proxy app:5500
     }
 }

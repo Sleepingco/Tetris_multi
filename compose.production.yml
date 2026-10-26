@@ -26,12 +26,14 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
       NODE_EXTRA_CA_CERTS: /run/secrets/postgres-ca.crt
       SOCKET_ALLOWED_ORIGINS: https://tetra-arena.duckdns.org
+      SOCKET_TRUSTED_PROXY_IPS: 172.30.0.2
       CSP_CONNECT_ORIGINS: wss://tetra-arena.duckdns.org
     volumes:
       - /srv/tetris/certs/ca.crt:/run/secrets/postgres-ca.crt:ro
     networks:
-      - edge
-      - database
+      edge:
+        ipv4_address: 172.30.0.3
+      database:
     logging: *default-logging
 
   postgres:
@@ -95,7 +97,8 @@ services:
     tmpfs:
       - /tmp
     networks:
-      - edge
+      edge:
+        ipv4_address: 172.30.0.2
     logging: *default-logging
 
 volumes:
@@ -105,5 +108,8 @@ volumes:
 
 networks:
   edge:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/29
   database:
     internal: true

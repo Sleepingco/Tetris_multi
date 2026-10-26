@@ -30,6 +30,30 @@ rehearsal은 [production boundary script](../../../scripts/verify-postgres-produ
 6. 실제 사용자 data 삭제는 자동화하지 않는다.
 7. 명령 실행 전 prompt가 OCI인지 확인한다.
 
+### Audit A01 proxy 접속 주소 적용과 복구 (2026-10-25)
+
+이 절은 로컬 구현된 [감사 패치](../../maintenance/repository-audit-patch-plan.md)의 운영 적용 절차다. 현재 운영이 이 설정으로 바뀌었다는 의미는 아니다. DB migration은 추가하지 않는다.
+
+| 설정 | 함께 유지할 값 |
+| --- | --- |
+| Compose `edge` subnet | `172.30.0.0/29` |
+| Caddy의 edge 주소 | `172.30.0.2` |
+| app의 edge 주소 | `172.30.0.3` |
+| app `SOCKET_TRUSTED_PROXY_IPS` | `172.30.0.2` |
+| app으로 보내는 header | Caddy `request_header X-Real-IP {remote_host}`로 덮어쓰기 |
+
+앱은 명시한 transport peer의 단일 IP만 신뢰하며 직접 접속의 forwarding header는 무시한다. 다른 proxy를 앞에 추가할 때 이 신뢰 범위를 자동으로 넓히지 않는다. Caddy의 `reverse_proxy app:5500`은 기존 CD의 maintenance 치환과 호환되도록 한 줄을 유지한다. 블록으로 바꾸려면 workflow의 503 전환도 함께 검증한다.
+
+1. source·image tag·DB3 호환 rollback artifact를 확인하고 기존 Compose/Caddyfile·network 설정을 보관한다. 기존 Caddy의 통계 proxy와 TLS 설정을 보존한다. app·PostgreSQL port는 host에 공개하지 않는다.
+2. 실제 host route와 Docker network에서 위 subnet 충돌을 확인한다. 충돌하면 적용을 중단하고 subnet·두 주소·신뢰 주소를 함께 재설계한다. 충돌한 기존 network를 임의로 삭제하지 않는다.
+3. 후보 Compose의 `docker compose config`와 Caddy validate, maintenance 503 치환을 검사한다. 로컬에서는 다른 접속자별 제한·위조 header 무시·실제 pinned Caddy의 peer 검증을 통과했다.
+4. 별도 maintenance 창에서 기존 동접 0·backup/restore 기준을 충족한 뒤 app 유입을 차단한다. 기존 `edge`가 다른 subnet이면 app·Caddy 연결을 정리한 다음 해당 edge network만 재생성한다. 다른 container가 붙어 있으면 중단한다. PostgreSQL의 database network·row·volume은 유지한다.
+5. 새 network의 Caddy `.2`, app `.3`과 app 환경변수·X-Real-IP 규칙을 함께 반영한다. 기존 app만 교체하는 CD로 network 전환까지 완료됐다고 판단하지 않는다. Caddy 설정 reload/재기동은 WebSocket 연결에 영향을 주므로 동접 중 수행하지 않는다.
+6. app healthy·HTTPS·기존 row 보존과 새 app의 오류를 확인하고 유입을 연다. 서로 다른 실제 접속망에서 신규 접속과 기존 token 재개를 확인한다. 실패하면 유입을 차단한 채 원인을 확인한다.
+7. app 코드 rollback은 migration 3을 읽는 호환 artifact를 사용한다. 변경한 edge를 유지한 채 app을 복구할 수 있으나 이전 app에서는 proxy별 세션 제한 문제가 다시 나타날 수 있다. network도 되돌려야 하면 백업한 설정과 양쪽 주소를 같이 복구하고 Caddy 설정·health를 다시 검사한다. DB downgrade·row/volume 삭제는 하지 않는다.
+
+운영 적용 후 실제 image tag·설정 hash·시간·접속망 검증 결과를 배포 기록에 남긴다. 이번 감사 구현에서는 운영 접속·설정 교체·재배포를 수행하지 않았다.
+
 ### 게임 오버 계획 2단계의 로컬 호환 빌드 (2026-10-22)
 
 [저장 호환 구현·검증 기록](../../gameplay/top-out-buffer-zone-plan.md#13-2단계-저장-호환-기반-완료-2026-10-22)은 로컬에서 완료했으며 위 운영 image·DB가 갱신됐다는 의미는 아니다. 새 빌드는 migration **3**을 요구한다. 운영 반영 시에는 기존 절차대로 백업 후 003 migration을 적용하고 app을 교체한다. migration 역할과 runtime 역할은 계속 분리한다.

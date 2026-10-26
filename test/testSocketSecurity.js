@@ -9,6 +9,7 @@ const assert = require("node:assert/strict")
 
 const {
     createSocketServerOptions,
+    createSocketAddressResolver,
     readAllowedOrigins,
 } = require("../dist/server/server/socketSecurity.js")
 const {
@@ -19,6 +20,19 @@ const {
     TEST_RATE_LIMITS,
     createSocketRateLimitService,
 } = require("../dist/server/server/services/socketRateLimitService.js")
+
+test("접속 주소는 명시한 proxy의 단일 IP만 신뢰한다", () => {
+    const resolve = createSocketAddressResolver({ SOCKET_TRUSTED_PROXY_IPS: "172.30.0.2, ::1" });
+    assert.equal(resolve("::ffff:172.30.0.2", "203.0.113.1"), "203.0.113.1");
+    assert.equal(resolve("::1", "2001:0db8::1"), "2001:db8::1");
+    for (const header of [undefined, "bad", "fe80::1%eth0", "203.0.113.1, 203.0.113.2", ["203.0.113.1"]]) {
+        assert.equal(resolve("172.30.0.2", header), "172.30.0.2");
+    }
+    assert.equal(resolve("fe80::1%eth0", "203.0.113.1"), "fe80::1%eth0");
+    assert.equal(resolve("203.0.113.9", "203.0.113.1"), "203.0.113.9");
+    assert.equal(createSocketAddressResolver({})("127.0.0.1", "203.0.113.1"), "127.0.0.1");
+    assert.throws(() => createSocketAddressResolver({ SOCKET_TRUSTED_PROXY_IPS: "*" }), /SOCKET_TRUSTED_PROXY_IPS/);
+});
 
 test("production은 exact origin allowlist가 없으면 fail closed한다", () => {
     assert.throws(

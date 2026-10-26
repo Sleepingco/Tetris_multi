@@ -4,8 +4,29 @@
 // =============================
 type Environment = NodeJS.ProcessEnv;
 import type { ServerOptions } from "socket.io";
+import { isIP } from "node:net";
 
 type SocketServerOptions = Partial<ServerOptions>;
+
+function normalizeIp(address: string): string {
+    if (address.startsWith("::ffff:") && isIP(address.slice(7)) === 4) return address.slice(7);
+    return isIP(address) === 6 && !address.includes("%") ? new URL(`http://[${address}]`).hostname.slice(1, -1) : address;
+}
+
+/** 지정한 proxy의 단일 X-Real-IP만 사용하고 직접 접속의 forwarding header는 무시한다. */
+export function createSocketAddressResolver(environment: Environment = process.env) {
+    const addresses = environment.SOCKET_TRUSTED_PROXY_IPS?.split(",").map(value => value.trim()) ?? [];
+    if (addresses.some(address => !isIP(address) || address.includes("%"))) {
+        throw new Error("SOCKET_TRUSTED_PROXY_IPS must contain IP addresses");
+    }
+    const trusted = new Set(addresses.map(normalizeIp));
+    return (remoteAddress: string, realIp: string | string[] | undefined): string => {
+        const peer = normalizeIp(remoteAddress);
+        return trusted.has(peer) && typeof realIp === "string" && isIP(realIp) && !realIp.includes("%")
+            ? normalizeIp(realIp)
+            : peer;
+    };
+}
 
 export const DEFAULT_DEVELOPMENT_ORIGINS = Object.freeze([
     "http://127.0.0.1:5173",

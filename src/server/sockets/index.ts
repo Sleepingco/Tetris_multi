@@ -24,6 +24,7 @@ import {
 import { handshakeAuthSchema } from "../../shared/socketContracts.mjs";
 import { findRoomByPlayerId } from "../services/roomService.js";
 import { markMatchPlayerDisconnected } from "../services/matchService.js";
+import { createSocketAddressResolver } from "../socketSecurity.js";
 import type {
     ClientToServerEventName,
     ServerToClientEvents,
@@ -69,6 +70,7 @@ type RegisterSocketDependencies = Partial<MultiplayerHandlerDependencies> & {
     authoritativePlayerMutationQueue?: AuthoritativePlayerMutationQueue;
     authoritativeTickerService?: AuthoritativeTickerService;
     rateLimitProfile?: string;
+    trustedProxyIps?: string;
 };
 
 class SessionAuthError extends Error {
@@ -84,12 +86,6 @@ const SESSION_CLEANUP_INTERVAL_MS = 60_000
 
 function createSessionError(code: string): SessionAuthError {
     return new SessionAuthError(code)
-}
-
-function getRemoteAddress(clientSocket: AppSocket): string {
-    return clientSocket.handshake?.address
-        || clientSocket.request?.socket?.remoteAddress
-        || "unknown"
 }
 
 /**
@@ -108,6 +104,9 @@ export function registerSocketHandlers(
     dependencies: RegisterSocketDependencies = {},
 ): () => void {
     let disposed = false
+    const resolveRemoteAddress = createSocketAddressResolver({
+        SOCKET_TRUSTED_PROXY_IPS: dependencies.trustedProxyIps ?? process.env.SOCKET_TRUSTED_PROXY_IPS,
+    });
     const playerSessionService = dependencies.playerSessionService
         || createPlayerSessionService()
     const rateLimitProfile = dependencies.rateLimitProfile
@@ -141,7 +140,10 @@ export function registerSocketHandlers(
     socketServer.use?.((clientSocket, next) => {
         const auth: unknown = clientSocket.handshake?.auth || {}
         const authRecord = isRecord(auth) ? auth : {}
-        const remoteAddress = getRemoteAddress(clientSocket)
+        const remoteAddress = resolveRemoteAddress(
+            clientSocket.request?.socket?.remoteAddress || clientSocket.handshake?.address || "unknown",
+            clientSocket.request?.headers?.["x-real-ip"],
+        );
         const hasCredential = authRecord.playerId !== undefined
             || authRecord.token !== undefined
             || authRecord.credentialError !== undefined

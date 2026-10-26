@@ -122,6 +122,22 @@ function registerTestHandlers(socketServer, dependencies = {}) {
     })
 }
 
+test("동일 proxy 뒤 21명은 독립 세션 제한을 사용하고 같은 IP의 21번째는 거부한다", t => {
+    const server = new FakeSocketServer();
+    const dispose = registerTestHandlers(server, { trustedProxyIps: "172.30.0.2" });
+    t.after(dispose);
+    const connect = (id, address) => {
+        const socket = new FakeSocket(id, { nickname: "Guest" });
+        socket.request = { socket: { remoteAddress: "::ffff:172.30.0.2" }, headers: { "x-real-ip": address } };
+        return server.connect(socket);
+    };
+    for (let index = 1; index <= 21; index++) {
+        assert.equal(connect(`separate-${index}`, `203.0.113.${index}`), null);
+    }
+    for (let index = 1; index < 20; index++) assert.equal(connect(`same-${index}`, "203.0.113.1"), null);
+    assert.equal(connect("same-over-limit", "203.0.113.1").data.code, "SESSION_RATE_LIMITED");
+});
+
 test("기본 lifecycle 제한은 인증 실패와 구분되고 제한 이후에도 membership을 유지한다", async t => {
     clearRoomsForTest();
     let now = 0;
