@@ -1,6 +1,6 @@
 # Human 조작 dataset 설계 계약
 
-상태: 첫 timing-only 게임 정책 `quality-policy-v1` 사용자 승인, 생성기 Notebook과 사용자 full dataset 생성·무결성 검토 완료. Baseline 명세만 준비했으며 모델 학습은 미실행.
+상태: 첫 timing-only 게임 정책 `quality-policy-v1` 승인, full dataset·B0~B2 Validation/B2 Test·B3 Full Validation 해석 완료. 2026-10-28 사용자 결정으로 신규 action trace 수집은 취소했다. **기존 로그만 활용**하며 dataset schema·split·label·원본은 유지한다. [관측 연결 감사](../experiments/human-action-observation-link-audit.md)의 한계 안에서 확인 가능한 행동열·리듬·Hold 시도부터 범위를 정한다. 새 dataset 생성·전체 상태 복원·학습은 자동 시작하지 않는다.
 [현재 계획](../strategy/ai-plan.md)에 따라 품질 경계를 학습 전에 고정한다.
 
 ## 목적과 단위
@@ -22,6 +22,24 @@
 배치 정책이 제공한 목표로 따로 검증한다.
 
 ## 기존 로그와 v3 해석
+
+### 상황 조건부 확장 전 확인할 계약 — 설계, 미구현
+
+- 예측 지점의 입력은 그 시점에 사람이 알 수 있었던 보드·활성 조각·공개 next·Hold 가능 여부·알려진 incoming garbage·최근 행동/시간이다. 필드 존재뿐 아니라 관찰 시점과 연결 근거를 확인한다.
+- 서버 확정 상태와 Human에게 표시된 상태를 구분한다. Placement 고정 직전 `boardBefore`/queue/Hold를 모든 action 직전으로 소급 복사하지 않는다.
+- 다음 action과 그때까지의 대기를 함께 다루되, 조각 관측 가능 시점→첫 action / action 사이 / 외부 사건 관측 이후를 구분한다. 현재 timing v1은 첫 행동 대기를 포함하지 않는다.
+- 무입력 구간의 시작·관측 종료·누락을 확인한다. 종료/끊김 때문에 다음 입력을 못 본 구간은 큰 시간 label이나 전략적 WAIT로 만들지 않는다. 생각·의도·공격을 기다린 이유는 직접 관측 label이 아니다.
+- client 처리 시각과 server 수신 시각 등 다른 clock을 그대로 빼지 않는다. 입력 attempt와 실제 outcome, Hold 교체 전/후, 중간 garbage/보정의 사건 순서를 확인한다.
+- 관측 중 변화가 생기면 새 관측 지점을 정의하고 미래 사건을 이전 feature에 넣지 않는다. 대기 취소·재판단의 학습 표본 계약과 실행 계약을 맞춘다.
+- 현재는 semantic action 모방이다. keydown/keyup/repeat/DAS/ARR를 복원했다고 주장하지 않는다. 필요한 새 기록은 수집 비용·개인정보·누락/잘림 표시와 함께 별도 승인한다.
+- 과제별 verified / timing-only / unverified를 분리한다. 기존 raw·timing v1·품질 정책은 보존하고 새 표본은 새 revision으로 만든다. Legacy와 v3/40행은 자동 혼합하지 않는다.
+- B2 Test는 이미 관측했고 후속 가설에 영향을 주었다. 새 구조의 최종 독립 검증에는 미관측 cohort를 예약한다. 기존 cohort를 다시 섞어 독립 Test라고 부르지 않는다.
+
+이 절은 필요한 증거의 계약이지 해당 필드가 현재 전부 저장돼 있다는 선언이 아니다.
+첫 작업과 A/B 구조 비교는 [AI 계획](../strategy/ai-plan.md)을 따른다.
+[Action trace v1](human-action-trace-v1.md)은 취소된 과거 제안이다. 신규 수집이나 전량 재수집을 현재 학습의 선행 조건으로 삼지 않는다. 기존에 없는 상태/성공/첫 대기 label은 미지원으로 표시하고, 확인 가능한 표본·과제만 사용한다.
+
+### 유지하는 legacy·v3 해석 규칙
 
 - 원본 bytes를 보존한다. schema, gameplayRulesVersion, geometry, coordinateSystem,
   observation stage, trust level과 source를 함께 해석한다. legacy→v3로 번호만 바꾸지 않는다.
@@ -214,6 +232,6 @@ fit하고 validation/test는 별도로 평가한다. 사용자 식별 근거가 
 **현재 고정:** 게임 품질 `quality-policy-v1`, game 단위 SHA-256 split seed
 `human-timing-v1-20261024`, 70%/15%/나머지(213게임이면 149/31/33)다.
 **Full 확인:** 61,190 pair, Train/Validation/Test 41,151/10,180/9,859 pair, manifest SHA `c203a1db7b8f2aa7014c565b371088a9614f6abb0df5632e93fe6c807712fc88`이다.
-**아직 미확정:** 제외 편향·모델 채택·runtime 대기 경계·실제 사람다운 체감·v3/40행 전이다. 비교 방법은 [baseline 명세](../../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)에 준비했고 아직 fit하지 않았다.
-새 데이터 수집 없이 첫 제한적 dataset 실험은 진행할 수 있다. 상태 조건부 action/hold는
-여전히 replay와 별도 수집 증거가 필요하다.
+**아직 미확정:** 제외 편향·production 모델 채택·runtime 대기 경계·실제 사람다운 체감·v3/40행 전이다. [baseline 명세](../../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)의 사용자 full Validation과 고정 B2 Test를 완료했으며 B2는 timing 비교 기준으로만 유지한다.
+새 데이터 수집 없이 제한적 행동열/리듬 실험을 계획할 수 있다. 상태 조건부 action/hold는
+기존 로그 안에서 연결 근거가 확인되는 범위만 사용한다. 불충분하면 해당 주장을 제한하며 추가 수집을 강제하지 않는다.

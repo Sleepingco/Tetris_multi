@@ -41,16 +41,18 @@ bash scripts/verify.sh
 
 ## 반복 ML 실험 호출
 
-현재 실험 파일과 MODE만 전달한다.
+반복 실험은 실험 파일과 MODE만 전달한다. 현재는 B3 Full 해석까지 마쳤으며,
+관측 연결 감사 뒤 제안했던 [신규 trace 수집](../docs/ai-ml/contracts/human-action-trace-v1.md)은 2026-10-28 사용자 결정으로 취소하고 구현도 제거했다. 기존 로그만 활용하며 전량 재수집을 요구하지 않는다. 전체 ML gate의 기존 사용자 Notebook 출력/Full 설정 문제는 별도 보류다.
 
 ```text
-ai-harness/ml-experiments/experiments/human-timing-baseline.md를
-MODE=implement-smoke로 실행해. 사용자 full-run gate에서 멈춰.
+docs/ai-ml/strategy/ai-plan.md의 기존 로그 전용 방향을 확인해.
+추가 수집 없이 확인 가능한 행동열·리듬·Hold 시도와 문맥으로 실험 범위를 제안해.
+기존 사용자 출력·dataset을 보존하고 신규 수집·전체 replay·학습을 자동 시작하지 마.
 ```
 
 세부 읽기 순서와 MODE 책임은 ML 안내를 따른다. 전체 실험 명세와 과거 실행 기록을 한꺼번에 읽지 않는다.
 
-조작 데이터 적합성 명세는 구현·사용자 full 감사·결과 해석을 완료했다. 위 호출 예시는
-후속 timing baseline 비교다. 게임 품질 정책 승인과 timing-only full dataset 생성·검토는 완료했고 baseline은 명세만 준비했다.
-해당 MODE를 실제로 요청받았을 때만 구현하며 학습·full 평가·Test 확인을 자동 시작하지 않는다.
+조작 데이터 적합성·timing baseline·고정 B2 Test·B3 Full 결과 검토를 완료했다.
+B0~B3는 상태를 보지 않는 비교 기준으로 남기며 현재 구조는 상황 조건부 Human 행동 모방을 목표로 한다.
+후속 실험 명세가 정해진 뒤에만 해당 MODE로 구현하며 새 후보를 기존 Test에서 자동 평가하지 않는다.
 완료 실험을 학습 순서대로 읽으려면 [AI/ML 역사 목차](../docs/archive/ai-ml/README.md)를 본다.

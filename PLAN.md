@@ -11,18 +11,15 @@
 - 사용자의 요청에 따라 테트리스 블록 장식을 메인 화면에서만 표시한다. 싱글·로비·멀티 페이지는 격자와 그라데이션 배경만 유지한다. 상세는 [디자인 기록](docs/design/buffer-layout-plan.md#11-블록-장식-메인-화면-전용-2026-10-28)을 따른다.
 - 이번 변경은 CSS와 문서 수정이다. 실행 검증은 수행하지 않았다.
 
-
 ### 모든 페이지 블록 장식 위치 통일 (2026-10-28)
 
 - 홈·싱글·로비·멀티의 블록 장식을 각 콘텐츠 영역에 연결해 함께 스크롤하도록 수정했다. 모바일에서는 콘텐츠 아래에 표시한다. 상세는 [디자인 기록](docs/design/buffer-layout-plan.md#10-모든-페이지-장식-위치-통일-2026-10-28)을 따른다.
 - 필수 verify **793 pass·1 skip·0 fail**, 관련 Chromium **9/9**와 CSP 개별 검사 **1/1** 통과. 이전 CSP 경고는 현재 작업 트리의 개별 검사에서 재현되지 않았다. 전체 브라우저 검사와 실기기는 이번에 확인하지 않았다.
 
-
 ### 홈 테트리미노 장식 위치 복원 (2026-10-28)
 
 - 공용 배경으로 옮기면서 화면 하단에 고정된 홈 장식을 기존처럼 모드 선택 영역 기준 위치로 복원했다. 모바일의 공용 장식과 게임·로비 배경은 유지한다. 상세는 [디자인 기록](docs/design/buffer-layout-plan.md#9-홈-장식-위치-복원-2026-10-28)을 따른다.
 - 필수 verify **793 pass·1 skip·0 fail**, 홈 위치·반응형·페이지 진입 Chromium **4/4** 통과. 이전 전체 브라우저 CSP 경고는 별도로 남아 있다.
-
 
 ### 게임·로비 사용자 후속 조정 (2026-10-28)
 
@@ -30,18 +27,91 @@
 - 로비 폭을 줄이고 PVP 직접 생성·AI 옵션 펼침, 내 채팅 오른쪽 정렬을 적용했다. Quick Match 표기는 제거했다. 기존 room/chat 권한·게임 규칙과 색상은 보존한다.
 - Node 필수 verify **813 pass·1 skip·0 fail**. 전체 Chromium 최초 61 pass·2 fail 중 재연결은 단독 재실행에 통과했고, 다른 작업의 Zod 동적 코드 탐지에 따른 싱글 CSP 경고 1건은 남았다. CSS를 모두 비워도 재현해 공통 배경과 분리했다. 실기기·운영 배포는 미실행이다.
 
+### 신규 Human trace 수집 취소·기존 로그 활용으로 복귀 (2026-10-28)
+
+- 사용자 계획과 다른 신규 수집을 취소하고 관련 runtime/schema·session·Vite/page·서버 extension·전용 검사/fixture·준비 Notebook을 제거했다. 기존 로그·dataset·실험 결과와 동시 UI 작업은 보존했다. 취소 전 증거는 [과거 실행 기록](ai-harness/runs/human-action-trace-v1-implement-smoke-2026-10-28.md)으로만 남긴다.
+- 모든 로그를 새로 모으지 않는다. [AI 계획](docs/ai-ml/strategy/ai-plan.md)은 기존 행동열·리듬·Hold 시도와 확인 가능한 문맥으로 과제를 한정한다. 미기록 상태·첫 대기·공격 의도를 추정해 정답으로 만들지 않는다.
+- 커밋 준비에서 Git 저장 source만 output/count를 비우고 B2/B3 Full 기본값을 복원한 격리 복사본의 ML Node 35/35·Python 220/220을 통과했다. 작업 폴더의 사용자 실행 Notebook은 byte 그대로라 출력/Full 설정 차이가 미커밋으로 남는다. 필수 verify는 793 pass·기존 1 skip·0 fail이다.
+- 실제 Human 신규 수집·운영 DB 변경·dataset 생성·학습·배포는 실행하지 않았다. 취소된 설계는 현재 실행 지시가 아니며 다음 실험을 자동 시작하지 않는다.
 
 ### 시안 기준 게임·로비 배치 재수정 (2026-10-28)
 
 - 사용자가 최초 결과와 예시 이미지의 차이를 지적해 [시안 비교·재수정 기록](docs/design/buffer-layout-plan.md#7-시안과-비교한-재수정-2026-10-28)을 추가했다. 싱글의 제목·점수·HOLD/NEXT·하단 조작법, 멀티의 두 보드·안쪽 대기 meter, 로비의 상단 프로필·실제 참여자·말풍선 채팅을 시안에 맞췄다.
 - 기존 40행·NEXT 4개·색상·room/chat 계약을 유지하고 성과 표시를 보드 위로 옮겨 meter 겹침을 피했다. 필수 verify 812 pass·1 skip, Chromium 최초 31 pass·1 fail 후 사운드 lifecycle·로비 3/3 및 모바일 정렬·멀티 2/2를 재검증했다. 다크·모바일·CSS 확대는 로컬 확인했고 실기기·운영 배포는 미실행이다.
 
-
 ### 게임·멀티 로비 배치 개선 구현 (2026-10-28)
 
 - [배치 계획](docs/design/buffer-layout-plan.md#6-구현-결과-2026-10-28)에 따라 보드의 높이 제한·가시 영역 정렬과 로비의 방 조작 우선 순서를 적용했다. 기존 색상·40행 규칙·NEXT 4개·방 상태/채팅을 유지하고 싱글 조작법을 키보드로 접고 펼칠 수 있게 했다.
 - 필수 verify는 Node 797 pass·1 skip·0 fail이다. 관련 Chromium 최초 25 pass·높이 1 fail을 수정했고 실패 항목과 낮은 화면의 성과 비겹침 검사 2/2가 재통과했다. 다크 테마·1100px 전환·390px·CSS 확대를 로컬 확인했다. 기존 사용자 변경은 보존했으며 실기기와 운영 배포는 미실행이다.
 
+### Human action trace v1 최소 수집 계약 설계 (2026-10-27)
+
+- [계약 v1](docs/ai-ml/contracts/human-action-trace-v1.md)을 작성했다. 기존 Human/v3 placement 안의 optional versioned trace를 선택해 단일 sink·event identity를 유지하고 새 테이블/Socket event를 제안하지 않았다. 마지막 미완성 턴 유실과 선택 편향을 명시한다.
+- 공개 row 16~39/NEXT 4개·pending 공격·Hold 가능 여부를 같은 단조 clock과 inputIndex로 연결한다. 입력 전/후 관측을 구분하고 pre_action→동일 action의 0ms를 대기 label로 쓰지 않는다. Terminal outcome 누락 없이 로그를 봉인하는 순서·누락/종료 처리를 정했다.
+- Local pilot 제안 cap은 trace 64KiB·action 64/event 512/board 32·120초·보관 총량 256KiB다. 합성 직렬화 8 actions는 6,571 bytes였으며 실제 플레이/처리 성능 측정은 아니다. 기본 off·Vite-dev만·공개 수집 정책 미결정을 유지한다.
+- 수용 기준 AC-001~007과 구현 영향·저장 round-trip·비밀/한도 검증·rollback을 기록했다. 다음은 수집 구현·synthetic smoke 후 사용자 local pilot gate다. 이번에는 문서만 변경했고 코드/DB/실제 수집/dataset/학습·stage/commit은 시작하지 않았다.
+- 합성 예제의 구조 assert·독립 Python 직렬화 재계산과 문서 9개 링크 307개/앵커 22개·fence/공백 검사를 통과했다. 전체 테스트·실제 브라우저/DB 검증은 설계 범위 밖으로 생략했으며 구현 검증 완료로 보고하지 않는다.
+
+### Human 관측 연결 1단계 감사 완료 (2026-10-27)
+
+- [감사 결과](docs/ai-ml/experiments/human-action-observation-link-audit.md): `observation_link_audit_complete_partial_reuse_new_capture_required`. 기존 readiness 결과·runtime/session/projector·legacy Train 일반/Hold 표본·local v3 tail 600행을 대조했다. 전체 감사/replay·Test 평가·DB 접근은 하지 않았다.
+- 기록된 시도 순서/간격은 재사용 가능하다. 그러나 입력 전후 조각·성공 callback은 저장되지 않고, lock 직전 board/queue/Hold와 갱신 가능한 activePiece anchor로 모든 입력 직전 상황을 대체할 수 없다. Spawn/ready 시각·공격 관측 시각·Hold availability/outcome은 보완이 필요하다.
+- 연속 legacy placement의 이전 boardAfter와 다음 boardBefore가 51 cell 다르고 garbage가 9→36개인 사례를 확인했다. 원인/도착 시각은 확정하지 않았다. Human incomingGarbageLines=0은 현재 코드의 결과 placeholder여서 공격 없음 label로 쓰지 않는다.
+- 다음은 최소 상황/action trace 수집 계약 설계다. 공개 next 4개·표시 보드 mask와 내부 상태를 구분하고 clock/ID/누락/종료·저장 상한을 정한다. 기존 raw/timing 자료·정책·사용자 출력을 유지하며 새 dataset·수집/runtime·학습·commit은 시작하지 않았다.
+- 읽기 전용 pandas/Matplotlib 예제의 15개 입력/시각 원점/Hold assert와 표·그래프 생성을 통과했다. 변경 문서 9개 링크 293개·앵커 24개·fence/공백을 검사했다. 문서 작업이므로 전체 테스트는 반복하지 않았고 기존 ML gate 보류는 유지한다.
+
+### 상황 조건부 Human AI 구조·로드맵 개정 (2026-10-27)
+
+- 사용자 요청으로 [AI 계획](docs/ai-ml/strategy/ai-plan.md)을 **상황 관측 → 행동과 대기 예측 → 중단 가능한 실행 → 재관측** 구조로 개정했다. 목적은 Human 배치·조작·리듬·Hold 모방이며 강한 AI/개인 복제를 보장하지 않는다.
+- [B3 사용자 Full 결과](ai-harness/ml-experiments/experiments/human-timing-history-baseline.md#사용자-full-결과와-계획-판단--2026-10-27)를 기록했다. Validation 31게임/10,180 pair에서 B2/B3 game-macro CRPS 53.028/49.743ms, 26게임 개선/5악화다. Report SHA `601a55ac…5d6fd12`를 확인했다. B0~B3는 상태를 보지 않는 timing 기준선으로 보존하며 production/최종 구조로 채택하지 않는다.
+- 다음은 기존 로그의 행동 직전 상태·첫 행동 대기·공격·Hold 연결 가능성을 확인하는 한 작업이다. 이후 새 dataset → 상황 정보 ablation → A 모듈형/B 통합 신경망형 → 자체 실행·체감·독립 평가 → 실험적 사이트 적용 순서다. 현재 timing dataset·기존 Test·품질 정책은 바꾸지 않는다.
+- 개정은 문서만이다. Notebook/테스트/데이터/runtime·수집·학습·full·stage/commit을 변경하거나 실행하지 않았다. 기존 사용자 실행 output/full 설정 및 ML 전체 gate 보류는 보존한다. 문서 링크·fence·diff 검사를 적용하고 전체 실행 검증은 반복하지 않는다.
+
+### B2 Test 마감·과거 간격 조건 실험 준비 (2026-10-27)
+
+- 고정 B2의 사용자 full Test를 검토했다. 33게임/9,859 pair·fit 0·입력 checksum/집계 정합, game-macro CRPS 51.87ms(지정 게임 제외 50.58/단독 93.22)를 확인했다. B2를 비교 기준으로 유지하며 production 승격은 없다.
+- [새 명세](ai-harness/ml-experiments/experiments/human-timing-history-baseline.md)·[Notebook](scripts/ml/notebooks/human_timing_history_baseline.ipynb)·[테스트](scripts/ml/tests/test_human_timing_history_baseline_notebook.py)는 B2(action)와 B3(action+이미 관측한 직전 간격 구간)를 비교한다. 같은 원본 구간·인접 index만 연결하고 이력 없음/미학습 cell은 B2 fallback한다. 기존 Test는 새 후보의 평가에 사용하지 않는다.
+- 새 검사 16개 통과, 실제 작은 Train 5게임/Validation 3게임 smoke 두 report byte-identical(SHA `b5176a80…d5fea4e`), Test/raw open guard와 가상 headless 오류 0·표/그래프·full skipped를 확인했다. 기존 source 출력은 보존했다.
+- 필수 verify 793 pass·기존 1 skip·0 fail. ML Node 35/35·Python 215/220로 전체 미통과다. 기존 source 형식 실패 4개·사용자 B2 full 설정의 기존 report 보호 오류 1개를 구분한다. 새 full·Test 재평가·runtime·stage/commit은 하지 않았다.
+
+### B2 테스트 직접 실행 import 보완 (2026-10-27)
+
+- 테스트 파일 직접 실행 시 저장소 루트가 import 검색 경로에 없어 발생한 `ModuleNotFoundError: No module named 'scripts'`를 보완했다. 직접 실행일 때만 파일 위치 기준 루트를 추가하며 Notebook·실험 계산은 바꾸지 않았다.
+- 직접 실행과 `python -m unittest` 모두 import를 통과하고 16/17 검사에 성공했다. 남은 1개는 사용자가 실행한 B2 source Notebook의 execution count/output 형식 검사이며 출력은 보존했다. 실제 Test 평가·재학습·stage/commit은 실행하지 않았다.
+- 필수 `bash scripts/verify.sh`는 793 pass·기존 1 skip·0 fail, `git diff --check`도 통과했다. ML 전체 suite는 반복하지 않았다.
+
+### 고정 B2 Test 코드·가상 smoke 확인 (2026-10-26)
+
+- [Notebook](scripts/ml/notebooks/human_timing_b2_test_evaluation.ipynb)·[테스트](scripts/ml/tests/test_human_timing_b2_test_evaluation_notebook.py)를 작성했다. 기존 정의 셀의 CRPS·분포·검증·게시를 재사용하고 B2만 score하며, 가상 smoke와 실제 full 섹션을 분리했다. 기본 모두 실행은 실제 Test를 열지 않는다.
+- 새 테스트 17개, 가상 3게임/6 pair의 세 scope·fit 0·동일 bundle·실제 데이터 open 금지 guard·headless error 0·그래프 2개와 반복 report bytes 일치를 확인했다. SHA `588c8449…ba3c6d`다. 실제 Test는 읽거나 평가하지 않았다.
+- 필수 verify 793 pass·기존 1 skip·0 fail. ML은 Node 35/35·Python 201/204로 기존 사용자 실행 Notebook 세 개의 output/count 검사 실패가 남아 **전체 미통과**다. 실행 결과를 보존했고 새 source는 비어 있다. 다음은 해당 형식 gate 처리와 별도 사용자 full 실행이며, 재학습·runtime·stage/commit은 하지 않았다.
+
+### Full Validation 검토·고정 B2 Test 평가 준비 (2026-10-26)
+
+- 사용자 full baseline 두 report는 byte-identical(SHA `3c631c00…41ba902`)이며 Train 149/Validation 31게임의 입력 checksum·bundle hash·cohort·집계와 실행 오류 0을 확인했다. B2의 game-macro CRPS 53.028ms는 B1 54.270ms보다 약 2.29% 낮고 28게임 개선/3게임 악화다.
+- [후속 명세](ai-harness/ml-experiments/experiments/human-timing-b2-test-evaluation.md)에 B2 후보와 원본 bundle SHA `4bda9fb6…197eddf`를 고정했다. 다음은 새 Notebook·테스트와 가상 smoke 준비이며 실제 Test 전체 33게임/지정 게임 제외/단독은 별도 사용자 full에서만 평가한다. Fit은 0, 신경망·runtime·production 채택은 없다.
+- 이번에는 문서만 변경했다. Test 파일 열기·Notebook 구현·추가 평가·source 출력 정리·stage/commit은 하지 않았다. 기존 ML source 형식 검사 보류는 별도로 남는다.
+
+### 향후 Notebook smoke/full 섹션 분리 (2026-10-26)
+
+- 사용자 요청으로 공통 ML 계약·workflow·검증·명세 template에 smoke/full 설정·실행·결과 섹션 분리를 기록했다. 계산 함수는 공유하고 full은 기본 비활성화하며 Notebook 내 실행 안내를 기본으로 한다. 현재 Notebook에는 소급 적용하지 않았고 실험·학습·commit은 실행하지 않았다.
+
+### Human timing baseline 구현·smoke, ML 전체 gate 보류 (2026-10-26)
+
+- [Notebook](scripts/ml/notebooks/human_timing_baseline.ipynb)·[테스트](scripts/ml/tests/test_human_timing_baseline_notebook.py)를 추가했다. 기존 readiness 정의 셀에서 경로/JSON/SHA/게시 함수를 재사용하고 raw 재추출이나 Python 실험 구현 복제 없이 세 분포 baseline·CRPS·pandas/Matplotlib을 구현했다.
+- 새 테스트 18개 통과, 실제 Train 5게임/1,223 pair·Validation 3게임/1,167 pair smoke 두 결과 bytes/SHA 일치. Headless error 0·그래프 2개, Test open guard 통과다. 전체 Train fit·full Validation·Test는 실행하지 않았다.
+- 필수 verify는 793 pass·기존 1 skip·0 fail이다. `verify:ml`은 Node 35/35, Python 185/187로 **전체 미통과**다. 기존 dataset/0ms 진단 Notebook의 사용자 output/count 형식 실패 2개를 보존했다. [명세의 마감·실행 방법](ai-harness/ml-experiments/experiments/human-timing-baseline.md)을 따르며 source 정리 승인과 gate 해결 전 full 인계 완료로 선언하지 않는다. Stage/commit·runtime 변경은 없다.
+
+### Human AI 전체 구조 두 버전 비교 계획 (2026-10-26)
+
+- [AI 구조 비교 계획](docs/ai-ml/strategy/ai-plan.md#전체-ai-구조-비교-두-버전-실험-예정)에 모듈 조합형 A와 다음 행동·대기시간 공동 예측 신경망형 B를 모두 실험할 후보로 명시했다. 공통 데이터/관측/실행 조건과 offline·자체 실행·체감 평가를 정하고 최종 구조는 미채택으로 유지한다.
+- 현재 timing-only 자료로 전체 구조를 학습할 수 있다고 가정하지 않는다. 상태/action/hold 연결 검증과 별도 비교 명세가 선행돼야 한다. 다음 timing baseline 범위는 유지하며 이번에는 문서만 변경했다. 구현·학습·수집·runtime 통합·stage/commit은 하지 않았다.
+
+### 다음 timing baseline 실행 계획 (2026-10-26)
+
+- [AI 계획의 실행 순서](docs/ai-ml/strategy/ai-plan.md#다음-작업-실행-계획-timing-baseline)를 구체화했다. 다음 한 작업은 기존 고정 dataset을 읽는 Notebook·테스트 두 파일 구현과 작은 smoke다. 이후 사용자 full Validation → 결과 해석·후보 SHA 고정 → 별도 승인 후 같은 모델의 Test 전체/제외/단독 평가로 나눈다.
+- 구현 성공과 B2 성능 개선을 구분한다. 성능 차이가 없다는 결과도 정상 마감하며 Test 선택·재학습·dataset 재생성·조작/hold/runtime 통합은 섞지 않는다. 기존 두 Notebook의 사용자 output을 보존하고 ML 전체 gate 문제를 새 구현 결과와 구분한다.
+- 이번에는 계획·현재 상태·이력 문서만 변경했다. 구현·학습·smoke/full·stage/commit은 수행하지 않았다.
 
 ### 날짜·항목별 로컬 Git checkpoint (2026-10-26)
 

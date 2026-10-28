@@ -9,12 +9,15 @@
 
 기존 V4 연구의 결론은 `imitation_only_not_gameplay_ready`다. 현재 40행
 `buffer20-v1`에서 V4 선택은 호환 불가 사유를 표시하고 heuristic으로 fallback한다.
-새 Human 조작 AI는 데이터 full 적합성 감사를 완료했고 모델 학습은 시작하지 않았다.
+새 Human 조작 AI는 데이터 full 적합성 감사와 timing baseline의 full 학습·Validation을 완료했다. 상태 조건부 action/hold 모델 학습은 아직 시작하지 않았다.
 후속 [게임 품질 감사 Notebook](../../scripts/ml/notebooks/human_game_quality_audit.ipynb)은
 사용자 full 246게임과 첫 정책 승인을 완료했다.
 [timing dataset Notebook](../../scripts/ml/notebooks/human_timing_dataset.ipynb)과
 [명세](../../ai-harness/ml-experiments/experiments/human-timing-dataset.md)의 full 생성·무결성 검토도 완료했다.
-다음은 [timing baseline 비교 명세](../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)의 Notebook 구현이다. 명세만 준비했으며 fit·Validation/Test 평가는 미실행이다.
+이후 [timing baseline](../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)의 사용자 full Validation을 검토하고 B2를 Test 후보로 고정했다.
+이후 [B2 Test 평가 명세](../../ai-harness/ml-experiments/experiments/human-timing-b2-test-evaluation.md)의 사용자 full을 검토했다. 전체 33게임/9,859 pair의 game-macro CRPS는 51.87ms이며 B2를 비교 기준으로 유지했다.
+[과거 간격 조건 탐색](../../ai-harness/ml-experiments/experiments/human-timing-history-baseline.md)의 Full Validation에서 B2/B3 game-macro CRPS 53.028/49.743ms를 확인했다. B0~B3는 상태를 보지 않는 timing 기준선으로 보존한다.
+현재 목표는 Human 행동·리듬·Hold 모방을 유지하되 **기존 로그만 활용**하는 것이다. [관측 연결 감사](experiments/human-action-observation-link-audit.md) 뒤의 [신규 trace 수집](contracts/human-action-trace-v1.md)은 2026-10-28 사용자 결정으로 취소하고 구현·준비 Notebook을 제거했다. 전량 재수집을 요구하지 않는다. 확인된 행동열·간격·문맥으로 실험 범위를 정하고 미기록 상태·성공·의도를 정답처럼 추정하지 않는다. A 모듈형/B 통합 신경망형은 이후 비교 후보이며 새 학습/runtime 채택은 없다. 기존 ML gate 보류와 취소 이력은 [실행 기록](../../ai-harness/runs/human-action-trace-v1-implement-smoke-2026-10-28.md)을 따른다.
 기록 간격 분석과 상태 조건부 행동·hold 학습의 미검증 범위를 구분하며,
 [full 결과 기록](../../ai-harness/runs/human-action-data-readiness-analyze-result-2026-10-24.md)을 따른다.
 자세한 현재 계획은 [ai-plan.md](strategy/ai-plan.md), 과거 수치와 명령은

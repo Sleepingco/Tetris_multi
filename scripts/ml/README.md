@@ -13,8 +13,11 @@ scripts/ml/
 Notebook을 이해하려면 [현재 AI 계획](../../docs/ai-ml/strategy/ai-plan.md)과
 [실험 시간순 목차](../../docs/archive/ai-ml/README.md)를 먼저 본다.
 실험은 Notebook에서 설명하고, 확정된 최종 학습·배포용 처리는 Python 파일로 둔다.
+2026-10-28부터 새 실험·실행·요약과 작은 assert 검증은 Notebook에만 작성한다. 새 Python 구현/테스트 파일은 추가하지 않고 기존 파일은 보존한다. 게임 수집 runtime과 서버 검증은 TypeScript/기존 Node 테스트의 책임이므로 이 제한과 구분한다.
 테스트는 분석 구현을 복사하지 않고 해당 Notebook/모듈을 검사한다. 제목·필수 코드
 문자열 검사도 학습 문서 구성을 보존하기 위해 유지한다.
+
+2026-10-28 커밋 준비에서는 작업 폴더의 실행 Notebook을 변경하지 않고 Git 저장 버전만 output/count를 비우고 B2/B3의 `RUN_FULL=False`, `FULL_REPORT=None`을 복원했다. 그 source를 내보낸 격리 복사본은 `verify:ml` Node 35/35·Python 220/220을 통과했다. 로컬 실행본의 출력/Full 설정 차이가 Git에 수정 상태로 남는 것은 의도적이며 Python 검사를 삭제하거나 약화하지 않았다.
 
 저장소 루트에서 전체 ML 검증:
 
@@ -48,12 +51,33 @@ conda run -n tetris-ml python -m unittest scripts.ml.tests.test_human_action_dat
 기록 메커니즘은 재현했지만 과거 입력 원천은 미확인으로 조사를 종료했다. 기존 dataset과 split은
 읽기 전용이고 전체 Human 입력과 채택 pair의 분모를 구분한다. 원인을 자동 확정하거나 데이터를 제외하지 않는다.
 
-다음 [timing baseline 명세](../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)는 준비 완료다.
+기존 [timing baseline 명세](../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)는 사용자 full Validation 결과 검토까지 완료했다.
 고정 평균·전체 분포·이전 action별 분포를 Train만으로 만들고 Validation에서 비교한다.
-후보 고정 뒤 같은 모델의 Test 전체/지정 게임 제외 결과로 영향을 확인한다. 현재는 명세만 있으며
-해당 baseline Notebook·테스트·학습 결과는 아직 없다. 다음 구현도 Notebook 안에서 하고 별도 .py로 복사하지 않는다.
+후보 고정 뒤 같은 모델의 Test 전체/지정 게임 제외 결과로 영향을 확인한다.
+[baseline Notebook](notebooks/human_timing_baseline.ipynb)과 [테스트](tests/test_human_timing_baseline_notebook.py)를 작성했다.
+별도 Python 실험 구현은 없으며 report 안에 candidate bundle을 보존한다. 이후 사용자 full Validation과 고정 B2 Test 결과 검토를 완료했다.
+사용자가 source Notebook을 직접 실행·저장한 작업 파일의 output/count는 보존 중이다. 실행 성공과 별개로 빈 source 형식 검사는 보류이며, 이번 명세 준비에서는 전체 ML suite를 재실행하지 않았다.
+GUI 모두 실행은 기본 smoke다. 전체 Validation 실행·재실행 경로·gate 조건은 명세의 사용자 실행 방법을 따른다.
+
+후속 [고정 B2 Test 평가 명세](../../ai-harness/ml-experiments/experiments/human-timing-b2-test-evaluation.md)의
+[Notebook](notebooks/human_timing_b2_test_evaluation.ipynb)·[테스트](tests/test_human_timing_b2_test_evaluation_notebook.py)를 작성했다.
+공통 정의 뒤 3번은 가상 smoke 설정/실행/결과, 4~5번은 실제 full 설정/실행/결과다.
+기본 `RUN_FULL = False`라 모두 실행해도 실제 Test를 열지 않는다. Smoke는 기본 메모리 결과라 반복 실행해도 파일 충돌이 없다.
+실제 Test는 사용자가 full 섹션을 켜 실행했고, 33게임/9,859 pair·fit 0·game-macro CRPS 51.87ms를 확인했다. 자세한 결과와 한계는 명세를 따른다.
+
+[과거 간격 조건 명세](../../ai-harness/ml-experiments/experiments/human-timing-history-baseline.md)의
+[Notebook](notebooks/human_timing_history_baseline.ipynb)·[테스트](tests/test_human_timing_history_baseline_notebook.py)는
+B2(action)와 B3(action+과거 간격 구간)를 같은 Train/Validation에서 비교한다.
+기존 dataset을 다시 만들지 않고 인접 lineage로 과거 간격 하나를 연결한다. 첫 pair/gap에서는 B2 fallback이며 기존 Test는 열지 않는다.
+3번 가상 smoke → 4번 full 설정/실행 → 5번 결과 순서다. 기본 모두 실행은 가상 smoke만, 사용자 full은 `RUN_FULL=True`로 명시한다.
+기존 Test를 이미 본 뒤의 가설이므로 새 후보의 독립 최종 평가에는 새 cohort가 필요하다.
+
+사용자 Full Validation 해석을 완료했다. B2/B3 game-macro CRPS는 53.028/49.743ms이며 B0~B3는 timing 비교 기준으로 남긴다.
+[관측 연결 감사](../../docs/ai-ml/experiments/human-action-observation-link-audit.md) 후의 [신규 trace 수집](../../docs/ai-ml/contracts/human-action-trace-v1.md)은 사용자 결정으로 취소하고 구현·준비 Notebook을 제거했다. 다음 계획은 추가 수집 없이 기존 행동열·리듬·Hold 시도와 검증된 문맥으로 과제를 한정하는 것이다. 기존 사용자 출력/Full 설정과 ML 검사 문제는 별도 보류다. 전량 재수집이나 기존 timing 실험 반복을 요구하지 않는다.
 
 ## 결과 읽기: pandas + Matplotlib
+
+취소된 trace pilot 준비 Notebook은 제거했다. 현재는 기존 Notebook과 원본·dataset·실행 결과를 보존한다.
 
 현재 Human 감사 Notebook 두 개는 pandas 요약·비교표와 Matplotlib 그래프를 제공한다.
 적합성 감사는 과제별 상태·입력 시도 분포, 게임 품질 감사는 분류·난이도·확인된
