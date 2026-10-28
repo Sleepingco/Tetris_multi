@@ -2,8 +2,8 @@
 
 ## 상태와 질문
 
-- Experiment ID: `human-timing-baseline`, Lifecycle: `proposed`, 다음 MODE: `implement-smoke`.
-- 현재 단계는 **명세 준비만**이다. Notebook·학습 코드·fit·평가는 아직 구현하거나 실행하지 않았다.
+- Experiment ID: `human-timing-baseline`, Lifecycle: `implemented`, MODE: `implement-smoke`.
+- 현재 상태는 **사용자 full Validation 검토·B2 Test 후보 고정**이다. 사용자 full run1/run2의 입력/집계/hash와 반복 결정성을 확인했다. 기존 source Notebook 형식 검사의 보류는 별도이며 Test는 아직 평가하지 않았다.
 - 질문: 직전 action별로 기록 간격 분포를 구분하면, action을 구분하지 않는 분포보다 held-out 게임의 기록 간격을 잘 설명하는가?
 - 최종 목표는 Human 조작 모방이지만 이번 범위는 **기록된 처리 시도 간격**이다. 입력 순서·배치·hold·개인화·사람다운 체감·v3/40행 적용은 검증하지 않는다.
 - 사용자는 0ms 집중 게임을 v1에 포함한 채, 나중에 제외한 결과도 함께 비교하는 방침에 동의했다. 이는 다른 모델을 재학습하거나 test 결과로 후보를 고르는 승인이 아니다.
@@ -96,8 +96,8 @@ Test 결과에 반응해 새 후보를 만들 경우 이번 Test는 더 이상 �
 
 ## 구현 산출물과 허용 범위
 
-다음 구현은 `scripts/ml/notebooks/human_timing_baseline.ipynb`와
-`scripts/ml/tests/test_human_timing_baseline_notebook.py`로 한다. **현재 두 파일은 아직 작성하지 않았다.**
+구현은 [Notebook](../../../scripts/ml/notebooks/human_timing_baseline.ipynb)과
+[정의 셀을 직접 검사하는 테스트](../../../scripts/ml/tests/test_human_timing_baseline_notebook.py) 두 파일이다.
 Notebook에 왜→작은 예제→Train 분포→Validation 표/그래프→한계 흐름을 넣고 실험 코드를 별도 .py로 복사하지 않는다.
 Pandas 표와 Matplotlib CDF·분포·game별 CRPS delta 그래프를 제공한다. raw label을 바꾸지 않고 표시 변환은 명확히 구분한다.
 Python/NumPy/pandas/Matplotlib 기존 환경만 사용하며 새 dependency·JS 실험 복제·runtime·PVE·DB·로그 수집은 변경하지 않는다.
@@ -112,7 +112,7 @@ Python/NumPy/pandas/Matplotlib 기존 환경만 사용하며 새 dependency·JS 
 - 모델/점수 배열·report 순서는 결정적이며 NaN/Infinity를 거부한다. 입력·기존 산출물·symlink/hardlink/path alias 출력 충돌을 게시 전에 거부한다.
 - 출력은 ignored `data/ml-experiments/human-timing-baseline/` 또는 임시 경로의 새 파일만 쓴다. timestamp·timing·사용자 절대 경로는 canonical JSON에서 제외한다.
 - 구현 후 targeted → `npm run verify:ml` → `bash scripts/verify.sh`를 적용한다. 기존 사용자 source Notebook output에 따른 별도 검사 실패는 구분해 보고하고 임의로 지우지 않는다.
-- Full Validation 명령은 구현·smoke 검증 뒤 실제 경로를 채워 제공한다. 지금은 실행할 Notebook이 없으므로 작동하지 않는 명령을 안내하지 않는다.
+- Full Validation 명령은 아래에 기록했다. 기존 Notebook 두 개의 source-format 검사 실패가 남아 있어 전체 gate 통과로 간주하지 않는다.
 
 ## 판단·중단 gate
 
@@ -120,4 +120,52 @@ Python/NumPy/pandas/Matplotlib 기존 환경만 사용하며 새 dependency·JS 
 - Full Validation이 정합하면 `validation_baseline_comparison_complete`. 후보를 자동 production 채택하거나 Test를 자동 실행하지 않는다.
 - Full Test의 `test_all`/민감도/단독 결과는 최종 평가·진단이며 후보 재선택에 사용하지 않는다. Canonical/freeze는 별도 요청 전까지 false다.
 - 입력 SHA 변경, split 누수, evaluation fit 유입, 음수/비유한 label, support 계약 오류, 결과 기반 Test 제외 또는 runtime 변경은 중단 사유다.
-- 이번 준비 요청에서는 명세·계획·안내만 작성한다. fit·Notebook 구현·smoke/full·후속 기능은 시작하지 않는다.
+- 이번 구현은 작은 smoke까지만 수행했다. Full·후보 선택·Test·후속 기능은 자동 시작하지 않는다.
+
+## 구현·검증 기록 — 2026-10-26
+
+### 사용자 full 완료 후 갱신
+
+- Train 149게임/41,151 pair, Validation 31게임/10,180 pair. B0/B1/B2의 game-macro CRPS는 각각 `75.14956728707253` / `54.27002863620122` / `53.02814125677356`ms다.
+- B2는 B1보다 약 2.29% 낮고 game별 28개 개선/3개 악화였다. 다음 단계 준비 요청에 따라 B2를 Test 평가 후보로 고정하고 [후속 명세](human-timing-b2-test-evaluation.md)에 원본 report·bundle SHA를 기록했다. Gameplay/production 채택은 아니다.
+- `full-report-run1.json`과 `full-report-run2.json`은 byte-identical이며 SHA `3c631c003ad1b80ae3cad653b552a3c69869dd2309ea0f27cb92968aa41ba902`다. 두 executed Notebook의 오류 출력은 0이고 Test 미사용·dataset checksum·bundle hash·cohort·집계를 확인했다. 계산을 재실행하지 않고 저장된 결과를 검토했다.
+- 아래 구현 당시 smoke 기록은 당시 이력이다. 사용자 full 성공이 기존 source output/count 형식 검사를 해결했다는 뜻은 아니며 전체 ML gate 통과로 보고하지 않는다.
+
+### 구현 당시 smoke와 검사
+
+- 실행 branch/HEAD: `main` / `77af682`. 기존 계획 문서 변경과 실행된 두 Notebook은 보존했다. Stage/commit하지 않았다.
+- B0/B1/B2의 empirical fit·정렬/누적합 CRPS·game macro/micro·action별/게임별 진단·같은 bundle의 synthetic 민감도 검사·pandas/Matplotlib 표시를 구현했다. Candidate bundle은 report 안에 포함하고 별도 모델 파일로 중복 저장하지 않는다.
+- Synthetic 새 테스트 **18개 통과**. 경계 quantile의 부동소수점 누적 때문에 median이 다음 값으로 밀리는 경우를 재현해 균일 분포는 rank로 계산하도록 보완했다. Notebook kernel의 cwd가 source 폴더인 점도 검사해 상대 report 경로를 repository root 기준으로 해석한다.
+- 실제 smoke: Train 5게임/1,223 pair, Validation 3게임/1,167 pair. 최종 run3는 headless Notebook 실행, run4는 같은 정의 함수에 Test 파일 open 금지 guard를 적용한 실행이다. Report bytes와 SHA가 같고 executed error 0, 그래프 2개다. 고정값 B0의 CDF도 선으로 표시되는 것을 확인했다.
+- 최종 report: `data/ml-experiments/human-timing-baseline/smoke-report-run3.json`, 반복본 `smoke-report-run4.json`. SHA `ae0ba059cef4fd42d5262914a90c15cbde6993ec17543575d487739b049d2513`.
+- Executed Notebook: `data/ml-experiments/human-timing-baseline/smoke-executed-run3.ipynb`. Bundle SHA `0a0d429dd8df713f5759e541b50a93669e8bec6146d37d35882b0903d7f13569`.
+- `fullCohortCovered=false`, `policyDecisionEligible=false`, `canonicalResultEligible=false`, `testFileRead=false`다. Manifest·Train/Validation·새 source·dependency의 checksum은 실행 전후 같다. Raw와 Test 파일은 이 구현에서 읽지 않는다.
+- `npm run verify:ml`: Node **35/35**, Python **185/187**. 실패 2개는 기존 `human_timing_dataset.ipynb`와 `human_timing_zero_ms_diagnostic.ipynb`의 사용자 execution count/output 형식 검사다. 새 계산 오류와 구분하며 사용자 결과를 지워 통과시키지 않았다. 전체 ML gate는 아직 미통과다.
+- `bash scripts/verify.sh`: type/build/artifact와 Node **793 pass·기존 1 skip·0 fail**. 코드 coverage 비율·full 성능·실제 사람다운 체감은 측정하지 않았다.
+
+## 사용자 실행 방법 — 전체 gate 해결 후 full Validation
+
+기존 두 Notebook의 실행 결과를 별도 실행본으로 보존하고 source를 비울지 먼저 사용자와 결정한다.
+현재 작업 트리의 `verify:ml`이 실패하는 동안 full 인계 gate 완료로 선언하지 않는다.
+아래는 gate 해결 후 사용자가 실행할 실제 명령이며 **이번 작업에서 실행하지 않았다**.
+저장소 루트에서 실행하고 기존 full 파일이 있으면 덮어쓰지 말고 새 이름을 사용한다.
+
+```bash
+mkdir -p data/ml-experiments/human-timing-baseline
+for run in 1 2; do
+  HUMAN_TIMING_BASELINE_MODE=full \
+  HUMAN_TIMING_BASELINE_REPORT="data/ml-experiments/human-timing-baseline/full-report-run${run}.json" \
+  conda run -n tetris-ml jupyter nbconvert \
+    --to notebook --execute scripts/ml/notebooks/human_timing_baseline.ipynb \
+    --ExecutePreprocessor.timeout=600 \
+    --output-dir data/ml-experiments/human-timing-baseline \
+    --output "full-executed-run${run}.ipynb"
+done
+cmp data/ml-experiments/human-timing-baseline/full-report-run1.json \
+    data/ml-experiments/human-timing-baseline/full-report-run2.json
+```
+
+첫 계산 구현의 결정성을 확인하므로 full 두 번을 안내한다. 실행 사이 source/dataset을 바꾸지 않는다.
+Full도 Test를 읽지 않는다. 완료 뒤 full report 경로를 전달해 `analyze-result`로 검증·해석하고 후보를 별도로 고정한다.
+GUI의 모두 실행은 기본 smoke이며 최초 결과는 `/private/tmp/human-timing-baseline-smoke.json`에 쓴다.
+반복할 때는 실행 셀 전에 `HUMAN_TIMING_BASELINE_REPORT`를 새 경로로 설정한다. Report 이름에는 `.json`, 기존 parent가 필요하다.
