@@ -79,38 +79,6 @@ function IndexPage() {
 
             <main className="main home-main">
                 <section className="home-modes" aria-labelledby="homeTitle">
-                    <svg className="home-side-art home-side-art-left" viewBox="0 0 192 128" aria-hidden="true">
-                        <g className="piece-yellow">
-                            <rect x="64" y="0" width="31" height="31" />
-                            <rect x="64" y="32" width="31" height="31" />
-                            <rect x="96" y="0" width="31" height="31" />
-                            <rect x="96" y="32" width="31" height="31" />
-                        </g>
-                        <g className="piece-green">
-                            <rect x="128" y="0" width="31" height="31" />
-                            <rect x="128" y="32" width="31" height="31" />
-                            <rect x="160" y="32" width="31" height="31" />
-                            <rect x="160" y="64" width="31" height="31" />
-                        </g>
-                        <g className="piece-purple">
-                            <rect x="0" y="64" width="31" height="31" />
-                            <rect x="32" y="32" width="31" height="31" />
-                            <rect x="32" y="64" width="31" height="31" />
-                            <rect x="64" y="64" width="31" height="31" />
-                        </g>
-                        <g className="piece-red">
-                            <rect x="96" y="64" width="31" height="31" />
-                            <rect x="128" y="64" width="31" height="31" />
-                            <rect x="128" y="96" width="31" height="31" />
-                            <rect x="160" y="96" width="31" height="31" />
-                        </g>
-                        <g className="piece-cyan">
-                            <rect x="0" y="96" width="31" height="31" />
-                            <rect x="32" y="96" width="31" height="31" />
-                            <rect x="64" y="96" width="31" height="31" />
-                            <rect x="96" y="96" width="31" height="31" />
-                        </g>
-                    </svg>
                     <div className="home-heading">
                         <p className="home-eyebrow">한 판의 몰입, 한 줄의 역전.</p>
                         <h2 id="homeTitle" className="hero-title">TETRA <span>ARENA</span></h2>
@@ -146,20 +114,6 @@ function IndexPage() {
                         </article>
                     </div>
                     <p className="home-data-note">플레이 기록은 AI 학습에 사용될 수 있습니다.</p>
-                    <svg className="home-side-art home-side-art-right" viewBox="0 0 192 96" aria-hidden="true">
-                        <g className="piece-blue">
-                            <rect x="0" y="32" width="31" height="31" />
-                            <rect x="0" y="64" width="31" height="31" />
-                            <rect x="32" y="64" width="31" height="31" />
-                            <rect x="64" y="64" width="31" height="31" />
-                        </g>
-                        <g className="piece-orange">
-                            <rect x="96" y="32" width="31" height="31" />
-                            <rect x="96" y="64" width="31" height="31" />
-                            <rect x="128" y="64" width="31" height="31" />
-                            <rect x="160" y="64" width="31" height="31" />
-                        </g>
-                    </svg>
                 </section>
 
                 <section className="home-guide">

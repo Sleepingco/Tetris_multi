@@ -497,29 +497,16 @@ function MultiplayerGamePage() {
             if (!event || !layer) return;
             clearAchievement(index);
             const canvas = index === 0 ? player1Canvas! : player2Canvas!;
-            const other = index === 0 ? player2Canvas! : player1Canvas!;
             const board = canvas.getBoundingClientRect();
-            const oppositeBoard = other.getBoundingClientRect();
             const playfield = canvas.closest<HTMLElement>(".playfield")!;
-            const frame = playfield.getBoundingClientRect();
-            const oppositeFrame = other.closest(".playfield")!.getBoundingClientRect();
-            const bounds = layer.getBoundingClientRect();
-            const leftBoard = board.left < oppositeBoard.left;
-            const beside = Math.abs(board.top - oppositeBoard.top) < 30;
-            const gap = leftBoard ? oppositeFrame.left - frame.right : frame.left - oppositeFrame.right;
             const feedback = canvas.closest(".player-column")!.querySelector<HTMLElement>(".combat-feedback")!;
-            const width = beside ? Math.min(172, gap - 16) : Math.min(220, board.width);
+            const width = Math.min(220, board.width);
             const element = document.createElement("div");
             element.className = `combat-achievement combat-achievement--${event}`;
             element.setAttribute("aria-hidden", "true");
             element.dataset.player = String(index + 1);
             element.dataset.event = event;
             element.dataset.viewport = `${window.innerWidth}:${window.innerHeight}`;
-            if (beside) {
-                const x = leftBoard ? frame.right + 8 : frame.left - width - 8;
-                element.style.left = `${x - bounds.left}px`;
-                element.style.top = `${board.top + board.height * (leftBoard ? 0.75 : 0.88) - bounds.top}px`;
-            }
             element.style.width = `${width}px`;
             element.style.fontSize = `${Math.min(34, width / 4.5)}px`;
             const title = document.createElement("strong");
@@ -543,9 +530,9 @@ function MultiplayerGamePage() {
                 element.append(spark);
             }
             // 세로 배치 문구는 보드에 붙여 앞쪽 레이아웃 변경을 따라간다.
-            (beside ? layer : playfield).append(element);
+            playfield.append(element);
             achievementElements[index] = element;
-            if (!beside) feedback.dataset.achievement = "true";
+            feedback.dataset.achievement = "true";
             achievementTimers[index] = window.setTimeout(() => clearAchievement(index), 1200);
         }
 
@@ -958,7 +945,7 @@ function MultiplayerGamePage() {
         <div className="multi-wrapper">
             <header className="multi-header">
                 <div className="multi-title">
-                    <h1>Multiplayer Tetris</h1>
+                    <h1>Multi Match</h1>
                     <div
                         className="room-info-badge"
                         id="multiRoomBadge"
@@ -967,7 +954,6 @@ function MultiplayerGamePage() {
                         <span className="room-dot" />
                         <span id="roomCodeText">방 코드: {pageInfo.roomId ?? "-"}</span>
                     </div>
-                    <p>2인 멀티 MVP</p>
                     {collectionFailureCount > 0 && <p role="status">
                         플레이 기록 저장 실패 {collectionFailureCount}건. 게임은 계속할 수 있습니다.
                     </p>}

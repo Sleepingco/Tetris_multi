@@ -15,7 +15,7 @@ test("PVE 상단 종료의 human 전송 수와 명시적인 rate-limit 거부 �
 
 test("구버전 탭의 handshake는 session 발급 전에 거부하고 현재 탭 연결은 유지한다", async ({ page }) => {
     await page.goto("/pages/multiLobby.html");
-    await expect(page.locator("#btnOpenCreateRoom")).toBeVisible();
+    await expect(page.locator("#btnCreateRoom")).toBeVisible();
     const errors = await page.evaluate(async () => {
         const results = [];
         for (const version of [undefined, 1, 3]) {
@@ -33,7 +33,6 @@ test("구버전 탭의 handshake는 session 발급 전에 거부하고 현재 �
     expect(errors).toEqual(Array.from({ length: 3 }, () => ({
         code: "GAMEPLAY_PROTOCOL_INCOMPATIBLE", terminal: true, connected: false,
     })));
-    await page.locator("#btnOpenCreateRoom").click();
     await page.locator("#btnOpenPveCreate").click();
     await page.locator("#btnCreatePveRoom").click();
     await expect(page.locator("#roomStatus")).toBeVisible();
@@ -63,8 +62,21 @@ test("싱글은 20행 크기를 유지하고 열린 천장 위에 생성 조각�
         borderTop: "0px", borderLeft: "0px", outerBorder: "0px", frameTop: 120, frameBottom: 0 });
     expect(geometry.upperCells.length).toBeGreaterThan(0);
     await page.screenshot({ path: testInfo.outputPath("open-ceiling-desktop.png") });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    expect(await page.locator("#tetrisBoardCanvas").evaluate(canvas => {
+        const rect = canvas.getBoundingClientRect();
+        const next = document.querySelector(".next-strip").getBoundingClientRect();
+        return rect.bottom <= innerHeight && Math.abs(next.top - rect.top - rect.height / 6) < 2;
+    })).toBe(true);
     await page.setViewportSize({ width: 390, height: 844 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
+    expect(await page.locator("#tetrisBoardCanvas").evaluate(canvas => {
+        const board = canvas.getBoundingClientRect();
+        const hold = document.querySelector(".single-hold").getBoundingClientRect();
+        const next = document.querySelector(".next-strip").getBoundingClientRect();
+        return Math.abs(hold.top - board.top - board.height / 6) < 2
+            && Math.abs(next.top - board.top - board.height / 6) < 2;
+    })).toBe(true);
     await page.screenshot({ path: testInfo.outputPath("open-ceiling-mobile.png") });
 });
 
@@ -121,7 +133,6 @@ test("40행 PVE의 V4 요청은 사유를 본문에 표시하고 두 보드·재
         });
     });
     await page.goto("/pages/multiLobby.html");
-    await page.locator("#btnOpenCreateRoom").click();
     await page.locator("#btnOpenPveCreate").click();
     await page.locator('#aiPolicySelector input[value="placement_v4"]').check();
     await page.locator("#btnCreatePveRoom").click();

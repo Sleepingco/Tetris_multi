@@ -43,12 +43,13 @@ type GlobalMessage = ServerToClientParsedPayload<"global:message">;
 type ChatResult = ServerToClientParsedPayload<"chat:result">;
 type Session = PlayerSession;
 type RequestType = "create" | "join" | "leave" | "start" | "sync" | null;
-type View = "join" | "create" | "pve" | "room";
+type View = "join" | "pve" | "room";
 type DisplayMessage = {
     id: number;
     sender: string;
     text: string;
     scope: "global" | "room" | null;
+    playerId?: string;
 };
 
 function createGuestNickname(): string {
@@ -119,8 +120,9 @@ function MultiLobbyPage() {
         sender: string,
         text: string,
         scope: "global" | "room" | null = null,
+        senderId?: string,
     ) => {
-        const message = { id: nextMessageId.current, sender, text, scope };
+        const message = { id: nextMessageId.current, sender, text, scope, playerId: senderId };
         nextMessageId.current += 1;
         setMessages(current => [...current, message]);
     }, []);
@@ -177,7 +179,7 @@ function MultiLobbyPage() {
             }),
             onRoomMessage((message: RoomMessage) => {
                 if (message.type === "chat") {
-                    appendMessage(message.nickname || "Guest", message.text || "", "room");
+                    appendMessage(message.nickname || "Guest", message.text || "", "room", message.playerId);
                     return;
                 }
                 appendMessage("system", message.text || "");
@@ -222,7 +224,7 @@ function MultiLobbyPage() {
                 }
             }),
             onGlobalMessage((message: GlobalMessage) => {
-                appendMessage(message.nickname || "Guest", message.text || "", "global");
+                appendMessage(message.nickname || "Guest", message.text || "", "global", message.playerId);
             }),
             onChatResult((result: ChatResult) => {
                 if (!result.ok) appendMessage("system", result.reason || "CHAT_ERROR");
@@ -307,17 +309,14 @@ function MultiLobbyPage() {
         }
     };
 
-    let primaryTitle = "Quick Match";
     let primaryDescription = "방을 만들거나 코드로 참가하면 게임 시작 상태를 확인할 수 있습니다.";
     let primaryText = "방 대기 중";
     let primaryDisabled = true;
     const isHost = room?.hostPlayerId === playerId;
     if (!sessionReady) {
-        primaryTitle = "서버 연결";
         primaryDescription = "연결이 준비될 때까지 잠시 기다려주세요.";
         primaryText = "연결 중";
     } else if (room) {
-        primaryTitle = "Game Start";
         primaryText = "게임 시작";
         if (room.status === "finished") {
             primaryDescription = "상대가 로비로 돌아오면 다시 시작할 수 있습니다.";
@@ -327,6 +326,7 @@ function MultiLobbyPage() {
             primaryText = "방장 대기중";
         } else if (room.status !== "waiting" || room.players.length !== 2) {
             primaryDescription = "상대가 입장하면 게임을 시작할 수 있습니다.";
+            primaryText = room.players.length < 2 ? "상대 입장 대기 중" : "게임 준비 중";
         } else {
             primaryDescription = room.mode === "pve"
                 ? room.aiPolicy === "placement_v4"
@@ -349,6 +349,22 @@ function MultiLobbyPage() {
         <div className="container">
             <header className="header">
                 <h1 className="brand">Multi Lobby</h1>
+                <div className="profile-box">
+                    <div className="avatar"><span id="playerAvatarChar">{nickname.charAt(0).toUpperCase()}</span></div>
+                    <div className="profile-details">
+                        <span className="profile-meta">My Profile</span>
+                        <div className="profile-name-row">
+                            <span className="profile-name" id="playerNicknameText">{nickname}</span>
+                            <span className="host-badge" id="playerHostBadge" hidden={!isHost}>방장</span>
+                        </div>
+                        <div className={`room-badge${room ? " active" : ""}`} id="lobbyRoomBadge">
+                            <span className="room-badge-dot"></span>
+                            <span className="room-badge-text" id="lobbyRoomBadgeText">
+                                {room ? `방 코드: ${room.roomId}` : "로비 대기 중"}
+                            </span>
+                        </div>
+                    </div>
+                </div>
                 <nav className="nav">
                     <button ref={soundToggleRef} id="soundToggle" type="button" className="btn ghost"
                         aria-pressed="false">사운드 켜기</button>
@@ -362,59 +378,37 @@ function MultiLobbyPage() {
 
             <main className="main" style={{ paddingTop: 10 }}>
                 <div className="lobby-grid">
-                    <section className="card chat-panel">
-                        <h2 className="card-title" style={{ marginBottom: 4 }}>Chat</h2>
-                        <div ref={messagesRef} className="chat-messages" id="chatMessages">
-                            {messages.map(message => {
-                                const scopeLabel = message.scope === "global"
-                                    ? "전체 "
-                                    : message.scope === "room" ? "방 " : "";
-                                return (
-                                    <div className="chat-msg" key={message.id}>
-                                        <span className={message.sender === "system" ? "system" : "user"}>
-                                            {message.sender === "system"
-                                                ? "[System]"
-                                                : `[${scopeLabel}${message.sender}]`}
-                                        </span>{" "}{message.text}
-                                    </div>
-                                );
-                            })}
-                        </div>
-                        <form className="chat-input-group" id="chatForm" onSubmit={submitChat}>
-                            <select id="chatScope" className="input-box chat-scope" aria-label="채팅 범위"
-                                value={chatScope} disabled={!sessionReady}
-                                onChange={event => setChatScope(event.target.value as "global" | "room")}>
-                                <option value="global">전체</option>
-                                <option value="room">방</option>
-                            </select>
-                            <input type="text" id="chatInput" className="input-box"
-                                placeholder="메시지를 입력하세요..." autoComplete="off" value={chatInput}
-                                disabled={!sessionReady} onChange={event => setChatInput(event.target.value)} />
-                            <button type="submit" className="btn primary" disabled={!sessionReady}>전송</button>
-                        </form>
-                    </section>
-
                     <section className="action-panel">
-                        <div className="action-box profile-box">
-                            <div className="avatar"><span id="playerAvatarChar">{nickname.charAt(0).toUpperCase()}</span></div>
-                            <div className="profile-details">
-                                <span className="profile-meta">My Profile</span>
-                                <div className="profile-name-row">
-                                    <span className="profile-name" id="playerNicknameText">{nickname}</span>
-                                    <span className="host-badge" id="playerHostBadge" hidden={!isHost}>방장</span>
-                                </div>
-                                <div className={`room-badge${room ? " active" : ""}`} id="lobbyRoomBadge">
-                                    <span className="room-badge-dot"></span>
-                                    <span className="room-badge-text" id="lobbyRoomBadgeText">
-                                        {room ? `방 코드: ${room.roomId}` : "로비 대기 중"}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
                         <div className="action-box">
-                            <h3 id="primaryActionTitle">{primaryTitle}</h3>
+                            <h2>대기실</h2>
                             <p id="primaryActionDesc">{primaryDescription}</p>
+                            <div id="roomStatus" className="room-status" hidden={view !== "room" || !room}>
+                                <div className="room-status-row">
+                                    <span>방 코드</span>
+                                    <div className="room-code-group">
+                                        <strong id="roomCodeText">{room?.roomId || "-"}</strong>
+                                        <button id="btnCopyRoomCode" className="room-copy-btn" type="button"
+                                            onClick={copyRoomCode}>복사</button>
+                                    </div>
+                                </div>
+                                <div className="room-status-row">
+                                    <span>상태</span><strong id="roomStateText">{room?.status || "-"}</strong>
+                                </div>
+                                <div className="room-status-row">
+                                    <span>플레이어</span>
+                                    <strong><span id="roomPlayerCountText">{room?.players.length || 0}</span> / 2</strong>
+                                </div>
+                                <ul className="room-players" aria-label="방 플레이어">
+                                    {room?.players.map(player => (
+                                        <li key={player.playerId}>
+                                            <span className="room-player-avatar" aria-hidden="true">{player.nickname.charAt(0).toUpperCase()}</span>
+                                            <strong>{player.nickname}</strong>
+                                            {player.playerId === room.hostPlayerId && <span>방장</span>}
+                                        </li>
+                                    ))}
+                                    {room && room.players.length < 2 && <li>상대 대기 중</li>}
+                                </ul>
+                            </div>
                             <button id="btnPrimaryAction" className="btn primary btn-match" type="button"
                                 disabled={primaryDisabled} onClick={() => {
                                     if (!room || needsRoomSync) return;
@@ -422,12 +416,20 @@ function MultiLobbyPage() {
                                         appendMessage("system", "게임 시작을 요청했습니다.");
                                     }
                                 }}>{primaryText}</button>
+                            <button id="btnLeaveRoom" className="btn ghost" type="button" hidden={!room}
+                                    disabled={!sessionReady || !!pendingRequest || needsRoomSync} onClick={() => {
+                                        if (!room) {
+                                            appendMessage("system", "존재하지 않는 방입니다.");
+                                            return;
+                                        }
+                                        sendRoomRequest("leave", () => requestLeaveRoom(room.roomId, playerId));
+                                    }}>방 나가기</button>
                         </div>
 
-                        <div className="action-box">
-                            <h3>Join by Code</h3>
+                        <div className="action-box room-join-box" hidden={view === "room" && !needsRoomSync}>
+                            <h3>방 참가 / 생성</h3>
                             <p>상대가 만든 방 코드로 참가할 수 있습니다.</p>
-                            <div id="joinByCodeControls" className="join-group" hidden={view !== "join"}>
+                            <div id="joinByCodeControls" className="join-group" hidden={view === "room"}>
                                 <input type="text" id="roomCodeInput" className="input-box input-code"
                                     placeholder="ENTER CODE" maxLength={8} value={roomCodeInput}
                                     disabled={!sessionReady} onChange={event => setRoomCodeInput(event.target.value)} />
@@ -440,21 +442,19 @@ function MultiLobbyPage() {
                                         }
                                         sendRoomRequest("join", () => requestJoinRoom(roomId, { playerId, nickname }));
                                     }}>방 입장</button>
-                                <button id="btnOpenCreateRoom" className="btn ghost" type="button"
-                                    disabled={!sessionReady || !!pendingRequest || needsRoomSync} onClick={() => setView("create")}>방 생성</button>
                             </div>
-                            <div id="createRoomControls" className="join-group"
-                                hidden={view !== "create" && view !== "pve"}>
-                                <button id="btnBackToJoin" className="room-mode-back" type="button"
-                                    aria-label="방 입장으로 돌아가기" title="방 입장으로 돌아가기"
-                                    onClick={() => setView("join")}>&larr;</button>
-                                <button id="btnCreateRoom" className="btn ghost" type="button"
-                                    disabled={!sessionReady || !!pendingRequest || needsRoomSync}
-                                    onClick={() => sendRoomRequest("create", () => requestCreateRoom({ playerId, nickname }, "pvp"))}>
-                                    PVP 방 생성
-                                </button>
-                                <button id="btnOpenPveCreate" className="btn" type="button"
-                                    disabled={!sessionReady} onClick={() => setView("pve")}>AI PVE</button>
+                            <div id="createRoomControls" className="join-group" hidden={view === "room"}>
+                                <div className="room-mode-buttons">
+                                    <button id="btnCreateRoom" className="btn ghost" type="button"
+                                        disabled={!sessionReady || !!pendingRequest || needsRoomSync}
+                                        onClick={() => sendRoomRequest("create", () => requestCreateRoom({ playerId, nickname }, "pvp"))}>
+                                        PVP 방 생성
+                                    </button>
+                                    <button id="btnOpenPveCreate" className="btn" type="button"
+                                        aria-expanded={view === "pve"} aria-controls="pveCreateControls"
+                                        disabled={!sessionReady || !!pendingRequest || needsRoomSync}
+                                        onClick={() => setView(current => current === "pve" ? "join" : "pve")}>AI PVE</button>
+                                </div>
                                 <div id="pveCreateControls" className="join-group" hidden={view !== "pve"}>
                                     <fieldset id="aiPolicySelector" className="difficulty-selector">
                                         <legend>AI 정책</legend>
@@ -501,37 +501,44 @@ function MultiLobbyPage() {
                                         ))}>PVE 방 생성</button>
                                 </div>
                             </div>
-                            <div id="roomStatus" className="room-status" hidden={view !== "room" || !room}>
-                                <div className="room-status-row">
-                                    <span>방 코드</span>
-                                    <div className="room-code-group">
-                                        <strong id="roomCodeText">{room?.roomId || "-"}</strong>
-                                        <button id="btnCopyRoomCode" className="room-copy-btn" type="button"
-                                            onClick={copyRoomCode}>복사</button>
-                                    </div>
-                                </div>
-                                <div className="room-status-row">
-                                    <span>상태</span><strong id="roomStateText">{room?.status || "-"}</strong>
-                                </div>
-                                <div className="room-status-row">
-                                    <span>플레이어</span>
-                                    <strong><span id="roomPlayerCountText">{room?.players.length || 0}</span> / 2</strong>
-                                </div>
-                                <button id="btnLeaveRoom" className="btn ghost" type="button"
-                                    disabled={!sessionReady || !!pendingRequest || needsRoomSync} onClick={() => {
-                                        if (!room) {
-                                            appendMessage("system", "존재하지 않는 방입니다.");
-                                            return;
-                                        }
-                                        sendRoomRequest("leave", () => requestLeaveRoom(room.roomId, playerId));
-                                    }}>방 나가기</button>
-                            </div>
                             {needsRoomSync && <button id="btnRetryRoomSync" className="btn" type="button"
                                 disabled={!sessionReady || !!pendingRequest} onClick={() => {
                                     const savedRoomId = sessionStorage.getItem("tetris:roomId");
                                     if (savedRoomId && playerId) sendRoomRequest("sync", () => requestRoomSync(savedRoomId, playerId));
                                 }}>방 상태 다시 확인</button>}
                         </div>
+                    </section>
+
+                    <section className="card chat-panel">
+                        <h2 className="card-title">채팅</h2>
+                        <fieldset className="chat-scopes" aria-label="채팅 전송 범위" disabled={!sessionReady}>
+                            <label><input type="radio" name="chatScope" value="global" checked={chatScope === "global"}
+                                onChange={() => setChatScope("global")} /><span>전체</span></label>
+                            <label><input type="radio" name="chatScope" value="room" checked={chatScope === "room"}
+                                onChange={() => setChatScope("room")} /><span>방</span></label>
+                        </fieldset>
+                        <div ref={messagesRef} className="chat-messages" id="chatMessages">
+                            {messages.map(message => {
+                                const scopeLabel = message.scope === "global"
+                                    ? "전체 "
+                                    : message.scope === "room" ? "방 " : "";
+                                return (
+                                    <div className={`chat-msg${message.playerId && message.playerId === playerId ? " is-mine" : ""}`} key={message.id}>
+                                        <span className="chat-avatar" aria-hidden="true">{message.sender.charAt(0).toUpperCase()}</span>
+                                        <div className="chat-bubble">
+                                            <strong>{message.scope === null ? "System" : `${scopeLabel}${message.sender}`}</strong>
+                                            <p>{message.text}</p>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                        <form className="chat-input-group" id="chatForm" onSubmit={submitChat}>
+                            <input type="text" id="chatInput" className="input-box"
+                                placeholder="메시지를 입력하세요..." autoComplete="off" value={chatInput}
+                                disabled={!sessionReady} onChange={event => setChatInput(event.target.value)} />
+                            <button type="submit" className="btn primary" disabled={!sessionReady}>전송</button>
+                        </form>
                     </section>
                 </div>
             </main>

@@ -51,12 +51,9 @@ body.home-page {
     --shadow: none;
     --card-glow: transparent;
     --kbd-bg: #e6eaf0;
-    --home-glow: rgba(228, 179, 70, 0.16);
-    --home-grid: rgba(45, 56, 70, 0.045);
     --home-shadow: 0 18px 50px -28px rgba(35, 45, 60, 0.3);
     min-height: 100vh;
     color: var(--text);
-    background: var(--bg);
     font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -74,8 +71,6 @@ body.home-page {
     --shadow: none;
     --card-glow: transparent;
     --kbd-bg: #272a2e;
-    --home-glow: rgba(232, 180, 76, 0.09);
-    --home-grid: rgba(255, 255, 255, 0.025);
     --home-shadow: 0 22px 50px -26px rgba(0, 0, 0, 0.65);
 }
 
@@ -222,12 +217,6 @@ kbd {
 body.home-page {
     display: flow-root;
     padding: 0 20px;
-    background:
-        radial-gradient(ellipse at 50% 16%, var(--home-glow), transparent 55%),
-        linear-gradient(var(--home-grid) 1px, transparent 1px),
-        linear-gradient(90deg, var(--home-grid) 1px, transparent 1px),
-        var(--bg);
-    background-size: auto, 48px 48px, 48px 48px, auto;
 }
 
 .container.home-page {
@@ -353,39 +342,6 @@ body.home-page {
     font: 600 0.7rem ui-monospace, monospace;
     letter-spacing: 0.14em;
 }
-
-.home-side-art {
-    position: absolute;
-    z-index: 0;
-    overflow: visible;
-    pointer-events: none;
-    filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.18)) drop-shadow(0 12px 16px rgba(0, 0, 0, 0.12));
-}
-
-.home-side-art-left {
-    bottom: 58px;
-    left: -18px;
-    width: 200px;
-}
-
-.home-side-art-right {
-    right: -18px;
-    bottom: 58px;
-    width: 180px;
-}
-
-.home-side-art rect {
-    stroke: rgba(255, 255, 255, 0.3);
-    stroke-width: 1px;
-}
-
-.home-side-art .piece-cyan { fill: #22c9dd; }
-.home-side-art .piece-yellow { fill: #f3b930; }
-.home-side-art .piece-purple { fill: #a855e8; }
-.home-side-art .piece-green { fill: #56c95e; }
-.home-side-art .piece-red { fill: #ee5b58; }
-.home-side-art .piece-blue { fill: #4383eb; }
-.home-side-art .piece-orange { fill: #f28a37; }
 
 .mode-option h3 {
     margin: 0 0 6px;
@@ -578,41 +534,11 @@ body.home-page {
     .mode-grid {
         max-width: 620px;
     }
-
-    .home-side-art-left {
-        width: 140px;
-    }
-
-    .home-side-art-right {
-        width: 130px;
-    }
 }
-
-@media (max-width: 900px) {
-    .home-side-art {
-        display: none;
-    }
-}
-
-/* 한 번 내려앉는 연출만 사용해 맞물린 블록의 최종 위치를 보존한다. */
-.home-side-art g {
-    animation: home-block-land 800ms 200ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
-}
-
-.home-side-art g:nth-child(2) { animation-delay: 280ms; }
-.home-side-art g:nth-child(3) { animation-delay: 360ms; }
-.home-side-art g:nth-child(4) { animation-delay: 440ms; }
-.home-side-art g:nth-child(5) { animation-delay: 520ms; }
 
 @keyframes home-reveal {
     from { opacity: 0; translate: 0 14px; }
     to { opacity: 1; translate: 0 0; }
-}
-
-@keyframes home-block-land {
-    from { opacity: 0; transform: translateY(-36px); }
-    75% { opacity: 1; transform: translateY(2px); }
-    to { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 520px) {
@@ -635,19 +561,32 @@ body.home-page {
 /* ===============================
       Multi Lobby Specific Styles
       =============================== */
-.lobby-grid {
+#multiLobbyRoot .container {
+        max-width: 960px;
+}
+
+#multiLobbyRoot .header {
+        gap: 16px;
+}
+
+#multiLobbyRoot .profile-box {
+        margin-left: auto;
+        padding: 0;
+}
+
+#multiLobbyRoot .lobby-grid {
         display: grid;
-        grid-template-columns: 1fr 340px;
-        gap: 24px;
+        grid-template-columns: minmax(0, 1.35fr) minmax(300px, 1fr);
+        gap: 16px;
         margin-top: 10px;
         align-items: stretch;
 }
 
 /* 1) 채팅 패널 */
-.chat-panel {
+#multiLobbyRoot .chat-panel {
         display: flex;
         flex-direction: column;
-        height: 520px;
+        height: clamp(300px, calc(100vh - 190px), 520px);
         padding: 20px;
         border-radius: 6px;
         backdrop-filter: none;
@@ -661,29 +600,77 @@ body.home-page {
 .chat-panel::after { content: none; }
 .chat-messages {
         flex: 1;
-        background: var(--bg-soft);
-        border-radius: 6px;
-        padding: 16px;
-        margin-top: 4px;
-        margin-bottom: 16px;
+        min-height: 0;
+        padding: 12px 0;
+        margin-bottom: 12px;
         overflow-y: auto;
-        border: 1px inset var(--border);
 }
 .chat-messages::-webkit-scrollbar { width: 6px; }
 .chat-messages::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 3px; }
 
 .chat-msg {
-        margin-bottom: 10px;
+        display: flex;
+        width: fit-content;
+        max-width: 90%;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 12px;
         font-size: 0.95rem;
         line-height: 1.4;
-        word-break: break-all;
+        overflow-wrap: anywhere;
 }
-.chat-msg .system { color: var(--accent-2); font-weight: 700; margin-right: 4px; }
-.chat-msg .user { color: var(--accent); font-weight: 700; margin-right: 4px; }
+
+.chat-msg.is-mine {
+        margin-left: auto;
+        flex-direction: row-reverse;
+}
+
+.chat-avatar,
+.room-player-avatar {
+        flex: 0 0 30px;
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--kbd-bg);
+        color: var(--muted);
+        font-weight: 700;
+}
+
+.chat-bubble {
+        min-width: 0;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: var(--bg-soft);
+}
+
+.chat-msg.is-mine .chat-bubble {
+        background: color-mix(in srgb, var(--accent) 8%, var(--panel));
+}
+
+.chat-bubble strong { color: var(--accent-2); font-size: 0.8rem; }
+.chat-bubble p { margin: 4px 0 0; white-space: pre-wrap; }
+
+.chat-scopes {
+        display: flex;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        padding: 0;
+        margin: 0;
+}
+.chat-scopes label { flex: 1; text-align: center; cursor: pointer; }
+.chat-scopes input { position: absolute; opacity: 0; }
+.chat-scopes span { display: block; padding: 10px; color: var(--muted); border-bottom: 2px solid transparent; }
+.chat-scopes input:checked + span { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.chat-scopes input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .chat-input-group {
         display: flex;
         gap: 8px;
+}
+#multiLobbyRoot .chat-input-group input {
+        min-width: 0;
 }
 .input-box {
         flex: 1;
@@ -696,44 +683,30 @@ body.home-page {
         font-size: 0.95rem;
         transition: border-color 0.2s;
 }
-.chat-scope {
-        flex: 0 0 84px;
-        padding-left: 12px;
-        padding-right: 24px;
-        appearance: none;
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2364748b' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
-        background-repeat: no-repeat;
-        background-position: right 8px center;
-        background-size: 1.1rem;
-        cursor: pointer;
-}
-[data-theme="dark"] .chat-scope {
-        background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%2394a3b8' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
-}
 .input-box:focus {
         outline: none;
         border-color: var(--accent);
 }
 
 /* 2) 우측 액션 패널 */
-.action-panel {
+#multiLobbyRoot .action-panel {
         display: flex;
         flex-direction: column;
-        gap: 24px;
+        gap: 12px;
 }
 
-.action-box {
+#multiLobbyRoot .action-box {
         background: var(--panel);
-        padding: 24px;
+        padding: 16px;
         border-radius: 6px;
         border: 1px solid var(--border);
         box-shadow: var(--shadow);
         display: flex;
         flex-direction: column;
-        gap: 14px;
+        gap: 10px;
 }
+#multiLobbyRoot .room-join-box[hidden],
+#multiLobbyRoot #btnLeaveRoom[hidden] { display: none; }
 
 .action-box h3 {
         margin: 0;
@@ -742,6 +715,8 @@ body.home-page {
         text-transform: uppercase;
         letter-spacing: 0.05em;
 }
+
+.action-box h2 { margin: 0; font-size: 1.25rem; }
 .action-box p {
         margin: 0;
         font-size: 0.9rem;
@@ -760,29 +735,10 @@ body.home-page {
         display: none;
 }
 
-.room-mode-back {
-        align-self: flex-start;
-        width: 32px;
-        height: 32px;
-        padding: 0;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        color: var(--muted);
-        background: transparent;
-        cursor: pointer;
-        font: inherit;
-        font-size: 1.1rem;
-        line-height: 1;
-}
-
-.room-mode-back:hover {
-        border-color: var(--accent);
-        color: var(--text);
-}
-
-.room-mode-back:focus-visible {
-        outline: 2px solid var(--accent);
-        outline-offset: 2px;
+.room-mode-buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
 }
 
 .difficulty-selector {
@@ -867,12 +823,34 @@ body.home-page {
         display: flex;
         flex-direction: column;
         gap: 8px;
-        margin-top: 12px;
-        padding: 12px;
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        background: var(--kbd-bg);
+        margin-top: 0;
+        padding: 0;
 }
+
+.room-players {
+        display: grid;
+        gap: 8px;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+}
+.room-players li {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+        padding: 8px;
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+}
+.room-players strong { overflow-wrap: anywhere; }
+
+#joinByCodeControls:not([hidden]) {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+}
+#joinByCodeControls .input-code { min-width: 0; }
 
 .room-status[hidden] {
         display: none;
@@ -915,7 +893,9 @@ body.home-page {
 }
 
 @media (max-width: 768px) {
-        .lobby-grid { grid-template-columns: 1fr; }
+        #multiLobbyRoot .lobby-grid { grid-template-columns: 1fr; }
+        #multiLobbyRoot .header { flex-wrap: wrap; }
+        #multiLobbyRoot .nav { flex-wrap: wrap; }
 }
 
 /* ===============================

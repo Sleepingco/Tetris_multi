@@ -152,6 +152,21 @@ test("TETRIS·T-SPIN·COMBO는 양쪽 보드 옆에 한 번 표시하고 모바�
     expect(errors).toEqual([]);
 });
 
+test("낮은 데스크톱에서 양쪽 성과가 보드와 대기 게이지를 가리지 않는다", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await prepareAchievementFixtures(page);
+    await deliverAchievement(page, 1, { linesCleared: 4, combo: 1 });
+    await deliverAchievement(page, 2, { isTSpin: true, tSpinType: "mini", combo: 2 });
+    await expect(page.locator(".combat-achievement")).toHaveCount(2);
+    expect(await page.evaluate(() => {
+        const overlap = (a, b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+        const events = [...document.querySelectorAll(".combat-achievement")].map(node => node.getBoundingClientRect());
+        const areas = [...document.querySelectorAll("canvas, .incoming-meter")].map(node => node.getBoundingClientRect());
+        return events.every(event => event.width >= 80 && areas.every(area => !overlap(event, area)))
+            && !overlap(events[0], events[1]);
+    })).toBe(true);
+});
+
 test("수집 실패 건수는 화면에, 이유는 진단 로그에 남기고 게임을 유지한다", async ({ page }) => {
     const warnings = [];
     page.on("console", message => { if (message.type() === "warning") warnings.push(message.text()); });

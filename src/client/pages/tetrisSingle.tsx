@@ -140,7 +140,7 @@ function SingleGamePage() {
     return (
         <div className="single-wrapper">
             <header className="single-header">
-                <h1 className="page-title">Single Player Tetris</h1>
+                <h1 className="page-title">Single Player</h1>
                 <div className="scoreboard">
                     <span className="score-label">Score</span>
                     <span ref={scoreRootRef} className="score" />
@@ -167,23 +167,23 @@ function SingleGamePage() {
                     </div>
                 </section>
 
-                <aside className="panel panel--right">
-                    <div className="panel-section">
-                        <h2>Hold</h2>
-                        <div ref={holdRootRef} className="hold-preview" />
-                    </div>
-                    <div className="panel-section">
-                        <h2>Controls</h2>
+                <aside className="panel single-hold">
+                    <h2>Hold</h2>
+                    <div ref={holdRootRef} className="hold-preview" />
+                    <details className="controls-details">
+                        <summary onKeyDown={event => {
+                            if (event.key === " ") event.stopPropagation();
+                        }}>조작법</summary>
                         <ul className="controls-list">
                             <li><kbd>←</kbd><span>왼쪽 이동</span></li>
                             <li><kbd>→</kbd><span>오른쪽 이동</span></li>
-                            <li><kbd>↑ / X</kbd><span>시계방향 회전</span></li>
-                            <li><kbd>Z</kbd><span>반시계방향 회전</span></li>
+                            <li><kbd>↑ / X</kbd><span>시계 회전</span></li>
+                            <li><kbd>Z</kbd><span>반시계 회전</span></li>
                             <li><kbd>↓</kbd><span>소프트 드롭</span></li>
                             <li><kbd>Space</kbd><span>하드 드롭</span></li>
                             <li><kbd>C</kbd><span>홀드 / 교체</span></li>
                         </ul>
-                    </div>
+                    </details>
                 </aside>
             </main>
 

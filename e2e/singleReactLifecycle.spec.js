@@ -65,8 +65,28 @@ test.beforeEach(async ({ page }) => {
     await page.clock.pauseAt(pausedTime);
 });
 
+test("모바일 조작법은 HOLD 아래에서 읽을 수 있는 폭으로 펼쳐진다", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/pages/tetrisSingle.html");
+    const actions = await page.locator(".single-header .header-actions").evaluate(root => {
+        const boxes = [...root.children].map(element => element.getBoundingClientRect());
+        return boxes.every(box => box.width > 0 && box.left >= 0 && box.right <= innerWidth
+            && Math.abs(box.top - boxes[0].top) < 2);
+    });
+    expect(actions).toBe(true);
+    const controls = page.locator(".controls-details");
+    await controls.locator("summary").click();
+    await expect(controls).toHaveAttribute("open", "");
+    const bounds = await controls.locator(".controls-list").boundingBox();
+    expect(bounds.width).toBeGreaterThanOrEqual(180);
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(844);
+});
+
 test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 세트만 유지한다", async ({ page }) => {
     const errors = captureBrowserErrors(page);
+    await page.addInitScript(() => { HTMLMediaElement.prototype.play = () => Promise.resolve(); });
     await page.goto("/pages/tetrisSingle.html");
 
     await expect(page.locator(".next-slot")).toHaveCount(4);
@@ -91,8 +111,18 @@ test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 �
         };
     });
     expect(previewLayout).toEqual({ vertical: true, leftOfBoard: true, overlaps: false });
+    expect(await page.evaluate(() => {
+        const board = document.querySelector("canvas").getBoundingClientRect();
+        const hold = document.querySelector(".single-hold").getBoundingClientRect();
+        const controls = document.querySelector(".controls-details").getBoundingClientRect();
+        const title = document.querySelector(".single-header h1").getBoundingClientRect();
+        const score = document.querySelector(".scoreboard").getBoundingClientRect();
+        const preview = document.querySelector(".hold-preview").getBoundingClientRect();
+        return hold.left >= board.right && controls.top >= preview.bottom && controls.bottom <= hold.bottom && title.right < score.left;
+    })).toBe(true);
     await expect(page.locator(".hold-preview .next-cell")).toHaveCount(16);
     const soundToggle = page.locator("#soundToggle");
+    await expect(soundToggle).toHaveAttribute("aria-pressed", "true");
     const initialPressed = await soundToggle.getAttribute("aria-pressed");
     await soundToggle.click();
     await expect(soundToggle).not.toHaveAttribute("aria-pressed", initialPressed);
@@ -104,6 +134,12 @@ test("single StrictMode lifecycle은 입력·sound listener와 preview를 한 �
 
     await pressGameKey(page, "KeyC");
     await expect(page.locator(".hold-preview .next-cell.tree.preview")).toHaveCount(4);
+    const canvasBeforeControls = await page.locator("canvas").evaluate(canvas => canvas.toDataURL());
+    await page.locator(".controls-details summary").focus();
+    await page.keyboard.press("Space");
+    await page.clock.runFor(INPUT_TICK_MS);
+    await expect(page.locator(".controls-details")).toHaveAttribute("open", "");
+    expect(await page.locator("canvas").evaluate(canvas => canvas.toDataURL())).toBe(canvasBeforeControls);
     expect(errors).toEqual([]);
 });
 

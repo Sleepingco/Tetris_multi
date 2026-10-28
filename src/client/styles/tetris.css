@@ -68,19 +68,23 @@ body {
     display: flex;
     justify-content: center;
     align-items: flex-start;
-    padding: 2rem;
+    padding: 1rem;
 }
 
 /* -----------------------------
   * Wrappers & Layouts
   * ----------------------------- */
 .multi-wrapper {
+    --board-width: clamp(120px, calc((100vh - 240px) / 2.4), 300px);
+}
+
+.multi-wrapper {
     position: relative;
     width: min(1440px, 100%);
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 0.75rem;
 }
 
 #multiplayerRoot,
@@ -91,21 +95,33 @@ body {
 }
 
 .single-wrapper {
-    width: min(960px, 100%);
+    --board-width: clamp(120px, calc((100vh - 180px) / 2.4), 300px);
+    width: min(720px, 100%);
     margin: 0 auto;
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: 0;
+    background: var(--game-panel);
+    border: 1px solid var(--game-border);
+    border-radius: 6px;
 }
 
 .single-layout {
     display: grid;
-    width: max-content;
+    width: 100%;
     margin: 0 auto;
-    grid-template-columns: 130px 300px 260px;
-    gap: 1.5rem;
+    grid-template-columns: 100px minmax(0, var(--board-width)) 180px;
+    gap: 0.5rem;
     align-items: flex-start;
     justify-content: center;
+    padding: 0.75rem;
+    background: var(--game-panel-soft);
+}
+
+.single-layout > .next-strip,
+.single-layout > .single-hold,
+.player-panels > .panel--left {
+    margin-top: calc(var(--board-width) * 0.4);
 }
 
 /* -----------------------------
@@ -117,6 +133,43 @@ body {
     justify-content: space-between;
     align-items: center;
     gap: 1rem;
+}
+
+.multi-header {
+    padding: 0.75rem;
+    background: var(--game-panel);
+    border: 1px solid var(--game-border);
+    border-radius: 6px;
+}
+
+.multi-title {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.multi-title h1 { font-size: 1.15rem; }
+.multi-title .room-info-badge { margin-top: 0; }
+
+.single-header {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--game-border);
+}
+
+.single-header .page-title {
+    font-size: 1.15rem;
+}
+
+.single-header .scoreboard {
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+}
+
+.single-header .score {
+    font-size: 1.4rem;
 }
 
 .header-actions,
@@ -251,6 +304,44 @@ body {
     width: 100%;
 }
 
+.controls-details summary {
+    cursor: pointer;
+    color: var(--game-muted);
+    font-weight: 600;
+    padding: 0.6rem;
+    text-align: center;
+}
+
+.controls-details {
+    position: relative;
+    width: 100%;
+    margin-top: 1rem;
+    background: var(--game-panel);
+    border: 1px solid var(--game-border);
+    border-radius: 6px;
+}
+
+.controls-details[open] .controls-list {
+    padding: 0.5rem;
+}
+
+.controls-details .controls-list { gap: 0.25rem; }
+.controls-details .controls-list li { gap: 0.5rem; padding: 0.2rem 0.3rem; font-size: 0.75rem; }
+.controls-details .controls-list kbd { padding: 0.2rem 0.35rem; font-size: 0.7rem; }
+
+.single-layout > .single-hold {
+    padding: 0.5rem;
+}
+
+.single-hold h2 { text-align: center; }
+.single-hold .next-grid { grid-template-columns: repeat(4, 16px); padding: 4px; }
+.single-hold .next-cell { width: 16px; height: 16px; }
+
+.controls-details summary:focus-visible {
+    outline: 2px solid var(--game-accent);
+    outline-offset: 3px;
+}
+
 .panel--left p {
     font-size: 0.9rem;
     color: var(--game-muted);
@@ -270,7 +361,7 @@ body {
 .next-preview {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 1.5rem;
+    gap: 0.5rem;
     align-items: center;
     justify-items: center;
     width: 100%;
@@ -374,13 +465,9 @@ kbd {
   * ----------------------------- */
 .playfield {
     position: relative;
-    padding: 1rem;
+    padding: 0;
     display: flex;
     justify-content: center;
-}
-
-.playfield--multi {
-    min-height: 380px;
 }
 
 .playground {
@@ -401,8 +488,9 @@ kbd {
 
 .playground>canvas {
     border: 0;
-    width: 300px;
-    height: 720px;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 5 / 12;
     background: linear-gradient(to bottom, transparent 0% var(--board-visible-top), var(--game-board-bg) var(--board-visible-top) 100%);
     border-radius: 0 0 4px 4px;
     display: block;
@@ -448,17 +536,19 @@ kbd {
   * ----------------------------- */
 .multi-grid {
     display: grid;
+    width: min(100%, calc(var(--board-width) * 2 + 510px));
+    margin: 0 auto;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: clamp(5rem, 6vw, 6rem);
+    gap: 1rem;
 }
 
 .player-column {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 0.5rem;
     background: var(--game-panel);
     border-radius: 6px;
-    padding: 1.5rem;
+    padding: 1rem;
     border: 1px solid var(--game-border);
     box-shadow: var(--game-shadow);
 }
@@ -539,7 +629,7 @@ kbd {
 
 .board-with-incoming {
     display: grid;
-    grid-template-columns: 48px minmax(0, 334px);
+    grid-template-columns: minmax(0, var(--board-width)) 48px;
     justify-content: center;
     align-items: start;
     gap: 12px;
@@ -547,7 +637,7 @@ kbd {
 }
 
 .board-with-incoming .playfield {
-    grid-column: 2;
+    grid-column: 1;
     grid-row: 1;
     min-width: 0;
 }
@@ -564,22 +654,25 @@ kbd {
 }
 
 .incoming-root {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
     align-self: stretch;
     min-width: 0;
 }
 
 .incoming-rail {
+    position: relative;
     height: 100%;
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 8px;
-    padding-top: 4px;
+    padding-top: 0;
 }
 
 .incoming-rail-label {
+    position: absolute;
+    bottom: calc(100% - 100% / 6);
     color: var(--game-muted);
     text-align: center;
     font-size: 0.85rem;
@@ -599,6 +692,8 @@ kbd {
 }
 
 .incoming-overflow {
+    position: absolute;
+    top: 100%;
     color: var(--game-danger);
     font-size: 0.8rem;
     font-weight: 700;
@@ -606,6 +701,9 @@ kbd {
 }
 
 .incoming-meter {
+    position: absolute;
+    top: calc(100% / 6);
+    bottom: 0;
     display: grid;
     grid-template-rows: repeat(20, minmax(0, 1fr));
     gap: 3px;
@@ -631,7 +729,7 @@ kbd {
 }
 
 .combat-feedback {
-    height: 40px;
+    height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -754,15 +852,15 @@ kbd {
 .player-column[data-player="2"] .board-with-incoming {
     grid-column: 1;
     grid-row: 1;
-    grid-template-columns: minmax(0, 334px) 48px;
+    grid-template-columns: 48px minmax(0, var(--board-width));
 }
 
 .player-column[data-player="2"] .incoming-root {
-    grid-column: 2;
+    grid-column: 1;
 }
 
 .player-column[data-player="2"] .playfield {
-    grid-column: 1;
+    grid-column: 2;
     grid-row: 1;
 }
 
@@ -872,13 +970,35 @@ kbd {
 
     .single-layout {
         width: 100%;
-        grid-template-columns: 96px minmax(0, 1fr);
+        grid-template-columns: 76px minmax(0, var(--board-width)) 106px;
         gap: 0.5rem;
     }
 
     .single-layout .playfield {
         min-width: 0;
-        padding: 0.5rem;
+        padding: 0;
+    }
+
+    .single-layout > .single-hold,
+    .single-layout > .next-strip {
+        margin-top: calc(max(0px, min(var(--board-width), 100vw - 256px)) * 0.4);
+    }
+
+    .single-layout .next-preview .next-grid {
+        grid-template-columns: repeat(4, 16px) !important;
+    }
+
+    .single-layout .next-preview .next-cell { width: 16px; height: 16px; }
+
+    .single-hold .controls-details[open] .controls-list {
+        position: absolute;
+        right: 0;
+        top: 100%;
+        z-index: 12;
+        width: min(220px, calc(100vw - 2rem));
+        background: var(--game-panel);
+        border: 1px solid var(--game-border);
+        border-radius: 6px;
     }
 
     .single-layout .playground > canvas,
@@ -886,19 +1006,6 @@ kbd {
         width: 100%;
         height: auto;
         aspect-ratio: 5 / 12;
-    }
-
-    .single-layout > .panel--right {
-        grid-column: 1 / -1;
-        flex-direction: row;
-        align-items: flex-start;
-        gap: 1rem;
-        padding: 0.75rem;
-    }
-
-    .single-layout > .panel--right .panel-section {
-        flex: 1;
-        min-width: 0;
     }
 
     .multi-grid {
@@ -931,12 +1038,12 @@ kbd {
     }
 
     .board-with-incoming {
-        grid-template-columns: 34px minmax(0, 334px);
+        grid-template-columns: minmax(0, var(--board-width)) 34px;
         gap: 4px;
     }
 
     .player-column[data-player="2"] .board-with-incoming {
-        grid-template-columns: minmax(0, 334px) 34px;
+        grid-template-columns: 34px minmax(0, var(--board-width));
     }
 
     .incoming-meter {
@@ -958,6 +1065,7 @@ kbd {
     .player-panels .panel--left {
         min-width: 0;
         padding: 4px;
+        margin-top: calc(max(0px, min(var(--board-width), 100vw - 200px)) * 0.4);
     }
 
     .player-panels .panel--left .hold-preview .next-grid {
@@ -969,12 +1077,11 @@ kbd {
 
     .player-panels .playfield {
         min-width: 0;
-        padding: 0.5rem;
+        padding: 0;
     }
 }
 
 @media (max-width: 600px) {
-    .single-header,
     .multi-header {
         align-items: stretch;
         flex-direction: column;
@@ -984,6 +1091,11 @@ kbd {
     .multi-title h1 {
         font-size: 1.35rem;
     }
+
+    .single-header { gap: 0.5rem; flex-wrap: wrap; }
+    .single-header .header-actions { flex-basis: 100%; }
+    .single-header .page-title { font-size: 0.95rem; }
+    .single-header .score { font-size: 1.1rem; }
 
     .header-actions,
     .multi-actions {

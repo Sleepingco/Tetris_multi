@@ -48,6 +48,11 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
 
     try {
         await enterTwoPlayerMatch(hostPage, guestPage);
+        expect(await hostPage.evaluate(() => ({
+            background: getComputedStyle(document.body).backgroundImage.includes("radial-gradient"),
+            ornaments: ["::before", "::after"].some(pseudo =>
+                getComputedStyle(document.querySelector("#multiplayerRoot"), pseudo).backgroundImage.includes("svg")),
+        }))).toEqual({ background: true, ornaments: false });
         await expect.poll(() => hostMonitor.getSentEventCount("game:join")).toBe(1);
         await expect.poll(() => guestMonitor.getSentEventCount("game:join")).toBe(1);
         await hostPage.waitForTimeout(200);
@@ -86,7 +91,7 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
                     const board = root.querySelector("canvas").getBoundingClientRect();
                     return {
                         vertical: meter.height > meter.width * 4,
-                        besideBoard: root.dataset.player === "1" ? meter.right <= board.left : board.right <= meter.left,
+                        besideBoard: root.dataset.player === "1" ? board.right <= meter.left : meter.right <= board.left,
                     };
                 });
                 expect(railLayout).toEqual({ vertical: true, besideBoard: true });
@@ -107,17 +112,20 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
             }
         }
 
-        const desktopGap = await hostPage.evaluate(() => {
-            const boards = [...document.querySelectorAll("canvas")].map(canvas => canvas.getBoundingClientRect());
-            return boards[1].left - boards[0].right;
-        });
-        expect(desktopGap).toBeGreaterThan(240);
-        await hostPage.setViewportSize({ width: 1280, height: 720 });
-        await expect.poll(() => hostPage.evaluate(() => document.documentElement.scrollWidth)).toBe(1280);
-        expect(await hostPage.evaluate(() => {
-            const boards = [...document.querySelectorAll("canvas")].map(canvas => canvas.getBoundingClientRect());
-            return boards[1].left - boards[0].right;
-        })).toBeGreaterThan(160);
+        for (const [width, height] of [[1600, 900], [1280, 720]]) {
+            await hostPage.setViewportSize({ width, height });
+            expect(await hostPage.evaluate(() => {
+                const boards = [...document.querySelectorAll("canvas")].map(canvas => canvas.getBoundingClientRect());
+                const meters = [...document.querySelectorAll(".incoming-meter")].map(meter => meter.getBoundingClientRect());
+                return {
+                    fits: boards.every(board => board.top >= 0 && board.bottom <= innerHeight),
+                    gap: boards[1].left - boards[0].right,
+                    aligned: meters.every((meter, index) => Math.abs(meter.top - boards[index].top - boards[index].height / 6) < 2
+                        && Math.abs(meter.bottom - boards[index].bottom) < 2),
+                    scrollWidth: document.documentElement.scrollWidth,
+                };
+            })).toMatchObject({ fits: true, aligned: true, scrollWidth: width });
+        }
         await hostPage.setViewportSize({ width: 390, height: 844 });
         await expect.poll(() => hostPage.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
         for (const playerNumber of [1, 2]) {
@@ -133,7 +141,7 @@ test("multiplayer StrictMode는 join, input과 HUD lifecycle을 한 세트만 �
             const meterBesideBoard = await column.evaluate(root => {
                 const meter = root.querySelector(".incoming-meter").getBoundingClientRect();
                 const board = root.querySelector("canvas").getBoundingClientRect();
-                return root.dataset.player === "1" ? meter.right <= board.left : board.right <= meter.left;
+                return root.dataset.player === "1" ? board.right <= meter.left : meter.right <= board.left;
             });
             expect(meterBesideBoard).toBe(true);
         }
@@ -259,7 +267,6 @@ test("multiplayer BFCache 복귀와 terminal replacement는 stale 입력을 남�
 test("placement V4 badge와 production artifact 경계를 유지한다", async ({ page }) => {
     const browserErrors = captureBrowserErrors(page);
     await page.goto("/pages/multiLobby.html");
-    await page.locator("#btnOpenCreateRoom").click();
     await page.locator("#btnOpenPveCreate").click();
     await page.locator('#aiPolicySelector input[value="placement_v4"]').check();
     await page.locator("#btnCreatePveRoom").click();

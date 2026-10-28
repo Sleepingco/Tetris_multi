@@ -46,8 +46,7 @@ test("React lobby lifecycle은 listener와 초기 room sync를 한 세트만 유
 
     try {
         await hostPage.goto("/pages/multiLobby.html");
-        await expect(hostPage.locator("#btnOpenCreateRoom")).toBeEnabled();
-        await hostPage.locator("#btnOpenCreateRoom").click();
+        await expect(hostPage.locator("#btnCreateRoom")).toBeEnabled();
         await hostPage.locator("#btnCreateRoom").click();
         await expect(hostPage.locator("#roomStatus")).toBeVisible();
         await expect(hostPage.locator("#chatMessages .chat-msg").filter({
@@ -66,7 +65,7 @@ test("React lobby lifecycle은 listener와 초기 room sync를 한 세트만 유
         await guestPage.locator("#roomCodeInput").fill(roomId);
         await guestPage.locator("#btnJoinCode").click();
         await expect(hostPage.locator("#roomPlayerCountText")).toHaveText("2");
-        await guestPage.locator("#chatScope").selectOption("room");
+        await guestPage.getByRole("radio", { name: "방", exact: true }).check();
         await guestPage.locator("#chatInput").fill("react-lifecycle-message");
         await guestPage.locator("#chatForm").getByRole("button", { name: "전송" }).click();
         await expect(hostPage.locator("#chatMessages .chat-msg").filter({

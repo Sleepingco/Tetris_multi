@@ -6,6 +6,55 @@
  */
 const { test, expect } = require("@playwright/test");
 
+test("홈 장식은 모드 선택 영역의 원래 위치를 따른다", async ({ page }) => {
+    await page.goto("/");
+    for (const [width, leftWidth, rightWidth] of [[1600, "200px", "180px"], [1000, "140px", "130px"]]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.locator(".home-modes").evaluate(root => {
+            const left = getComputedStyle(root, "::before");
+            const right = getComputedStyle(root, "::after");
+            return { left: [left.position, left.bottom, left.left, left.width],
+                right: [right.position, right.bottom, right.right, right.width] };
+        })).toEqual({ left: ["absolute", "58px", "-18px", leftWidth],
+            right: ["absolute", "58px", "-18px", rightWidth] });
+        expect(await page.evaluate(() => getComputedStyle(document.querySelector("#indexRoot"), "::before").display)).toBe("none");
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+    expect(await page.evaluate(() => getComputedStyle(document.querySelector("#indexRoot"), "::before").position)).toBe("absolute");
+});
+
+test("격자 배경은 공용이고 블록 장식은 홈 화면에만 표시한다", async ({ page }) => {
+    const backgrounds = [];
+    for (const [path, selector] of [["/", ".home-modes"], ["/pages/tetrisSingle.html", "#singleRoot"], ["/pages/multiLobby.html", "#multiLobbyRoot"]]) {
+        await page.goto(path);
+        backgrounds.push(await page.evaluate(selector => ({
+            background: getComputedStyle(document.body).backgroundImage,
+            left: getComputedStyle(document.querySelector(selector), "::before").backgroundImage,
+            right: getComputedStyle(document.querySelector(selector), "::after").backgroundImage,
+        }), selector));
+    }
+    expect(backgrounds[0].background).toContain("radial-gradient");
+    expect(backgrounds[0].left).toContain("svg");
+    expect(backgrounds[0].right).toContain("svg");
+    expect(backgrounds[0].left).not.toBe(backgrounds[0].right);
+    for (const background of backgrounds.slice(1)) {
+        expect(background.background).toBe(backgrounds[0].background);
+        expect(background.left).toBe("none");
+        expect(background.right).toBe("none");
+    }
+});
+
+test("모바일 블록 장식은 홈 화면에만 나타난다", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const [path, selector] of [["/pages/tetrisSingle.html", "#singleRoot"], ["/pages/multiLobby.html", "#multiLobbyRoot"]]) {
+        await page.goto(path);
+        expect(await page.locator(selector).evaluate(root => [
+            getComputedStyle(root, "::before").backgroundImage,
+            getComputedStyle(root, "::after").backgroundImage,
+        ])).toEqual(["none", "none"]);
+    }
+});
+
 test("root의 실제 링크로 single과 lobby에 진입한다", async ({ page }) => {
     await page.goto("/");
     await page.evaluate(() => sessionStorage.setItem("tetris:nickname", "SavedMultiName"));
