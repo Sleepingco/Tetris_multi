@@ -19,14 +19,14 @@ convergence/scaler/pair 검사를 해당 없음으로 표시하고 복원 가능
 5. 정적·targeted 검증을 실행한다.
 6. Full과 같은 경로로 작은 smoke를 실행한다.
 7. Smoke 결과가 성능 결론이 아님을 명시한다.
-8. 실제 dataset 경로가 채워진 복사 가능한 full 명령 하나를 제공한다.
+8. Notebook 안의 별도 full 섹션에서 설정·실행·결과를 보는 방법을 인계한다. 기본은 full 비활성화이며 명령어는 보조 방법이다.
 9. 변경과 남은 dirty 상태를 보고한다. 사용자 요청에 commit 권한이 포함된 경우에만 해당 범위로 수행한다.
 
 ## 2. `run-full`
 
 1. 구현 보고와 smoke 통과를 확인한다.
 2. Source, dataset, Notebook checksum을 기록한다.
-3. 제공된 명령을 수정하지 않고 실행한다.
+3. 승인된 Notebook full 섹션 또는 제공된 보조 명령을 정해진 조건으로 실행한다. Smoke/full은 같은 계산 함수를 사용한다.
 4. Full report와 executed Notebook을 `/private/tmp`에 생성한다.
 5. Error, traceback, leakage, convergence와 source 불변성을 확인한다.
 6. 사용자에게 report 경로·SHA-256과 검증·실패·미검증 결과를 보고한다.

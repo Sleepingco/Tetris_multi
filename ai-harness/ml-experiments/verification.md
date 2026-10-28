@@ -21,6 +21,7 @@ Notebook 또는 테스트를 변경했다면 다음을 수행한다.
 2. 최종 상태에서 `npm run verify:ml`과 `bash scripts/verify.sh`를 실행한다. 전자는 Node/Python parity, 후자는 type/build/artifact/compiled test를 검증한다.
 3. 위 suite에 포함된 targeted test와 `git diff --check`는 같은 최종 상태에서 별도로 중복 실행하지 않는다. 실패 분석이나 추가 변경이 있으면 관련 검증을 다시 실행한다.
 4. Source Notebook output과 execution count가 비어 있는지 확인한다.
+   새 Notebook은 smoke/full 섹션 분리·공유 계산 함수·서로 다른 출력 경로와 기본 full 비활성화를 검사한다. 모두 실행만으로 full이 시작되면 통과가 아니다.
 5. 기존 canonical result와 허용 밖 파일이 불변인지 확인한다.
 
 정확한 실행 명령은 [ML 스크립트](../../scripts/verify-ml.sh)와 [기본 스크립트](../../scripts/verify.sh)를 기준으로 한다. 필수 검증이 실패하거나 미실행이면 완료로 보고하지 않는다.

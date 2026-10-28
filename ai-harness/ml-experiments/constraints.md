@@ -10,6 +10,7 @@ Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 �
 - 새 feature·pair·weight·모델·평가 실험은 Python에서만 수행한다.
 - JavaScript에서 Python 실험을 다시 구현하지 않는다.
 - 실험은 Jupyter Notebook으로 작성한다.
+- 사용자 요청(2026-10-28)에 따라 앞으로 실험 구현·실행·요약용 Python 파일이나 별도 Python 테스트 파일을 늘리지 않는다. 작은 검증은 Notebook 안의 assert로 둔다. 기존 Python/테스트는 임의 삭제하지 않는다.
 - Representation, feature, weight, scaler, estimator와 metric이 동결된 뒤에만 최종 trainer를 `.py`로 추출한다.
 - Production model, runtime, PVE와 migration은 실험 범위에 포함하지 않는다.
 
@@ -39,6 +40,8 @@ Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 �
 
 - `왜 → 무엇 → 어떻게 → 결과 → 한계 → 다음 gate` 흐름을 갖는다.
 - 사용자가 손으로 따라갈 수 있는 작은 worked example을 포함한다.
+- 앞으로 작성하는 Notebook은 공통 정의 셀 뒤에 **smoke 실행 섹션**과 **full 실행 섹션**을 따로 둔다. 각 섹션에서 설정·실행·결과 표/그래프를 확인할 수 있게 하고, 계산 함수는 공유해 복제하지 않는다. 기존 Notebook에 소급 적용하지 않는다.
+- Full 섹션은 실행 여부를 명시적으로 선택하도록 기본 비활성화한다. 모두 실행만으로 full이 자동 시작되지 않아야 한다. Smoke/full 결과 변수·출력 경로를 구분하고 기존 산출물을 덮어쓰지 않는다.
 - 결과 요약·비교는 pandas 표, 분포·차이는 Matplotlib 그래프로 보여준다. 각 표·축의 분모와 smoke/full 범위를 표시하고 실제로 보존한 값만 시각화한다.
 - Source Notebook output과 execution count는 비워 둔다.
 - 환경변수로 dataset과 report 경로를 받는다.
@@ -53,7 +56,7 @@ Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 �
 - Smoke는 full과 같은 함수·변환 경로를 사용한다.
 - Smoke report는 `runMode: smoke`, `fullCohortCovered: false`, `policyDecisionEligible: false`, `canonicalResultEligible: false`다.
 - Smoke metric으로 모델 성능을 결론 내리지 않는다.
-- Full 실행은 사용자가 복사할 명령으로 인계하는 것이 기본이다.
+- Full 실행은 Notebook의 해당 섹션에서 진행하는 안내를 기본으로 하고, 명령어는 선택 가능한 보조 방법으로 제공한다. Python 테스트를 먼저 실행해야 Notebook이 동작하는 구조로 만들지 않는다.
 - 데이터만 추가되고 계산 코드가 같다면 full 한 번으로 시작한다.
 - 계산 코드가 바뀌거나 동결 후보를 감사할 때만 full run1/run2 결정성을 요구한다.
 - Routine full 한 번은 정책 판단 자료일 뿐 canonical/freeze 결과가 아니다.
