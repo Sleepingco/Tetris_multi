@@ -58,7 +58,6 @@ async function createWaitingRoom(hostPage, guestPage) {
         })).toBe(true);
     }));
 
-    await hostPage.locator("#btnOpenCreateRoom").click();
     await hostPage.locator("#btnCreateRoom").click();
     await expect(hostPage.locator("#roomStatus")).toBeVisible();
 

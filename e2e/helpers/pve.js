@@ -146,7 +146,6 @@ function createPveSocketMonitor(page) {
 
 async function createPveRoom(page, difficulty) {
     await page.goto("/pages/multiLobby.html");
-    await page.locator("#btnOpenCreateRoom").click();
     await page.locator("#btnOpenPveCreate").click();
 
     const difficultyInput = page.locator(
