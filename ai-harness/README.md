@@ -42,15 +42,17 @@ bash scripts/verify.sh
 ## 반복 ML 실험 호출
 
 반복 실험은 실험 파일과 MODE만 전달한다. 현재는 B3 Full 해석까지 마쳤으며,
-관측 연결 감사 뒤 제안했던 [신규 trace 수집](../docs/ai-ml/contracts/human-action-trace-v1.md)은 2026-10-28 사용자 결정으로 취소하고 구현도 제거했다. 기존 로그만 활용하며 전량 재수집을 요구하지 않는다. 전체 ML gate의 기존 사용자 Notebook 출력/Full 설정 문제는 별도 보류다.
+[기존 로그 활용 조사](../docs/ai-ml/experiments/human-action-observation-link-audit.md#6-기존-로그만으로-완성할-경로-조사-2026-10-28)를 마쳤다. 신규 수집 계획/문서는 삭제했고 기존 pair의 다음 행동·간격 공동 예측, 기존 raw Hold 시도 확장, A/B 비교를 제안한다. Git 저장 source의 ML 검증은 통과했고 로컬 사용자 Notebook 실행 출력은 보존한다.
 
 ```text
-docs/ai-ml/strategy/ai-plan.md의 기존 로그 전용 방향을 확인해.
-추가 수집 없이 확인 가능한 행동열·리듬·Hold 시도와 문맥으로 실험 범위를 제안해.
-기존 사용자 출력·dataset을 보존하고 신규 수집·전체 replay·학습을 자동 시작하지 마.
+ai-harness/ml-experiments/experiments/human-action-timing-joint-baseline.md를 MODE=implement-smoke로 진행해.
+Notebook 하나와 내부 assert·가상 smoke만 구현하고 사용자 실행본·기존 dataset은 보존해.
+신규 수집·실제 Full·Hold raw 확장·신경망·runtime 통합·commit은 하지 마.
 ```
 
 세부 읽기 순서와 MODE 책임은 ML 안내를 따른다. 전체 실험 명세와 과거 실행 기록을 한꺼번에 읽지 않는다.
+
+위 호출은 공동 예측 최초 구현 당시의 재현 예시이며 현재 다음 작업 지시가 아니다. 후속 배치·조작 view, 신경망 비교와 진단까지 완료한 현재 상태는 [AI 계획](../docs/ai-ml/strategy/ai-plan.md)과 [ML 안내](ml-experiments/README.md)를 따른다. 후속 구조는 미채택 상태다.
 
 조작 데이터 적합성·timing baseline·고정 B2 Test·B3 Full 결과 검토를 완료했다.
 B0~B3는 상태를 보지 않는 비교 기준으로 남기며 현재 구조는 상황 조건부 Human 행동 모방을 목표로 한다.

@@ -24,6 +24,8 @@ convergence/scaler/pair 검사를 해당 없음으로 표시하고 복원 가능
 
 ## 2. `run-full`
 
+사용자가 Full-only를 명시하면 별도 Smoke 학습을 선행하지 않고 짧은 내부 assert·고정 명세·입력 계약 확인 뒤 승인된 전체 cohort로 실행한다. 기존 과거 Smoke 산출물은 보존하며 횟수/재현 범위는 현재 명세에 기록한다.
+
 1. 구현 보고와 smoke 통과를 확인한다.
 2. Source, dataset, Notebook checksum을 기록한다.
 3. 승인된 Notebook full 섹션 또는 제공된 보조 명령을 정해진 조건으로 실행한다. Smoke/full은 같은 계산 함수를 사용한다.

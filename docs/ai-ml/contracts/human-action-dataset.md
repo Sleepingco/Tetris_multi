@@ -1,7 +1,11 @@
 # Human 조작 dataset 설계 계약
 
-상태: 첫 timing-only 게임 정책 `quality-policy-v1` 승인, full dataset·B0~B2 Validation/B2 Test·B3 Full Validation 해석 완료. 2026-10-28 사용자 결정으로 신규 action trace 수집은 취소했다. **기존 로그만 활용**하며 dataset schema·split·label·원본은 유지한다. [관측 연결 감사](../experiments/human-action-observation-link-audit.md)의 한계 안에서 확인 가능한 행동열·리듬·Hold 시도부터 범위를 정한다. 새 dataset 생성·전체 상태 복원·학습은 자동 시작하지 않는다.
+상태: 첫 timing-only 게임 정책 `quality-policy-v1` 승인, full dataset·B0~B2 Validation/B2 Test·B3 Full Validation 해석 완료. **기존 로그만 활용**하며 신규 수집 계획·문서는 삭제했다. [활용 조사](../experiments/human-action-observation-link-audit.md#6-기존-로그만으로-완성할-경로-조사-2026-10-28)에 따라 기존 pair의 다음 행동·간격 공동 예측과 기존 raw의 Hold 시도 확장을 제안한다. 기존 schema/split/원본은 보존하며 이번 조사에서 생성·학습은 하지 않는다.
 [현재 계획](../strategy/ai-plan.md)에 따라 품질 경계를 학습 전에 고정한다.
+
+2026-10-29 후속: joint 사용자 Full 결과 해석을 마쳤다. 다음은 [Human 배치·조작 연결 계약](human-placement-action-link.md)에 따른 기존 raw의 배치 label·입력 prefix 연결 확인이다. 새 계약은 고정 직전 보드·anchor와 action별 관측을 구분하며 아직 dataset 생성·reachability·학습을 수행한 결과가 아니다.
+
+2026-11-02 현재 사용 기준은 [offline-use-v1](human-placement-action-link.md#9-기존-로그의-학습-사용-범위--offline-use-v1)이다. Snapshot 관계의 배치 탐색·시도 순서/간격·oracle 목표 조건 과제를 구분한다. 이 계약은 실제 상태 기반 정책의 검증 조건을 완화하지 않는다. 다음은 [학습 view 구성](../../../ai-harness/ml-experiments/experiments/human-placement-action-offline-views.md)이며 기존 timing 파일을 덮어쓰지 않는다.
 
 ## 목적과 단위
 
@@ -12,6 +16,7 @@
 
 | 학습 과제 | 관측 입력 | 정답 |
 | --- | --- | --- |
+| 배치 선택 | 시점 정합성을 확인한 보드·조각 상태 | Human selectedPlacement의 물리 배치 class |
 | 조작 간격 | 현재까지의 문맥·이력, 현재 계획한 행동 | 해당 행동까지의 대기시간 |
 | 다음 행동 | 현재 상태·이력, 사용하는 경우 목표 배치 | 다음 Human action |
 | Hold 여부 | hold 직전 보드·현재 조각·보관 조각·공개 next·사용 가능 여부 | hold 사용/미사용 |
@@ -31,13 +36,20 @@
 - 무입력 구간의 시작·관측 종료·누락을 확인한다. 종료/끊김 때문에 다음 입력을 못 본 구간은 큰 시간 label이나 전략적 WAIT로 만들지 않는다. 생각·의도·공격을 기다린 이유는 직접 관측 label이 아니다.
 - client 처리 시각과 server 수신 시각 등 다른 clock을 그대로 빼지 않는다. 입력 attempt와 실제 outcome, Hold 교체 전/후, 중간 garbage/보정의 사건 순서를 확인한다.
 - 관측 중 변화가 생기면 새 관측 지점을 정의하고 미래 사건을 이전 feature에 넣지 않는다. 대기 취소·재판단의 학습 표본 계약과 실행 계약을 맞춘다.
-- 현재는 semantic action 모방이다. keydown/keyup/repeat/DAS/ARR를 복원했다고 주장하지 않는다. 필요한 새 기록은 수집 비용·개인정보·누락/잘림 표시와 함께 별도 승인한다.
+- 현재는 semantic action 시도 모방이다. keydown/keyup/repeat/DAS/ARR·실행 성공을 복원했다고 주장하지 않는다. 없는 기록은 해당 학습/주장에서 제외하며 새 기록 수집을 요구하지 않는다.
 - 과제별 verified / timing-only / unverified를 분리한다. 기존 raw·timing v1·품질 정책은 보존하고 새 표본은 새 revision으로 만든다. Legacy와 v3/40행은 자동 혼합하지 않는다.
-- B2 Test는 이미 관측했고 후속 가설에 영향을 주었다. 새 구조의 최종 독립 검증에는 미관측 cohort를 예약한다. 기존 cohort를 다시 섞어 독립 Test라고 부르지 않는다.
+- B2 Test는 이미 관측했고 후속 가설에 영향을 주었다. 기존 Train 내부 game-grouped 검증과 고정 Validation으로 개발하며 기존 Test는 진단 자료다. 재분할을 새 독립 Test라고 부르지 않는다. 독립 Human 일반화 증거가 없다는 한계를 남긴다.
 
 이 절은 필요한 증거의 계약이지 해당 필드가 현재 전부 저장돼 있다는 선언이 아니다.
 첫 작업과 A/B 구조 비교는 [AI 계획](../strategy/ai-plan.md)을 따른다.
-[Action trace v1](human-action-trace-v1.md)은 취소된 과거 제안이다. 신규 수집이나 전량 재수집을 현재 학습의 선행 조건으로 삼지 않는다. 기존에 없는 상태/성공/첫 대기 label은 미지원으로 표시하고, 확인 가능한 표본·과제만 사용한다.
+신규 수집이나 전량 재수집을 선행 조건으로 삼지 않는다. 기존에 없는 상태/성공/첫 대기 label은 미지원으로 표시하고 확인 가능한 표본·과제만 사용한다.
+
+### 기존 pair의 공동 예측 view — joint 부분 기준선 검증
+
+- 기존 `nextActionDiagnostic`을 다음 행동 **label**로 쓰고 `recordedIntervalMs`와 함께 예측한다. 미래 action을 입력에 넣지 않는다. 기존 timing v1의 feature/label 계약은 덮어쓰지 않고 새 실험 명세에 view의 의미를 명시한다.
+- Prefix는 같은 split/game/player/piece/sourceLine의 인접 index만 연결하고 gap에서 reset한다. 첫 행동 대기·숨은 상태를 0/정상 값으로 채우지 않는다.
+- Hold는 timing v1에 없으므로 기존 raw의 승인된 gameId 안에서 별도 view로 정의한다. Attempt label만 쓰고 성공·전략 label을 추정하지 않는다. 기존 22게임 격리·11게임 제외·승패 무관 정책은 바꾸지 않는다.
+- 모델의 행동 label·시간 평가와 runtime의 유효 행동 검사·fallback을 분리한다. 전체 목표에는 Human 배치 선택 학습도 포함하며 규칙 기반 배치로 대신하지 않는다.
 
 ### 유지하는 legacy·v3 해석 규칙
 
@@ -136,7 +148,7 @@ Versioned manifest에 source checksum, ruleset/좌표/관찰 단계, 추출 코�
 placement bundle 형식을 조작 dataset에 억지로 맞추지 않는다.
 
 관측 불가능한 상태는 0·빈 배열·안전으로 조용히 대체하지 않는다. 부족하면
-학습 범위를 줄이거나 새 수집 항목을 제안하고, 현재 기록 계약을 임의로 변경하지 않는다.
+학습 범위/성능 주장을 줄이거나 해당 과제를 보류한다. 추가 수집을 제안하거나 현재 기록 계약을 임의로 변경하지 않는다.
 
 ## 입력 시간 생성 경로 조사 (2026-10-24)
 

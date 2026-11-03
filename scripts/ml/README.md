@@ -70,12 +70,36 @@ GUI 모두 실행은 기본 smoke다. 전체 Validation 실행·재실행 경로
 B2(action)와 B3(action+과거 간격 구간)를 같은 Train/Validation에서 비교한다.
 기존 dataset을 다시 만들지 않고 인접 lineage로 과거 간격 하나를 연결한다. 첫 pair/gap에서는 B2 fallback이며 기존 Test는 열지 않는다.
 3번 가상 smoke → 4번 full 설정/실행 → 5번 결과 순서다. 기본 모두 실행은 가상 smoke만, 사용자 full은 `RUN_FULL=True`로 명시한다.
-기존 Test를 이미 본 뒤의 가설이므로 새 후보의 독립 최종 평가에는 새 cohort가 필요하다.
+기존 Test를 이미 본 뒤의 가설이므로 같은 cohort로 새 후보의 독립 최종 일반화를 주장하지 않는다. 현재는 추가 수집 없이 개발 검증과 합성 실행 검사를 계획한다.
 
 사용자 Full Validation 해석을 완료했다. B2/B3 game-macro CRPS는 53.028/49.743ms이며 B0~B3는 timing 비교 기준으로 남긴다.
-[관측 연결 감사](../../docs/ai-ml/experiments/human-action-observation-link-audit.md) 후의 [신규 trace 수집](../../docs/ai-ml/contracts/human-action-trace-v1.md)은 사용자 결정으로 취소하고 구현·준비 Notebook을 제거했다. 다음 계획은 추가 수집 없이 기존 행동열·리듬·Hold 시도와 검증된 문맥으로 과제를 한정하는 것이다. 기존 사용자 출력/Full 설정과 ML 검사 문제는 별도 보류다. 전량 재수집이나 기존 timing 실험 반복을 요구하지 않는다.
+[기존 로그 활용 조사](../../docs/ai-ml/experiments/human-action-observation-link-audit.md#6-기존-로그만으로-완성할-경로-조사-2026-10-28)에서 timing v1에 다음 행동 label도 있음을 재확인했다. 다음은 기존 pair로 행동+간격 공동 예측을 정의하는 명세이며 Hold는 기존 raw의 별도 view로 다룬다. 신규 수집 계획/문서는 삭제했고 전량 재수집이나 기존 timing 실험 반복을 요구하지 않는다.
+
+[공동 기준선 명세](../../ai-harness/ml-experiments/experiments/human-action-timing-joint-baseline.md)의 [Notebook](notebooks/human_action_timing_joint_baseline.ipynb)은 사용자 Full 해석까지 완료했다. 직전 action 조건의 NLL/F1·marginal CRPS 개선은 부분 기준선의 근거이며 전체 controller 채택은 아니다. 6절 Smoke는 가상 데이터만, 7절 Full은 새 출력 경로를 지정한 사용자 재현용이며 자동 반복하지 않는다. 별도 Python 파일 실행은 필요 없다.
+
+[연결 점검 Notebook](notebooks/human_placement_action_link_readiness.ipynb)은 [명세](../../ai-harness/ml-experiments/experiments/human-placement-action-link-readiness.md)와 [계약](../../docs/ai-ml/contracts/human-placement-action-link.md)에 따라 지정 Train 원본 3개/28 pair의 구조 연결을 확인했다. 기본 모두 실행은 4절 가상 Smoke만 처리한다. 실제 표본을 보려면 5절의 `RUN_TRAIN_SAMPLE=True`로 바꾸고 설정 → 실행 → 결과 셀을 실행한다. `SAMPLE_OUTPUT=None`이면 메모리 결과이며 저장하려면 새 JSON 경로를 지정한다. 6절 Full은 아직 지원하지 않고 차단한다. 전체 cohort·학습·Validation/Test·core replay를 수행하지 않았으며 연결 성공을 상태 조건부 학습 준비 완료로 읽지 않는다.
+
+후속 [상태·규칙 근거 Notebook](notebooks/human_placement_context_evidence.ipynb)은 [명세](../../ai-harness/ml-experiments/experiments/human-placement-context-evidence.md)의 사용자 실제 표본 해석까지 마쳤다. 4절의 `RUN_CONTEXT_SAMPLE=True`는 재현용이며 자동 반복하지 않는다. Snapshot/기록 순서의 일관성과 상태/규칙 근거의 한계를 확인했고 실제 replay·학습은 하지 않았다.
+
+[오프라인 view Notebook](notebooks/human_placement_action_offline_views.ipynb)은 [명세](../../ai-harness/ml-experiments/experiments/human-placement-action-offline-views.md)에 따라 사용자 작은 Train·Full 생성/해석을 마쳤다. 기존 raw·품질·split·parser로 배치 snapshot/정답, control prefix/정답, oracle 조건과 eligibility를 분리했다. 기존 생성물을 덮어쓰거나 반복 생성하지 않는다. 해당 Notebook의 4절/5절은 과거 생성 재현용이며 모델 학습 코드는 아니다.
+
+위 offline view의 사용자 Full은 180게임·7,959구간으로 마감했다. 다시 생성하지 않고 새 [목표 조건 prefix Notebook](notebooks/human_goal_conditioned_prefix.ipynb)과 [명세](../../ai-harness/ml-experiments/experiments/human-goal-conditioned-prefix.md)를 따른다. 기본 모두 실행은 가상3epoch Smoke이며 4절 Full은 `RUN_FULL=True`, `FULL_REPORT="data/ml-experiments/human-goal-conditioned-prefix/full-report-run1.json"`로 사용자가 실행한다. 여기서 이름은 dataset revision이 아니라 **새 JSON report 경로**다. 두 비교군의 독립 행동/시간 MLP를 각각30epoch 학습하고 pandas·Matplotlib으로 결과를 표시한다. 실제 Full fit·runtime은 자동 실행하지 않았다.
 
 ## 결과 읽기: pandas + Matplotlib
+
+2026-11-04 커밋 전 정리에서 사용자 실행 설정·출력16개는 ignored `data/ml-experiments/source-checkpoint-20261104/`에 그대로 보존했다. Git용 source는 빈 출력/count와 기본 Full/실제 표본 비활성 상태다. 기존 결과를 보려면 해당 실행본 또는 실험별 report를 열고, 새 실행 때만 source 설정을 명시적으로 변경한다. 별도 Python 파일 실행이나 Full 반복은 필요하지 않다.
+
+현재 [입력·정답 진단 Notebook](notebooks/human_placement_input_target_audit.ipynb)은 [명세](../../ai-harness/ml-experiments/experiments/human-placement-input-target-audit.md)에 따라 승인된 Train149게임 Full2회/결과 해석을 완료했다. 기본은 내부 assert만 실행한다. 결과는4절 `REPORT_TO_READ="data/ml-experiments/human-placement-input-target-audit/full-report-run1.json"`로 읽거나 ignored `data/ml-experiments/human-placement-input-target-audit/executed-analysis.ipynb`를 연다.3절에서 재실행하려면 `RUN_FULL=True`와 아직 없는 run3 등 새 경로를 지정한다. 기존 report는 덮어쓰지 않는다. 동일 입력의 최빈 정답 비율은 관측 표본의 결정적 일치 한계일 뿐 미래 정확도 상한이 아니며, 저장된 boardBefore와 정답 셀 겹침도 자동 제외 근거가 아니다. Validation/Test payload·raw·새 로그·model/scaler fit은 사용하지 않는다.
+
+[배치 snapshot Notebook](notebooks/human_placement_snapshot_baseline.ipynb)의 사용자 run2를 해석했다. 보드 입력의 신호와6epoch 이후 NLL 과적합을 확인했고 최종 지표는 기존 run1과 같았다. 기존 실행본/보고서는 보존한다. 최종 좌표/셀은 정답일 뿐 입력이 아니며 예측 class는 합법 후보로 검증되지 않았다.
+
+[L2 정규화 Notebook](notebooks/human_placement_l2_regularization.ipynb)의 사용자 Full을 해석했다. NLL 개선이 Top-1/MRR 개선으로 이어지지 않아 alpha0.0001을 다음 비교 기준으로 유지한다. 기존 source/보고서는 보존한다.
+
+[보드 스케일링 Notebook](notebooks/human_placement_board_scaling.ipynb)의 사용자 Full은 NLL 개선/Top-1 저하로 해석했다. 다음 [학습 게임 수별 Notebook](notebooks/human_placement_game_count_learning_curve.ipynb)과 [명세](../../ai-harness/ml-experiments/experiments/human-placement-game-count-learning-curve.md)는38/75/112/149게임·동일1530업데이트를 비교한다. 작은 조건도 Smoke가 아닌 정식 비교군이다.
+
+기본 모두 실행은 실제 fit 없는 내부 검사뿐이다.3절 `RUN_FULL=True`, `FULL_REPORT="data/ml-experiments/human-placement-game-count-learning-curve/full-report-run1.json"`로 실행한다.4절에서 전체 Validation/coverage·공통 정답/공통 어휘 projection과 예산 표를 본다. 결과만 읽을 때는 RUN_FULL=False와 REPORT_TO_READ를 사용하며 별도 Python 파일을 먼저 실행할 필요는 없다.
+
+2026-11-03 [정보 분리 Notebook](notebooks/human_goal_information_ablation.ipynb)은 사용자 승인으로 **별도 Smoke 학습 없이 Full1회**를 실행했다. [명세/결과](../../ai-harness/ml-experiments/experiments/human-goal-information-ablation.md)의3조건은 기존 학습·평가 함수를 재사용한다. 기본 모두 실행은 짧은 내부 검사만 수행하며, 저장 결과는4절 `REPORT_TO_READ="data/ml-experiments/human-goal-information-ablation/full-report-run1.json"`로 읽는다. 결과만 볼 때 RUN_FULL을 켜지 않는다. 실제 실행본은 같은 ignored 폴더의 `executed-full-run1.ipynb`다. 기존 실행 Notebook·보고서는 변경하지 않았다.
 
 취소된 trace pilot 준비 Notebook은 제거했다. 현재는 기존 Notebook과 원본·dataset·실행 결과를 보존한다.
 

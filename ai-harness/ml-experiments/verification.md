@@ -42,6 +42,7 @@ Full metric과 full 결정성은 `implement-smoke` 완료 조건이 아니다.
 
 ## `run-full` gate
 
+- 명시적 Full-only 요청은 별도 Smoke 학습 대신 짧은 내부 logic/경계 assert를 먼저 확인한다. Full1회·기존 조건 재현 대조처럼 명세에 정한 실행은 반복 결정성/동결 감사와 구분하며 기존 필수 회귀 검사는 생략하지 않는다.
 - 구현 이후 Notebook·dataset checksum 불변
 - 명세의 전체 validation cohort 사용
 - `runMode: full`

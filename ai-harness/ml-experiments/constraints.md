@@ -23,6 +23,8 @@ Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 �
 
 ## 3. 데이터 계약
 
+- 현재 Human 행동 모방은 사용자 결정(2026-10-28)에 따라 **이미 확보한 로그만 사용**한다. 신규 계측·추가 Human 수집·DB payload 확장을 계획의 선행 조건으로 넣지 않는다. 부족한 정보는 과제/주장의 한계로 남긴다. 기존 자료의 메모리 view 또는 별도 immutable revision은 명세 승인 뒤에만 정의/생성한다.
+
 - Live log를 모델 fit에 직접 사용하지 않고 원본을 고정한 뒤 과제에 맞는 versioned dataset을 만든다.
 - 기존 dataset 경로를 덮어쓰지 않는다.
 - Source checksum과 line 수를 실행 전후 비교한다.
@@ -38,6 +40,7 @@ Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 �
 
 ## 4. Notebook 계약
 
+- 사용자 명시적 `Full-only` 요청(2026-11-03의 정보 분리 실험처럼)은 아래 Smoke/Full 분리 기본값의 예외다. 별도 Smoke 학습/성능 report를 생략하고 짧은 내부 assert·필수 회귀·승인된 전체 cohort 평가를 수행한다. 과거 Smoke 코드/증거를 일괄 삭제하지 않으며, Full 기본 비활성과 실행 승인·출력 보호는 유지한다.
 - `왜 → 무엇 → 어떻게 → 결과 → 한계 → 다음 gate` 흐름을 갖는다.
 - 사용자가 손으로 따라갈 수 있는 작은 worked example을 포함한다.
 - 앞으로 작성하는 Notebook은 공통 정의 셀 뒤에 **smoke 실행 섹션**과 **full 실행 섹션**을 따로 둔다. 각 섹션에서 설정·실행·결과 표/그래프를 확인할 수 있게 하고, 계산 함수는 공유해 복제하지 않는다. 기존 Notebook에 소급 적용하지 않는다.
@@ -60,6 +63,7 @@ Placement ranking과 Human 조작 ML 실험의 공통 계약이다. 과제별 �
 - 데이터만 추가되고 계산 코드가 같다면 full 한 번으로 시작한다.
 - 계산 코드가 바뀌거나 동결 후보를 감사할 때만 full run1/run2 결정성을 요구한다.
 - Routine full 한 번은 정책 판단 자료일 뿐 canonical/freeze 결과가 아니다.
+- Full-only 단일 실행은 해당 명세에 횟수·재현 범위·미검증을 고정한다. 기존 조건을 이전 Full과 재현 대조할 수 있지만 신규 조건의 반복 결정성/동결 감사까지 통과했다고 주장하지 않는다.
 
 ## 6. 파일과 Git
 

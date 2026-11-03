@@ -17,13 +17,27 @@
 이후 [timing baseline](../../ai-harness/ml-experiments/experiments/human-timing-baseline.md)의 사용자 full Validation을 검토하고 B2를 Test 후보로 고정했다.
 이후 [B2 Test 평가 명세](../../ai-harness/ml-experiments/experiments/human-timing-b2-test-evaluation.md)의 사용자 full을 검토했다. 전체 33게임/9,859 pair의 game-macro CRPS는 51.87ms이며 B2를 비교 기준으로 유지했다.
 [과거 간격 조건 탐색](../../ai-harness/ml-experiments/experiments/human-timing-history-baseline.md)의 Full Validation에서 B2/B3 game-macro CRPS 53.028/49.743ms를 확인했다. B0~B3는 상태를 보지 않는 timing 기준선으로 보존한다.
-현재 목표는 Human 행동·리듬·Hold 모방을 유지하되 **기존 로그만 활용**하는 것이다. [관측 연결 감사](experiments/human-action-observation-link-audit.md) 뒤의 [신규 trace 수집](contracts/human-action-trace-v1.md)은 2026-10-28 사용자 결정으로 취소하고 구현·준비 Notebook을 제거했다. 전량 재수집을 요구하지 않는다. 확인된 행동열·간격·문맥으로 실험 범위를 정하고 미기록 상태·성공·의도를 정답처럼 추정하지 않는다. A 모듈형/B 통합 신경망형은 이후 비교 후보이며 새 학습/runtime 채택은 없다. 기존 ML gate 보류와 취소 이력은 [실행 기록](../../ai-harness/runs/human-action-trace-v1-implement-smoke-2026-10-28.md)을 따른다.
+현재 목표는 Human 배치 선택·행동·리듬·Hold 모방을 유지하되 **기존 로그만 활용**하는 것이다. 신규 수집 계획·문서는 삭제했다. [기존 로그 활용 조사](experiments/human-action-observation-link-audit.md#6-기존-로그만으로-완성할-경로-조사-2026-10-28)에 기존 pair의 다음 행동·간격 공동 예측, raw Hold 시도 확장, A 모듈형/B 통합 신경망 비교와 체험 완료 경로를 정리했다. 미기록 상태·성공·의도는 정답처럼 추정하지 않는다. 배치 선택도 Human selectedPlacement로 학습하며 휴리스틱 배치로 대신하지 않는다. Joint 부분 기준선 외 새 배치/controller 학습이나 runtime 변경은 없다.
 기록 간격 분석과 상태 조건부 행동·hold 학습의 미검증 범위를 구분하며,
 [full 결과 기록](../../ai-harness/runs/human-action-data-readiness-analyze-result-2026-10-24.md)을 따른다.
 자세한 현재 계획은 [ai-plan.md](strategy/ai-plan.md), 과거 수치와 명령은
 [실험 로그](experiments/ai-experiments-log.md), 프로젝트 구현·운영은 [PLAN.md](../../PLAN.md)를 본다.
 
+현재 [Human 행동·간격 공동 기준선 명세](../../ai-harness/ml-experiments/experiments/human-action-timing-joint-baseline.md)의 사용자 Full 해석을 완료했다. 직전 행동 조건의 신호를 확인했지만 전체 controller는 채택하지 않았다. 후속 [배치·조작 연결 Notebook](../../scripts/ml/notebooks/human_placement_action_link_readiness.ipynb)의 가상 smoke와 Train 원본 3개/28 pair 점검도 마쳤다. [연결 계약](contracts/human-placement-action-link.md)의 구조 연결은 확인했지만 관측 시점·과거 geometry/도달 가능성은 미검증이며 전체 검사·새 학습은 하지 않았다.
+
+상태·규칙 근거 표본 해석 뒤 [offline-use-v1](contracts/human-placement-action-link.md#9-기존-로그의-학습-사용-범위--offline-use-v1)에 따른 [오프라인 view Notebook](../../scripts/ml/notebooks/human_placement_action_offline_views.ipynb)의 사용자 Full 생성/해석을 마쳤다. [명세](../../ai-harness/ml-experiments/experiments/human-placement-action-offline-views.md)의 placement/control/oracleCondition/eligibility를 분리했고 모델 fit은 하지 않았다. 기존 실행본 때문에 전체 ML 형식 gate는 보류다.
+
+이후 offline view Full은180게임·7,959구간 구성으로 마감했고 [목표 조건 prefix 명세](../../ai-harness/ml-experiments/experiments/human-goal-conditioned-prefix.md)와 [Notebook](../../scripts/ml/notebooks/human_goal_conditioned_prefix.ipynb)의 사용자 Full도 해석했다. 같은 prefix에 목표 묶음을 추가한 조건의 신호를 확인한 뒤 아래 정보 분리 Full-only 실험을 진행했다. Human 배치 모델의 실제 학습·전체 자율 AI는 아직 미완료이며 기존 실행본의 ML 형식 gate 보류는 별개다.
+
 ## 권장 읽기 순서
+
+현재 [AI 계획](strategy/ai-plan.md)의 모듈형 A와 통합 신경망 B는 **미채택 비교 후보**다. 모듈형 우선이라는 이전 기록은 사용자의 질문을 결정으로 잘못 해석한 것이므로 정정했다. 후속 구조·실험은 사용자 선택 후 명세하며 기존 snapshot 분류/진단은 근거로 보존한다. 현재40행 직접 이식·새 수집·추가 학습은 시작하지 않는다.
+
+현재 [입력·정답 진단 명세](../../ai-harness/ml-experiments/experiments/human-placement-input-target-audit.md)와 [Notebook](../../scripts/ml/notebooks/human_placement_input_target_audit.ipynb)은 사용자 승인 Train149게임 Full2회/해석을 완료했다. 희소성은 뚜렷하고 다중 정답의 최소 관측 불일치는1.18%지만 데이터량/구조의 단독 원인은 미확정이다. 경험적 일치 한계·조건부 겹침의 한계를 명시하고 새 수집·Validation/Test payload·재학습·제외·runtime을 시작하지 않는다. 아래 코드 준비 상태는 이전 구현 이력이다.
+
+[배치 snapshot 기준선](../../ai-harness/ml-experiments/experiments/human-placement-snapshot-baseline.md)·[L2](../../ai-harness/ml-experiments/experiments/human-placement-l2-regularization.md)·[보드 스케일링](../../ai-harness/ml-experiments/experiments/human-placement-board-scaling.md)의 사용자 Full을 해석했다. 현재는 [학습 게임 수별 명세](../../ai-harness/ml-experiments/experiments/human-placement-game-count-learning-curve.md)의 [새 Notebook](../../scripts/ml/notebooks/human_placement_game_count_learning_curve.ipynb)으로 기존 Train 게임 수를 늘리며 coverage와 공통 배치 예측력을 구분하도록 준비했다. 새 Full은 미실행이고 기존 Notebook/보고서는 보존한다. snapshot 분류를 합법/도달 가능한 게임 정책으로 승격하지 않는다.
+
+최근 [정보 분리 Full-only 결과](../../ai-harness/ml-experiments/experiments/human-goal-information-ablation.md)는 `goal_cells_additional_signal_observed`다. 조각 종류만 제공한 조건보다 목표 셀까지 제공한 조건의 행동 예측이31게임 모두 NLL/F1에서 개선됐다. [Notebook](../../scripts/ml/notebooks/human_goal_information_ablation.ipynb)은 별도 Smoke 학습 없이 내부 검사·Full 실행·결과 읽기로 구성된다. 후속 배치 snapshot 코드 준비는 위 현재 안내를 따르며, 아직 실제 배치 선택·자체 실행 AI는 아니다.
 
 1. [ai-plan.md](strategy/ai-plan.md)에서 현재 정책과 금지된 승격 범위를 확인한다.
 2. 로그와 dataset 경계: [logService.ts](../../src/server/services/logService.ts),

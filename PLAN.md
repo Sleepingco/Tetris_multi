@@ -6,6 +6,153 @@
 
 ## Current Project Status
 
+### AI 실험 커밋 전 정리 (2026-11-04)
+
+- 사용자 승인으로 실행 상태의 Notebook16개를 ignored `data/ml-experiments/source-checkpoint-20261104/`에 byte-identical하게 보존했다. Git용 source의 output/count를 비우고 Full/실제 표본 스위치를 비활성화했으며 B2/B3의 보고서 초기값을 `None`으로 복구했다. 계산 정의·dataset·기존 report·테스트는 바꾸지 않았다.
+- 모듈형 우선은 채택 결정이 아닌 검토 후보로 정정했다. 다음 구조·실험은 사용자 선택 대기다. 아래 기존 ML7개 실패 기록은 정리 전 이력이며 현재 `verify:ml`은 Node35/35·Python220/220, 기본 verify는801 pass·기존1 skip이다. localhost EPERM은 권한 재실행으로 해소했다. Full 재학습·평가는 반복하지 않았다.
+- 커밋 범위는 기존 AI 실험·명세·관련 문서다. 동시 제품 입력/터치/UI 변경과 그 문서 항목은 제외한다. 로컬 보관 실행본·dataset·model은 Git에 넣지 않는다.
+
+### Human 모방 AI: 후속 구조 검토 — 미채택 (2026-11-04)
+
+- [현재 AI 계획](docs/ai-ml/strategy/ai-plan.md)의 모듈형 V4 배치·조작·타이밍 결합은 사용자가 문의한 검토 후보이지 채택 결정이 아니다. 통합 신경망과의 진행 순서는 미정이며 다음 실험은 별도 선택 후 명세한다.
+- V4는 휴리스틱 teacher가 아니라 Human 선택을 학습한 배치 정책 계열이다. 기존125게임 artifact와 현재 평가 gameId의 중복·16-feature/candidate 출처·legacy20행/현재40행 지원을 먼저 확인한다. 기존40행 `RULESET_INCOMPATIBLE` fallback과 운영 기본 정책은 바꾸지 않았다.
+- 다음 단계는 기존 실험·희소성 진단을 바탕으로 후속 구조와 한 실험을 선택하는 논의다. V4 재사용 경계·모듈 인터페이스 명세는 A 채택 시의 제안이며 자동 실행하지 않는다. 기존 모델·보고서는 보존한다.
+- 이번 변경은 문서만이다. 신규 수집·데이터 변경·학습·runtime·배포·Git mutation은 시작하지 않았다. 향후 자료 추가도 별도 승인과 split/lineage 검증을 거치며 현재 수집 취소 결정을 뒤집지 않는다. 기존 ML 형식 gate 보류와 실제 상태/규칙 미검증은 유지한다.
+
+### Human 배치 입력·정답 진단 (2026-11-03)
+
+- 사용자 학습곡선 Full은 기준선을 재현했고38→149게임의 game-macro Validation Top-1이8.17%→13.42%로 개선됐다. 공통878구간/1104-class projection Top-1도14.06%→21.27%로 개선됐지만 전체 성능으로 대체하지 않는다. 데이터량의 이익은 관측됐고 원인의 단독 귀속은 아직 불가하다.
+- 다음 [진단 명세](ai-harness/ml-experiments/experiments/human-placement-input-target-audit.md)와 [Notebook](scripts/ml/notebooks/human_placement_input_target_audit.ipynb)은 기존 Train149게임/6417구간의 동일 입력·다중 정답, class support, 형식/조건부 겹침을 학습 없이 센다. 사용자가 Full 진단 실행을 승인했다. 기존 Human 선정·정답·split·23개 부적격 정책은 바꾸지 않는다.
+- 승인된 Full2회 report는 byte-identical(SHA `635045e9…1c0155`)이며149게임/6417구간을 확인했다.2133종 중1241종(58.18%)은 사례1~2개,6095구간(94.98%)은 입력이 한 번뿐이다. 다중 정답36입력/246구간, 최소 관측 불일치76구간(1.18%), 저장 셀 겹침0이다. 동일 입력 다중 정답만으로 낮은 Validation을 설명할 근거는 부족하고 희소성이 뚜렷하다. 데이터량/구조 중 단독 원인은 확정하지 않는다.
+- model/scaler fit0·Validation/Test payload/raw/DB 읽기0·새 수집/제외/학습/runtime/Git mutation0이다. 기존 source Notebook·dataset·학습곡선 report는 불변이다. 결과 읽기 실행본의 표/그림2개와 오류0을 확인했다. 기본 verify793 pass·기존1 skip, ML Node35 pass·Python213/220(기존 실행본5 fail·2 error)로 전체 ML gate는 별도 보류다.
+- 기본 Full 비활성/빈 source 출력을 유지한다. 경험적 Train 일치 한계98.82%는 미래 정확도 상한이 아니며 관측 시점·합법성/도달 가능성은 여전히 미검증이다. 현재 gate는 결과 해석 뒤 다음 통제실험 선택이며 반복 학습/구조 변경을 자동 시작하지 않는다.
+
+### Human 배치 학습 게임 수별 학습곡선 준비 (2026-11-03)
+
+- 보드 스케일링 사용자 Full에서도 known NLL은5.803→4.838로 개선됐지만 game-macro Top-1은13.42%→11.84%로 낮아졌고 과적합은 남았다. 이를 데이터 부족의 단독 원인 증거로 해석하지 않고, 기존 Train 게임 수를 바꾸는 [학습곡선 명세](ai-harness/ml-experiments/experiments/human-placement-game-count-learning-curve.md)와 [Notebook](scripts/ml/notebooks/human_placement_game_count_learning_curve.ipynb)을 준비했다.
+- 고정 hash 순서의38/75/112/149게임을 중첩 사용하고, 각 조건은 같은1530 optimizer 업데이트를 사용한다. 각 scaler/어휘는 해당 Train subset만 사용하며 출력 class 수·행 노출량 차이도 보고한다. 공통 Train 어휘1104종/같은 Validation878구간의 projection 진단과 전체1516구간 평가를 분리한다.
+- 기존 parser/model/metric/path 보호를 재사용한다. 새 Python/테스트/dependency·dataset은 추가하지 않는다. 작은 조건은 Smoke가 아닌 정식 데이터량 비교군이며 기본 모두 실행은 실제 fit/data open 없는 내부 assert뿐이다.
+- 내부/default guard·실제 subset/coverage·가짜 fit 예산/public t_·공통 projection/point 조립·baseline drift·표/그림을 검증했다. verify793 pass·기존1 skip, ML Node35 pass·Python213/220(기존 실행본5 fail·2 error)이다. 실제100% 재학습 재현/새 성능은 사용자 Full 전까지 미검증이다.
+- 새 Full은 실행하지 않는다. 먼저100%의 기존30pass 결과 재현에 성공해야 작은 조건으로 진행한다. 다음은 사용자의3절 RUN_FULL=True와 새 report 경로 실행/해석이다. 새 수집·추가 모델 선택·runtime·artifact·commit은 범위에 없다.
+
+### Human 배치 보드 스케일링 비교 준비 (2026-11-03)
+
+- L2 사용자 Full은 기준선을 재현했지만 alpha0.01/1.0의 Top-1이13.42%→12.54%/7.68%로 낮아졌다. NLL 개선과 배치 선택 성능을 구분하고 alpha0.0001을 비교 기준으로 유지한다.
+- [새 명세](ai-harness/ml-experiments/experiments/human-placement-board-scaling.md)와 [Notebook](scripts/ml/notebooks/human_placement_board_scaling.ipynb)은 보드200차원의 표준편차 나눗셈만 제거한다. 평균 중심화·조각7차원·모델·L2·30epoch·데이터는 유지한다. 기존 학습/평가/경로 보호를 SHA 고정으로 재사용하며 기존 Notebook은 수정하지 않는다.
+- 두 조건의 Train/Validation NLL·정확도·게임 delta와 입력값 범위를 pandas/Matplotlib으로 보여준다. 먼저 기존 standardized 결과를1e-12 이내 재현해야 candidate로 진행한다. 입력/L2 상호작용을 포함한 전처리 효용 실험이지 희소 픽셀의 단독 인과 검증은 아니다.
+- 내부/default guard·실제 입력/전처리·가짜 fit report 조립/기준선 drift 중단·표/그림을 검증했다. 보드 최대 절댓값46.24→0.9995와 조각 feature 동일성을 확인했으며 성능은 아직 측정하지 않았다. verify793 pass·기존1 skip, ML Node35 pass·Python213/220(기존 실행본5 fail·2 error)로 전체 ML gate는 보류다.
+- 새 Full은 실행하지 않는다. 기본 모두 실행은 내부 assert뿐이며 사용자가3절 RUN_FULL=True와 새 report 경로로 실행한다. 새 Python/테스트/dependency·새 수집·runtime·artifact·commit은 추가하지 않는다. 전체 ML gate의 기존 실행본 형식 문제는 별도 보류다.
+
+### Human 배치 L2 정규화 비교 준비 (2026-11-03)
+
+- 사용자 snapshot run2는30epoch 전체를 완료했고 이전 최종 지표/최적화 loss trace가 그대로 재현됐다. board_piece의 Train/Validation 구간 Top-1은96.34%/13.46%이며 Validation known NLL은6epoch4.110142에서30epoch5.803012로 상승했다. 확률 손실 기준 과적합과 후반 Top-1 개선을 구분하며6epoch를 자동 채택하지 않는다.
+- [새 명세](ai-harness/ml-experiments/experiments/human-placement-l2-regularization.md)와 [Notebook](scripts/ml/notebooks/human_placement_l2_regularization.ipynb)은 board_piece의 L2 alpha0.0001/0.01/1.0만 비교한다. 같은 입력/어휘/scaler/MLP/seed/30epoch를 유지하고 early stopping/구조/표현은 바꾸지 않는다. 기준선이 reference run2를1e-12 이내 재현하지 못하면 후보 fit을 중단한다.
+- 기본 모두 실행은 실제 fit/data open 없는 내부 검사다. 기존 파서/평가/출력 보호를 재사용하며 새 Python/테스트/dependency는 없다. 실제 파일의 SHA·count·split·Train-only scaler/어휘는 fit 금지로 확인했다. pandas 비교표와 epoch/게임 delta 그래프를 제공한다.
+- 내부/default guard·기준선 drift 차단·가짜 표/그림·실제 전처리 검증을 통과했다. verify793 pass·기존1 skip, ML Node35 pass·Python213/220(기존 실행본5 fail·2 error)이며 전체 ML gate는 별도 보류다. 새 Notebook의 output/count는 비어 있고14개 ID는 고유하다.
+- 새 Full은 실행하지 않았다. 다음은 새 Notebook3절의 RUN_FULL=True와 새 report 경로로 사용자 실행/해석이다. 기존 사용자 Notebook·report를 수정하지 않으며 새 수집·runtime·artifact·commit은 범위 밖이다. 전체 ML gate는 기존 실행본 형식 문제로 계속 보류다.
+
+### Human 배치 snapshot epoch별 Validation 계측 보완 (2026-11-03)
+
+- 사용자가 노트북을 닫은 뒤 **NumPy loss 검사 재적용과 회귀 검증을 완료**했다. 정상 float64/float32·NaN/양음 Infinity·경고6경우를 확인했고 verify793 pass·기존1 skip 뒤에도 디스크 source가 수정 상태를 유지함을 확인했다. 사용자 최신 출력/count/설정은 보존했다. 전체 ML은 기존 실행본7개 문제로 별도 보류이며 실제 Full은 재실행하지 않았다.
+- 사용자 실행 중2번째 epoch의 검사 오류를 재현했다. JSON용 `finite()`가 정상 `numpy.float64` loss도 거부하던 문제를 `np.isfinite()`로 수정하고 NumPy scalar 회귀 검사를 추가했다. 경고는 상세 내용과 함께 별도로 거부하며 실제 NaN/Infinity 검사도 유지한다. 모델/학습 예산은 그대로이고 Full 재학습은 수행하지 않는다.
+- 수정 후 가짜 모델6경우와 verify793 pass·기존1 skip을 확인했다. 전체 ML은 기존 실행본7개 문제로 계속 보류다. 실패 run2 report는 생성되지 않았으므로 커널 재시작 후 현재 run2 경로로 사용자 재실행한다.
+- 사용자 재실행 뒤 디스크 source가 이전 검사로 돌아온 것을 확인해 재적용했다. 외부 변경 후 열린 노트북을 디스크에서 다시 불러오고 커널을 재시작하도록 안내하며, 최신 사용자 출력/설정과 과거 traceback은 보존한다. source가 덮어써진 원인은 미확인이다.
+- 사용자 기존 Full은 보드 정보의 예측 신호를 보였지만(game-macro Top-1 약1.68%→13.42%), 학습 중 Validation 곡선이 없어 과적합 시점을 확인할 수 없었다. [Notebook](scripts/ml/notebooks/human_placement_snapshot_baseline.ipynb)에 매 epoch 종료 후 같은 정의의 Train/Validation known-target NLL과 전체 Top-1·분모/OOV를 기록하고 pandas·Matplotlib으로 비교하도록 보완했다.
+- 모델/Train-only scaler·어휘/30epoch/seed/원래 최종 판단은 유지한다. Validation은 관찰 전용이며 fit·조기 종료·모델 선택에 쓰지 않는다. L2 포함 trainingLoss와 비교용 NLL을 분리한다. 기존 run1 report·사용자 출력/설정을 보존하고 새 계측은 schema2/새 report 경로를 요구한다.
+- 내부 계측/가짜 모델·표/그림 검증과 최종 verify793 pass·기존1 skip을 확인했다. ML Node35 pass·Python213/220(기존 사용자 실행본5 fail·2 error)로 전체 ML gate는 보류다. 기본 suite의 기존 JSONL 읽기1회 실패는 단독/전체 재실행 통과로 구분하며 실행 코드는 변경하지 않았다.
+- 새 계측 Full은 실행하지 않는다. 다음은 커널 재시작 후3절 FULL_REPORT를 새 run2 경로로 바꿔 사용자가 실행/해석하는 단계다. 새 수집·구조 변경·runtime·commit은 범위에 없다. 아래 코드 준비 기록은 최초 구현 당시 이력이다.
+
+### Human 배치 snapshot 기준선 코드 준비 (2026-11-03)
+
+- [명세](ai-harness/ml-experiments/experiments/human-placement-snapshot-baseline.md)와 [Notebook](scripts/ml/notebooks/human_placement_snapshot_baseline.ipynb)을 작성했다. 입력은 boardBefore 점유200+pieceType7뿐이며 최종 activePiece 좌표/회전/셀·정답·oracle·행동열·승패는 입력에서 제외했다. piece_only/board_piece는 같은207→ReLU64→Train class2133 구조에서 보드 mask만 바꾼다.
+- Full-only 코드이며 이번 요청은 코드 작성이므로 실제 Full fit은 미실행이다. 기본 모두 실행은 짧은 내부 검사뿐이다. 실제 snapshot 로딩/feature 변환·Train-only 어휘는 신경망 fit 금지 상태로 확인했다. Train6,417/Validation1,516구간, Validation known1364/OOV152를 확인했고 OOV는 전체 지표에서 실패로 남긴다.
+- 내부 누수/alias/OOV분모/동점/어휘·출력 보호 검사 통과. verify793 pass·기존1 skip, ML Node35 pass·Python213/220(기존 실행본5 fail·2 error), 격리 Git 원본 Python220/220이다. 기존 입력/결과를 보존하고 전체 ML gate 보류를 유지한다.
+- 다음은 사용자의3절 Full 실행/coverage·배치 예측 해석이다. 이 출력은 Train에서 관측한 class 목록이지 합법/도달 가능한 후보가 아니다. snapshot 관측 시점·실제40행 정책/조작 연결은 미검증이며 새 수집·replay·runtime·commit은 하지 않았다.
+
+### Human 정보 분리 Full-only 결과 (2026-11-03)
+
+- 사용자 요청으로 별도 Smoke 학습을 생략하고 [Notebook](scripts/ml/notebooks/human_goal_information_ablation.ipynb)에서 전체 Train149/Validation31게임의3조건을1회 비교했다. 기존 parser/feature/학습/평가를 재사용하고 새 Python·테스트·dependency는 추가하지 않았다. 짧은 correctness 검사와 필수 회귀는 유지했다.
+- `prefix_only`→`piece_type_prefix`→`oracle_goal_prefix`의 accuracy는0.505657→0.518772→0.667455, NLL은1.105671→1.066450→0.796889다. 조각 종류를 아는 조건에서도 목표 셀의 추가 정보가 관측됐으며 NLL/F1은31게임 모두 개선했다. 상태는 `goal_cells_additional_signal_observed`다.
+- Full 모델6개×30epoch, Smoke fit0. 기존 두 조건은 이전 Full과 지표 오차0으로 재현됐다. report SHA `fc5a1731…e790167`, executed SHA `c1d3ff8a…e50c663`, 실행 오류0·그림1개다. 기존25개 Notebook/입력/보고서는 byte 불변이다.
+- verify793 pass·기존1 skip. 현재 ML Node35 pass·Python213/220(기존 실행본5 fail·2 error), 격리 Git 원본 Python220/220이며 전체 ML gate는 보류다. source Notebook은 출력 비움·기본 Full 비활성이다.
+- 다음은 Human 배치 모델의 입력/정답 명세다. 최종 activePiece 좌표/회전/셀로 정답이 노출되는 것을 막고 기존 snapshot 시점 한계를 명시한다. oracle 제어 신호를 실제 배치 판단/자체 rollout 성공으로 승격하지 않는다. runtime·새 수집·추가 학습·commit은 하지 않았다.
+
+### Human 목표 조건 prefix 신경망 implement-smoke (2026-11-02)
+
+- 사용자 offline view Full은 180게임·7,959구간 구성으로 마감했다. 원본8,929 중970은 Hold 보류이고, first hard_drop만 있는73구간도 행동 label로 남겼다. 공통 목표 label Train6,417/Validation1,516구간과 파일 SHA·누수0을 확인했다.
+- [명세](ai-harness/ml-experiments/experiments/human-goal-conditioned-prefix.md)와 [Notebook](scripts/ml/notebooks/human_goal_conditioned_prefix.ipynb)에 `prefix_only`/`oracle_goal_prefix`를 구현했다. 행동/시간 각각 101→ReLU64→softmax의 독립 MLP를 쓰고 목표15차원 mask만 바꾼다. 모델·30epoch·seed·시간 support·평가 규칙을 실제 fit 전 고정했다.
+- 가상3epoch headless2회 byte일치(SHA `ef7c98e5…d4158a9`)·오류0·그림1개씩. 실제 데이터 로딩/101-feature 변환은 fit 금지로 검사했으며 Full 신경망 fit은 아직 하지 않았다. 기본 모두 실행은 가상 Smoke뿐이고4절 Full은 새 report 경로와 명시적 실행이 필요하다.
+- verify793 pass·기존1 skip, 현재 ML Node35 pass·Python213/220(기존 실행본5 fail·2 error)이다. 기존 출력·데이터·runtime은 보존하고 전체 ML gate 보류를 숨기지 않는다. 다음은 사용자 Full 결과 해석이며 배치 fit·Hold·새 수집·runtime·commit은 자동 시작하지 않는다.
+
+### Human 오프라인 view Notebook·가상 Smoke (2026-11-02)
+
+- [Notebook](scripts/ml/notebooks/human_placement_action_offline_views.ipynb) 하나에 placement/control/oracleCondition/eligibility를 분리했다. 기존 parser·품질·물리 class·pair 정의를 재사용하며 새 Python/테스트 파일·의존성·게임 규칙은 추가하지 않았다.
+- 기본 모두 실행은 가상 자료만 처리한다. 4절은 사용자 작은 Train 세 줄의 메모리 구성, 5절은 별도 승인된 Full용 새 immutable Train/Validation/rejected/manifest 출력이다. 둘 다 기본 비활성이고 실제 생성·fit·Test 파싱·runtime 변경은 실행하지 않았다.
+- 가상 headless 2회 bytes 일치(SHA `89ed8d1b…1009877`), 오류 0·그림 1개씩이다. BOS 첫 시간 null·실제 0ms·gap reset·부분 적격·Hold 보류·중복/충돌·Test 파싱 방지·manifest 마지막 독점 게시를 내부 검사했다.
+- 필수 verify 793 pass·기존 1 skip. 현재 ML Node 35 pass·Python 213/220(사용자 실행본의 기존 5 fail·2 error)이며 보존한 Git HEAD 원본 Python 220/220과 구분한다. 따라서 전체 ML gate는 보류다. 다음은 작은 Train 실행/해석이며 Full 실제 규모·모델 학습 준비를 아직 검증하지 않았다.
+
+### Human 기존 로그 사용 범위·오프라인 view 구성 명세 (2026-11-02)
+
+- 사용자 상태/규칙 표본 실행을 해석했다. 구조·두 snapshot 경계·입력 순서의 내부 일관성과 action별 상태/과거 build 근거의 한계를 구분했다. 새 실험을 재실행하거나 이를 전량 학습/실제 replay 근거로 승격하지 않았다.
+- [offline-use-v1](docs/ai-ml/contracts/human-placement-action-link.md#9-기존-로그의-학습-사용-범위--offline-use-v1)에 배치 snapshot 탐색·prefix 기반 행동 시도/간격·oracle 목표 조건·BOS 첫 행동·Hold 보류 기준을 확정했다. 배치와 조작 모두 Human 정답으로 학습한다는 목표를 유지한다.
+- 다음은 [view 구성 명세](ai-harness/ml-experiments/experiments/human-placement-action-offline-views.md)의 Notebook·가상 Smoke·작은 Train view다. Train/Validation만 구성 후보이며 기존 Test·원본·timing dataset·품질/split은 보존한다. 과제별 eligibility와 추론/상태 미검증을 함께 기록한다.
+- 첫 조작 학습 비교는 동일 모델/표본에서 목표 조건 유무를 비교하는 질문으로 한정하고 구체 모델/예산은 fit 전 별도 명세로 고정한다. 별도 Human 배치 학습·예측 목표 실행과 A/B 전체 구조 목표는 남는다.
+- 문서만 변경했으며 새 코드·데이터 생성·fit·replay·runtime·stage/commit은 하지 않았다. 문서 링크/공백을 검증하고 전체 실행 suite는 반복하지 않는다.
+
+### Human 상태·규칙 근거 점검 코드·가상 Smoke (2026-11-02)
+
+- [Notebook](scripts/ml/notebooks/human_placement_context_evidence.ipynb) 하나에 marker·입력 시간/상태 필드·같은 actor의 연속 배치 보드 차이·저장 상대 셀 비교를 구현했다. 이전 정의를 재사용하고 새 Python/게임 규칙·replay·패키지는 추가하지 않았다.
+- 기본 모두 실행은 가상 예제만 처리한다. 실제 새 표본 감사는 4절의 `RUN_CONTEXT_SAMPLE=True`로 별도 실행하며 Full·실제 replay는 차단한다. 사후 보드/배치는 진단 전용이며 예측 feature로 사용하지 않는다.
+- 가상 headless 2회 report bytes 일치(SHA `0e9f71b3…0203a3f`), 오류 0·그래프 1개씩이다. 필수 verify 793 pass·기존 1 skip, 현재 ML은 기존 실행본 때문에 Node 35 pass·Python 213/220이다. 격리된 기존 원본 Python 220/220과 구분한다.
+- 실제 새 감사·전체 cohort·학습·dataset·runtime·commit은 하지 않았다. 다음은 [명세](ai-harness/ml-experiments/experiments/human-placement-context-evidence.md)의 사용자 작은 표본 실행과 결과 해석이다.
+
+### Human 배치·조작 연결 Notebook·작은 Train 점검 (2026-10-29)
+
+- [Notebook](scripts/ml/notebooks/human_placement_action_link_readiness.ipynb) 하나에 기존 parser/정규화·품질·pair 검증을 재사용하고 가상 Smoke·명시적 작은 Train 표본·Full 차단을 분리했다. 별도 Python/테스트·패키지를 추가하지 않았다.
+- Train 원본 3개/1게임·조작 pair 28개가 연결됐고 격리 0이다. 구조 연결 외에는 observation unverified·reachability not_checked·geometry stored_cells_shape_only·actionState sequence_only로 남긴다. 학습 준비 완료나 자체 실행 성공으로 해석하지 않는다.
+- 가상 headless 2회 bytes 일치·오류 0·그래프 2개씩, 실제 sample headless 오류 0·총 그래프 4개다. 최신 실제 report SHA는 `14a8c4c6…b342962`이며 [명세](ai-harness/ml-experiments/experiments/human-placement-action-link-readiness.md)에 범위/보관 경로를 기록했다.
+- 필수 verify 793 pass·기존 1 skip. 현재 ML은 Node 35 pass·Python 213/220(기존 사용자 실행 Notebook 형식/Full 설정의 5 fail·2 error)이며 격리된 Git HEAD 원본 Python은 220/220이다. 사용자 파일은 보존하고 새 Notebook은 별도 내부/가상/실제 표본으로 검사했다.
+- 모델 fit·전체 cohort/replay·dataset 출판·Validation/Test 파일 open·runtime·commit은 수행하지 않았다. 다음은 작은 표본 coverage 해석과 과거 관측 시점/규칙 근거 확인 범위 선택이다.
+
+### Human joint Full 해석·배치/조작 연결 계약 (2026-10-29)
+
+- 사용자 joint Full의 입력 SHA·game별 재집계를 확인했다. Global→previous action의 game-macro NLL 1.418558→1.232912, F1 0.081364→0.237967, 시간 CRPS 54.269946→53.028209ms이며 `conditional_signal_observed`다. 전체 controller로 채택하지 않았다.
+- 정제된 Validation 1,513구간 중 1,511구간에 마지막 hard_drop 정답이 있지만 argmax 예측은 0이다. 데이터 부족보다 중간/최종 이동을 구분할 상태·목표 입력이 없는 부분 기준선의 한계다. Full report/사용자 실행 Notebook은 보존했다.
+- [연결 계약](docs/ai-ml/contracts/human-placement-action-link.md)에 기존 raw의 보드·selectedPlacement·입력 prefix 연결과 누수/시점·ruleset·Hold 경계를 정했다. Train sourceLine 3개의 정규화 identity·행동/시간만 대조했으며 전체 정합/도달 가능성은 미검증이다.
+- 다음은 연결 확인 Notebook의 가상 smoke·작은 Train 점검 준비다. 새 로그 수집·dataset 생성·학습·runtime 변경·stage/commit은 하지 않았다. 이번 변경은 문서만이며 링크·fence·diff를 검사하고 전체 실행 suite는 반복하지 않는다.
+
+### Human 행동·간격 공동 기준선 implement-smoke (2026-10-29)
+
+- [Notebook](scripts/ml/notebooks/human_action_timing_joint_baseline.ipynb) 하나에 설명·작은 예제·내부 assert·가상 Smoke·기본 비활성 Full·pandas/Matplotlib 결과를 구현했다. 기존 정의만 재사용하며 별도 Python 구현/테스트·패키지는 추가하지 않았다.
+- 가상 Train 3게임/9 pair·Validation 2게임/6 pair의 headless 두 report가 byte-identical(SHA `3096f863…994a9fc`)이고 오류 0·그래프 2개다. 실제 Human Train/Validation·Test·raw는 읽거나 fit하지 않았다.
+- 필수 verify 793 pass·기존 1 skip·0 fail. 현재 `verify:ml`은 기존 실행 Notebook의 output/Full 설정으로 Node 35 pass·Python 213/220, 5 fail/2 error다. 사용자 실행본은 보존하고 Git HEAD 원본 Notebook의 격리 cwd에서 Python 220/220을 확인했다. 새 joint 검사는 내부/가상/headless 경로로 별도 통과했다.
+- 다음은 [명세](ai-harness/ml-experiments/experiments/human-action-timing-joint-baseline.md)의 사용자 Full 실행·결과 해석이다. 현재 전체 ML gate 미통과와 구분하며 배치 학습·Hold·runtime·stage/commit은 시작하지 않았다.
+
+### Human 모방 대상·공동 기준선 우선순위 확정 (2026-10-29)
+
+- 사용자 선택은 **여러 Human의 전반적인 플레이 성향 모방 + Human joint 기준선부터 진행**이다. 특정 개인 복제는 이번 목표가 아니다. 기존 품질 정책·승패 무관 Human 선정·split은 유지한다.
+- [AI 계획](docs/ai-ml/strategy/ai-plan.md)의 순서를 공동 행동/시간 기준선 구현·결과 검토 → 기존 raw 배치/조작 view 정합 → Human 배치 학습과 전체 A/B 비교 → 자체 실행·opt-in 검증으로 정리했다. joint를 먼저 하되 배치 선택까지 학습하는 전체 목표는 축소하지 않는다.
+- [joint 명세](ai-harness/ml-experiments/experiments/human-action-timing-joint-baseline.md)의 계산·입력·지표는 유지하고 부분 기준선 역할을 명시했다. 다음 별도 요청은 Notebook 하나·내부 assert·가상 smoke이며 이번에는 문서만 반영했다. Full·새 데이터·runtime·stage/commit은 수행하지 않았다.
+
+### Human AI 목표: 배치 선택부터 조작·리듬까지 모방 (2026-10-28)
+
+- 새 Human AI는 기존 로그의 **보드·조각 상태 → selectedPlacement**로 사람의 배치 선택을 학습하고, inputSequence·간격으로 조작 순서와 리듬도 학습한다. 배치 목표를 휴리스틱 점수로 대신 정하거나 리듬 변경만으로 완료 처리하지 않는다.
+- 모듈형은 학습한 배치 정책 → 예측 목표 조건부 조작/리듬 모델, 통합형은 정합한 보드/이력에서 배치·행동·시간을 출력하는 후보로 비교한다. 기존 core는 합법성·도달 가능성·실행 제약을 담당하며 Human 선호 배치의 정답을 만들지 않는다.
+- selectedPlacement는 배치 정답 전용이고 미래 boardAfter/실제 공격 결과·승패는 입력에 넣지 않는다. 기존 보드의 기록 시점과 Hold 경계는 검증하되 신규 수집 없이 기존 자료로 진행한다. 현재 행동·간격 공동 기준선은 부분 과제이며 배치 모방을 대체하지 않는다. 운영 기본 AI의 현황/과거 기록과 새 학습 목표는 구분한다.
+
+### 기존 pair의 다음 행동·간격 공동 기준선 명세 (2026-10-28)
+
+- [첫 명세](ai-harness/ml-experiments/experiments/human-action-timing-joint-baseline.md)를 작성했다. 기존 Train/Validation만으로 Global joint와 previous-action joint를 비교하며 바뀌는 조건 변수는 직전 action 하나다. 새 수집·dataset 재생성 없이 기존 진단 action 열을 label로만 사용한다. 이는 조작/시간 부분의 기준선으로 전체 목표에는 별도의 Human 배치 선택 학습·평가도 필요하다.
+- Primary는 game-macro next-action NLL, 시간 guardrail은 미래 action을 알려주지 않은 marginal CRPS다. F1·cell/fallback·희소 행동·oracle 조건 시간 점수를 분리한다. Count/Laplace alpha=1·경험 CDF·기술 gate/탐색 판정과 Notebook Smoke/Full을 고정했다.
+- 현재 문서만 준비했다. 다음 별도 요청은 Notebook 하나·내부 assert·가상 smoke의 implement-smoke이며 실제 Full·Hold raw 확장·신경망·runtime·commit은 자동 시작하지 않는다. 사용자 실행본과 기존 데이터는 보존한다.
+
+### 신규 수집 문서 삭제·기존 로그 활용 조사 (2026-10-28)
+
+- 신규 수집 전용 계약·구현 실행 기록 두 문서와 PLAN/AI 계획/change-log의 상세 수집 제안을 삭제했다. 기존 로그 감사·품질 정책·실험 결과는 유지하고 [조사 보고 6절](docs/ai-ml/experiments/human-action-observation-link-audit.md#6-기존-로그만으로-완성할-경로-조사-2026-10-28)에 기존 자료만으로 가능한 경로를 정리했다.
+- 고정 timing v1의 Train 41,151/Validation 10,180 pair에 다음 행동 label도 있음을 열·개수·manifest SHA로 재확인했다. 재수집 없이 행동+간격 공동 예측을 설계할 수 있다. Hold 1,138구간은 이 dataset에서 빠져 있으므로 기존 raw의 승인 게임만 대상으로 별도 view가 필요하다. 새 정제/학습을 실행한 것은 아니다.
+- 전체 계획은 기존 raw의 보드·selectedPlacement 기반 배치 모방과 입력열/간격 기반 조작 모방 → 예측한 배치 목표로 A/B 결합 비교 → 기존 core 합성 실행 → opt-in 체험이다. 현재 공동 기준선은 조작/시간의 부분 과제다. 관측하지 못한 action별 상태/공격/첫 대기·성공 label과 새 독립 일반화는 주장하지 않으며, 배치 선택까지 학습한다는 목표는 유지한다.
+- 이번은 문서·읽기 전용 조사다. Runtime/수집/DB·Notebook·테스트·데이터 변경, 모델 fit/평가·stage/commit은 수행하지 않았다. 문서 링크·fence·diff를 검사하며 전체 ML/Node 검증은 반복하지 않는다.
+
 ### 블록 장식은 메인 화면에만 표시 (2026-10-28)
 
 - 사용자의 요청에 따라 테트리스 블록 장식을 메인 화면에서만 표시한다. 싱글·로비·멀티 페이지는 격자와 그라데이션 배경만 유지한다. 상세는 [디자인 기록](docs/design/buffer-layout-plan.md#11-블록-장식-메인-화면-전용-2026-10-28)을 따른다.
@@ -29,8 +176,8 @@
 
 ### 신규 Human trace 수집 취소·기존 로그 활용으로 복귀 (2026-10-28)
 
-- 사용자 계획과 다른 신규 수집을 취소하고 관련 runtime/schema·session·Vite/page·서버 extension·전용 검사/fixture·준비 Notebook을 제거했다. 기존 로그·dataset·실험 결과와 동시 UI 작업은 보존했다. 취소 전 증거는 [과거 실행 기록](ai-harness/runs/human-action-trace-v1-implement-smoke-2026-10-28.md)으로만 남긴다.
-- 모든 로그를 새로 모으지 않는다. [AI 계획](docs/ai-ml/strategy/ai-plan.md)은 기존 행동열·리듬·Hold 시도와 확인 가능한 문맥으로 과제를 한정한다. 미기록 상태·첫 대기·공격 의도를 추정해 정답으로 만들지 않는다.
+- 사용자 계획과 다른 신규 수집을 취소하고 관련 runtime/schema·session·Vite/page·서버 extension·전용 검사/fixture·준비 Notebook을 제거했다. 기존 로그·dataset·실험 결과와 동시 UI 작업은 보존했다. 후속 사용자 요청으로 신규 수집 문서와 상세 계획도 삭제했다.
+- 모든 로그를 새로 모으지 않는다. [AI 계획](docs/ai-ml/strategy/ai-plan.md)은 기존 보드·사람 selectedPlacement와 행동열·리듬·Hold 시도를 사용한다. 미기록 action별 상태·첫 대기·공격 의도를 추정해 정답으로 만들지 않으며, 데이터 제한을 이유로 배치 모방을 규칙 기반 배치로 대체하지 않는다.
 - 커밋 준비에서 Git 저장 source만 output/count를 비우고 B2/B3 Full 기본값을 복원한 격리 복사본의 ML Node 35/35·Python 220/220을 통과했다. 작업 폴더의 사용자 실행 Notebook은 byte 그대로라 출력/Full 설정 차이가 미커밋으로 남는다. 필수 verify는 793 pass·기존 1 skip·0 fail이다.
 - 실제 Human 신규 수집·운영 DB 변경·dataset 생성·학습·배포는 실행하지 않았다. 취소된 설계는 현재 실행 지시가 아니며 다음 실험을 자동 시작하지 않는다.
 
@@ -44,20 +191,12 @@
 - [배치 계획](docs/design/buffer-layout-plan.md#6-구현-결과-2026-10-28)에 따라 보드의 높이 제한·가시 영역 정렬과 로비의 방 조작 우선 순서를 적용했다. 기존 색상·40행 규칙·NEXT 4개·방 상태/채팅을 유지하고 싱글 조작법을 키보드로 접고 펼칠 수 있게 했다.
 - 필수 verify는 Node 797 pass·1 skip·0 fail이다. 관련 Chromium 최초 25 pass·높이 1 fail을 수정했고 실패 항목과 낮은 화면의 성과 비겹침 검사 2/2가 재통과했다. 다크 테마·1100px 전환·390px·CSS 확대를 로컬 확인했다. 기존 사용자 변경은 보존했으며 실기기와 운영 배포는 미실행이다.
 
-### Human action trace v1 최소 수집 계약 설계 (2026-10-27)
-
-- [계약 v1](docs/ai-ml/contracts/human-action-trace-v1.md)을 작성했다. 기존 Human/v3 placement 안의 optional versioned trace를 선택해 단일 sink·event identity를 유지하고 새 테이블/Socket event를 제안하지 않았다. 마지막 미완성 턴 유실과 선택 편향을 명시한다.
-- 공개 row 16~39/NEXT 4개·pending 공격·Hold 가능 여부를 같은 단조 clock과 inputIndex로 연결한다. 입력 전/후 관측을 구분하고 pre_action→동일 action의 0ms를 대기 label로 쓰지 않는다. Terminal outcome 누락 없이 로그를 봉인하는 순서·누락/종료 처리를 정했다.
-- Local pilot 제안 cap은 trace 64KiB·action 64/event 512/board 32·120초·보관 총량 256KiB다. 합성 직렬화 8 actions는 6,571 bytes였으며 실제 플레이/처리 성능 측정은 아니다. 기본 off·Vite-dev만·공개 수집 정책 미결정을 유지한다.
-- 수용 기준 AC-001~007과 구현 영향·저장 round-trip·비밀/한도 검증·rollback을 기록했다. 다음은 수집 구현·synthetic smoke 후 사용자 local pilot gate다. 이번에는 문서만 변경했고 코드/DB/실제 수집/dataset/학습·stage/commit은 시작하지 않았다.
-- 합성 예제의 구조 assert·독립 Python 직렬화 재계산과 문서 9개 링크 307개/앵커 22개·fence/공백 검사를 통과했다. 전체 테스트·실제 브라우저/DB 검증은 설계 범위 밖으로 생략했으며 구현 검증 완료로 보고하지 않는다.
-
 ### Human 관측 연결 1단계 감사 완료 (2026-10-27)
 
-- [감사 결과](docs/ai-ml/experiments/human-action-observation-link-audit.md): `observation_link_audit_complete_partial_reuse_new_capture_required`. 기존 readiness 결과·runtime/session/projector·legacy Train 일반/Hold 표본·local v3 tail 600행을 대조했다. 전체 감사/replay·Test 평가·DB 접근은 하지 않았다.
+- [감사 결과](docs/ai-ml/experiments/human-action-observation-link-audit.md)는 기존 자료의 부분 재사용과 상태 미확인을 구분했다. 후속 6절에서 기존 로그 전용 경로를 조사했다. 기존 readiness 결과·runtime/session/projector·legacy 일반/Hold 표본·local v3 tail만 대조했으며 전체 replay·Test 평가·운영 DB 접근은 하지 않았다.
 - 기록된 시도 순서/간격은 재사용 가능하다. 그러나 입력 전후 조각·성공 callback은 저장되지 않고, lock 직전 board/queue/Hold와 갱신 가능한 activePiece anchor로 모든 입력 직전 상황을 대체할 수 없다. Spawn/ready 시각·공격 관측 시각·Hold availability/outcome은 보완이 필요하다.
 - 연속 legacy placement의 이전 boardAfter와 다음 boardBefore가 51 cell 다르고 garbage가 9→36개인 사례를 확인했다. 원인/도착 시각은 확정하지 않았다. Human incomingGarbageLines=0은 현재 코드의 결과 placeholder여서 공격 없음 label로 쓰지 않는다.
-- 다음은 최소 상황/action trace 수집 계약 설계다. 공개 next 4개·표시 보드 mask와 내부 상태를 구분하고 clock/ID/누락/종료·저장 상한을 정한다. 기존 raw/timing 자료·정책·사용자 출력을 유지하며 새 dataset·수집/runtime·학습·commit은 시작하지 않았다.
+- 당시 제안한 신규 수집은 후속 사용자 요청으로 철회하고 상세 문서를 삭제했다. 현재는 위 기존 로그 활용 계획을 따른다. 기존 raw/timing 자료·정책·사용자 출력은 유지한다.
 - 읽기 전용 pandas/Matplotlib 예제의 15개 입력/시각 원점/Hold assert와 표·그래프 생성을 통과했다. 변경 문서 9개 링크 293개·앵커 24개·fence/공백을 검사했다. 문서 작업이므로 전체 테스트는 반복하지 않았고 기존 ML gate 보류는 유지한다.
 
 ### 상황 조건부 Human AI 구조·로드맵 개정 (2026-10-27)
@@ -104,7 +243,7 @@
 
 ### Human AI 전체 구조 두 버전 비교 계획 (2026-10-26)
 
-- [AI 구조 비교 계획](docs/ai-ml/strategy/ai-plan.md#전체-ai-구조-비교-두-버전-실험-예정)에 모듈 조합형 A와 다음 행동·대기시간 공동 예측 신경망형 B를 모두 실험할 후보로 명시했다. 공통 데이터/관측/실행 조건과 offline·자체 실행·체감 평가를 정하고 최종 구조는 미채택으로 유지한다.
+- [AI 구조 비교 계획](docs/ai-ml/strategy/ai-plan.md#전체-ai-구조-비교-두-후보-검토)에 모듈 조합형 A와 다음 행동·대기시간 공동 예측 신경망형 B를 모두 실험할 후보로 명시했다. 공통 데이터/관측/실행 조건과 offline·자체 실행·체감 평가를 정하고 최종 구조는 미채택으로 유지한다.
 - 현재 timing-only 자료로 전체 구조를 학습할 수 있다고 가정하지 않는다. 상태/action/hold 연결 검증과 별도 비교 명세가 선행돼야 한다. 다음 timing baseline 범위는 유지하며 이번에는 문서만 변경했다. 구현·학습·수집·runtime 통합·stage/commit은 하지 않았다.
 
 ### 다음 timing baseline 실행 계획 (2026-10-26)
@@ -1011,7 +1150,7 @@ Socket.IO 경기를 보존하지 못한다. 따라서 지금 상태를 진정한
 - [ ] 자원·상태 공유 선행조건이 충족될 때만 near-zero/무중단 배포 Goal 승인
 - [ ] Goal 9D 이후 DB dataset read-source가 필요할 때만 Goal 10 재개
 - [ ] 유지보수 이득이 분명해지면 Goal 8D test/e2e/scripts TypeScript 정리 재검토
-- [ ] 실제 gameplay 성능 목표가 생기면 heuristic/V4/hybrid를 새 실험 문서와 benchmark로 분리 검토
+- [ ] Human 배치 선택·조작/리듬 학습 후보의 결합 실행과 gameplay 성능을 별도 실험·benchmark로 검증. 현재 정책과의 비교는 가능하나 배치 선택 목표를 대신하지 않음
 - [ ] LLM 코칭 리포트는 분석 지표와 사용자-vs-AI 비교 결과가 준비된 뒤 별도 승인으로 검토
 
 ## Known Risks and Deferred Work

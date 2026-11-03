@@ -1,5 +1,9 @@
 # ML Experiment Harness
 
+2026-11-04 커밋 전 정리로 실행본16개를 ignored `data/ml-experiments/source-checkpoint-20261104/`에 보존하고 source의 출력/count·실행 기본값을 복구했다. `verify:ml` Node35/35·Python220/220 통과다. 아래 기존 실행본 형식 문제와 코드 준비 상태는 당시 이력이며 새 Full/다음 실험 지시가 아니다.
+
+현재 [Human 배치 입력·정답 진단](experiments/human-placement-input-target-audit.md)의 승인 Full2회/해석을 완료했다. [AI 계획](../../docs/ai-ml/strategy/ai-plan.md)의 모듈형 V4 재사용과 통합 신경망은 미채택 비교 후보이며 후속 구조·실험은 사용자 선택을 기다린다. 이전 준비/실행 기록을 새 구현·Full·수집·runtime 승인으로 읽지 않는다.
+
 이 하네스는 placement ranking과 Human 조작 ML 실험의 데이터·Notebook·leakage·검증·Git 규칙을 한곳에 둔다.
 
 현재 방향은 [AI 계획](../../docs/ai-ml/strategy/ai-plan.md), 과거 실험은
@@ -14,7 +18,7 @@
 Notebook·smoke와 사용자 full Validation 검토를 완료하고 B2를 Test 후보로 고정했다. 기존 source 형식 검사 보류와 구분한다.
 후속 [고정 B2 Test 평가](experiments/human-timing-b2-test-evaluation.md)는 사용자 full 결과를 검토하고 마감했다.
 [과거 간격 조건 탐색](experiments/human-timing-history-baseline.md)의 사용자 Full 결과도 해석했다. B3의 Validation 개선은 상태를 보지 않는 timing 기준선의 근거이며 최종 구조 채택은 아니다.
-현재 [관측 연결 감사](../../docs/ai-ml/experiments/human-action-observation-link-audit.md)는 마쳤지만 후속 [신규 trace 수집](../../docs/ai-ml/contracts/human-action-trace-v1.md)은 2026-10-28 사용자 결정으로 취소하고 구현을 제거했다. 기존 로그만 활용하며 재수집을 선행 조건으로 삼지 않는다. 기존 사용자 Notebook 출력/Full 설정 때문에 ML 전체 gate는 보류다. 학습/전체 replay를 자동 시작하지 않는다.
+현재 [기존 로그 활용 조사](../../docs/ai-ml/experiments/human-action-observation-link-audit.md#6-기존-로그만으로-완성할-경로-조사-2026-10-28)를 마쳤다. 신규 수집 계획/문서는 삭제했다. 기존 pair의 다음 행동·간격 공동 예측과 기존 raw의 Hold 시도 확장이 가능하다는 조사이며 새 모델을 학습/채택한 결과는 아니다. Git 저장 source는 ML 검증을 통과했고 로컬 사용자 실행 Notebook은 보존한다. 학습/전체 replay를 자동 시작하지 않는다.
 기존 source output/count 형식 검사는 별도 보류다. B3를 이미 관측한 Test에서 평가하지 않는다.
 이전 implement-smoke/full 예시는 재실행 지시가 아니다.
 
@@ -52,6 +56,7 @@ Notebook·smoke와 사용자 full Validation 검토를 완료하고 B2를 Test �
 | `freeze-audit` | 동결 후보의 결정성·재현성·승격 근거 감사 | run-full gate와 analyze-result gate, workflow의 freeze 조건 |
 
 기본 MODE는 `implement-smoke`다. 명시적인 `run-full` 권한 없이 긴 전체 평가를 실행하지 않는다.
+사용자가 Full-only를 명시한 경우에는 현재 명세의 승인·고정 조건 아래 별도 Smoke 학습을 생략할 수 있다. 짧은 내부 검사·필수 회귀·기본 Full 비활성·출력 보호는 유지하고 과거 Smoke 이력을 일괄 삭제하지 않는다.
 MODE나 환경변수 설정은 실행 승인이 아니다. `analyze-result`와 `freeze-audit`에서 결과가 부족하면 부족한 증거를 보고하고, 승인되지 않은 full 실행·재학습·production 승격은 하지 않는다.
 문서만 변경하면 verification의 문서 검증 절을 적용한다.
 
@@ -72,15 +77,24 @@ MODE나 환경변수 설정은 실행 승인이 아니다. `analyze-result`와 `
 
 ## 호출 방법
 
-현재 다음 계획은 기존 로그에서 확인 가능한 행동열·리듬·Hold 시도와 문맥으로 과제를 한정하는 것이다. 신규 수집은 취소됐으며 ML 검사 정합 문제는 별도로 남아 있다.
+기존 pair의 [공동 예측 명세](experiments/human-action-timing-joint-baseline.md)는 사용자 Full 해석을 완료했다. 후속 [배치·조작 연결 점검](experiments/human-placement-action-link-readiness.md)은 Notebook·가상 smoke·작은 Train 3개/28 pair 점검을 마쳤다. 현재 다음 gate는 표본 coverage 해석과 과거 관측/규칙 근거 확인 범위 선택이다. 신규 수집·전량 replay·dataset/학습·runtime은 자동 시작하지 않는다. 아래 implement-smoke 호출은 joint 최초 구현 범위의 재현 예시이며 현재 다음 실행 지시가 아니다.
+
+이후 [상태·규칙 근거 점검](experiments/human-placement-context-evidence.md)의 사용자 작은 표본 해석을 완료했다. 현재 [오프라인 view 구성](experiments/human-placement-action-offline-views.md)은 Notebook·가상 Smoke 검증을 마쳤으며 다음은 사용자 작은 Train 실행/해석이다. 학습 사용은 [offline-use-v1](../../docs/ai-ml/contracts/human-placement-action-link.md#9-기존-로그의-학습-사용-범위--offline-use-v1)을 따른다. 전체 ML gate는 기존 실행본의 차이로 보류하며 실제 전체 생성·학습·replay·runtime을 자동 시작하지 않는다.
 
 ```text
-docs/ai-ml/strategy/ai-plan.md의 기존 로그 전용 방향을 확인해.
-추가 수집 없이 확인 가능한 행동열·리듬·Hold 시도와 문맥으로 실험 범위를 제안해.
-기존 사용자 출력·dataset을 보존하고 신규 수집·전체 replay·학습을 자동 시작하지 마.
+CURRENT_EXPERIMENT_FILE=ai-harness/ml-experiments/experiments/human-action-timing-joint-baseline.md
+MODE=implement-smoke
+이 명세의 Notebook 하나와 내부 assert·가상 smoke만 구현해. 사용자 출력·dataset은 보존해.
+신규 수집·실제 Full·Hold raw 확장·신경망·runtime 통합·commit은 하지 마.
 ```
 
+offline view와 [목표 조건 prefix](experiments/human-goal-conditioned-prefix.md)의 사용자 Full 해석은 완료했다. 후속 [정보 분리 실험](experiments/human-goal-information-ablation.md)도 사용자 Full-only 승인으로 실행/해석했다. 현재는 [배치 snapshot 기준선](experiments/human-placement-snapshot-baseline.md)의 코드/내부 검사·로딩을 준비했고 사용자 Full 학습 전이다. 위 joint 최초 호출은 역사적 재현 예시다. 별도 승인 없이 추가 fit·runtime·다음 실험을 자동 시작하지 않는다.
+
+현재 snapshot/L2/보드 스케일링 Full을 해석했고 [학습 게임 수별 비교](experiments/human-placement-game-count-learning-curve.md)의 Notebook/내부 검사를 준비했다. 기존 Train38/75/112/149게임과 같은1530업데이트의 Full-only 비교이며 실제 Full은 사용자 실행 전이다. 작은 조건은 Smoke가 아닌 정식 비교군이며3절 RUN_FULL을 켜기 전에는 실제 학습을 하지 않는다. 이전 문단의 코드 준비 상태는 최초 구현 이력이다.
+
 후속 실험 명세가 정해지면 CURRENT_EXPERIMENT_FILE과 MODE를 지정한다. 기존 Full report를 다시 검토하려는 경우에만 다음처럼 호출한다.
+
+2026-11-03 [정보 분리 실험](experiments/human-goal-information-ablation.md)은 사용자 Full-only 승인으로1회 실행/해석했다. 후속 [배치 snapshot 기준선](experiments/human-placement-snapshot-baseline.md)은 코드/내부 검사까지 준비했고 실제 Full fit은 사용자 실행 전이다. 정보 분리 실험은 별도 Smoke 학습 없이 내부 assert·전체 cohort·기존 조건 재현·필수 회귀를 유지했으며 이 기록을 후속 학습의 자동 승인으로 읽지 않는다.
 
 ```text
 ai-harness/ml-experiments/experiments/human-timing-history-baseline.md를 MODE=analyze-result로 검토해.

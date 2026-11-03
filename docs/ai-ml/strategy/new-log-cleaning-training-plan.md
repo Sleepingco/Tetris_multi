@@ -5,6 +5,7 @@
 > [현재 AI 계획](ai-plan.md)과 [행동 dataset 계약](../contracts/human-action-dataset.md)을 적용한다.
 > 원본 무결성·DB row 해석·중복 검증 아이디어는 재사용하되 기존 정상 종료/초기
 > 조각 필터와 20행 후보 생성 정책을 행동 dataset에 자동 적용하지 않는다.
+> 여기서 '신규 로그'는 이미 확보한 아래 immutable 원본을 뜻한다. 새 계측/수집 계획이 아니며 현재 실행 지시는 [기존 자료 전용 AI 계획](ai-plan.md)을 따른다.
 
 작성일: 2026-10-04 (Asia/Seoul)
 상태: 계획 작성 완료. 정제 실행, 모델 학습 및 runtime 적용은 아직 수행하지 않음.
@@ -189,7 +190,7 @@ V0~V3 비교나 새 feature 실험은 이번 데이터 확장에 섞지 않는�
 5. 결과 분석 후 신규 cohort를 다음 training pool에 포함할지 결정한다.
 6. 포함이 결정되면 누적 training pool로 V4 모델 후보를 다시 batch fit한다.
 7. 이때 학습에 넣은 신규 게임의 점수를 새 모델의 held-out 성능으로 보고하지 않는다.
-   새 모델의 독립 성능 확인에는 별도로 남겨둔 미사용 게임 또는 이후 수집 게임을 사용한다.
+   기존 자료 안에 별도로 남겨둔 미사용 게임이 없다면 독립 성능 증거가 없음을 명시한다. 새 게임 수집을 선행 조건으로 요구하지 않는다.
 8. model artifact와 dataset/feature/training 정책·checksum을 함께 보존한다.
 
 PVE 적용은 Python/Node parity와 gameplay benchmark를 통과한 뒤 별도 단계로
