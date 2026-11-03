@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 async function createFixture(t) {
     let now = 1000;
     let inputTick;
-    const globals = new Map(["Audio", "localStorage", "document"].map(key => [key, {
+    const globals = new Map(["Audio", "localStorage", "document", "window"].map(key => [key, {
         exists: Object.hasOwn(globalThis, key), value: globalThis[key],
     }]));
     const listeners = new Set();
@@ -14,6 +14,7 @@ async function createFixture(t) {
         pause() {}
     };
     globalThis.localStorage = { getItem: () => null, setItem() {} };
+    globalThis.window = { addEventListener() {}, removeEventListener() {} };
     globalThis.document = {
         addEventListener(type, listener) { if (type === "keydown") listeners.add(listener); },
         removeEventListener(type, listener) { if (type === "keydown") listeners.delete(listener); },

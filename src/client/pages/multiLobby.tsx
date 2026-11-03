@@ -2,7 +2,7 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
 import type { ServerToClientParsedPayload } from "../../shared/socketContractTypes";
-import { roomPublicSchema } from "../../shared/socketContracts.mjs";
+import { roomPublicSchema, roomIdSchema } from "../../shared/socketContracts.mjs";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
 import { initLobbySound } from "../game/runtime/sound.ts";
 import {
@@ -92,6 +92,20 @@ const initialNickname = getSavedNickname();
  * sound effect를 해제한다. 게임 판정이나 room 상태 전이는 이 컴포넌트에서 결정하지 않는다.
  */
 function MultiLobbyPage() {
+    const [invitation] = useState(() => {
+        const values = new URL(window.location.href).searchParams.getAll("join");
+        const parsed = roomIdSchema.safeParse(values[0]?.trim().toUpperCase());
+        return { roomId: values.length === 1 && parsed.success ? parsed.data : null, invalid: values.length > 0 && (values.length !== 1 || !parsed.success) };
+    });
+    const invitationAttempted = useRef(false);
+    const invitationDismissedRef = useRef(false);
+    const shouldRestoreGame = (nextRoom: Room) => nextRoom.status === "playing" && (!invitation.roomId || invitation.roomId === nextRoom.roomId || invitationDismissedRef.current);
+    const [invitationDismissed, setInvitationDismissed] = useState(false);
+    const clearInvitationQuery = useCallback(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("join");
+        window.history.replaceState(null, "", url);
+    }, []);
     const [playerId, setPlayerId] = useState<string | null>(null);
     const [nickname, setNickname] = useState(initialNickname);
     const [room, setRoom] = useState<Room | null>(null);
@@ -147,8 +161,9 @@ function MultiLobbyPage() {
         if (send()) return true;
         pendingRequestRef.current = null;
         setPendingRequest(null);
+        appendMessage("system", "연결 상태를 확인한 뒤 다시 시도해 주세요.");
         return false;
-    }, []);
+    }, [appendMessage]);
 
     const releaseRequest = useCallback(() => {
         pendingRequestRef.current = null;
@@ -158,6 +173,23 @@ function MultiLobbyPage() {
     useEffect(() => {
         messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
     }, [messages]);
+
+    useEffect(() => {
+        if (invitation.invalid && !invitationAttempted.current) {
+            invitationAttempted.current = true;
+            clearInvitationQuery();
+            appendMessage("system", "초대 링크의 방 코드가 올바르지 않습니다. 방 코드를 직접 입력해 주세요.");
+        }
+        if (!invitation.roomId || invitationDismissed || invitationAttempted.current
+            || !sessionReady || !playerId || needsRoomSync || pendingRequest) return;
+        if (room && room.roomId !== invitation.roomId) return;
+        invitationAttempted.current = true;
+        clearInvitationQuery();
+        setRoomCodeInput(invitation.roomId);
+        if (!room && !sendRoomRequest("join", () => requestJoinRoom(invitation.roomId!, { playerId, nickname }))) {
+            appendMessage("system", "초대 참가 요청을 보내지 못했습니다. 방 입장 버튼으로 다시 시도해 주세요.");
+        }
+    }, [invitation, invitationDismissed, sessionReady, playerId, needsRoomSync, pendingRequest, room, nickname, appendMessage, sendRoomRequest, clearInvitationQuery]);
 
     // =============================
     // 로비 소켓 생명주기
@@ -170,7 +202,7 @@ function MultiLobbyPage() {
         const disposers = [
             onRoomUpdated((nextRoom: Room) => {
                 // 서버가 playing 전이를 확정한 뒤에만 game page로 이동한다.
-                if (nextRoom.status === "playing") {
+                if (shouldRestoreGame(nextRoom)) {
                     saveRoomSession(nextRoom);
                     window.location.href = `/pages/tetrisMulti.html?roomId=${nextRoom.roomId}`;
                     return;
@@ -210,7 +242,7 @@ function MultiLobbyPage() {
                     return;
                 }
                 if (!result.room) return;
-                if (requestType === "sync" && result.room.status === "playing") {
+                if (requestType === "sync" && shouldRestoreGame(result.room)) {
                     saveRoomSession(result.room);
                     window.location.href = `/pages/tetrisMulti.html?roomId=${result.room.roomId}`;
                     return;
@@ -278,7 +310,7 @@ function MultiLobbyPage() {
             window.removeEventListener("pageshow", onPageShow);
             dispose();
         };
-    }, [appendMessage, clearRoom, renderRoom, releaseRequest, sendRoomRequest]);
+    }, [appendMessage, clearRoom, renderRoom, releaseRequest, sendRoomRequest, invitation]);
 
     const submitChat = (event: FormEvent) => {
         event.preventDefault();
@@ -302,14 +334,16 @@ function MultiLobbyPage() {
             return;
         }
         try {
-            await navigator.clipboard.writeText(room.roomId);
-            appendMessage("system", `방 코드 ${room.roomId}를 복사했습니다.`);
+            const invitationUrl = new URL(window.location.pathname, window.location.origin);
+            invitationUrl.searchParams.set("join", room.roomId);
+            await navigator.clipboard.writeText(invitationUrl.href);
+            appendMessage("system", `방 ${room.roomId}의 초대 링크를 복사했습니다.`);
         } catch {
             appendMessage("system", `복사에 실패했습니다. 방 코드: ${room.roomId}`);
         }
     };
 
-    let primaryDescription = "방을 만들거나 코드로 참가하면 게임 시작 상태를 확인할 수 있습니다.";
+    let primaryDescription = "방을 만들거나 초대 코드로 참가하세요.";
     let primaryText = "방 대기 중";
     let primaryDisabled = true;
     const isHost = room?.hostPlayerId === playerId;
@@ -380,7 +414,7 @@ function MultiLobbyPage() {
                 <div className="lobby-grid">
                     <section className="action-panel">
                         <div className="action-box">
-                            <h2>대기실</h2>
+                            <h2>{room ? "대기실" : "친구와 대전"}</h2>
                             <p id="primaryActionDesc">{primaryDescription}</p>
                             <div id="roomStatus" className="room-status" hidden={view !== "room" || !room}>
                                 <div className="room-status-row">
@@ -388,7 +422,7 @@ function MultiLobbyPage() {
                                     <div className="room-code-group">
                                         <strong id="roomCodeText">{room?.roomId || "-"}</strong>
                                         <button id="btnCopyRoomCode" className="room-copy-btn" type="button"
-                                            onClick={copyRoomCode}>복사</button>
+                                            onClick={copyRoomCode}>초대 링크 복사</button>
                                     </div>
                                 </div>
                                 <div className="room-status-row">
@@ -409,6 +443,14 @@ function MultiLobbyPage() {
                                     {room && room.players.length < 2 && <li>상대 대기 중</li>}
                                 </ul>
                             </div>
+                            {invitation.roomId && !invitationDismissed && !invitationAttempted.current && room && room.roomId !== invitation.roomId && (
+                                <div role="status">
+                                    <p>다른 방에 참가 중입니다. 현재 방을 유지하거나 나간 뒤 초대 방 {invitation.roomId}에 참가할 수 있습니다.</p>
+                                    <button type="button" className="btn" disabled={!sessionReady || !!pendingRequest || needsRoomSync}
+                                        onClick={() => sendRoomRequest("leave", () => requestLeaveRoom(room.roomId, playerId))}>현재 방 나가고 초대 참가</button>
+                                    <button type="button" className="btn ghost" onClick={() => { invitationDismissedRef.current = true; setInvitationDismissed(true); clearInvitationQuery(); if (room.status === "playing") window.location.href = `/pages/tetrisMulti.html?roomId=${room.roomId}`; }}>현재 방 유지</button>
+                                </div>
+                            )}
                             <button id="btnPrimaryAction" className="btn primary btn-match" type="button"
                                 disabled={primaryDisabled} onClick={() => {
                                     if (!room || needsRoomSync) return;

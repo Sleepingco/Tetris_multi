@@ -160,18 +160,22 @@ async function waitForBoardConvergence({
     previousFingerprint,
     bottomRows = 6,
 }) {
+    let committedFingerprint;
     await expect.poll(async () => {
         const [sourceBoard, observerBoard] = await Promise.all([
             readBottomBoardFingerprint(sourcePage, playerNumber, bottomRows),
             readBottomBoardFingerprint(observerPage, playerNumber, bottomRows),
         ]);
 
-        return sourceBoard !== previousFingerprint && sourceBoard === observerBoard;
+        const converged = sourceBoard !== previousFingerprint && sourceBoard === observerBoard;
+        if (converged) committedFingerprint = sourceBoard;
+        return converged;
     }, {
         timeout: 8_000,
     }).toBe(true);
 
-    return readBottomBoardFingerprint(sourcePage, playerNumber, bottomRows);
+    // 검증한 프레임을 반환해 다음 연출 프레임을 다시 읽는 경쟁을 피한다.
+    return committedFingerprint;
 }
 
 function parseSocketIoFrame(payload) {

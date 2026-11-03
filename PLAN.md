@@ -6,6 +6,13 @@
 
 ## Current Project Status
 
+### 제품 사용성 첫 묶음 B01~B04 로컬 적용 (2026-11-03)
+
+- [제품 계획](docs/design/product-usability-patch-plan.md#6-첫-묶음-실행-결과-2026-11-03)의 첫 묶음을 구현했다. 키보드/터치 공통 DAS 130ms·ARR 30ms·soft drop 60ms·합산 55회/초 제한, 7개 터치 버튼, 모바일 세로/가로 배치, 친구 대전 안내와 초대 링크를 적용했다.
+- 초대는 session 준비·기존 membership 확인 뒤 기존 join 경로를 사용한다. 다른 방은 명시적 유지/퇴장 선택을 제공하고 자동 시작하지 않는다. Canvas 내부 해상도·서버 판정·기존 수동 참가를 유지한다.
+- Coder·QA·Reviewer의 별도 사본에서 구현·리뷰·수정 후 `bash scripts/verify-product-first-batch.sh`를 실행했다. 타입/빌드/artifact 통과, Node 801 pass·0 fail·기존 조건부 1 skip, 전체 Chromium E2E 78/78 pass다. 2026-11-04 main과 빌드/테스트 입력217개가 SHA256 일치하는 독립 사본에서 같은 Todo 스크립트가 Exit0으로 완료됐다. 원본 dist 동시 재빌드의 404 영향을 분리했다. 재접속 helper의 검증 후 재조회 경쟁을 고치고 회귀unit1개·reconnect3회 반복도 통과했다.
+- 입력 분포 변경 경계를 [Human 계약](docs/ai-ml/contracts/human-action-dataset.md#제품-입력기-변경-경계--2026-11-03)에 기록했다. 기존 사용자 문서·Notebook 출력·raw/dataset은 보존했다. B05/B06·실기기 Android/iOS·Windows/macOS 조작·운영 배포·새 수집·ML 학습은 실행하지 않았다.
+
 ### AI 실험 커밋 전 정리 (2026-11-04)
 
 - 사용자 승인으로 실행 상태의 Notebook16개를 ignored `data/ml-experiments/source-checkpoint-20261104/`에 byte-identical하게 보존했다. Git용 source의 output/count를 비우고 Full/실제 표본 스위치를 비활성화했으며 B2/B3의 보고서 초기값을 `None`으로 복구했다. 계산 정의·dataset·기존 report·테스트는 바꾸지 않았다.

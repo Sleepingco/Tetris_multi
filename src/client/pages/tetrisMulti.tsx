@@ -1,3 +1,5 @@
+import { TouchControls } from "../game/ui/touchControls.tsx";
+import type { InputController } from "../game/runtime/input.ts";
 import {
     StrictMode,
     useEffect,
@@ -380,6 +382,7 @@ function MultiplayerGamePage() {
     const homeButtonRef = useRef<HTMLAnchorElement>(null);
     const combatLayerRef = useRef<HTMLDivElement>(null);
     const [pageInfo, setPageInfo] = useState<PageInfo>(EMPTY_PAGE_INFO);
+    const [inputController, setInputController] = useState<InputController | null>(null);
     const [displayHandles, setDisplayHandles] = useState<DisplayHandles | null>(null);
     const [overlays, setOverlays] = useState<[Overlay, Overlay]>(WAITING_OVERLAYS);
     const [homeDisabled, setHomeDisabled] = useState(true);
@@ -679,6 +682,7 @@ function MultiplayerGamePage() {
             setCombatNotices([null, null]);
             activeGameSession?.destroy();
             activeGameSession = null;
+            setInputController(null);
         };
 
         function showCountdown(startsAt: number | null | undefined, serverNow: number): void {
@@ -830,6 +834,7 @@ function MultiplayerGamePage() {
                 deferStart: true,
             });
             activeGameSession = session;
+            setInputController(session.inputController);
             activeMatchId = result.match.gameId ?? null;
             setDisplayHandles(myRole === "host"
                 ? {
@@ -1016,6 +1021,7 @@ function MultiplayerGamePage() {
                     retryPending={retryPending}
                 />
             </main>
+            <TouchControls controller={inputController} />
             <div ref={combatLayerRef} className="combat-layer" aria-hidden="true" />
         </div>
     );

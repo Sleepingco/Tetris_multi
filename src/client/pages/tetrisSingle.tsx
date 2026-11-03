@@ -1,9 +1,11 @@
+import { TouchControls } from "../game/ui/touchControls.tsx";
+import type { InputController } from "../game/runtime/input.ts";
 import { StrictMode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { PiecePreview } from "../game/ui/piecePreview.tsx";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
-import { attachKeyboardInput } from "../game/runtime/input.ts";
+import { attachKeyboardInput, createInputController } from "../game/runtime/input.ts";
 import { initGameSound, tryPlayMusic } from "../game/runtime/sound.ts";
 import { createTetrisRuntime } from "../game/runtime/tetris.ts";
 import type { TetrisRuntime } from "../game/runtime/tetris.ts";
@@ -87,6 +89,7 @@ function SingleGamePage() {
     const soundToggleRef = useRef<HTMLButtonElement>(null);
     const themeToggleRef = useRef<HTMLButtonElement>(null);
     const runtimeRef = useRef<TetrisRuntime | null>(null);
+    const [inputController, setInputController] = useState<InputController | null>(null);
     const [displayHandle, setDisplayHandle] = useState<TetrisRuntime | null>(null);
 
     useEffect(() => {
@@ -96,7 +99,12 @@ function SingleGamePage() {
         applySavedTheme(themeToggleRef.current);
         const game = createTetrisRuntime({ boardCanvasEl });
         const cleanupSound = initGameSound(soundToggleRef.current);
+        const controller = createInputController({ enqueueAction: game.enqueueInput, onUserInteract: tryPlayMusic,
+            isActive: () => game.getDisplaySnapshot().phase !== "gameOver" });
+        const detachDisplay = game.subscribeDisplay(() => { if (game.getDisplaySnapshot().phase === "gameOver") controller.reset(); });
+        setInputController(controller);
         game.runtime.detachKeyboard = attachKeyboardInput({
+            controller,
             enqueueAction: game.enqueueInput,
             onUserInteract: tryPlayMusic,
         });
@@ -109,7 +117,9 @@ function SingleGamePage() {
             if (disposed) return;
             disposed = true;
             cleanupSound?.();
+            detachDisplay();
             game.destroy();
+            setInputController(null);
             if (runtimeRef.current === game) runtimeRef.current = null;
             setDisplayHandle(current => current === game ? null : current);
         };
@@ -126,7 +136,7 @@ function SingleGamePage() {
     }, []);
 
     // 아래 handler는 외부 runtime API만 호출하며 React가 gameState를 따로 복제하지 않는다.
-    const restart = () => runtimeRef.current?.init();
+    const restart = () => { inputController?.reset(); runtimeRef.current?.init(); };
     const toggleGameTheme = () => {
         toggleTheme(themeToggleRef.current);
         runtimeRef.current?.render();
@@ -187,6 +197,7 @@ function SingleGamePage() {
                 </aside>
             </main>
 
+            <TouchControls controller={inputController} />
             {hudRoots && (
                 <SingleHud
                     handle={displayHandle}

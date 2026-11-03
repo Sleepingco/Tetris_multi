@@ -9,6 +9,12 @@
 
 ## 목적과 단위
 
+### 제품 입력기 변경 경계 — 2026-11-03
+
+- 제품 B02/B01은 OS key repeat 대신 공통 held 입력기를 사용한다. 좌우 DAS 130ms·ARR 30ms, soft drop 60ms와 키보드/터치 합산 55회/초 상한을 적용한다. 기록은 기존 runtime 소비 시각의 semantic action attempt이며 물리 keydown/keyup 또는 터치 발생 시각을 뜻하지 않는다.
+- 이 변경의 기준 parent는 `f1c71ef9`다. 후속 로그를 해석할 때 실제 적용 commit/build와 배포 시점을 확인하고, 이전 OS 반복 기반 자료와 입력 간격 분포가 같다고 가정하지 않는다. 조작 방식이 확인되지 않은 과거 로그에 keyboard/touch label을 소급 부여하지 않는다.
+- 기존 schema·raw·dataset·split·학습 artifact를 변경하지 않는다. 이번 작업은 제품 입력 개선이며 새 수집·dataset 생성·재학습을 시작하지 않는다.
+
 배치 candidate row와 별도로 game/player/piece의 실제 입력 구간을 학습 단위로 한다.
 후보별 metadata에 복사된 inputSequence를 반복 표본으로 세지 않는다.
 한 턴 안에서 hold로 조각이 바뀌면 action 경계로 구분하고 pieceIndex만으로

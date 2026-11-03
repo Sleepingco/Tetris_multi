@@ -1,5 +1,5 @@
 import { createTetrisRuntime } from "../runtime/tetris.ts"
-import { attachKeyboardInput } from "../runtime/input.ts"
+import { attachKeyboardInput, createInputController } from "../runtime/input.ts"
 import {
     receiveAuthoritativeSnapshot,
     sendGameInput,
@@ -70,6 +70,7 @@ export type MultiplayerGameOptions = {
     deferStart?: boolean;
 };
 export type MultiplayerGameSession = {
+    inputController: ReturnType<typeof createInputController>;
     myGame: TetrisRuntime;
     opponentGame: TetrisRuntime;
     heartbeatTimer: ReturnType<typeof setInterval>;
@@ -407,15 +408,19 @@ export function startMultiplayerGame({
 
     // keyboard는 내 runtime에만 연결한다. 상대 runtime에는 입력 loop와 gravity가 없으며
     // 아래 snapshot listener가 전달한 authoritative 상태만 표시한다.
+    const inputController = createInputController({
+        enqueueAction: (action) => myGame.enqueueInput(action, null, myGame.runtime.pieceIndex),
+        isActive: () => !destroyed && gameplayStarted && !hasAuthoritativeGameOver
+            && myGame.getDisplaySnapshot().phase !== "gameOver",
+        onUserInteract,
+    });
+    const detachInputDisplay = myGame.subscribeDisplay(() => {
+        if (myGame.getDisplaySnapshot().phase === "gameOver") inputController.reset();
+    });
     myGame.runtime.detachKeyboard = attachKeyboardInput({
-        enqueueAction: (action) => {
-            if (destroyed || !gameplayStarted) return
-            myGame.enqueueInput(action, null, myGame.runtime.pieceIndex)
-        },
-        onUserInteract: () => {
-            if (!destroyed) onUserInteract?.()
-        },
-    })
+        enqueueAction: myGame.enqueueInput,
+        controller: inputController,
+    });
 
     const opponentGame = createTetrisRuntime({
         boardCanvasEl: opponentCanvas,
@@ -818,6 +823,7 @@ export function startMultiplayerGame({
         discardPlacementLogBuffer({ close: true })
         settledPlacementAttemptKeys.clear()
         hasPendingBagRequest = false
+        detachInputDisplay();
         myGame.destroy()
         opponentGame.destroy()
     }
@@ -830,6 +836,7 @@ export function startMultiplayerGame({
     }
 
     return {
+        inputController,
         myGame,
         opponentGame,
         heartbeatTimer,

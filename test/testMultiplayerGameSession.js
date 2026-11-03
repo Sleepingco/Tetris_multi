@@ -221,6 +221,14 @@ function installBrowserStubs(fakeSocket) {
 
         pause() {}
     };
+    const windowHandlers = new Map();
+    globalThis.window = {
+        addEventListener(eventName, handler) {
+            if (!windowHandlers.has(eventName)) windowHandlers.set(eventName, new Set());
+            windowHandlers.get(eventName).add(handler);
+        },
+        removeEventListener(eventName, handler) { windowHandlers.get(eventName)?.delete(handler); },
+    };
     globalThis.__documentHandlers = documentHandlers;
     globalThis.document = {
         addEventListener(eventName, handler) {

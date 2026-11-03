@@ -1,5 +1,20 @@
 
 
+## 2026-11-04 — 제품 첫 묶음 최종 검증·재접속 E2E 안정화
+
+- 최초 main 전체 검증에서 reconnect helper가 수렴 확인 후 다시 읽은 Canvas RGB를 기준값으로 저장하는 경쟁을 발견했다. Chromium의 반투명 잔상 합성에서 RGB1 차이를 재현하고, 실제 일치한 pair 값을 반환하도록 수정했다. 비교 강도·timeout을 유지하고 회귀unit1개·실제 reconnect3회 반복을 통과했다.
+- 후속 main E2E의 로비/홈404는 정상 URL 요청 직후 같은 dist HTML이 다시 생성된 시각으로 동시 재빌드 영향을 확인했다. 제품 로직을 바꾸지 않고 main의 빌드/테스트 입력217개가 SHA256 일치하는 독립 사본에서 Todo 전체를 직렬 실행했다.
+- `bash scripts/verify-product-first-batch.sh` Exit0: 타입/빌드/artifact1 pass, Node801 pass·0 fail·기존 외부 frozen artifact 조건부1 skip, Chromium78/78 pass. B01/B02/B03/B04 체크를 완료했다. 검증 완료 뒤 원본 main 소스217개도 같은 hash임을 재확인했다.
+- 기존 사용자 ML 문서/Notebook 출력·raw/dataset은 보존하고 이번 변경만 로컬 main에 반영한다. 실기기 Android/iOS·OS별 조작·운영 배포·DB/ML 별도 전체 검증·push는 수행하지 않았다. 복구 시 이번 입력기·컨트롤·page/session·CSS 연결을 함께 되돌리고 데이터를 삭제하지 않는다.
+
+## 2026-11-03 — 제품 사용성 첫 묶음 B01~B04
+
+- 모바일에서 실제 조작하고 초대 링크로 참가하도록 공통 입력기·7개 터치 컨트롤·친구 대전 문구·초대 링크를 구현했다. 기존 queue/server authoritative 경로와 Canvas 내부 해상도는 유지한다.
+- Held 입력은 OS repeat와 분리하고 DAS130/ARR30·soft60ms·합산55회/초를 적용한다. focus/blur/hidden/경기 종료/cleanup에서 해제한다. 터치는 pointer별 capture와 동시 이동/회전을 지원한다.
+- 초대는 roomId 검증→session 준비→기존 membership sync→join 순서다. 기존 다른 방을 자동 퇴장시키지 않고 선택하게 하며 URL에 credential을 넣지 않는다. 모바일 guest 반전 grid와 NEXT/HOLD 여백이 컨트롤을 밀어내던 배치도 컨트롤 표시 범위에서 수정했다.
+- Reviewer 승인 후 Todo 스크립트 `bash scripts/verify-product-first-batch.sh`가 타입/빌드/artifact·Node800 pass(0 fail, 기존 외부 artifact 조건부1 skip)·전체 Chromium78/78 pass를 확인했다. 원본 main에 QA 파일13개를 SHA256 일치 확인 후 반영했다. 입력 계약·PLAN·제품 계획에 결과와 한계를 남긴다.
+- Android/iOS 실기기·OS별 조작·운영 배포·별도 DB/ML 전체 검사는 실행하지 않았다. 기존 사용자 Notebook/문서·raw/dataset은 보존하며 B05/B06은 후속이다. 복구는 첫 묶음의 입력기·컨트롤·page/session·CSS와 초대 변경을 함께 되돌리며 사용자 데이터는 삭제하지 않는다.
+
 ## 2026-11-04 — AI 실험 커밋 전 실행본 보존·소스 안전성 정리
 
 - Notebook16개의 원래 실행 설정·출력을 ignored `data/ml-experiments/source-checkpoint-20261104/`에 원본 바이트 그대로 보존했다. Source output/count는 비우고 Full/실제 표본 실행은 기본 비활성화, B2/B3 `FULL_REPORT` 초기값은 `None`으로 복구했다. 계산 정의·데이터·기존 결과·테스트는 유지했다.

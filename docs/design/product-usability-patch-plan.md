@@ -1,7 +1,7 @@
 # 제품 사용성 검토 대응 패치 계획
 
 - 작성일: 2026-10-25
-- 상태: 계획 작성, 구현 미착수
+- 상태: 첫 묶음 B01~B04 로컬 구현·자동 검증 완료, B05/B06 미착수. 실기기·운영 적용은 별도
 - 원 조사: 대화에서 사용자가 오전 5:47 수정사항으로 지칭한 제품 관점 검토. 모바일 입력·DAS/ARR·라벨·초대·재경기·결과 요약을 뜻한다.
 - 재확인 기준: `main` / `08e8c5a` 위 현재 작업 트리. 원 제품 평가는 `3ac6045` 기준이었으며 앞선 검토에서 `bbf26b7`까지 대조했다.
 - 범위: 접속한 사용자가 조작하고 친구와 다음 판까지 이어가는 동선
@@ -122,4 +122,21 @@ npm run test:e2e -- e2e/multiplayerLobby.spec.js e2e/singleReactLifecycle.spec.j
 
 B03 → B02 → B01 → B04 → B05 → B06a → B06b를 권장 기본 순서로 삼되 독립 패치는 먼저 적용할 수 있다. 각 단위에서 관련 테스트와 필수 verify를 통과하고 PLAN·change-log에 실제 결과를 기록한다. 배포가 필요한 계약 변경은 운영 runbook을 따른다.
 
-이번에는 파일·caller·기존 테스트와 앞선 조사 대응을 확인했다. 실기기/OS별 조작 재현, 공개 서비스 플레이·이탈률 측정, 기능 구현·브라우저/DB 테스트는 실행하지 않았다. 이 계획서 작성은 별도 기능·운영 배포·full ML 실행을 시작하는 작업이 아니다.
+원 계획 작성 시점에는 파일·caller·기존 테스트만 확인했고 기능 구현·브라우저/DB 테스트는 실행하지 않았다. 이후 첫 묶음의 구현·검증 결과는 아래 6절에서 구분한다. 실기기·운영 배포·full ML 실행은 별도다.
+
+## 6. 첫 묶음 실행 결과 (2026-11-03)
+
+기준 parent `f1c71ef9`의 사용자 변경을 보존하고 Coder·QA·Reviewer의 별도 작업 사본에서 구현·리뷰·검증했다. 각 사본은 파일 작업을 분리한 것이며 OS 보안 샌드박스를 별도로 구성한 것은 아니다. 검증한 파일만 SHA256 일치를 확인해 main 작업 공간에 반영했다.
+
+- [x] B03: 방 밖 `친구와 대전` 안내, 실제 수동 방 생성/참가 설명.
+- [x] B02: 공통 held 입력기, DAS130/ARR30·soft60ms·합산55회/초, 마지막 좌우 우선, focus/blur/hidden/종료/cleanup 해제.
+- [x] B01: 7개 버튼·native 다중 터치·capture 취소·수동 표시·safe area·키보드 접근. 싱글·PVE·PVP guest 세로/가로 보드/버튼 좌표와 기존 HUD·재시작 검증.
+- [x] B04: 현재 origin 초대 링크, 단일 roomId 검증, 늦은 session·membership sync·중복/오류·명시적 다른 방 선택·query 정리·clipboard 실패 안내.
+- [x] Reviewer의 구조·예외·모바일 배치 리뷰 승인.
+- [x] [Todo 검증 스크립트](../../scripts/verify-product-first-batch.sh) 실행: 타입/빌드/artifact 통과, Node 801 pass·0 fail·기존 조건부 1 skip, Chromium 전체 78/78 pass. 새 입력 unit7개·보드 수렴 회귀unit1개와 제품 E2E13개 포함.
+
+초기 HTTP 검사의 localhost EPERM은 환경 권한 문제로 구분해 허용된 실행으로 검증했다. 새 window listener의 기존 Node fixture 보완, landscape 배치, guest 반전 grid, NEXT/HOLD sidebar 상단 여백을 실패 로그·좌표 측정으로 수정했다. 기존 assertion을 제거하거나 사용자 Notebook 출력을 지우지 않았다.
+
+2026-11-04 최종 재검증에서 기존 reconnect E2E helper의 관찰 경쟁을 확인했다. 양쪽 RGB 수렴 확인 뒤 소스 Canvas를 다시 읽어 하드드롭 합성의 RGB 반올림 차이를 기준값으로 저장할 수 있었다. 검증된 pair 값을 그대로 반환하도록 수정하고 회귀 unit 1개·실제 reconnect 3회 반복을 통과했다. 엄격한 RGB 비교·수렴 조건·timeout은 유지했다. 후속 main E2E의 로비·홈404는 동시 dist 재빌드 시각과 일치했다. main의 빌드/테스트 입력217개와 SHA256이 같은 독립 사본에서 같은 Todo 스크립트를 직렬 실행해 Exit0으로 완료했다. 검증 후 원본 main217개도 hash 일치를 재확인했다.
+
+자동 검사 성공은 Android/iOS 하드웨어 검증을 대신하지 않는다. 실기기·Windows/macOS 실제 조작·운영 배포·DB/ML 별도 전체 gate는 미검증이며 B05/B06은 이 묶음에 포함하지 않는다. 모바일 portrait는 내 보드→컨트롤→상대 보드 순으로 표시하고 상대 정보는 스크롤로 접근한다. 복구는 입력기와 연결된 page/session/컨트롤/CSS를 함께 되돌리며 초대 변경은 독립 복구할 수 있다. 데이터 삭제·수집·재학습은 수행하지 않는다.
