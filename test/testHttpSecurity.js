@@ -26,7 +26,7 @@ test("CSP는 strict source와 검증된 inline hash만 허용한다", () => {
         "object-src 'none'",
         "script-src 'self' https://cloud.umami.is 'sha256-dD0UYyHj6Sta8gSAF02VM8IfeQR0k7L4ZYIYWQgUBm0='",
         "script-src-attr 'none'",
-        "style-src 'self' 'sha256-8WMI54/fYjLyQ+V0ZVpxKy2ddoWYIfTvf6INokq2xEo=' 'sha256-isAGgst8p0POY9YHnzg/K0CpLsdJtzLOcjeCXqEi6Q4=' 'sha256-IsVLBKuEy1m/EXcXkJQYt/4Hss2umZ0wV/cKhk8GzBs=' 'sha256-YTKXzAi7pK9867AxR/RLRJhQ0YWSd1Need1r2mOx54E='",
+        "style-src 'self' 'sha256-7euhIynVvR4d1OdzpsKN+feW97rQv8jB9c17YcHVayo=' 'sha256-OWe/Xr96ykw/tj5ll4gzNc4NHm/S2Y8nRTaPb52tgAE=' 'sha256-yrkstog27bkzwTtoAhnqXJTIB4Z3w2UvuGeOjrjnZj8='",
         "style-src-attr 'none'",
         "img-src 'self' data:",
         "font-src 'none'",
