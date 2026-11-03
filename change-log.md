@@ -7,6 +7,13 @@
 - `bash scripts/verify-product-first-batch.sh` Exit0: 타입/빌드/artifact1 pass, Node801 pass·0 fail·기존 외부 frozen artifact 조건부1 skip, Chromium78/78 pass. B01/B02/B03/B04 체크를 완료했다. 검증 완료 뒤 원본 main 소스217개도 같은 hash임을 재확인했다.
 - 기존 사용자 ML 문서/Notebook 출력·raw/dataset은 보존하고 이번 변경만 로컬 main에 반영한다. 실기기 Android/iOS·OS별 조작·운영 배포·DB/ML 별도 전체 검증·push는 수행하지 않았다. 복구 시 이번 입력기·컨트롤·page/session·CSS 연결을 함께 되돌리고 데이터를 삭제하지 않는다.
 
+## 2026-11-04 — AI 실험 커밋 전 실행본 보존·소스 안전성 정리
+
+- Notebook16개의 원래 실행 설정·출력을 ignored `data/ml-experiments/source-checkpoint-20261104/`에 원본 바이트 그대로 보존했다. Source output/count는 비우고 Full/실제 표본 실행은 기본 비활성화, B2/B3 `FULL_REPORT` 초기값은 `None`으로 복구했다. 계산 정의·데이터·기존 결과·테스트는 유지했다.
+- 질문을 채택 결정으로 잘못 기록한 모듈형 우선 계획을 미승인 비교 후보로 정정했다. A/B 진행 순서와 다음 실험은 미정이며 신규 수집·학습·runtime 변경을 시작하지 않았다.
+- `verify:ml`: Node35/35·Python220/220. 기본 verify:801 pass·기존1 skip·0 fail. 최초 sandbox localhost EPERM은 권한 재실행 후 통과했다. Notebook16개 구문/ID·빈 출력·승인된 설정 외 source 불변을 확인했다. 아래 ML 실패7개 기록은 정리 전 이력이다.
+- 사용자 요청에 따라 작업별 로컬 커밋으로 구분하며, 동시 제품 UI/입력 작업과 그 문서 항목·local dataset/model/report/실행본은 제외한다. Full 재실행·push·merge·rebase는 하지 않는다.
+
 ## 2026-11-03 — 제품 사용성 첫 묶음 B01~B04
 
 - 모바일에서 실제 조작하고 초대 링크로 참가하도록 공통 입력기·7개 터치 컨트롤·친구 대전 문구·초대 링크를 구현했다. 기존 queue/server authoritative 경로와 Canvas 내부 해상도는 유지한다.
@@ -14,13 +21,6 @@
 - 초대는 roomId 검증→session 준비→기존 membership sync→join 순서다. 기존 다른 방을 자동 퇴장시키지 않고 선택하게 하며 URL에 credential을 넣지 않는다. 모바일 guest 반전 grid와 NEXT/HOLD 여백이 컨트롤을 밀어내던 배치도 컨트롤 표시 범위에서 수정했다.
 - Reviewer 승인 후 Todo 스크립트 `bash scripts/verify-product-first-batch.sh`가 타입/빌드/artifact·Node800 pass(0 fail, 기존 외부 artifact 조건부1 skip)·전체 Chromium78/78 pass를 확인했다. 원본 main에 QA 파일13개를 SHA256 일치 확인 후 반영했다. 입력 계약·PLAN·제품 계획에 결과와 한계를 남긴다.
 - Android/iOS 실기기·OS별 조작·운영 배포·별도 DB/ML 전체 검사는 실행하지 않았다. 기존 사용자 Notebook/문서·raw/dataset은 보존하며 B05/B06은 후속이다. 복구는 첫 묶음의 입력기·컨트롤·page/session·CSS와 초대 변경을 함께 되돌리며 사용자 데이터는 삭제하지 않는다.
-
-## 2026-11-04 — AI 실험 커밋 전 실행본 보존·소스 안전성 정리
-
-- Notebook16개의 원래 실행 설정·출력을 ignored `data/ml-experiments/source-checkpoint-20261104/`에 원본 바이트 그대로 보존했다. Source output/count는 비우고 Full/실제 표본 실행은 기본 비활성화, B2/B3 `FULL_REPORT` 초기값은 `None`으로 복구했다. 계산 정의·데이터·기존 결과·테스트는 유지했다.
-- 질문을 채택 결정으로 잘못 기록한 모듈형 우선 계획을 미승인 비교 후보로 정정했다. A/B 진행 순서와 다음 실험은 미정이며 신규 수집·학습·runtime 변경을 시작하지 않았다.
-- `verify:ml`: Node35/35·Python220/220. 기본 verify:801 pass·기존1 skip·0 fail. 최초 sandbox localhost EPERM은 권한 재실행 후 통과했다. Notebook16개 구문/ID·빈 출력·승인된 설정 외 source 불변을 확인했다. 아래 ML 실패7개 기록은 정리 전 이력이다.
-- 사용자 요청에 따라 작업별 로컬 커밋으로 구분하며, 동시 제품 UI/입력 작업과 그 문서 항목·local dataset/model/report/실행본은 제외한다. Full 재실행·push·merge·rebase는 하지 않는다.
 
 ## 2026-11-03 — Human 모방 AI 구조 제안 (2026-11-04 정정)
 
