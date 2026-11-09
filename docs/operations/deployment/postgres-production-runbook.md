@@ -1117,3 +1117,9 @@ openssl x509 \
 - `error in libcrypto`가 계속되면 개인키 대신 공개키를 넣었거나 키 내용이 누락되었는지도 확인한다. 접속용 키 교체만으로 `OCI_KNOWN_HOSTS`를 바꾸지 않는다.
 - 합성 암호화 키·암호 없는 키·잘못된 키와 임시 파일 정리를 로컬 확인했다. macOS에서는 runner의 GNU timeout 래퍼를 제외하고 검증했다. 실제 Actions와 운영 서버 접속은 별도 확인이 필요하다.
 - 필수 `bash scripts/verify.sh`: Node 24.18.0에서 802 pass·1 skip·0 fail.
+
+## 배포 실패 진단 보존 (2026-11-09)
+
+- 배포 실패 시 복구 전에 실행 당시 앱 image·State(healthcheck 포함)·최근 80줄 로그와 실패 단계·exit code를 배포별 `failure.log`에 저장한다. 기존 umask 077로 파일은 600이며 Actions에는 `DEPLOY_FAILURE_DIAGNOSTICS` 경로만 출력한다. 원문 앱 로그는 서버에서 확인한다. 진단 실패가 롤백을 막지 않도록 한다.
+- 웹페이지 정상 접근과 `DEPLOY_ROLLBACK_VERIFIED`는 기존 버전 복구를 의미하며 새 배포 성공과 구분한다. 서버 원문 진단은 자격증명 포함 가능성이 있으므로 공개 채팅에 그대로 붙이지 않는다.
+- 필수 검증 802 pass·1 skip·0 fail. 저장된 진단이 롤백 전 후보 image·실패 로그를 포함하고 600 권한이며 Actions에 원문이 출력되지 않는지 확인했다. 실제 운영 실패 재현은 미실행이다.

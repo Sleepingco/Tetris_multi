@@ -444,6 +444,14 @@ jobs:
                   fi
               fi
               if test "$code" -ne 0 && test -f "$state_dir/state"; then
+                  # 복구가 컨테이너를 교체하기 전에 원인을 보존하고 원문 로그는 서버에만 둔다.
+                  {
+                      printf 'exit_code=%s phase=' "$code"
+                      cat "$state_dir/status" || true
+                      sudo docker inspect tetris-app-1 --format 'image={{.Config.Image}} state={{json .State}}' || true
+                      sudo docker logs --timestamps --tail 80 tetris-app-1 || true
+                  } > "$state_dir/failure.log" 2>&1 || true
+                  printf 'DEPLOY_FAILURE_DIAGNOSTICS=%s/failure.log\n' "$state_dir"
                   if test "$maintenance" = true || test "$cutover_started" = true; then
                       if ! recover; then status manual_recovery_required; fi
                   else
