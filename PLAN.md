@@ -6,10 +6,94 @@
 
 ## Current Project Status
 
+### 커밋용 소스·로컬 실행본 분리 (2026-11-09)
+
+- 사용자 요청으로 지금까지의 ML·배포·제품 변경을 나누어 커밋한다. 후보 Notebook3개의 Git 소스는 출력/count를 비우고 Full 기본 비활성·출력 경로 환경변수 기본값으로 정리했다. 작업 중인 원본 Notebook은 수정하지 않았으며 실행 설정·결과의 로컬 차이는 유지한다.
+- 원본3개와 SHA manifest는 ignored `data/ml-experiments/source-checkpoint-20261109-commit-4d_u_5pf/`에 보존했다. 기존 dataset/report와 실행을 다시 시작하거나 덮어쓰지 않았다. ML 검증 Node35/35·Python220/220 통과이며 제품 검증은 아래 각 실행 기록을 따른다.
+
+### 모바일 로비 탭·홈 배경 높이 수정 (2026-11-09)
+
+- 390x844에서 기존 채팅 패널260px 중 메시지 영역이67px만 남는 것을 재현했다. 모바일768px 이하에서는 대기실/채팅 탭으로 한 패널씩 표시하고 채팅은 화면 높이에 맞춰 확장한다. PC는 양쪽 패널을 표시하며 입력·방 상태·채팅 기록은 같은 mounted DOM/state로 보존한다.
+- 탭 키보드 탐색·선택/연결 ARIA, 탭 재개 시 최신 메시지 스크롤, 대기실에서 서버/입력 오류를 볼 수 있는 파생 system 안내를 연결했다. Socket listener나 방/게임 판정은 변경하지 않는다.
+- 홈 가이드를 열면 콘텐츠는 약1368px인데 body 높이는844px에 고정되고 장식이 추가60px 넘치는 원인을 재현했다. body는 콘텐츠만큼 늘리고 min-height100dvh를 유지하며 모바일 장식은 영역 안으로 옮겼다. 장식 높이와 여백을 문서에 예약해 푸터와 겹치지 않게 하고 root fallback 색도 현재 테마와 일치시킨다. 로컬에서 경계 노출은 확인했지만 사용자 환경의 파란색 자체는 미재현이다.
+- 최종 필수 verify: 타입/빌드/artifact·Node805 pass·0 fail·기존 ML artifact 조건부1 skip. 격리 빌드 전체 Chromium96/96, 마지막 장식 여백 보완 후 영향 화면11/11 통과. 최종 소스/config/테스트135개 SHA가 검증 복사본과 일치하며 Reviewer 승인이다. 390px 채팅 메시지 영역은67→351px로 늘었다. 실제 iOS/Android 주소창·키보드 및 운영 적용은 별도다.
+
+### 시스템 단축키·터치 캡처 실패 입력 보호 (2026-11-09)
+
+- 방향키를 누른 뒤 Meta를 누르고 방향키 keyup이 누락되면 300ms 동안 이동 입력4개가 발생하는 조건을 재현했다. 공유 키보드 경계에서 Meta/Control/Alt와 해당 조합 입력은 held 상태를 초기화하고 브라우저 단축키를 보존한다. Shift·DAS180ms/ARR60ms는 유지한다.
+- 예상 포인터 캡처 오류(NotFoundError/InvalidStateError)는 해당 터치만 해제한 뒤 입력을 시작하지 않는다. 다른 손가락은 유지하고 예상하지 못한 오류는 숨기지 않는다. 단축키3종 단위 회귀와 native touch 캡처 오류2종 E2E를 추가했다.
+- 필수 verify 통과: 타입/빌드/artifact·Node805 pass·0 fail·기존 frozen ML artifact 조건부1 skip. 전체 Chromium88/88 pass, Reviewer·QA 정적 검토 승인. 최초 HTTP 수신 EPERM은 허용 환경 재실행으로 해소했다. 제품/ML/배포 변경이 섞인 기존 작업 트리를 보존하며 일괄 커밋하지 않는다. 실제 macOS keyup 누락·iOS/Android 기기·운영 적용은 별도 검증이다.
+
+### 공유 후보 scorer 조기 종료 실험 준비 (2026-11-09)
+
+- 사용자 모델 비교 Full은 `candidate_scoring_signal_observed`다. 같은31게임 macro Top-1은 ID13.42%→후보 제한25.08%→공유 scorer43.56%이며 공유 모델의 과적합은 남았다. 원본을 바꾸는 증강/추가 수집 대신 **①과적합 제어 → ②공유 scorer 학습 게임 수별 곡선** 순서로 진행한다.
+- [새 명세](ai-harness/ml-experiments/experiments/human-placement-candidate-early-stopping.md)·[Notebook](scripts/ml/notebooks/human_placement_candidate_early_stopping.ipynb)은 Train149게임을 inner fit119게임5035구간 / monitor30게임1382구간으로 고정한다. monitor BCE의 min_delta1e-4·patience3·최대30epoch로 예산을 정하고 전체Train149게임에서 새로 그 epoch만 학습한다. 외부Validation31게임으로 epoch를 고르지 않는다.
+- 실제 inner/refit 코드2개를 구현했고 기존 실제30epoch report는 고정 참조한다. 데이터·candidate·407→64→이진 MLP·weight·alpha는 유지하며 모델 축소/L2/게임 수 실험을 섞지 않는다. 기본 Full=False·pandas4표/Matplotlib4패널이다.
+- 내부 경계/기본 fit 차단·실제 read-only split/scaler-only 검사·report/그래프 검사, ML Node35/35·Python220/220·기본 verify805 pass·기존1 skip 통과다. 사용자 실행 Notebook·자료/기존 결과·동시 제품 변경은 보존했다. 다음은 사용자4절 Full이며 새 학습·학습곡선·runtime·stage/commit은 실행하지 않았다.
+
+### 공유 후보 모델 scaler 비교 오판 수정 (2026-11-09)
+
+- 사용자 Full은 ID30epoch·기준선 재현을 통과했지만 후보 scaler 평균의 누적 오차가 기존1e-12 검사를 초과해 B 학습 전에 중단됐다. 실제 Train6417→후보147450행의1/K 가중 집계에서 mean 최대1.34e-12를 재현했다. 데이터/weight 계약 변경이 아니다.
+- [모델 비교 Notebook](scripts/ml/notebooks/human_placement_candidate_model_comparison.ipynb)의 scaler 통계 비교에만 절대오차1e-10을 적용했다. 실제 통계 변경·NaN 거부 검사를 추가했으며 모델 metric/기준선 재현의1e-12는 유지한다. 기존 사용자 Full=True·실행 출력/count는 보존했다. Full 학습은 재실행하지 않는다.
+- 실제 Train147450/Validation34552 후보 행렬의 scaler-only 재현과 내부 회귀 검사 통과. ML Node35/35·Python220/220, 기본 verify802 pass·기존1 skip·0 fail이다. 최초 localhost EPERM은 권한 재실행으로 해소했다.
+
+### Human 공유 후보 scorer 실제 학습·비교 구현 (2026-11-09)
+
+- 사용자 Coverage Full을 검토했다. Train6417/Validation1516구간의 정답 후보 포함률100%, 제외0이며 기존 ID OOV152개도 모두 포함됐다. 후보 evidence와 dataset SHA를 고정하고 같은149/31게임을 유지한다.
+- [새 Notebook](scripts/ml/notebooks/human_placement_candidate_model_comparison.ipynb)에 실제 ID MLP30epoch·같은 모델의 후보 제한 평가·실제 공유 후보 MLP30epoch를 구현했다. 출력3종이지만 fit은2개다. ID 기준선 재현 실패 시 B 학습 전 중단하며 비교 미구현 placeholder는 없다. 기존 coverage Notebook 실행본은 수정하지 않았다.
+- 기본 `RUN_FULL=False`; 다음은 사용자4절 Full이다. 저장 evidence를 재사용해 Node 설정·후보 재생성이 필요 없다. pandas4표/Matplotlib3패널에 Train/Validation NLL·BCE·Top-1, OOV와 게임별 차이를 표시한다. 서로 다른 loss/계산량/유효 L2의 한계를 유지한다.
+- 기본 실행 fit 차단·내부 경계 검사·실제7933구간 read-only join 검증, ML Node35/35·Python220/220·기본 verify802 pass·기존1 skip 통과다. 새 Full·Test payload·runtime·stage/commit은 수행하지 않았다. [현재 명세](ai-harness/ml-experiments/experiments/human-placement-candidate-scoring.md)를 따른다.
+
+### 배포 실패 진단 보존 (2026-11-09)
+
+- 앱 교체·롤백 전에 상태와 healthcheck·최근 로그를 서버 전용 `failure.log`로 보존한다. Actions는 파일 경로만 출력하며 기존 복구 흐름을 유지한다.
+
 ### 암호화된 배포 SSH 키 지원 (2026-11-09)
 
 - `OCI_SSH_PASSPHRASE`로 키 암호를 전달하고 ssh-agent에 로드하도록 배포 workflow를 수정했다. 합성 키 3종과 임시 자격증명 정리를 확인했다. 실제 Secret 등록과 Actions 접속은 미확인이다.
 
+### Human 정적 후보 지원도 Notebook 준비 (2026-11-04)
+
+- [Notebook](scripts/ml/notebooks/human_placement_candidate_scoring.ipynb) 하나에 기존 core 호출·physical class alias·후보 coverage/사유·game/piece/OOV 집계·streaming evidence/독점 report 게시·재로딩·pandas/Matplotlib을 구현했다. Python 규칙·새 `.py`/test/dependency는 추가하지 않았고 기존 형식 테스트를 유지했다.
+- 기본 전체 실행은 가상 검사뿐이며 실제 dataset/model/scaler를 차단해 검증했다. 가상3구간 게시/결정성/변조 거부·표4개/그림2패널, ML Node35/35·Python220/220, 기본 verify802 pass·기존1 skip이다. localhost EPERM은 권한 재실행으로 해소했다.
+- 다음은 사용자4절 Coverage Full과 결과 해석이다. 실제 dataset 후보 처리·모델 학습·40행/gameplay·stage/commit은 하지 않았다. 모델 비교 Full은 coverage 검토 전 미구현 오류로 차단한다. 후보 지원도는 정확도/도달 가능성이 아니다.
+
+### 네 화면 브랜드·모바일 헤더 통일 (2026-11-04)
+
+- 메인·로비·싱글·멀티의 header는 공통 BrandLogo를 사용한다. 기존 favicon.svg의 골드T를 재사용하고 Tetra Arena 표기/크기를 통일하며 모드만 작은 보조 문구로 구분한다. 로고 클릭 이동은 추가하지 않아 기존 room 퇴장 절차를 우회하지 않는다.
+- 모바일 사운드→테마→홈 순서와44px 아이콘을 공통 page-header.css로 옮겼다. 네 HTML이 같은 스타일을 연결하며 page-header 범위로 기존 page별 CSS 덮어쓰기를 방지한다. 기존 DOM label·aria-pressed와 PC 텍스트 버튼은 유지한다.
+- 필수 verify: 타입/빌드/artifact·Node802 pass·0 fail·기존1 skip. 전체 Chromium86/86 pass, Reviewer 승인. PC/모바일 네 화면의 실제 로고 로딩·동일 자산/크기·44px/행 정렬·문구 숨김·실제 토글·CSP·기존 게임/로비 회귀를 확인했다. 실제 모바일 기기·배포는 미검증이다.
+
+### AI 실험 경과·한계 보고서 (2026-11-04)
+
+- [통합 보고서](docs/ai-ml/experiments/ai-experiment-report-2026-11-04.md)에 V4 배치/weighting/temporal/gameplay와 Human timing/action/goal/snapshot/학습곡선/희소성 실험을 정리했다. 최근 Full report8개를 읽고 SHA·수치를 대조했으며, 과거 V4는 tracked 기록 인용과 이번 원본 재검증 여부를 구분했다.
+- 부분 예측 신호와 전체 자율 모방·gameplay 강도를 구분하고 독립 Test·관측 시점·Hold·40행·보관 경로의 한계를 명시했다. 명세만 있는 후보 scorer를 완료 결과로 넣지 않았다. 문서 작성 외 데이터/코드/모델·Full·stage/commit은 변경하지 않았다.
+
+### 모바일 UI 피드백 5종 반영 (2026-11-04)
+
+- 터치 버튼을 `← ↓ → HOLD / DROP(2칸) ↺ ↻`로 재배치하고 DROP을 강조했다. 버튼 기호를 키우고 컨트롤에만 WebKit 선택/콜아웃 방지를 적용했다. 입력 action·pointer capture·반복 cadence는 유지한다.
+- 멀티 세로 터치 화면의 상대 요약 바는 기존 상대 display handle을 구독해 닉네임·점수·줄·상대 대기 공격·상태를 표시한다. DOM 복제나 별도 gameplay 상태를 만들지 않는다. 상대 보드는 유지하며 가로/PC에서는 요약을 숨긴다.
+- 터치 환경의 홈/로비 입력창을 `max(16px, 1rem)`으로 맞추고 싱글 키보드 안내를 숨겼다.768px 이하 로비 채팅은 border-box와 dvh를 사용해 바깥 높이를 최대260px로 제한한다. 사용자 확대 기능은 유지한다.
+- 필수 verify: 타입/빌드/artifact 통과·Node802 pass·기존1 skip·0 fail. 최종 타입 검사 통과·전체 Chromium84/84 pass. 엄지 배치·회전 인접·DROP폭·양쪽 역할의 상대 요약/실제 점수 갱신·세로/가로 화면 내 배치·입력 폰트·채팅 전송·기존 헤더와 gameplay를 확인했다. Reviewer도 승인했다.
+- [제품 계획](docs/design/product-usability-patch-plan.md#9-모바일-ui-피드백-5종-실행-2026-11-04)에 결과를 남겼다. 실제 iOS Safari/Android Chrome의 자동 줌·길게 누르기·주소창/가상 키보드 변화와 파지감은 미검증이다. 운영 배포·새 수집/학습은 하지 않았다.
+
+### Human 배치 ID 분류·공유 후보 점수화 비교 명세 (2026-11-04)
+
+- 사용자 요청으로 [실험 명세](ai-harness/ml-experiments/experiments/human-placement-candidate-scoring.md)를 작성했다. 기존 snapshot의 비충돌·하방 이동 불가 후보를 core로 구성하는 지원도 점검 후, ID 분류·같은 ID 모델의 candidate mask·공유 candidate scorer를 구분한다. 정답은 Human 선택이며 최종 pose·heuristic 선호를 후보 생성/입력에 넣지 않는다.
+- 출발 상태를 추정하지 않으므로 실제 reachability·과거 ruleset·40행 정책 검증은 아니다. 현재는 문서만 작성했으며 Notebook·실제 데이터 처리·후보 생성·학습/Full·runtime·stage/commit은 수행하지 않았다. 기존 제품 작업은 보존하고 전체 모듈형/통합 구조는 채택하지 않는다.
+
+### 모바일 게임 헤더 SVG 아이콘 (2026-11-04)
+
+- 싱글·멀티의 터치 환경에서 사운드·테마·홈 버튼을 오른쪽 한 줄의44×44px 버튼으로 묶었다. 기존 버튼 textContent 갱신과 접근성 이름·aria-pressed를 유지하고 CSS SVG mask로만 아이콘을 표시한다. 사운드/테마 상태에 따라 아이콘도 바뀐다. PC 텍스트 버튼은 유지한다.
+- 새 패키지·React 상태·동기화 helper를 추가하지 않았다. CSS와 브라우저 회귀만 수정했고 기존 입력 조정·PC 터치 UI 미표시 변경은 보존했다.
+- 기본 verify는 타입/빌드/artifact 통과·Node802 pass·기존1 skip·0 fail이다. 관련 Chromium22/22 pass 및 최종 헤더 캡처2/2 pass로 모바일 좌표·44px 크기·접근성 이름·실제 토글·CSP·기존 싱글/멀티 lifecycle을 확인했다. 실제 Safari/Android 기기와 배포는 미검증이다.
+
+### 조작감·PC 터치 UI 피드백 반영 (2026-11-04)
+
+- 키 해제 뒤 미끄러지는 체감에 대해 기존 DAS130/ARR30의 빠른 반복과 queue 소비 경계를 점검했다. 기본 좌우 반복을 DAS180ms·ARR60ms로 늦췄으며 soft drop60ms·55회/초 제한은 유지한다. Input queue와 authoritative 판정은 바꾸지 않았다.
+- PC의 수동 터치 표시 버튼을 제거하고 `(pointer: coarse)`일 때만 컨트롤을 렌더링한다. 창 폭만으로 PC를 모바일로 판단하지 않으며 입력 장치 조건 변화 시 held 상태도 정리한다.
+- 필수 verify: 타입/빌드/artifact 통과·Node802 pass·기존1 skip·0 fail. 전체 Chromium81/81 pass로 PC 일반/좁은 창 미표시와 싱글/멀티 keyup 후 새 입력·가로 이동 정지를 확인했다. 키업 전 큐에 들어간 입력은 다음 runtime tick에서 처리하며 지속 이동 자체는 정상 테스트에서 미재현이다. 실제 사용자 환경의 원인과 체감 개선은 별도 확인이 필요하다.
+- [제품 계획](docs/design/product-usability-patch-plan.md#7-조작감pc-터치-ui-피드백-2026-11-04)·[Human 입력 계약](docs/ai-ml/contracts/human-action-dataset.md#제품-입력기-변경-경계--2026-11-03)에 조건 변경을 기록했다. 운영 배포·ML 수집/학습은 실행하지 않았다.
 
 ### AI 실험 커밋 전 정리 (2026-11-04)
 

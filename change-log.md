@@ -1,6 +1,101 @@
+## 2026-11-09 — 커밋용 소스 정리와 실행본 보존
+
+- 사용자 commit/push 요청에 따라 ML 실험·배포 진단·모바일 제품 변경을 분리했다. Git에 넣는 후보 Notebook3개는 출력/count 없음·Full 기본 False·출력 경로 환경변수만 유지한다. 사용자 작업 Notebook은 변경하지 않고 Git index에만 소스 기본값을 적용했다.
+- 원본3개를 ignored `data/ml-experiments/source-checkpoint-20261109-commit-4d_u_5pf/`에 바이트 그대로 복사하고 SHA manifest로 확인했다. 현재 실행 설정·결과의 워킹 트리 차이는 의도적으로 남기며 기존 dataset/evidence/report는 보존한다.
+- `verify:ml` Node35/35·Python220/220 통과. 새 Full 학습/평가는 실행하지 않았다. 복구할 때 원본 실행본은 해당 로컬 백업과 현재 작업 파일에서 확인할 수 있다.
+
+## 2026-11-09 — 모바일 로비 탭·홈 스크롤 배경 수정
+
+- 사용자 요청으로768px 이하 로비를 대기실/채팅 탭으로 전환했다. 기존260px 제한으로67px만 남던 메시지 공간을 화면 높이에 따라 확장하고 최소 패널380px을 확보한다. PC는 기존 동시 표시이며 room/code/PVE/채팅 draft·history와 Socket 수명주기는 유지한다.
+- 선택 탭의 ARIA/roving focus와 방향키/Home/End를 지원한다. 숨김 중 새 메시지는 탭을 열 때 최신 위치로 이동하고, 대기실에는 기존 messages에서 파생한 최근 system 안내를 보여 오류가 숨지 않게 한다.
+- html/body height100%가 홈의 긴 콘텐츠를 body 배경 밖으로 넘기고 모바일 장식 bottom-60px이 추가overflow를 만들었다. body auto/min-height100dvh·장식bottom16px·장식 높이+여백의 padding·root 테마 배경으로 수정했다. 로컬 초기 측정은 body844px/콘텐츠끝1368px/scroll1428px이며 파란색 자체는 현재 코드에서 재현하지 못했다.
+- 최종 필수 verify 타입/빌드/artifact·Node805 pass·0 fail·기존 ML artifact 조건부1 skip. 격리 소스 전체 Chromium96/96, 최종 장식 공간 보완 후 영향 화면11/11 통과다. 초기 집중15/15, 숨김 수신/스크롤·대기실 오류 안내·라이트/다크/가로/세로 배경과 장식-푸터 비중첩을 검증했다. 최종 소스/config/테스트135개 SHA 일치와 Reviewer 승인을 확인했다. 채팅 메시지 영역은390px에서67→351px다.
+- 실제 모바일 기기·운영 배포·커밋은 하지 않았다. Rollback은 이번 탭/높이/장식 변경만 되돌리며 기존 제품·ML·배포 작업과 데이터는 보존한다.
+
+## 2026-11-09 — 시스템 단축키·터치 캡처 실패 입력 보호
+
+- 사용자 패치 피드백 중 재현 가능한 입력 고착 방어를 반영했다. Meta/Control/Alt를 누르거나 조합 입력이 들어오면 키보드 경계에서 반복 상태를 비우고 기본 단축키를 차단하지 않는다. 입력창 대상도 같은 초기화를 거치며 Shift 조합과 기존 반복 간격은 유지한다.
+- setPointerCapture의 예상 DOMException은 해당 포인터만 정리하고 press 전에 중단한다. 캡처 실패를 무시한 채 반복을 시작하지 않으며 다른 손가락과 예상하지 못한 오류 처리를 보존한다.
+- 단축키/keyup 누락 단위3종·native multitouch 캡처 예외 E2E2종을 추가했다. 필수 verify의 타입/빌드/artifact·Node805 pass·0 fail·기존 frozen ML artifact 조건부1 skip, 전체 Chromium88/88 pass와 Reviewer·QA 정적 검토 승인을 확인했다. 최초 localhost 수신 EPERM은 허용 환경 재실행으로 해소했다.
+- 실제 OS·모바일 기기·배포·커밋은 수행하지 않았다. 복구는 이번 입력 guard/catch와 해당 회귀 검사만 되돌리며 기존 제품·ML·배포 작업과 데이터는 보존한다.
+
+## 2026-11-09 — 공유 후보 scorer 조기 종료 실험 구현
+
+- 사용자 모델 비교 Full의 실제 report를 검토했다. 공유 scorer는 같은31게임에서 후보 제한 ID보다 macro Top-1 +18.49%p였지만 Train/Validation gap과 후반 BCE 상승이 남았다. 기존 report/실행 Notebook은 보존했다.
+- 새 `human_placement_candidate_early_stopping.ipynb`와 명세를 추가했다. Train 내부119/30게임으로 종료 epoch를 고르고 전체149게임을 그 epoch만 실제 재학습한다. 기존30epoch는 실제 고정 report를 재사용한다. 내장 random-row split·외부Validation 기반 epoch 선택·미구현 모델 비교·행동 증강·추가 수집을 넣지 않았다.
+- 같은 parser/candidate/scaler/MLP/metric/출력 보호를 definitions SHA로 재사용했다. 실제 학습2개·prefix 재현 gate·report 검증·pandas4표/Matplotlib4패널·기본 Full=False와 내부 assert를 구현했고 별도 `.py`/test/dependency/runtime 변경은 없다.
+- 실제 모델 fit 없이 기본 전체 실행·Train-only scaler/분할/stop/가중치/prefix/출력 경계·기존 자료 SHA를 검사했다. 실제 전처리는 fit119게임5035구간115808후보 / monitor30게임1382구간31642후보이며 외부31게임 중복0이다. ML Node35/35·Python220/220·기본 verify805 pass·기존1 skip 통과다.
+- 새 Full 학습·신규 반복 결정성·게임 수별 후속 실험·Test·stage/commit은 하지 않았다. Rollback은 새 Notebook/명세와 이번 안내를 되돌리며 기존 원본·자료·결과와 사용자 제품 변경은 삭제하지 않는다.
+
+## 2026-11-09 — 후보 scorer scaler 비교의 부동소수점 오판 수정
+
+- 같은 Train 입력을 후보 수만큼 반복하고1/K weight로 집계할 때 scaler 평균에 최대1.34e-12의 누적 오차가 발생해 `BOARD_PIECE_SCALER_WEIGHTING_CHANGED`가 나던 문제를 재현했다. ID 기준선 재현은 통과했고 B 학습 전 검사만 실패했다.
+- scaler mean/scale 비교만 atol1e-10·rtol0으로 분리하고 오류에 최대 차이를 표시한다. 모델 지표/기준선 허용오차1e-12·Train-only fit·가중치·학습 설정은 유지했다. 내부 회귀 검사는 관측 오차 허용과 실제 mean/scale 변경·NaN 거부를 확인한다.
+- 사용자 Notebook의 기존 Full=True·실행 출력/count를 지우지 않았다. 새 Full 학습·commit은 하지 않으며 수정 전 오류 출력은 과거 실행 기록이다. Rollback은 비교 helper·회귀 검사와 이번 문서만 되돌리며 기존 dataset/evidence는 보존한다.
+- 실제 전체 후보 행렬 scaler-only 검증·내부 회귀·schema/구문/고유 ID·자료 SHA/문서 링크 검사 통과. `verify:ml` Node35/35·Python220/220, 기본 verify802 pass·기존1 skip·0 fail. 최초 localhost EPERM은 권한 재실행으로 해소했다.
+
+## 2026-11-09 — Human 공유 후보 scorer 실제 모델 비교 구현
+
+- 사용자 Coverage Full의 Train6417/Validation1516구간 정답 포함100%·제외0을 확인하고 같은 split과 candidate evidence SHA를 고정했다. 기존 coverage 실행 Notebook·report/evidence는 보존했다.
+- `human_placement_candidate_model_comparison.ipynb`에 실제207→64→2133 ID MLP와407→64→이진 공유 scorer의30epoch 학습을 구현했다. 후보 제한 ID는 같은 weight의 평가만 수행한다. ID 최종/epoch 지표의 기준선 재현 gate, Train-only weighted scaler·구간 총 weight1, OOV 포함 평가·독점 report 게시·읽기를 연결했다. 미구현 모델 비교/가상 성능 report는 제공하지 않는다.
+- Full 기본 비활성·Notebook 내부 assert만 추가했다. pandas4표·Matplotlib3패널에 Train/Validation 손실·배치 지표를 표시하고 노출 행/업데이트/파라미터·서로 다른 목적함수/유효 L2를 기록한다. Node 재호출·새 `.py`/test/dependency·수집/runtime 변경은 없다.
+- 기본 실행의 실제 data/fit 차단·7933개 evidence 연결 read-only 검사·가상 경계/표/그래프, `verify:ml` Node35/35·Python220/220·기본 verify802 pass·기존1 skip 통과다. 새 Full·신규 조건 반복 결정성·실제 일반화는 아직 미검증이며 commit하지 않았다. Rollback은 새 비교 Notebook과 이번 문서 안내만 되돌리며 기존 source/자료/결과는 삭제하지 않는다.
+
+## 2026-11-09 — 롤백 전 배포 진단 보존
+
+- 실패 앱의 상태·최근 로그를 서버의 배포별 `failure.log`에 남기고 원문은 Actions에 출력하지 않는다. 진단 저장 실패에도 복구를 계속한다.
+
 ## 2026-11-09 — 암호화된 배포 SSH 키 지원
 
 - 배포 SSH 준비 단계에 passphrase Secret·ssh-agent 로드·15초 제한과 종료 정리를 추가했다. 키 CRLF를 정규화하며 합성 암호화/무암호/잘못된 키와 정리를 확인했다. 실제 Actions·운영 접속은 미확인이다.
+
+## 2026-11-04 — 메인·로비·게임 로고와 모바일 헤더 통일
+
+- 네 page의 서로 다른 L블록/MultiLobby/SinglePlayer/MultiMatch header를 공통 BrandLogo의 기존 골드T/favicon SVG와 Tetra Arena로 통일했다. 로비·게임 모드는 작은 보조 문구로 유지하고 로고에 새 navigation handler는 만들지 않았다. Vite native URL 변환으로 같은 asset을 개발/빌드 경계에서 재사용한다.
+- 게임에만 있던 모바일 SVG 버튼 스타일을 page-header.css로 이동해 메인/로비에도 같은 사운드→테마→홈 순서·44px 영역·켜짐 상태를 적용했다. 기존 CSS 우선순위가 글자와 배치를 덮어쓰는 현상을 page-header 공통 범위로 해결하고 모바일 hover의 이동/그림자 차이를 없앴다. 기존 textContent/접근성 이름과 PC 텍스트는 보존한다.
+- 필수 verify 타입/빌드/artifact·Node802 pass·기존1 skip·0 fail, 전체 Chromium86/86 pass 및 Reviewer 승인. 네 화면의 PC/모바일 로고 실제 로딩·동일 자산과 크기·버튼 순서/배치·상태 전환·CSP·기존 gameplay/lobby를 검증했다. 실제 기기·배포·push는 하지 않았다.
+- 기존 조작감/터치/UI 피드백과 사용자 ML 변경은 보존했다. 새 패키지·상태 저장·게임 규칙 변경은 없다. 복구 시 네 page의 BrandLogo/공통 CSS 연결을 함께 되돌리고 기존 favicon·데이터는 삭제하지 않는다.
+
+## 2026-11-04 — 모바일 엄지 배치·상대 요약·브라우저 대응
+
+- 사용자 요청으로 검토한 모바일 UI 피드백을 반영했다. 버튼 순서는 `← ↓ → HOLD / DROP(2칸) ↺ ↻`, DROP 강조색·기호 확대·컨트롤만 선택/콜아웃 방지를 적용한다. 기존 입력 경계·반복 cadence·SVG 헤더는 유지한다.
+- 멀티 세로 터치 화면에 닉네임·게임 상태·점수·줄·상대 대기 공격을 표시하는 요약을 추가했다. 기존 display handle의 useSyncExternalStore 구독만 사용하고 원본 DOM/ID나 게임 상태를 복제하지 않는다. 내 보드·컨트롤·상대 보드 순서와 상대 전체 보드는 유지한다.
+- 터치 입력창 최소16px, 터치 싱글 키보드 안내 숨김, 로비 채팅 dvh/최대260px를 적용했다. 최초 집중 검증에서 content-box의 패딩/테두리 때문에302px이 되는 문제를 발견해 모바일 채팅에 border-box를 지정했다. 채팅 전송/스크롤과 사용자 확대 기능은 보존한다.
+- 필수 verify: 타입/빌드/artifact·Node802 pass·0 fail·기존 외부 artifact 조건부1 skip. 최종 타입 검사와 전체 Chromium84/84 pass. 실제 native touch·양쪽 역할의 요약 값/실제 상대 점수 갱신·DROP2칸·인접 회전·최소16px/채팅 기능·기존 헤더 및 gameplay를 확인하고 Reviewer 승인을 받았다.
+- 실제 Safari/Android 기기의 콜아웃·자동 줌·주소창/가상 키보드/파지감은 별도 검증이다. 미니 보드·새 상태/패키지·데이터 변경·운영 배포·추가 수집/학습은 추가하지 않았다. 복구는 이번 버튼 배열/스타일·상대 요약·입력창/채팅 CSS를 되돌리며 기존 데이터는 보존한다.
+
+## 2026-11-04 — Human 정적 후보 지원도 Notebook 구현
+
+- `human_placement_candidate_scoring.ipynb`18개 cell을 추가했다. Snapshot 정의·입력/정답·report 보호를 재사용하고 Node24가 기존 core geometry만 호출하도록 제한했다. Label·최종 pose·휴리스틱 선호는 후보 입력에 포함하지 않는다.
+- Alias class·target coverage·선택 필요/미지원·game/piece/기존 OOV 진단과 evidence/report 독점 게시, 코드/자료 identity·evidence SHA 검증, pandas4표·Matplotlib2패널을 구현했다. 두 Full 스위치는 기본 비활성이고 모델 비교는 coverage 검토 전 미구현/차단한다.
+- 가상 core 경계·정답 독립성·NaN/잘못된 입력·출력 보호와3구간 게시/결정성/변조를 검사했다. 기본 실행의 실제 data/scaler/MLP fit 차단·Notebook schema/구문·고유 ID·빈 출력, ML Node35/35·Python220/220·기본 verify802 pass·기존1 skip 통과다. Sandbox localhost EPERM은 허용 재실행으로 해소했다.
+- 실제 dataset payload·Coverage Full·model fit·gameplay·새 수집·stage/commit은 수행하지 않았다. 다음은 사용자 Coverage Full 결과 해석이며, source의 실제 실행 스위치는 실행 후 다시 끄도록 안내했다. 기존 제품·문서·실행본 변경은 보존했다.
+
+## 2026-11-04 — AI 실험 경과·한계 통합 보고서
+
+- [보고서](docs/ai-ml/experiments/ai-experiment-report-2026-11-04.md)에 데이터 계보·모델 구조·정량 결과·기각 가설·평가 분모·미검증과 포트폴리오용 요약을 정리했다. 최근 report8개는 실제 파일 SHA·수치를 확인했고 과거 V4 기록 인용과 현재 원본 경로 미확인을 구분했다.
+- V4의 screening 경계 통과를 우월성으로, oracle 조작 정확도를 전체 AI 성능으로, 경험적 Train 일치를 미래 상한으로 해석하지 않도록 명시했다. 데이터 추가의 이익과 필요 판수 미확정, Validation 반복 관측/이미 본 Test·runtime 입력기/규칙 차이도 기록했다.
+- 문서 진입점·현재 상태만 연결했다. Raw/DB/Test payload·새 수집·후보 생성·학습·Full 재실행·코드 수정·stage/commit은 수행하지 않았다. 동시 제품/기존 AI 명세 변경은 보존했다.
+
+## 2026-11-04 — Human 배치 ID·공유 후보 scorer 비교 명세
+
+- [비교 명세](ai-harness/ml-experiments/experiments/human-placement-candidate-scoring.md)를 추가했다. 후보 제약의 이익과 공유 학습의 이익을 나누기 위해 ID 원래 출력·같은 weight의 candidate mask·공유 scorer를 정의했다. 기존 cohort·Human 정답·누수 경계와 전체/공통 평가 분모를 유지한다.
+- 현재 planner가 출발 pose를 요구한다는 사실을 확인해 최종 activePiece를 출발점으로 쓰지 않기로 했다. 첫 범위는 core geometry로 확인하는 정적 snapshot 후보이며 실제 reachability·historical ruleset·gameplay 강도 주장은 제외한다. 지원도 report 검토 전 model fit을 차단한다.
+- 연결 계약에 남아 있던 “A를 먼저 진행” 문장도 미채택 후보로 정정했다. Notebook-only/Full-only·pandas/Matplotlib·내부 assert와 기존 형식 테스트를 유지하며, 이번에는 문서만 작성했다. 새 데이터/코드/학습·runtime·stage/commit은 없고 제품 작업을 보존했다.
+
+## 2026-11-04 — 모바일 게임 헤더 벡터 버튼
+
+- 사용자 요청으로 터치 환경의 게임 헤더를 사운드·테마·홈 아이콘3개로 정리했다.44px 터치 영역·22px SVG 마스크와 키보드 focus 표시를 제공하며 상태별 speaker/moon/sun을 표시한다.
+- 버튼 글자와 aria-pressed를 갱신하는 기존 theme/sound helper를 보존했다. 화면에서만 글자를 숨겨 접근성 이름을 유지하고, SVG는 CSS에 두어 textContent 갱신 때 지워지지 않게 했다. PC 버튼은 기존 텍스트를 사용한다.
+- 필수 verify: 타입/빌드/artifact 통과·Node802 pass·기존1 skip·0 fail. Chromium 관련22/22 pass, 전환 완료 후 캡처를 포함한 헤더2/2 pass. 모바일 싱글/PVE의 배치·44px 영역·접근성 이름·실제 토글·CSP와 기존 lifecycle을 확인했다.
+- 새 의존성·게임 규칙·입력 방식·저장 데이터 변경은 없다. CSS의 모바일 헤더 블록을 되돌리면 기존 배치/텍스트로 복구된다. 실제 iOS/Android 기기·배포는 수행하지 않았다.
+
+## 2026-11-04 — 조작 반복 완화·PC 터치 UI 제거
+
+- 사용자 키 해제 후 미끄러짐 피드백에 따라 좌우 DAS130/ARR30을180/60ms로 늦췄다. 키업 시 반복 생성은 멈추며 이미 enqueue된 입력은 다음16ms 단위 tick에서 처리한다. 지속 이동은 정상 브라우저 테스트에서 재현되지 않아 체감 원인 해결을 확정하지 않는다.
+- 항상 보이던 PC 수동 터치 표시 버튼을 제거했다. primary coarse pointer에서만7개 컨트롤을 자동 표시하고 장치 조건 변화·cleanup에서 held 상태를 정리한다. 기존 수동 표시 fallback보다 이번 사용자 표시 정책을 우선한다.
+- 가짜 clock의 짧은 누름·keyup 회귀와 PC1600/390px 미표시, 싱글·멀티 실제 keyup 후 입력/가로 위치 정지를 검증했다. 필수 verify는 Node802 pass·기존1 skip·0 fail(타입/빌드/artifact 통과), 전체 Chromium81/81 pass다.
+- 실제 Android/iOS·사용자 OS/네트워크에서의 체감 확인·배포·추가 수집/학습은 수행하지 않았다. 이전130/30ms와 수동 표시 경로는 Git의 직전 구현으로 복구 가능하며 데이터를 삭제하지 않는다.
 
 
 
