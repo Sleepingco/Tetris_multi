@@ -6,6 +6,11 @@
 
 ## Current Project Status
 
+### 암호화된 배포 SSH 키 지원 (2026-11-09)
+
+- `OCI_SSH_PASSPHRASE`로 키 암호를 전달하고 ssh-agent에 로드하도록 배포 workflow를 수정했다. 합성 키 3종과 임시 자격증명 정리를 확인했다. 실제 Secret 등록과 Actions 접속은 미확인이다.
+
+
 ### AI 실험 커밋 전 정리 (2026-11-04)
 
 - 사용자 승인으로 실행 상태의 Notebook16개를 ignored `data/ml-experiments/source-checkpoint-20261104/`에 byte-identical하게 보존했다. Git용 source의 output/count를 비우고 Full/실제 표본 스위치를 비활성화했으며 B2/B3의 보고서 초기값을 `None`으로 복구했다. 계산 정의·dataset·기존 report·테스트는 바꾸지 않았다.

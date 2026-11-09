@@ -1109,3 +1109,11 @@ openssl x509 \
 사용자 요청으로 [실행 기록](../history/oci/oci-buffer-zone-deployment-2026-10-23.md)의 운영 전환을 완료했다. 현재 app은 **`tetris-app:bbf26b7`**, migration은 **3**이다. 정확한 source commit의 main CI 네 job·운영 backup/임시 restore·접속 0건 확인·83초 신규 유입 차단·migration/재실행·공개 싱글/PVP/PVE 검증을 통과했다. 기존 이벤트 143,404건을 보존했고 합성 두 경기 v3 배치 33/33·start 2/over 2를 저장했다. 이 cohort는 기존 빈도 제한을 제거하거나 일반적인 무손실 수집을 보장하지 않는다.
 
 검증된 호환 rollback은 **`tetris-app:6be7d05`**다. tag는 게임 오버 계획 §13 archive SHA-256 앞 7자리이며 Git commit tag가 아니다. 실제 운영 migration 3 DB에서 20행 gameplay·healthy·HTTP 200과 정상 종료를 확인했다. rollback 시 이 image로 server/client를 함께 복구하고 v3 row·schema·volume을 보존한다. 이전 `842b744`는 migration 2를 요구하므로 직접 되돌리지 않는다. 두 image와 backup은 운영 VM에 보관했다. 기존 Caddyfile의 추가 Umami 프록시 경로는 덮어쓰지 않았으며 원본 checksum과 200 응답을 확인했다.
+
+## 암호화된 배포 SSH 키 (2026-11-09)
+
+- GitHub `production` 환경의 `OCI_SSH_PRIVATE_KEY`에는 배포 개인키 전체를, `OCI_SSH_PASSPHRASE`에는 그 개인키의 암호를 저장한다. 암호가 없는 키는 passphrase Secret을 비워도 된다. 서버 `authorized_keys`에는 짝이 맞는 공개키가 등록되어 있어야 한다.
+- Actions는 임시 askpass helper로 암호를 전달해 키를 ssh-agent에 로드한다. 암호는 명령 인자나 파일 본문에 쓰지 않고 준비 단계의 환경변수로만 전달한다. 키 로드는 15초 제한이며 종료 단계에서 agent와 임시 키·helper를 정리한다.
+- `error in libcrypto`가 계속되면 개인키 대신 공개키를 넣었거나 키 내용이 누락되었는지도 확인한다. 접속용 키 교체만으로 `OCI_KNOWN_HOSTS`를 바꾸지 않는다.
+- 합성 암호화 키·암호 없는 키·잘못된 키와 임시 파일 정리를 로컬 확인했다. macOS에서는 runner의 GNU timeout 래퍼를 제외하고 검증했다. 실제 Actions와 운영 서버 접속은 별도 확인이 필요하다.
+- 필수 `bash scripts/verify.sh`: Node 24.18.0에서 802 pass·1 skip·0 fail.
