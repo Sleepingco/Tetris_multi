@@ -1,3 +1,7 @@
+## 2026-11-09 — 암호화된 배포 SSH 키 지원
+
+- 배포 SSH 준비 단계에 passphrase Secret·ssh-agent 로드·15초 제한과 종료 정리를 추가했다. 키 CRLF를 정규화하며 합성 암호화/무암호/잘못된 키와 정리를 확인했다. 실제 Actions·운영 접속은 미확인이다.
+
 ## 2026-10-28 — Timing 실험 checkpoint·신규 수집 취소
 
 - 사용자 커밋 요청으로 B0~B2 baseline, 고정 B2 Test, B3 이력 조건, Notebook-first 공통 규칙, 관측 감사/신규 수집 취소/기존 로그 계획의 다섯 묶음으로 구분한다. Python 검사는 유지하고 별도 로비 E2E helper 두 변경은 제외한다.

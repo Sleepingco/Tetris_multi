@@ -106,6 +106,7 @@ jobs:
         shell: bash
         env:
           SSH_PRIVATE_KEY: ${{ secrets.OCI_SSH_PRIVATE_KEY }}
+          SSH_KEY_PASSPHRASE: ${{ secrets.OCI_SSH_PASSPHRASE }}
           KNOWN_HOSTS: ${{ secrets.OCI_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
@@ -113,10 +114,21 @@ jobs:
           ssh_dir="$RUNNER_TEMP/tetris-ssh"
           install -d -m 700 "$ssh_dir"
 
-          printf '%s\n' "$SSH_PRIVATE_KEY" > "$ssh_dir/id_rsa"
+          printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$ssh_dir/id_rsa"
           printf '%s\n' "$KNOWN_HOSTS" > "$ssh_dir/known_hosts"
 
           chmod 600 "$ssh_dir/id_rsa" "$ssh_dir/known_hosts"
+
+          eval "$(ssh-agent -s)" > /dev/null
+          printf 'SSH_AUTH_SOCK=%s\nSSH_AGENT_PID=%s\n' "$SSH_AUTH_SOCK" "$SSH_AGENT_PID" >> "$GITHUB_ENV"
+          cat > "$ssh_dir/askpass" <<'ASKPASS'
+          #!/bin/sh
+          printf '%s\n' "$SSH_KEY_PASSPHRASE"
+          ASKPASS
+          chmod 700 "$ssh_dir/askpass"
+          SSH_ASKPASS="$ssh_dir/askpass" SSH_ASKPASS_REQUIRE=force DISPLAY=:0 \
+            timeout 15s ssh-add "$ssh_dir/id_rsa" < /dev/null
+          rm -f -- "$ssh_dir/askpass"
 
       - name: Transfer and verify artifact
         env:
@@ -551,4 +563,6 @@ jobs:
 
       - name: Remove runner SSH credentials
         if: always()
-        run: rm -f -- "$RUNNER_TEMP/tetris-ssh/id_rsa" "$RUNNER_TEMP/tetris-ssh/known_hosts"
+        run: |
+          if test -n "${SSH_AGENT_PID:-}"; then ssh-agent -k > /dev/null || true; fi
+          rm -f -- "$RUNNER_TEMP/tetris-ssh/id_rsa" "$RUNNER_TEMP/tetris-ssh/known_hosts" "$RUNNER_TEMP/tetris-ssh/askpass"
