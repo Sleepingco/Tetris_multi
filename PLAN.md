@@ -10,6 +10,8 @@
 
 - 사용자 요청으로 지금까지의 ML·배포·제품 변경을 나누어 커밋한다. 후보 Notebook3개의 Git 소스는 출력/count를 비우고 Full 기본 비활성·출력 경로 환경변수 기본값으로 정리했다. 작업 중인 원본 Notebook은 수정하지 않았으며 실행 설정·결과의 로컬 차이는 유지한다.
 - 원본3개와 SHA manifest는 ignored `data/ml-experiments/source-checkpoint-20261109-commit-4d_u_5pf/`에 보존했다. 기존 dataset/report와 실행을 다시 시작하거나 덮어쓰지 않았다. ML 검증 Node35/35·Python220/220 통과이며 제품 검증은 아래 각 실행 기록을 따른다.
+- 원격 main의 배포 PR7/8 이력을 보존해 병합했다. workflow·배포 테스트·runbook은 양쪽 내용이 동일했고, 공유 문서는 중복 배포 기록과 로컬 제품/ML 기록을 함께 보존했다. Notebook3개의 실행 설정·출력 차이는 로컬에 유지한다.
+- 병합 후 최종 `bash scripts/verify.sh` 타입/빌드/artifact·Node805 pass·0 fail·기존1 skip. Git 소스와 로컬 Notebook의 계산 정의가 동일하고 Git의 Full 기본값/출력/count만 분리됐음을 확인했다.
 
 ### 모바일 로비 탭·홈 배경 높이 수정 (2026-11-09)
 

@@ -3,6 +3,8 @@
 - 사용자 commit/push 요청에 따라 ML 실험·배포 진단·모바일 제품 변경을 분리했다. Git에 넣는 후보 Notebook3개는 출력/count 없음·Full 기본 False·출력 경로 환경변수만 유지한다. 사용자 작업 Notebook은 변경하지 않고 Git index에만 소스 기본값을 적용했다.
 - 원본3개를 ignored `data/ml-experiments/source-checkpoint-20261109-commit-4d_u_5pf/`에 바이트 그대로 복사하고 SHA manifest로 확인했다. 현재 실행 설정·결과의 워킹 트리 차이는 의도적으로 남기며 기존 dataset/evidence/report는 보존한다.
 - `verify:ml` Node35/35·Python220/220 통과. 새 Full 학습/평가는 실행하지 않았다. 복구할 때 원본 실행본은 해당 로컬 백업과 현재 작업 파일에서 확인할 수 있다.
+- 원격 main의 PR7/8을 이력 보존 방식으로 병합했다. 배포 코드/테스트/runbook은 이미 동일한 내용이며 PLAN/change-log의 충돌은 양쪽 기록을 보존해 해소했다. 강제 갱신이나 기존 커밋 재작성은 하지 않는다.
+- 병합 후 최종 verify의 타입/빌드/artifact·Node805 pass·0 fail·기존1 skip을 확인했다. Notebook 계산 정의는 로컬 실행본과 Git 소스가 동일하며 기본 실행 설정과 출력/count만 다르다.
 
 ## 2026-11-09 — 모바일 로비 탭·홈 스크롤 배경 수정
 
