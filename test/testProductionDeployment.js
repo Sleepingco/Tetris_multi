@@ -88,6 +88,15 @@ for (const [options, expectedActive, expectedVersion, status] of [
             if (status !== "preflight") assert.equal(f.status(), status, result.stderr);
             assert.equal(f.state().maintenance, status === "manual_recovery_required");
             if (["preflight", "failed_preflight"].includes(status)) assert.equal(f.state().migrations, 0);
+            if (options.fault === "storage") {
+                const diagnostic = path.join(f.journal, "failure.log");
+                const content = fs.readFileSync(diagnostic, "utf8");
+                assert.match(content, /tetris-app:aaaaaaa/);
+                assert.match(content, /\[gameEventStorage\] write_failed/);
+                assert.equal(fs.statSync(diagnostic).mode & 0o777, 0o600);
+                assert.match(result.stdout, /DEPLOY_FAILURE_DIAGNOSTICS=/);
+                assert.doesNotMatch(result.stdout, /\[gameEventStorage\] write_failed/);
+            }
         } finally { f.close(); }
     });
 }

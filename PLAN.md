@@ -6,6 +6,11 @@
 
 ## Current Project Status
 
+### 배포 실패 진단 보존 (2026-11-09)
+
+- 앱 교체·롤백 전에 상태와 healthcheck·최근 로그를 서버 전용 `failure.log`로 보존한다. Actions는 파일 경로만 출력하며 기존 복구 흐름을 유지한다.
+
+
 ### 암호화된 배포 SSH 키 지원 (2026-11-09)
 
 - `OCI_SSH_PASSPHRASE`로 키 암호를 전달하고 ssh-agent에 로드하도록 배포 workflow를 수정했다. 합성 키 3종과 임시 자격증명 정리를 확인했다. 실제 Secret 등록과 Actions 접속은 미확인이다.
