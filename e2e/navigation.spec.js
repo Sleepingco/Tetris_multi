@@ -91,3 +91,54 @@ test("좁은 홈에서 모션 축소와 Guest 키보드 진입을 지원한다",
     await expect(page).toHaveURL(/\/pages\/multiLobby\.html$/);
     await expect(page.locator("#playerNicknameText")).toHaveText(/^Guest\d{4}$/);
 });
+
+for (const theme of ["light", "dark"]) {
+    for (const viewport of [{ width: 390, height: 550 }, { width: 740, height: 390 }]) {
+        test(`홈 ${theme} ${viewport.width}x${viewport.height} 배경은 가이드와 스크롤 끝까지 문서 내용을 덮는다`, async ({ page }) => {
+            await page.setViewportSize(viewport);
+            await page.emulateMedia({ reducedMotion: "reduce" });
+            await page.addInitScript(value => localStorage.setItem("theme", value), theme);
+            await page.goto("/");
+            await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+            const assertCovered = async () => {
+                const geometry = await page.evaluate(() => {
+                    const body = document.body.getBoundingClientRect();
+                    const root = document.querySelector("#indexRoot").getBoundingClientRect();
+                    const footer = document.querySelector("footer").getBoundingClientRect();
+                    const style = getComputedStyle(document.body);
+                    return {
+                        bodyBottom: body.bottom + scrollY,
+                        contentBottom: Math.max(root.bottom, footer.bottom) + scrollY,
+                        documentBottom: document.documentElement.scrollHeight,
+                        documentWidth: document.documentElement.scrollWidth,
+                        background: style.backgroundImage,
+                        decorationBottom: ["::before", "::after"].map(pseudo => parseFloat(getComputedStyle(document.querySelector("#indexRoot"), pseudo).bottom)),
+                        decorationTop: ["::before", "::after"].map(pseudo => {
+                            const decoration = getComputedStyle(document.querySelector("#indexRoot"), pseudo);
+                            return root.bottom + scrollY - parseFloat(decoration.bottom) - parseFloat(decoration.height);
+                        }),
+                        footerBottom: footer.bottom + scrollY,
+                    };
+                });
+                expect(geometry.bodyBottom).toBeGreaterThanOrEqual(geometry.contentBottom - 1);
+                expect(geometry.bodyBottom).toBeGreaterThanOrEqual(geometry.documentBottom - 1);
+                expect(geometry.documentWidth).toBeLessThanOrEqual(viewport.width);
+                expect(geometry.background).toContain("radial-gradient");
+                expect(geometry.decorationBottom.every(bottom => bottom >= 0)).toBe(true);
+                for (const top of geometry.decorationTop) {
+                    expect(top).toBeGreaterThanOrEqual(geometry.footerBottom);
+                }
+                return geometry;
+            };
+            await assertCovered();
+            await page.locator("#guide summary").click();
+            await expect(page.locator("#guide")).toHaveAttribute("open", "");
+            const expanded = await assertCovered();
+            expect(expanded.documentBottom).toBeGreaterThan(viewport.height);
+            await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+            expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
+            await assertCovered();
+            await expect(page.locator("footer")).toBeInViewport();
+        });
+    }
+}

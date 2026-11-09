@@ -40,7 +40,7 @@ B03은 독립적으로 먼저 할 수 있다. 입력 변경은 B02 → B01 순�
 
 - 영향: [input adapter](../../src/client/game/runtime/input.ts), [싱글](../../src/client/pages/tetrisSingle.tsx), [멀티](../../src/client/pages/tetrisMulti.tsx), [게임 CSS](../../src/client/styles/tetris.css), 작은 공용 컨트롤 component. 두 실제 caller가 있으므로 표시 component만 공유한다.
 - 동작: 좌·우·내리기·시계 회전·반시계 회전·하드드롭·홀드의 **7개** 버튼을 제공한다. 모든 입력은 기존 `enqueueInput`으로 보내고 서버 판정·prediction을 우회하지 않는다. 멀티에서는 내 보드만 조작한다.
-- 표시: viewport 폭만으로 기기를 판단하지 않는다. coarse pointer와 사용 가능한 입력 장치를 반영하고, 터치 노트북·태블릿에서도 조작할 수 있게 한다. 탐지 실패 시 조작 UI를 열 수 있는 경로를 둔다.
+- 표시: viewport 폭만으로 기기를 판단하지 않는다. 사용자 피드백에 따라 주 입력이 터치인 `(pointer: coarse)` 환경에서만 조작 UI를 렌더링한다. PC에는 수동 표시 버튼도 만들지 않는다. 주 입력 장치가 바뀌면 표시 조건을 갱신하고 기존 held 상태를 해제한다.
 - 입력: 좌·우·내리기는 B02 반복기를 사용하고 나머지는 한 번씩 실행한다. Pointer ID와 capture로 다중 터치를 구분한다. `pointerup/cancel/lostpointercapture`, blur·hidden·pagehide·unmount 때 held state를 해제한다. 방향키 유지와 회전을 동시에 누를 수 있어야 한다.
 - 화면·접근성: 버튼 이름·focus·누름 상태, safe-area와 충분한 터치 영역을 제공한다. touch-action 제한은 컨트롤 영역에 한정한다. [기존 배치 계획](buffer-layout-plan.md)의 300×720 Canvas·40행 판정·NEXT 4개·색상·연출 간격을 보존한다.
 - 검증: 새 작은 입력 경계 테스트와 touch context E2E를 추가한다. 390×844 세로와 가로 화면에서 버튼 7개, 보드·종료 UI 접근, 좌 이동+회전, 취소 뒤 정지, 싱글/PVP/PVE를 확인한다. 터치에 따른 음향 unlock도 기존 사용자 상호작용 경로로 연결한다.
@@ -50,7 +50,7 @@ B03은 독립적으로 먼저 할 수 있다. 입력 변경은 B02 → B01 순�
 ### B02. OS 설정과 독립된 반복 입력
 
 - 영향: `input.ts`, 두 page의 attach/cleanup, [멀티 session](../../src/client/game/entry/multiplayerGameSession.ts)의 입력 연결, [runtime queue](../../src/client/game/runtime/tetris.ts), [제한 서비스](../../src/server/services/socketRateLimitService.ts). queue·제한은 먼저 읽고 변경이 꼭 필요한 때만 수정한다.
-- 동작: keydown 즉시 한 번 이동하고 held state로 반복한다. 좌우 이동의 시작 후보는 DAS 130ms·ARR 30ms다. 아래 이동은 별도 cadence를 정해 동시 유지 때도 서버의 player당 60 input/초를 정상적으로 넘기지 않게 한다. OS `event.repeat`는 새 반복 입력의 원천으로 쓰지 않는다.
+- 동작: keydown 즉시 한 번 이동하고 held state로 반복한다. 좌우 이동은 초기 DAS 130ms·ARR 30ms에서 사용자 조작감 피드백 후 DAS 180ms·ARR 60ms로 조정한다. 아래 이동은 별도 cadence를 정해 동시 유지 때도 서버의 player당 60 input/초를 정상적으로 넘기지 않게 한다. OS `event.repeat`는 새 반복 입력의 원천으로 쓰지 않는다.
 - 정책: 마지막에 누른 좌우 방향을 우선하고, 해제하면 아직 눌린 반대 방향으로 전환한다. 회전·홀드·하드드롭은 한 번씩 실행한다. 입력창에 쓰는 키를 가로채지 않고 blur/hidden/unmount/경기 종료에 반복을 멈춘다. timer 지연 뒤 과거 반복을 한꺼번에 재생하지 않는다.
 - 최소 구조: 작은 held/repeat 로직을 기존 입력 경계에 두고 B01이 같은 press/release를 사용한다. 새 입력 framework·설정 화면·사용자별 DAS 저장은 추가하지 않는다. React가 gameplay 상태를 소유하지 않는다.
 - 검증: fake clock으로 즉시 1회·대기 전 무반복·ARR 반복·회전 중 좌우 유지·반대 키 해제·blur·숨김·cleanup을 확인한다. 재부착·StrictMode에서 timer가 늘지 않고 runtime의 tick당 queue 상한과 서버 입력 제한을 넘기는 backlog가 없어야 한다.
@@ -140,3 +140,33 @@ B03 → B02 → B01 → B04 → B05 → B06a → B06b를 권장 기본 순서로
 2026-11-04 최종 재검증에서 기존 reconnect E2E helper의 관찰 경쟁을 확인했다. 양쪽 RGB 수렴 확인 뒤 소스 Canvas를 다시 읽어 하드드롭 합성의 RGB 반올림 차이를 기준값으로 저장할 수 있었다. 검증된 pair 값을 그대로 반환하도록 수정하고 회귀 unit 1개·실제 reconnect 3회 반복을 통과했다. 엄격한 RGB 비교·수렴 조건·timeout은 유지했다. 후속 main E2E의 로비·홈404는 동시 dist 재빌드 시각과 일치했다. main의 빌드/테스트 입력217개와 SHA256이 같은 독립 사본에서 같은 Todo 스크립트를 직렬 실행해 Exit0으로 완료했다. 검증 후 원본 main217개도 hash 일치를 재확인했다.
 
 자동 검사 성공은 Android/iOS 하드웨어 검증을 대신하지 않는다. 실기기·Windows/macOS 실제 조작·운영 배포·DB/ML 별도 전체 gate는 미검증이며 B05/B06은 이 묶음에 포함하지 않는다. 모바일 portrait는 내 보드→컨트롤→상대 보드 순으로 표시하고 상대 정보는 스크롤로 접근한다. 복구는 입력기와 연결된 page/session/컨트롤/CSS를 함께 되돌리며 초대 변경은 독립 복구할 수 있다. 데이터 삭제·수집·재학습은 수행하지 않는다.
+
+## 7. 조작감·PC 터치 UI 피드백 (2026-11-04)
+
+- 키 해제 뒤 미끄러지는 체감에 대한 완화로 DAS180ms·ARR60ms를 적용했다. 초기130/30ms 설정은 너무 빠른 반복으로 체감될 수 있었다. Queue에 들어간 입력은 다음16ms 단위 runtime tick에서 처리하며 첫 탭을 잃지 않도록 queue 전체를 삭제하지 않는다. 지속 이동 자체는 정상 싱글·멀티 테스트에서 미재현이므로 사용자 환경에서의 원인 해결로 단정하지 않는다.
+- 사용자 요청에 따라 PC 수동 표시 fallback을 제거한다. 주 입력이 터치인 `(pointer: coarse)` 환경에만 조작 UI가 존재한다. PC의 창을 좁혀도 조작 버튼이나 표시 토글을 만들지 않는다.
+- 필수 verify: Node802 pass·0 fail·기존1 skip, 타입/빌드/artifact 통과. Chromium 전체81/81 pass. 짧은 누름·keyup 후 반복 생성 중단, 싱글/멀티에서 잔여 tick 이후 가로 위치 유지, PC 일반/좁은 창 미표시와 모바일7개 버튼을 확인했다.
+- 실제 키보드/모바일 하드웨어·운영 배포·사용자 체감 개선은 별도 확인이다. 로컬 조정으로 남기고 새 수집·dataset 생성·재학습은 하지 않는다.
+
+## 8. 모바일 게임 헤더 아이콘 (2026-11-04)
+
+사용자 요청에 따라 primary coarse pointer에서만 사운드·테마·홈을 우측 한 줄의44px 버튼으로 표시한다. CSS의22px SVG mask가 상태에 따라 변하고 기존 DOM 문구는 접근성 이름으로 남긴다. PC 텍스트·사운드 정책·게임 종료/퇴장 계약은 유지한다. 새 component/state/package는 만들지 않는다.
+
+기본 verify는 Node802 pass·기존1 skip·0 fail과 타입/빌드/artifact 통과다. 모바일 싱글/PVE44px 좌표·접근성 이름·사운드/테마 실제 토글·CSP·기존 lifecycle을 포함한 Chromium22/22와 최종 헤더 캡처2/2를 통과했다. 실제 iOS Safari/Android Chrome 기기는 미검증이며 운영 배포는 하지 않았다.
+
+## 9. 모바일 UI 피드백 5종 실행 (2026-11-04)
+
+- [x] 엄지 배치: `← ↓ → HOLD / DROP(2칸) ↺ ↻`. 회전 버튼을 인접시키고 DROP을 강조한다. 기존 pointer별 capture/해제와 입력 연결은 유지한다.
+- [x] 상대 시야: 멀티 세로 터치 화면 상단의 요약은 기존 상대 display handle을 구독한다. 닉네임·점수·줄·상대가 받을 대기 공격·게임 상태를 표시하고 별도의 경기 상태나 DOM clone을 만들지 않는다. 전체 상대 보드는 스크롤 영역에 유지한다.
+- [x] 입력창: 터치 홈/로비의 두 입력 스타일 모두 `max(16px, 1rem)`으로 지정한다. PC·사용자 확대 기능은 유지한다.
+- [x] 길게 누르기/시인성: 컨트롤/버튼에 WebKit 선택·콜아웃 방지, 기호1.2rem·DROP 강조색을 적용한다. 채팅 등 다른 영역의 텍스트 선택은 막지 않는다.
+- [x] 안내/채팅: 터치 싱글의 키보드 안내를 숨기고768px 이하 로비 채팅의 바깥 높이를 dvh 기준 최대260px로 제한한다. content-box302px 문제를 border-box로 수정했다.
+- [x] 검증: 필수 verify 타입/빌드/artifact·Node802 pass·0 fail·기존1 skip, 최종 타입 검사, 전체 Chromium84/84 pass, Reviewer 승인.390×844/844×390 native touch와 PVP host/guest의 상대 요약 대상·실제 점수 갱신, 제어부 배치·폰트/채팅 기능을 확인했다.
+
+실제 iOS Safari의 자동 줌/콜아웃 및 Android의 주소창·가상 키보드 동작은 Chromium emulation으로 입증하지 않는다. dvh만으로 가상 키보드 가림이 모두 해결됐다고 주장하지 않는다. 실기기 파지감과 배포는 미검증이며 새 수집/dataset 생성/학습은 수행하지 않았다. 이전 SVG 헤더·DAS180/ARR60 조정과 PC 터치 UI 숨김은 보존했다.
+
+## 10. 네 화면 로고·모바일 헤더 통일 (2026-11-04)
+
+메인·로비·싱글·멀티 header는 BrandLogo에서 같은 기존 골드T/favicon SVG와 Tetra Arena 표기를 읽는다. 작은 모드 문구만 다르고 로고에 페이지 이동은 추가하지 않는다. 네 HTML은 공통 page-header.css를 연결하며 사운드→테마→홈의 모바일44px SVG 버튼과 상태 표현을 공유한다. PC 텍스트 버튼·기존 접근성 이름·room leave 흐름은 유지한다.
+
+필수 verify는 타입/빌드/artifact·Node802 pass·0 fail·기존1 skip이다. Chromium86/86 pass와 Reviewer 승인을 확인했다. PC/모바일 네 화면의 실제 동일 로고 로딩·크기·버튼 정렬/숨긴 문구·실제 토글과 기존 전체 회귀를 검증했다. 실제 모바일 기기·운영 배포는 미검증이다.

@@ -1,3 +1,4 @@
+import { BrandLogo } from "../game/ui/brandLogo.tsx";
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { createRoot } from "react-dom/client";
@@ -110,6 +111,8 @@ function MultiLobbyPage() {
     const [nickname, setNickname] = useState(initialNickname);
     const [room, setRoom] = useState<Room | null>(null);
     const [view, setView] = useState<View>("join");
+    const [mobileLayout, setMobileLayout] = useState(() => window.matchMedia("(max-width: 768px)").matches);
+    const [lobbyTab, setLobbyTab] = useState<"room" | "chat">("room");
     const [sessionReady, setSessionReady] = useState(false);
     const [pendingRequest, setPendingRequest] = useState<RequestType>(null);
     const [needsRoomSync, setNeedsRoomSync] = useState(false);
@@ -125,6 +128,9 @@ function MultiLobbyPage() {
         text: "전체 채팅 또는 방 채팅을 선택해서 메시지를 보낼 수 있습니다.",
         scope: null,
     }]);
+    const systemMessage = messages.reduce<DisplayMessage | null>(
+        (last, message) => message.scope === null && message.id > 0 ? message : last, null,
+    );
     const nextMessageId = useRef(1);
     const messagesRef = useRef<HTMLDivElement>(null);
     const themeToggleRef = useRef<HTMLButtonElement>(null);
@@ -171,8 +177,15 @@ function MultiLobbyPage() {
     }, []);
 
     useEffect(() => {
+        const query = window.matchMedia("(max-width: 768px)");
+        const update = () => setMobileLayout(query.matches);
+        query.addEventListener("change", update);
+        return () => query.removeEventListener("change", update);
+    }, []);
+
+    useEffect(() => {
         messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
-    }, [messages]);
+    }, [messages, lobbyTab, mobileLayout]);
 
     useEffect(() => {
         if (invitation.invalid && !invitationAttempted.current) {
@@ -381,8 +394,8 @@ function MultiLobbyPage() {
 
     return (
         <div className="container">
-            <header className="header">
-                <h1 className="brand">Multi Lobby</h1>
+            <header className="header page-header">
+                <h1 className="brand"><BrandLogo context="멀티 로비" /></h1>
                 <div className="profile-box">
                     <div className="avatar"><span id="playerAvatarChar">{nickname.charAt(0).toUpperCase()}</span></div>
                     <div className="profile-details">
@@ -406,13 +419,32 @@ function MultiLobbyPage() {
                         aria-pressed="false" onClick={() => toggleTheme(themeToggleRef.current)}>
                         다크 모드
                     </button>
-                    <a href="./index.html" className="btn ghost">← 홈으로</a>
+                    <a href="./index.html" className="btn ghost home-btn">홈으로</a>
                 </nav>
             </header>
 
             <main className="main" style={{ paddingTop: 10 }}>
+                <div className="lobby-tabs" role="tablist" aria-label="로비 화면" hidden={!mobileLayout}
+                    onKeyDown={event => {
+                        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+                        event.preventDefault();
+                        const next = event.key === "Home" ? "room" : event.key === "End" ? "chat" : lobbyTab === "room" ? "chat" : "room";
+                        setLobbyTab(next);
+                        document.getElementById(`lobby-tab-${next}`)?.focus();
+                    }}>
+                    <button id="lobby-tab-room" type="button" role="tab" aria-selected={lobbyTab === "room"}
+                        aria-controls="lobby-room-panel" tabIndex={lobbyTab === "room" ? 0 : -1}
+                        onClick={() => setLobbyTab("room")}>대기실</button>
+                    <button id="lobby-tab-chat" type="button" role="tab" aria-selected={lobbyTab === "chat"}
+                        aria-controls="lobby-chat-panel" tabIndex={lobbyTab === "chat" ? 0 : -1}
+                        onClick={() => setLobbyTab("chat")}>채팅</button>
+                </div>
+                {mobileLayout && lobbyTab === "room" && systemMessage && (
+                    <p className="lobby-feedback" role="status">{systemMessage.text}</p>
+                )}
                 <div className="lobby-grid">
-                    <section className="action-panel">
+                    <section className="action-panel" id="lobby-room-panel" hidden={mobileLayout && lobbyTab !== "room"}
+                        role={mobileLayout ? "tabpanel" : undefined} aria-labelledby={mobileLayout ? "lobby-tab-room" : undefined}>
                         <div className="action-box">
                             <h2>{room ? "대기실" : "친구와 대전"}</h2>
                             <p id="primaryActionDesc">{primaryDescription}</p>
@@ -551,7 +583,8 @@ function MultiLobbyPage() {
                         </div>
                     </section>
 
-                    <section className="card chat-panel">
+                    <section className="card chat-panel" id="lobby-chat-panel" hidden={mobileLayout && lobbyTab !== "chat"}
+                        role={mobileLayout ? "tabpanel" : undefined} aria-labelledby={mobileLayout ? "lobby-tab-chat" : undefined}>
                         <h2 className="card-title">채팅</h2>
                         <fieldset className="chat-scopes" aria-label="채팅 전송 범위" disabled={!sessionReady}>
                             <label><input type="radio" name="chatScope" value="global" checked={chatScope === "global"}

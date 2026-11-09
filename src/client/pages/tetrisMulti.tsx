@@ -1,3 +1,4 @@
+import { BrandLogo } from "../game/ui/brandLogo.tsx";
 import { TouchControls } from "../game/ui/touchControls.tsx";
 import type { InputController } from "../game/runtime/input.ts";
 import {
@@ -227,6 +228,20 @@ function PlayerHud({
             )}
         </>
     );
+}
+
+/** 상대 runtime의 표시 snapshot을 구독하며 별도의 경기 상태를 저장하지 않는다. */
+function OpponentSummary({ handle, name, status }: { handle: DisplayHandle; name: string; status?: string }) {
+    const snapshot = useSyncExternalStore(handle.subscribeDisplay, handle.getDisplaySnapshot);
+    return <aside className="opponent-summary" aria-label="상대 요약">
+        <strong>{name}</strong>
+        <span data-opponent-stat="status">{status || (snapshot.phase === "gameOver" ? "종료" : "플레이 중")}</span>
+        <div className="opponent-summary-stats">
+            <span>점수 <b data-opponent-stat="score">{snapshot.score}</b></span>
+            <span>줄 <b data-opponent-stat="lines">{snapshot.lines}</b></span>
+            <span>상대 대기 공격 <b data-opponent-stat="incoming">{snapshot.pendingGarbageLines}</b></span>
+        </div>
+    </aside>;
 }
 
 function PlayerColumn({
@@ -948,9 +963,9 @@ function MultiplayerGamePage() {
 
     return (
         <div className="multi-wrapper">
-            <header className="multi-header">
+            <header className="multi-header page-header">
                 <div className="multi-title">
-                    <h1>Multi Match</h1>
+                    <h1><BrandLogo context="멀티 대전" /></h1>
                     <div
                         className="room-info-badge"
                         id="multiRoomBadge"
@@ -993,6 +1008,11 @@ function MultiplayerGamePage() {
                 </div>
             </header>
 
+            {pageInfo.mine && displayHandles && <OpponentSummary
+                handle={pageInfo.mine === 1 ? displayHandles.player2 : displayHandles.player1}
+                name={pageInfo.mine === 1 ? pageInfo.player2Name : pageInfo.player1Name}
+                status={overlays[pageInfo.mine === 1 ? 1 : 0]?.text}
+            />}
             <main className="multi-grid">
                 <PlayerColumn
                     playerNumber={1}

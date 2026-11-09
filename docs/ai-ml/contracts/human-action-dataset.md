@@ -12,6 +12,7 @@
 ### 제품 입력기 변경 경계 — 2026-11-03
 
 - 제품 B02/B01은 OS key repeat 대신 공통 held 입력기를 사용한다. 좌우 DAS 130ms·ARR 30ms, soft drop 60ms와 키보드/터치 합산 55회/초 상한을 적용한다. 기록은 기존 runtime 소비 시각의 semantic action attempt이며 물리 keydown/keyup 또는 터치 발생 시각을 뜻하지 않는다.
+- 2026-11-04 사용자 조작감 피드백 후 좌우 반복을 DAS180ms·ARR60ms로 늦췄다. Soft drop60ms·합산55회/초·runtime 소비 시각의 의미는 유지한다. PC 터치 UI를 제거하고 primary coarse pointer에서만 표시한다. 이 전후 빌드의 입력 간격 분포도 같은 조건으로 합치지 않는다.
 - 이 변경의 기준 parent는 `f1c71ef9`다. 후속 로그를 해석할 때 실제 적용 commit/build와 배포 시점을 확인하고, 이전 OS 반복 기반 자료와 입력 간격 분포가 같다고 가정하지 않는다. 조작 방식이 확인되지 않은 과거 로그에 keyboard/touch label을 소급 부여하지 않는다.
 - 기존 schema·raw·dataset·split·학습 artifact를 변경하지 않는다. 이번 작업은 제품 입력 개선이며 새 수집·dataset 생성·재학습을 시작하지 않는다.
 

@@ -59,8 +59,9 @@ body > div {
 
 @media (max-width: 900px) {
     .home-modes::before, .home-modes::after { display: none; }
+    #indexRoot { padding-bottom: calc(clamp(80px, 14vw, 140px) / 1.5 + 32px); }
     #indexRoot::before, #indexRoot::after {
-        bottom: -60px;
+        bottom: 16px;
         width: clamp(80px, 14vw, 140px);
     }
 }

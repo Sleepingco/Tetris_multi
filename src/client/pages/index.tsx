@@ -1,3 +1,4 @@
+import { BrandLogo } from "../game/ui/brandLogo.tsx";
 import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { applySavedTheme, toggleTheme } from "../game/entry/theme";
@@ -57,23 +58,15 @@ function IndexPage() {
     };
     return (
         <div className="container home-page">
-            <header className="header">
-                <h1 className="brand">
-                    <svg className="brand-mark" viewBox="0 0 40 56" aria-hidden="true">
-                        <rect x="20" y="2" width="15" height="15" rx="1.5" />
-                        <rect x="20" y="19" width="15" height="15" rx="1.5" />
-                        <rect x="20" y="36" width="15" height="15" rx="1.5" />
-                        <rect x="3" y="36" width="15" height="15" rx="1.5" />
-                    </svg>
-                    <span>Tetra Arena</span>
-                </h1>
+            <header className="header page-header">
+                <h1 className="brand"><BrandLogo /></h1>
                 <nav className="nav">
+                    <button ref={soundToggleRef} id="soundToggle" type="button" className="btn ghost"
+                        aria-pressed="false">사운드 켜기</button>
                     <button ref={themeToggleRef} id="themeToggle" type="button" className="btn ghost"
                         aria-pressed="false" onClick={() => toggleTheme(themeToggleRef.current)}>
                         다크 모드
                     </button>
-                    <button ref={soundToggleRef} id="soundToggle" type="button" className="btn ghost"
-                        aria-pressed="false">사운드 켜기</button>
                 </nav>
             </header>
 

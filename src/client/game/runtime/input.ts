@@ -49,7 +49,7 @@ export function createInputController({ enqueueAction, onUserInteract, isActive 
         const now = performance.now();
         if (direction && now >= horizontalAt) {
             emit(direction);
-            horizontalAt = now + 30;
+            horizontalAt = now + 60;
         }
         if ([...held.values()].includes("soft_drop") && now >= softDropAt) {
             emit("soft_drop");
@@ -64,7 +64,7 @@ export function createInputController({ enqueueAction, onUserInteract, isActive 
         emit(action);
         if (horizontal(action)) {
             direction = action;
-            horizontalAt = performance.now() + 130;
+            horizontalAt = performance.now() + 180;
         }
         if (action === "soft_drop") softDropAt = performance.now() + 60;
         if (timer === null && (horizontal(action) || action === "soft_drop")) timer = setTimeout(repeat, 10);
@@ -76,7 +76,7 @@ export function createInputController({ enqueueAction, onUserInteract, isActive 
             const next = [...held.values()].reverse().find(horizontal) ?? null;
             if (next !== direction) {
                 direction = next;
-                horizontalAt = performance.now() + 130;
+                horizontalAt = performance.now() + 180;
             }
         }
         if (!held.size) reset();
@@ -112,6 +112,10 @@ export function attachKeyboardInput({ enqueueAction, onUserInteract, controller 
     const interactive = (target: EventTarget | null) => typeof Element !== "undefined" && target instanceof Element && !!target.closest("input,textarea,select,button,a,summary,[contenteditable]:not([contenteditable=false])");
     const onFocus = (event: FocusEvent) => { if (interactive(event.target)) input.reset(); };
     const onKeydown = (event: KeyboardEvent) => {
+        if (event.metaKey || event.ctrlKey || event.altKey || ["Meta", "Control", "Alt"].includes(event.key)) {
+            input.reset();
+            return;
+        }
         const target = event.target;
         if (typeof Element !== "undefined" && target instanceof Element
             && (target.closest("input,textarea,select,[contenteditable]:not([contenteditable=false])")

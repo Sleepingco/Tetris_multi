@@ -42,17 +42,17 @@ async function fixture(t) {
         setActive: value => { active = value; } };
 }
 
-test("B02 DAS 130ms 대기 후 ARR 30ms, 회전 중에도 좌우 반복 유지", async t => {
+test("B02 DAS 180ms 대기 후 ARR 60ms, 회전 중에도 좌우 반복 유지", async t => {
     const f = await fixture(t);
     f.controller.press("left", "move_left");
     assert.deepEqual(f.actions.map(row => row.action), ["move_left"]);
-    f.tick(129);
+    f.tick(179);
     assert.equal(f.actions.length, 1);
     f.controller.press("rotate", "rotate");
     f.controller.press("rotate", "rotate");
     f.tick(1);
     assert.deepEqual(f.actions.map(row => row.action), ["move_left", "rotate", "move_left"]);
-    f.tick(30);
+    f.tick(60);
     assert.equal(f.actions.at(-1).action, "move_left");
     f.controller.release("left");
     const count = f.actions.length;
@@ -64,10 +64,10 @@ test("B02 마지막 좌우 키 우선과 해제 후 반대 방향 복귀", async
     const f = await fixture(t);
     f.controller.press("left", "move_left");
     f.controller.press("right", "move_right");
-    f.tick(130);
+    f.tick(180);
     assert.equal(f.actions.at(-1).action, "move_right");
     f.controller.release("right");
-    f.tick(130);
+    f.tick(180);
     assert.equal(f.actions.at(-1).action, "move_left");
     f.controller.reset();
     const count = f.actions.length;
@@ -92,7 +92,7 @@ test("B02 경기 종료·destroy 후 입력과 반복이 중단된다", async t 
     const f = await fixture(t);
     f.controller.press("left", "move_left");
     f.setActive(false);
-    f.tick(130);
+    f.tick(180);
     f.controller.press("drop", "hard_drop");
     assert.equal(f.actions.length, 1);
     f.controller.destroy();
@@ -152,3 +152,42 @@ test("B02 입력창에 focus가 이동하면 눌린 방향을 해제한다", asy
     assert.equal(f.actions.length, 1);
     detach();
 });
+
+test("B02 짧은 누름은 한 번만 이동하고 keyup 뒤에는 새 반복 입력을 만들지 않는다", async t => {
+    const f = await fixture(t);
+    const detach = f.attachKeyboardInput({ controller: f.controller, enqueueAction() {} });
+    const event = { key: "ArrowLeft", code: "ArrowLeft", repeat: false, preventDefault() {} };
+    document.fire("keydown", event);
+    f.tick(150);
+    document.fire("keyup", event);
+    f.tick(400);
+    assert.deepEqual(f.actions.map(row => row.action), ["move_left"]);
+    document.fire("keydown", event);
+    f.tick(240);
+    assert.equal(f.actions.length, 4);
+    document.fire("keyup", event);
+    f.tick(1000);
+    assert.equal(f.actions.length, 4);
+    detach();
+});
+
+for (const [key, flag] of [["Meta", "metaKey"], ["Control", "ctrlKey"], ["Alt", "altKey"]]) {
+    test(`B02 ${key} 입력은 keyup 누락 시 반복을 해제하고 시스템 단축키를 보존한다`, async t => {
+        const f = await fixture(t);
+        const detach = f.attachKeyboardInput({ controller: f.controller, enqueueAction() {} });
+        document.fire("keydown", { key: "ArrowLeft", code: "ArrowLeft", repeat: false, preventDefault() {} });
+        document.fire("keydown", { key, [flag]: true, target: new Element(), preventDefault() { assert.fail("시스템 키를 차단했다"); } });
+        f.tick(500);
+        assert.deepEqual(f.actions.map(row => row.action), ["move_left"]);
+        for (const shortcut of ["c", "z", "ArrowRight"]) {
+            document.fire("keydown", { key: shortcut, [flag]: true, preventDefault() { assert.fail("시스템 단축키를 차단했다"); } });
+        }
+        document.fire("keyup", { key });
+        f.tick(500);
+        assert.equal(f.actions.length, 1);
+        document.fire("keydown", { key: "ArrowRight", code: "ArrowRight", shiftKey: true, repeat: false, preventDefault() {} });
+        f.tick(180);
+        assert.deepEqual(f.actions.map(row => row.action), ["move_left", "move_right", "move_right"]);
+        detach();
+    });
+}

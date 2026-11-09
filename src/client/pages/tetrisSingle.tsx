@@ -1,3 +1,4 @@
+import { BrandLogo } from "../game/ui/brandLogo.tsx";
 import { TouchControls } from "../game/ui/touchControls.tsx";
 import type { InputController } from "../game/runtime/input.ts";
 import { StrictMode, useEffect, useRef, useState, useSyncExternalStore } from "react";
@@ -149,8 +150,8 @@ function SingleGamePage() {
 
     return (
         <div className="single-wrapper">
-            <header className="single-header">
-                <h1 className="page-title">Single Player</h1>
+            <header className="single-header page-header">
+                <h1 className="page-title"><BrandLogo context="싱글 플레이" /></h1>
                 <div className="scoreboard">
                     <span className="score-label">Score</span>
                     <span ref={scoreRootRef} className="score" />
