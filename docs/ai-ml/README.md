@@ -1,5 +1,9 @@
 # AI/ML 문서와 파일 안내
 
+2026-11-09 현재: [배치 후보 비교 명세](../../ai-harness/ml-experiments/experiments/human-placement-candidate-scoring.md)의 사용자 Full을 검토했다. 공유 scorer는 같은31게임 macro Top-1 43.56%로 개선됐지만 과적합은 남았다. 다음은 [조기 종료 명세](../../ai-harness/ml-experiments/experiments/human-placement-candidate-early-stopping.md)와 [새 Notebook](../../scripts/ml/notebooks/human_placement_candidate_early_stopping.ipynb)4절의 사용자 Full이다. Train 내부119/30게임에서 epoch를 정해 전체149게임에 실제 재학습하고, 실제30epoch report와 비교하는 코드/내부 검증을 완료했다. 기본 비활성·새 Full 미실행이며 원본 행동 증강·추가 수집·전체 구조 채택·runtime은 없다. 그 결과 해석 뒤에만 게임 수별 학습곡선을 준비한다. 아래 이전 “다음” 기록보다 이 안내와 현재 명세를 우선한다.
+
+[2026-11-04 실험 경과·결과·한계 보고서](experiments/ai-experiment-report-2026-11-04.md)는 과거 V4와 현재 Human 행동 실험의 수치·평가 분모·미검증을 한곳에서 정리한 최신 회고 진입점이다. 아래 단계별 “현재/다음” 문장은 과거 작성 시점의 이력을 포함하므로 실제 진행 상태는 이 보고서와 AI 계획을 우선한다.
+
 이 문서는 placement AI와 Human 조작 AI 관련 파일을 찾는 단일 진입점이다. 실행 코드와 Notebook
 경로는 유지하면서 현재 재사용할 경로와 과거 실험 근거를 구분한다. 종료되거나
 대체되어 이동한 문서는 [AI/ML archive와 시간순 목차](../archive/ai-ml/README.md)에서 찾는다.

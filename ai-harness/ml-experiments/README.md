@@ -1,5 +1,7 @@
 # ML Experiment Harness
 
+현재 [Human 배치 ID 분류 vs 공유 후보 점수화](experiments/human-placement-candidate-scoring.md)의 사용자 Full 검토를 완료했다(2026-11-09). 공유 scorer의 macro Top-1은43.56%로 후보 제한 ID25.08%보다 높지만 과적합은 남았다. 다음은 [조기 종료 명세](experiments/human-placement-candidate-early-stopping.md)와 [새 Notebook](../../scripts/ml/notebooks/human_placement_candidate_early_stopping.ipynb)4절의 사용자 Full이다. Train 내부119/30게임에서 종료 epoch를 정하고 전체149게임에 재학습하며 실제30epoch report를 기준선으로 재사용한다. 실제 두 학습 경로·내부 검증까지 구현했고 기본 Full=False다. 원본 행동/데이터 증강·외부Validation 기반 epoch 선택·Node 재호출·게임 수 실험·runtime은 추가하지 않았다.
+
 2026-11-04 커밋 전 정리로 실행본16개를 ignored `data/ml-experiments/source-checkpoint-20261104/`에 보존하고 source의 출력/count·실행 기본값을 복구했다. `verify:ml` Node35/35·Python220/220 통과다. 아래 기존 실행본 형식 문제와 코드 준비 상태는 당시 이력이며 새 Full/다음 실험 지시가 아니다.
 
 현재 [Human 배치 입력·정답 진단](experiments/human-placement-input-target-audit.md)의 승인 Full2회/해석을 완료했다. [AI 계획](../../docs/ai-ml/strategy/ai-plan.md)의 모듈형 V4 재사용과 통합 신경망은 미채택 비교 후보이며 후속 구조·실험은 사용자 선택을 기다린다. 이전 준비/실행 기록을 새 구현·Full·수집·runtime 승인으로 읽지 않는다.

@@ -1,5 +1,7 @@
 # ML 코드 안내
 
+현재는 사용자 모델 비교 Full 이후의 [human_placement_candidate_early_stopping.ipynb](notebooks/human_placement_candidate_early_stopping.ipynb)다. Train 내부119/30게임에서 종료 epoch를 선택하고 전체149게임에 실제 재학습해 외부31게임을 평가한다. 기존 실제30epoch report를 재사용하며 새 모델 비교가 미구현인 셀은 없다. **4절 `RUN_FULL=True`와 새 report 경로**를 설정하면 실행되며 기본은 False다. Node 호출·coverage/ID 모델 재실행·별도 Python 파일 실행은 필요 없다. 새 Full은 아직 실행하지 않았다. [조기 종료 명세](../../ai-harness/ml-experiments/experiments/human-placement-candidate-early-stopping.md)의 결과 해석 뒤에만 공유 scorer의 게임 수별 학습곡선을 준비한다.
+
 실험과 검사를 같은 부모 폴더에서 역할별로 찾는다.
 
 ```text
@@ -86,6 +88,8 @@ B2(action)와 B3(action+과거 간격 구간)를 같은 Train/Validation에서 �
 위 offline view의 사용자 Full은 180게임·7,959구간으로 마감했다. 다시 생성하지 않고 새 [목표 조건 prefix Notebook](notebooks/human_goal_conditioned_prefix.ipynb)과 [명세](../../ai-harness/ml-experiments/experiments/human-goal-conditioned-prefix.md)를 따른다. 기본 모두 실행은 가상3epoch Smoke이며 4절 Full은 `RUN_FULL=True`, `FULL_REPORT="data/ml-experiments/human-goal-conditioned-prefix/full-report-run1.json"`로 사용자가 실행한다. 여기서 이름은 dataset revision이 아니라 **새 JSON report 경로**다. 두 비교군의 독립 행동/시간 MLP를 각각30epoch 학습하고 pandas·Matplotlib으로 결과를 표시한다. 실제 Full fit·runtime은 자동 실행하지 않았다.
 
 ## 결과 읽기: pandas + Matplotlib
+
+현재 [후보 지원도 Notebook](notebooks/human_placement_candidate_scoring.ipynb)은 [명세](../../ai-harness/ml-experiments/experiments/human-placement-candidate-scoring.md)에 따라 구현·내부 검사를 완료했다. 기본 모두 실행은 작은 가상 검사뿐이다. 사용자 다음 실행은4절 `RUN_COVERAGE_FULL=True`와 새 report/evidence 경로 두 개를 지정하는 **학습 없는 Full**이다.5절에서 두 저장 파일로 표/그래프를 다시 읽을 수 있다.6절 모델 비교는 coverage 검토 전 미구현/차단 상태다. 실제 Full·모델 fit은 이번 구현에서 실행하지 않았다.
 
 2026-11-04 커밋 전 정리에서 사용자 실행 설정·출력16개는 ignored `data/ml-experiments/source-checkpoint-20261104/`에 그대로 보존했다. Git용 source는 빈 출력/count와 기본 Full/실제 표본 비활성 상태다. 기존 결과를 보려면 해당 실행본 또는 실험별 report를 열고, 새 실행 때만 source 설정을 명시적으로 변경한다. 별도 Python 파일 실행이나 Full 반복은 필요하지 않다.
 

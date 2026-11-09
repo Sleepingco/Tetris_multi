@@ -1,6 +1,8 @@
 # AI 현재 계획
 
-정리일: 2026-11-04. 상태: **architecture_decision_pending — 기존 Human 배치·조작·시간 실험과 입력·정답 진단 완료. 모듈형 V4 재사용과 통합 신경망은 비교 후보이며 후속 구조·실행 순서는 미채택**.
+정리일: 2026-11-09. 상태: **architecture_decision_pending — 기존 Human 배치·조작·시간 실험과 입력·정답 진단 완료. 모듈형 V4 재사용과 통합 신경망은 비교 후보이며 전체 구조는 미채택**.
+
+현재 [배치 ID 분류 vs 공유 후보 점수화](../../../ai-harness/ml-experiments/experiments/human-placement-candidate-scoring.md)의 사용자 Full 해석을 완료했다. 같은31게임 macro Top-1은 ID13.42%→후보 제한25.08%→공유 scorer43.56%로 개선됐지만 과적합은 남았다. 다음 순서는 **①공유 scorer 과적합 제어 → ②그 정책의 게임 수별 학습곡선**이다. 첫 [조기 종료 명세](../../../ai-harness/ml-experiments/experiments/human-placement-candidate-early-stopping.md)와 [Notebook](../../../scripts/ml/notebooks/human_placement_candidate_early_stopping.ipynb)은 Train149게임을 내부119/30게임으로 나눠 epoch를 고르고 전체149게임에 재학습한다. 기존 실제30epoch report와 비교하며 새 fit2개의 코드·내부 검증까지 완료했다. 기본 Full=False이고 다음은 사용자4절 Full이다. 원본 행동 증강·추가 수집·외부Validation 기반 epoch 선택·후속 학습곡선·runtime 통합은 하지 않았다. 실제 reachability·모듈형 우선·현재40행 통합을 채택하지 않는다. 이 문서 후반의 구조 선택·A/B 순서 논의는 전체 시스템 후보이지 새 실행 지시가 아니다.
 
 2026-11-04 소스 정리: 기존 실행 설정·출력16개는 ignored `data/ml-experiments/source-checkpoint-20261104/`에 보존하고 Git용 Notebook은 출력/count를 비웠다. Full/실제 표본은 기본 비활성화하고 보고서 초기값을 복구했다. 계산 정의·데이터·결과·기존 테스트는 그대로다. `verify:ml` Node35/35·Python220/220, 기본 verify801 pass·기존1 skip이다. 아래 ML gate 보류·실행본 차이는 당시 이력이며 현재 gate 실패를 뜻하지 않는다. Full 학습/평가는 반복하지 않았다.
 

@@ -211,7 +211,7 @@ eligibility:
 
 배치 선택 학습은 별도의 필수 과제다. Snapshot 관계의 탐색 점수와 판단 시점/규칙이 맞는 배치 정책 성능을 분리하고,
 지원 core의 후보 합법성·실제 목표 도달·예측 목표 기반 rollout을 확인한 뒤에만 전체 모방 정책을 평가한다.
-A는 **V4 계열 Human 배치 모델 + 목표 조건부 조작 습관 + 타이밍**으로 먼저 진행한다. B는 관측 정합과 데이터 지원 조건이 충족됐을 때 비교하는 후속 통합 신경망 후보다. V4가 예측한 목표와 다른 Human 목표의 원래 행동열을 새 목표의 경로 정답으로 바꾸지 않는다. Oracle 목표 decoder 진단과 예측 목표 기반 결합 도달 평가는 분리한다.
+A는 **V4 계열 Human 배치 모델 + 목표 조건부 조작 습관 + 타이밍**, B는 통합 신경망의 미채택 비교 후보이며 진행 순서는 확정하지 않았다. 현재 제한된 다음 명세는 [ID 분류 vs 공유 후보 점수화](../../../ai-harness/ml-experiments/experiments/human-placement-candidate-scoring.md)이며 전체 구조 채택과 독립적이다. 배치 모델이 예측한 목표와 다른 Human 목표의 원래 행동열을 새 목표의 경로 정답으로 바꾸지 않는다. Oracle 목표 decoder 진단과 예측 목표 기반 결합 도달 평가는 분리한다.
 배치 정합이나 B의 조건이 미달이면 보류를 보고하며 휴리스틱 배치나 리듬 체험만으로 전체 목표를 완료 처리하지 않는다.
 
 다음 구현은 [오프라인 view 구성 명세](../../../ai-harness/ml-experiments/experiments/human-placement-action-offline-views.md)의 Notebook·가상 Smoke·작은 Train 표본 구성이다.
